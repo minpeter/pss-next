@@ -1,25 +1,33 @@
 import { buildCompactionFixture } from "./baseline-fixture";
 import { buildBoundaryNoiseFixture } from "./boundary-noise-fixture";
-import type { BenchmarkScenario, CompactionFixture } from "./fixture";
+import {
+  type BenchmarkScenario,
+  type CompactionFixture,
+  validateCompactionFixture,
+} from "./fixture";
 import { buildLifecycleFixture } from "./lifecycle-fixture";
+import { buildLongSessionFixture } from "./long-session-fixture";
 
 export const BENCHMARK_SCENARIOS = [
   "baseline",
   "lifecycle",
   "boundary-noise",
+  "long-session",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
   scenario: BenchmarkScenario,
   seed: string
 ): CompactionFixture {
+  let fixture = buildCompactionFixture(seed);
   if (scenario === "lifecycle") {
-    return buildLifecycleFixture(seed);
+    fixture = buildLifecycleFixture(seed);
+  } else if (scenario === "boundary-noise") {
+    fixture = buildBoundaryNoiseFixture(seed);
+  } else if (scenario === "long-session") {
+    fixture = buildLongSessionFixture(seed);
   }
-  if (scenario === "boundary-noise") {
-    return buildBoundaryNoiseFixture(seed);
-  }
-  return buildCompactionFixture(seed);
+  return validateCompactionFixture(fixture);
 }
 
 export function scenarioForFixtureIndex(index: number): BenchmarkScenario {

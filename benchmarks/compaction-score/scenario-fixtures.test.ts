@@ -31,11 +31,12 @@ const CHARACTERIZED_FIXTURES = [
 ] as const;
 
 describe("benchmark scenario registry", () => {
-  it("covers baseline, lifecycle, and boundary-noise families", () => {
+  it("covers existing families plus long-session retention", () => {
     expect(BENCHMARK_SCENARIOS).toEqual([
       "baseline",
       "lifecycle",
       "boundary-noise",
+      "long-session",
     ]);
   });
 

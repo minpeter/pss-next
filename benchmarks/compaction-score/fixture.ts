@@ -21,11 +21,41 @@ export interface FixtureQuestion {
   readonly question: string;
 }
 
-export type BenchmarkScenario = "baseline" | "boundary-noise" | "lifecycle";
+export type BenchmarkScenario =
+  | "baseline"
+  | "boundary-noise"
+  | "lifecycle"
+  | "long-session";
 
 export interface CompactionFixture {
   readonly compactionEnds: readonly number[];
   readonly messages: ModelMessage[];
   readonly questions: FixtureQuestion[];
   readonly scenario: BenchmarkScenario;
+}
+
+export function validateCompactionFixture(
+  fixture: CompactionFixture
+): CompactionFixture {
+  let previousEnd = 0;
+  if (fixture.compactionEnds.length === 0) {
+    throw new TypeError("Compaction fixture requires at least one boundary.");
+  }
+  for (const end of fixture.compactionEnds) {
+    const before = fixture.messages[end - 1];
+    const after = fixture.messages[end];
+    if (
+      !Number.isInteger(end) ||
+      end <= previousEnd ||
+      before?.role !== "assistant" ||
+      typeof before.content !== "string" ||
+      after?.role !== "user"
+    ) {
+      throw new TypeError(
+        `Compaction boundary ${end} must be an increasing, tool-safe assistant-text to user transition.`
+      );
+    }
+    previousEnd = end;
+  }
+  return fixture;
 }
