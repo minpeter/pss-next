@@ -1,3 +1,4 @@
+import { estimateModelMessagesTokens } from "@minpeter/pss-runtime";
 import { describe, expect, it } from "vitest";
 import type { BenchmarkScenario } from "./fixture";
 import {
@@ -56,6 +57,15 @@ describe("progressive five-hop fixture", () => {
       expect(typeof fixture.messages[end - 1]?.content).toBe("string");
       expect(fixture.messages[end]).toMatchObject({ role: "user" });
     }
+  });
+
+  it("provides a compressible source prefix before the first hop", () => {
+    const fixture = buildScenarioFixture(SCENARIO, "five-hop-compressible");
+    const firstPrefix = fixture.messages.slice(0, fixture.compactionEnds[0]);
+
+    expect(estimateModelMessagesTokens(firstPrefix)).toBeGreaterThanOrEqual(
+      1000
+    );
   });
 
   it("records five compaction hops with perfect mock control and recall", async () => {

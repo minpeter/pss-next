@@ -34,6 +34,7 @@ export function buildProgressiveFiveHopFixture(
       "The original state test run failed and remains historical evidence."
     )
   );
+  addTransientTrace(messages, seed, 1);
   compactionEnds.push(messages.length);
 
   messages.push(
@@ -46,6 +47,7 @@ export function buildProgressiveFiveHopFixture(
     toolResult("five-hop-2", "8 passed, 2 failed; StoreV2Error"),
     assistant("Correction 1 still has two failing tests.")
   );
+  addTransientTrace(messages, seed, 2);
   compactionEnds.push(messages.length);
 
   messages.push(
@@ -58,6 +60,7 @@ export function buildProgressiveFiveHopFixture(
     toolResult("five-hop-3", "10 passed, 1 failed; StorageV3Error"),
     assistant("Correction 2 still has one failing test.")
   );
+  addTransientTrace(messages, seed, 3);
   compactionEnds.push(messages.length);
 
   messages.push(
@@ -70,6 +73,7 @@ export function buildProgressiveFiveHopFixture(
     toolResult("five-hop-4", "12 passed, 1 failed; SchemaV4Error"),
     assistant("Correction 3 still has a schema failure.")
   );
+  addTransientTrace(messages, seed, 4);
   compactionEnds.push(messages.length);
 
   messages.push(
@@ -92,6 +96,7 @@ export function buildProgressiveFiveHopFixture(
     toolResult("five-hop-5", finalOutput),
     assistant("The final state verification passed.")
   );
+  addTransientTrace(messages, seed, 5);
   compactionEnds.push(messages.length);
 
   messages.push(
@@ -162,6 +167,22 @@ function question(
   text: string
 ): FixtureQuestion {
   return { answer, category, question: text };
+}
+
+function addTransientTrace(
+  messages: ModelMessage[],
+  seed: string,
+  phase: number
+): void {
+  const trace = Array.from(
+    { length: 36 },
+    (_, index) =>
+      `TRANSIENT phase=${phase} sample=${index} digest=${createHash("sha256").update(`${seed}:${phase}:${index}`).digest("hex")}; ignore this telemetry when preserving durable state.`
+  ).join("\n");
+  messages.push(
+    user(trace),
+    assistant("The transient telemetry has no durable state.")
+  );
 }
 
 function toolCall(toolCallId: string): ModelMessage {
