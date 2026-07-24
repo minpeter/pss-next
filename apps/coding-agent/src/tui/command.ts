@@ -14,8 +14,8 @@ export interface TuiCommandResult {
 }
 
 export interface TuiCommand {
-  aliases?: string[];
-  argumentSuggestions?: string[];
+  aliases?: readonly string[];
+  argumentSuggestions?: readonly string[];
   description: string;
   displayName?: string;
   execute: (input: {

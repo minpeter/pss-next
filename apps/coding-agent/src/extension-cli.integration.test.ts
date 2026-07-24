@@ -29,7 +29,7 @@ async function createCliFixture(): Promise<CliFixture> {
     modulePath,
     [
       "export default function demo(pss) {",
-      '  pss.instructions.append("installed extension");',
+      '  pss.provide({ kind: "instructions", fragments: ["installed extension"] });',
       "}",
       "",
     ].join("\n"),

@@ -13,6 +13,21 @@ export type {
   BaseToolCallView,
   ToolRendererMap,
 } from "../tui/tool-call-view";
+export type {
+  CommandCapability,
+  ExtensionCapability,
+  InstructionsCapability,
+  ThreadMigrationCapability,
+  ToolRendererCapability,
+  ToolsCapability,
+} from "./capabilities";
+export {
+  command,
+  instructions,
+  threadMigration,
+  toolRenderer,
+  tools,
+} from "./capabilities";
 export { composeAgentHooks } from "./compose-hooks";
 export {
   CodingAgentExtensionError,
@@ -34,7 +49,6 @@ export {
   type CodingAgentExtensionActivationHandler,
   type CodingAgentExtensionApi,
   type CodingAgentExtensionCleanup,
-  type CodingAgentExtensionContribution,
   type CodingAgentExtensionEventContext,
   type CodingAgentExtensionEventHandler,
   type CodingAgentExtensionFactory,

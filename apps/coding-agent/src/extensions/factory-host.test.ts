@@ -2,9 +2,11 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAgent } from "@minpeter/pss-runtime";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
+import { instructions, tools } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type {
   CodingAgentExtensionApi,
+  CodingAgentExtensionInput,
   CodingAgentExtensionModule,
 } from "./types";
 
@@ -14,8 +16,8 @@ describe("default-export coding agent extensions", () => {
     const lifecycle: string[] = [];
     const extensionModule: CodingAgentExtensionModule = {
       default(pss) {
-        pss.instructions.append("Factory instruction");
-        pss.lifecycle.onActivate(({ mode }) => {
+        pss.provide(instructions("Factory instruction"));
+        pss.on("activate", ({ mode }) => {
           lifecycle.push(`activate:${mode}`);
           return () => {
             lifecycle.push("dispose");
@@ -44,10 +46,16 @@ describe("default-export coding agent extensions", () => {
 
   it("registers hooks through the top-level use alias", async () => {
     let aliasesMatch = false;
+    const staticExtension: CodingAgentExtensionInput = {
+      configure(registry) {
+        aliasesMatch = registry.use === registry.runtime.use;
+      },
+      id: "static-alias",
+    };
     const host = await createCodingAgentExtensionHost([
+      staticExtension,
       {
         default(pss) {
-          aliasesMatch = pss.use === pss.runtime.use;
           pss.use({
             acceptInput(event) {
               if (event.type !== "user-input" || !("text" in event)) {
@@ -88,11 +96,11 @@ describe("default-export coding agent extensions", () => {
     const host = await createCodingAgentExtensionHost([
       {
         default(pss) {
-          pss.provide({
-            tools: {
+          pss.provide(
+            tools({
               provided_tool: providedTool,
-            },
-          });
+            })
+          );
         },
         id: "tool-provider",
       },
@@ -111,14 +119,17 @@ describe("default-export coding agent extensions", () => {
       createCodingAgentExtensionHost([
         {
           default(pss) {
-            pss.provide({ tools: { duplicate_tool: duplicateTool } });
-            pss.provide({ tools: { duplicate_tool: duplicateTool } });
+            pss.provide(tools({ duplicate_tool: duplicateTool }));
+            pss.provide(tools({ duplicate_tool: duplicateTool }));
           },
           id: "duplicate-provider",
         },
       ])
     ).rejects.toMatchObject({
-      cause: { message: 'Duplicate tool "duplicate_tool"' },
+      cause: {
+        message:
+          'Tool "duplicate_tool" from extension "duplicate-provider" conflicts with extension "duplicate-provider"',
+      },
     });
   });
 
@@ -132,9 +143,7 @@ describe("default-export coding agent extensions", () => {
       createCodingAgentExtensionHost([
         {
           default(pss) {
-            pss.provide({
-              tools: { ["__proto__"]: dangerousTool },
-            });
+            pss.provide(tools({ ["__proto__"]: dangerousTool }));
           },
           id: "dangerous-provider",
         },
@@ -144,18 +153,18 @@ describe("default-export coding agent extensions", () => {
     });
   });
 
-  it("rejects unsupported declarative contribution shapes", async () => {
+  it("rejects unknown capability kinds", async () => {
     await expect(
       createCodingAgentExtensionHost([
         {
           default(pss) {
-            pss.provide({ hooks: {} } as never);
+            pss.provide({ kind: "hooks" } as never);
           },
           id: "invalid-provider",
         },
       ])
     ).rejects.toMatchObject({
-      cause: { message: "Extension contribution must provide a tools object" },
+      cause: { message: 'Unknown extension capability kind "hooks"' },
     });
   });
 
@@ -192,7 +201,7 @@ describe("default-export coding agent extensions", () => {
     expect(() => lateOn?.("turn-error", () => undefined)).toThrow(
       'Coding agent extension "late-registration" registration is closed'
     );
-    expect(() => lateProvide?.({ tools: {} })).toThrow(
+    expect(() => lateProvide?.(tools({}))).toThrow(
       'Coding agent extension "late-registration" registration is closed'
     );
     expect(() => lateUse?.({})).toThrow(

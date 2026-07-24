@@ -1,9 +1,13 @@
+import type { AgentEvent } from "@minpeter/pss-runtime";
 import type {
   CodingAgentExtension,
   CodingAgentExtensionActivationHandler,
+  CodingAgentExtensionApi,
   CodingAgentExtensionCleanup,
+  CodingAgentExtensionEventHandler,
   CodingAgentExtensionInput,
   CodingAgentExtensionModule,
+  CodingAgentExtensionRegistry,
 } from "./types";
 
 export function normalizeCodingAgentExtension(
@@ -26,23 +30,20 @@ function factoryModuleToExtension(
   const activationHandlers: CodingAgentExtensionActivationHandler[] = [];
   return {
     id: extensionModule.id,
-    async configure(registry) {
+    async configure(registry, { signal }) {
       let open = true;
       try {
-        await extensionModule.default({
-          ...registry,
-          id: extensionModule.id,
-          lifecycle: {
-            onActivate(handler) {
-              if (!open) {
-                throw new Error(
-                  `Coding agent extension "${extensionModule.id}" registration is closed`
-                );
-              }
-              activationHandlers.push(handler);
-            },
-          },
-        });
+        const result = extensionModule.default(
+          createFactoryApi(
+            registry,
+            activationHandlers,
+            extensionModule.id,
+            () => open && !signal.aborted
+          )
+        );
+        if (isPromiseLike(result)) {
+          await result;
+        }
       } finally {
         open = false;
       }
@@ -52,7 +53,12 @@ function factoryModuleToExtension(
       try {
         for (const handler of activationHandlers) {
           const cleanup = await handler(context);
-          if (cleanup) {
+          if (cleanup !== undefined && typeof cleanup !== "function") {
+            throw new TypeError(
+              `Coding agent extension "${extensionModule.id}" activation handler must return a cleanup function`
+            );
+          }
+          if (cleanup !== undefined) {
             cleanups.push(cleanup);
           }
         }
@@ -65,6 +71,61 @@ function factoryModuleToExtension(
       };
     },
   };
+}
+
+function createFactoryApi(
+  registry: CodingAgentExtensionRegistry,
+  activationHandlers: CodingAgentExtensionActivationHandler[],
+  extensionId: string,
+  isOpen: () => boolean
+): CodingAgentExtensionApi {
+  const assertOpen = () => {
+    if (!isOpen()) {
+      throw new Error(
+        `Coding agent extension "${extensionId}" registration is closed`
+      );
+    }
+  };
+  const on = ((
+    type: AgentEvent["type"] | "activate",
+    handler:
+      | CodingAgentExtensionActivationHandler
+      | CodingAgentExtensionEventHandler<AgentEvent["type"]>
+  ) => {
+    assertOpen();
+    if (type === "activate") {
+      if (typeof handler !== "function") {
+        throw new TypeError(
+          'Extension event "activate" handler must be a function'
+        );
+      }
+      activationHandlers.push(handler as CodingAgentExtensionActivationHandler);
+      return;
+    }
+    registry.on(type, handler as CodingAgentExtensionEventHandler<typeof type>);
+  }) as CodingAgentExtensionApi["on"];
+  const provide: CodingAgentExtensionApi["provide"] = (capability) => {
+    assertOpen();
+    registry.provide(capability);
+  };
+  const use: CodingAgentExtensionApi["use"] = (hooks) => {
+    assertOpen();
+    registry.use(hooks);
+  };
+
+  return Object.freeze({
+    on,
+    provide,
+    use,
+  });
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<void> {
+  return (
+    ((typeof value === "object" && value !== null) ||
+      typeof value === "function") &&
+    typeof Reflect.get(value, "then") === "function"
+  );
 }
 
 async function disposeCleanups(

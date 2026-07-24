@@ -139,9 +139,26 @@ export async function runCodingAgentExec({
       webTools: { webToolsAvailability },
       workspace: absoluteWorkspace,
     });
-    await extensionHost.activate(agent, "exec");
   } catch (error) {
     await extensionHost.dispose();
+    throw error;
+  }
+  try {
+    await extensionHost.activate(agent, "exec");
+  } catch (error) {
+    const cleanupResults = await Promise.allSettled([
+      agent.dispose(),
+      extensionHost.dispose(),
+    ]);
+    const cleanupErrors = cleanupResults.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : []
+    );
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "Coding agent extension activation and cleanup failed"
+      );
+    }
     throw error;
   }
   const thread = agent.thread(`exec:${randomUUID()}`);

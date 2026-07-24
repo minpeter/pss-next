@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { threadMigration } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 
 describe("default-export extension runtime boundary", () => {
-  it("qualifies storage migrations with the extension id", async () => {
+  it("qualifies migration capabilities with the extension id", async () => {
     // Given
     const extensionModule = {
       default(pss) {
-        pss.storage.registerThreadMigration({
-          id: "sanitize",
-          migrate(snapshot) {
-            return snapshot;
-          },
-          version: 2,
-        });
+        pss.provide(
+          threadMigration({
+            id: "sanitize",
+            migrate(snapshot) {
+              return snapshot;
+            },
+            version: 2,
+          })
+        );
       },
       id: "workspace-policy",
     };
@@ -34,11 +37,13 @@ describe("default-export extension runtime boundary", () => {
     // Given
     const extensionModule = {
       default(pss) {
-        pss.storage.registerThreadMigration({
-          id: "invalid",
-          migrate: "not-a-function",
-          version: 0,
-        });
+        pss.provide(
+          threadMigration({
+            id: "invalid",
+            migrate: "not-a-function",
+            version: 0,
+          })
+        );
       },
       id: "workspace-policy",
     };
@@ -61,13 +66,15 @@ describe("default-export extension runtime boundary", () => {
     // Given
     const extensionModule = {
       default(pss) {
-        pss.storage.registerThreadMigration({
-          id: "bad id",
-          migrate(snapshot) {
-            return snapshot;
-          },
-          version: 1,
-        });
+        pss.provide(
+          threadMigration({
+            id: "bad id",
+            migrate(snapshot) {
+              return snapshot;
+            },
+            version: 1,
+          })
+        );
       },
       id: "workspace-policy",
     };

@@ -8,6 +8,7 @@ import type {
 import type { ToolSet } from "ai";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
+import type { ExtensionCapability } from "./capabilities";
 
 export type CodingAgentExtensionMode = "exec" | "tui";
 
@@ -42,10 +43,6 @@ export type CodingAgentExtensionEventHandler<Type extends AgentEvent["type"]> =
     context: CodingAgentExtensionEventContext
   ) => Promise<void> | void;
 
-export interface CodingAgentExtensionContribution {
-  readonly tools: ToolSet;
-}
-
 export interface CodingAgentExtensionRegistry {
   readonly commands: {
     register(command: TuiCommand): void;
@@ -57,7 +54,7 @@ export interface CodingAgentExtensionRegistry {
     type: Type,
     handler: CodingAgentExtensionEventHandler<Type>
   ): void;
-  provide(contribution: CodingAgentExtensionContribution): void;
+  provide(capability: ExtensionCapability): void;
   readonly runtime: {
     use(hooks: AgentHooks): void;
   };
@@ -76,11 +73,14 @@ export interface CodingAgentExtensionRegistry {
   use(hooks: AgentHooks): void;
 }
 
-export interface CodingAgentExtensionApi extends CodingAgentExtensionRegistry {
-  readonly id: string;
-  readonly lifecycle: {
-    onActivate(handler: CodingAgentExtensionActivationHandler): void;
-  };
+export interface CodingAgentExtensionApi {
+  on<Type extends AgentEvent["type"]>(
+    type: Type,
+    handler: CodingAgentExtensionEventHandler<Type>
+  ): void;
+  on(type: "activate", handler: CodingAgentExtensionActivationHandler): void;
+  provide(capability: ExtensionCapability): void;
+  use(hooks: AgentHooks): void;
 }
 
 export type ExtensionAPI = CodingAgentExtensionApi;

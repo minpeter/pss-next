@@ -53,11 +53,35 @@ runtime hooks, activation cleanup, and durable thread migrations:
 
 ```ts
 import {
+  command,
+  instructions,
+  threadMigration,
+  toolRenderer,
+  tools,
   type ExtensionAPI,
 } from "@minpeter/pss-coding-agent/extension";
 
 export default function workspacePolicy(pss: ExtensionAPI) {
-  pss.instructions.append("Keep all file operations in the workspace.");
+  pss.provide(
+    instructions("Keep all file operations in the workspace."),
+  );
+  pss.provide(tools({
+    review_workspace: reviewWorkspaceTool,
+  }));
+  pss.provide(command(reviewCommand));
+  pss.provide(
+    toolRenderer("review_workspace", renderWorkspaceReview),
+  );
+  pss.provide(threadMigration({
+    id: "sanitize-legacy-history",
+    version: 1,
+    migrate(snapshot) {
+      return {
+        ...snapshot,
+        history: snapshot.history.filter(isSafeMessage),
+      };
+    },
+  }));
   pss.use({
     beforeToolExecution(checkpoint) {
       if (checkpoint.toolName === "delete_file") {
@@ -75,24 +99,9 @@ export default function workspacePolicy(pss: ExtensionAPI) {
       threadKey: context.threadKey,
     });
   });
-  pss.provide({
-    tools: {
-      review_workspace: reviewWorkspaceTool,
-    },
-  });
-  pss.lifecycle.onActivate(() => {
+  pss.on("activate", () => {
     const watcher = startWorkspaceWatcher();
     return () => watcher.close();
-  });
-  pss.storage.registerThreadMigration({
-    id: "sanitize-legacy-history",
-    version: 1,
-    migrate(snapshot) {
-      return {
-        ...snapshot,
-        history: snapshot.history.filter(isSafeMessage),
-      };
-    },
   });
 }
 ```
@@ -100,11 +109,14 @@ export default function workspacePolicy(pss: ExtensionAPI) {
 Extensions configure sequentially, use stable IDs, and cannot register new
 contributions after the factory resolves. Activation callbacks run after agent
 creation; cleanups run in reverse order. `pss.use()` composes control-flow
-hooks, `pss.on()` observes a named runtime event, and `pss.provide()` publishes
-declarative tool contributions. Event handlers run serially in extension and
-registration order. Naming a stream event such as `assistant-output-delta`
-explicitly opts into ephemeral deltas; handler failures are attributed to the
-owning extension and surfaced after the original events.
+hooks, `pss.on()` observes runtime and activation events, and overloaded
+`pss.provide()` accepts branded instruction, tool, command, migration, and
+renderer capabilities. Each factory's capabilities are validated and staged
+before one atomic publication; unknown capability kinds fail closed. Event
+handlers run serially in extension and registration order. Naming a stream
+event such as `assistant-output-delta` explicitly opts into ephemeral deltas;
+handler failures are attributed to the owning extension and surfaced after
+the original events.
 
 Install an extension globally or for one project:
 

@@ -76,9 +76,10 @@ exactly one event shape regardless of model capability.
 
 Deltas are ephemeral. A recording-boundary guard keeps them out of durable
 storage, so they never appear in `thread.events()` replay or in event logs,
-and they bypass plugins entirely (no interception, no observation). The
-committed `assistant-output`, `assistant-reasoning`, and `tool-call` events
-remain the durable per-step record.
+and they bypass `AgentHooks` interception. Live stream consumers and
+instrumentation can still observe them. The committed `assistant-output`,
+`assistant-reasoning`, and `tool-call` events remain the durable per-step
+record.
 
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text
@@ -146,7 +147,8 @@ exported from the package root. Categories are stable runtime classifications:
 and `unknown`.
 
 The metadata is additive and durable: it survives `thread.events()` replay and
-is visible to plugins. Older stored events without `error` remain valid.
+is visible to stream consumers and instrumentation. Older stored events
+without `error` remain valid.
 `message` is an application-owned safe summary for structured provider
 failures, not raw provider prose. The metadata whitelist can include status,
 bounded code/type values, retry-after, and labeled correlation IDs; it excludes
@@ -651,10 +653,10 @@ that attribute here.
 
 `attemptId` is generated once per PSS runtime model-step invocation. It
 correlates runtime telemetry and durable replay; it does not identify or count
-HTTP retries hidden inside an AI SDK or provider adapter. Plugins observe the
-same record through `model.usage` after the durable usage-flush boundary. A
-failing observer can fail the turn without erasing an already persisted usage
-record.
+HTTP retries hidden inside an AI SDK or provider adapter. Instrumentation and
+live consumers observe the same record through `model-usage` after the durable
+usage-flush boundary. A failing observer can fail the turn without erasing an
+already persisted usage record.
 
 When the host supports durable thread-event replay, the runtime first stages
 `model-usage` with pending lifecycle events and attempts the durable flush. It
@@ -844,8 +846,8 @@ const protocolGuard: AgentHooks = {
 ```
 
 Thread-state shape validation remains an internal runtime invariant at decode,
-in-memory append, and encode boundaries. Plugins do not receive a loaded-state
-or pre-commit mutation capability.
+in-memory append, and encode boundaries. `AgentHooks` do not receive a
+loaded-state or pre-commit mutation capability.
 
 Persisted-history repair belongs in a separate recovery job. The job should
 load a versioned snapshot, produce an auditable object diff before writing, and
@@ -925,19 +927,19 @@ The checkpoint carries `toolName`, `toolCallId`, `input`, `policy`, `attempt`,
 and `idempotencyKey`. Hook contexts carry `history`, `signal`, and `threadKey`.
 The runtime passes snapshots into host callbacks, so in-place mutations do not
 affect execution. Keep transformed inputs structured-cloneable. Invalid
-decisions fail closed with `PluginHookError`, including a transform missing
+decisions fail closed with `AgentHookError`, including a transform missing
 `input`, `input: undefined`, or a non-cloneable `input` (for example a function).
-If an earlier plugin transforms and a later one returns `block` or
-`needs-recovery`, execution and `tool.execution.start` are skipped.
+If an earlier hook transforms and a later one returns
+`status: "blocked"` or `status: "needs-recovery"`, execution and
+`tool.execution.start` are skipped.
 
-`tool.execution.start` runs only after every `tool.call.before` handler continues
-(and carries the final transformed input when transforms were applied).
-`tool.result` transforms chain in registration order, followed by the
-observe-only `tool.execution.end` event carrying the final result.
+Tool execution starts only after every `beforeToolExecution` hook continues
+and uses the final transformed input. `transformToolResult` hooks chain in
+registration order and produce the final result exposed to live consumers.
 
 ### Input `meta.source`
 
-The runtime attaches `meta` on input events at API boundaries. Plugins can route
+The runtime attaches `meta` on input events at API boundaries. Hooks can route
 on `event.meta?.source`:
 
 | `source` | Boundary |

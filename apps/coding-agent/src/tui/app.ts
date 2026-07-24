@@ -161,7 +161,8 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       setupMessages: [...startupNotices, ...noticeLines],
       toolRenderers: mergeToolRenderers(
         createToolRenderers(),
-        extensionHost.toolRenderers
+        extensionHost.toolRenderers,
+        (toolName) => extensionHost.getToolRendererOwner(toolName)
       ),
     };
 
@@ -185,14 +186,18 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   }
 }
 
-function mergeToolRenderers(
+export function mergeToolRenderers(
   builtIn: NonNullable<AgentTUIConfig["toolRenderers"]>,
-  contributed: NonNullable<AgentTUIConfig["toolRenderers"]>
+  contributed: NonNullable<AgentTUIConfig["toolRenderers"]>,
+  getOwner: (toolName: string) => string | undefined
 ): NonNullable<AgentTUIConfig["toolRenderers"]> {
   const merged = { ...builtIn };
   for (const [toolName, renderer] of Object.entries(contributed)) {
     if (Object.hasOwn(merged, toolName)) {
-      throw new Error(`Duplicate coding agent tool renderer "${toolName}"`);
+      const owner = getOwner(toolName) ?? "unknown";
+      throw new Error(
+        `Extension "${owner}" tool renderer "${toolName}" conflicts with built-in renderer`
+      );
     }
     merged[toolName] = renderer;
   }

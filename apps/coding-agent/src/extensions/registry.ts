@@ -1,22 +1,26 @@
-import type {
-  AgentEvent,
-  AgentHooks,
-  ThreadStateMigration,
-} from "@minpeter/pss-runtime";
-import type { ToolSet } from "ai";
-import type { TuiCommand } from "../tui/command";
+import type { AgentEvent, AgentHooks } from "@minpeter/pss-runtime";
 import type { ToolRendererMap } from "../tui/tool-call-view";
-import type { RegisteredAgentHooks } from "./compose-hooks";
+import type { ExtensionCapability } from "./capabilities";
+import {
+  snapshotCommand,
+  snapshotInstruction,
+  snapshotThreadMigration,
+  snapshotToolEntry,
+  validateExtensionCapability,
+} from "./capability-validation";
 import type { RegisteredCodingAgentExtensionEvent } from "./events";
+import { snapshotToolRendererName } from "./name-validation";
+import type { ExtensionRegistryCollections } from "./registry-collections";
+import {
+  assertNoCommandConflicts,
+  recordCommandOwners,
+} from "./registry-conflicts";
 import type {
-  CodingAgentExtensionContribution,
   CodingAgentExtensionEventContext,
   CodingAgentExtensionEventHandler,
   CodingAgentExtensionRegistry,
 } from "./types";
 
-const THREAD_MIGRATION_ID_PATTERN = /^[A-Za-z0-9@][A-Za-z0-9@/._:-]*$/;
-const UNSAFE_TOOL_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 const EXTENSION_EVENT_TYPES = Object.freeze({
   "assistant-output": true,
   "assistant-output-delta": true,
@@ -38,16 +42,6 @@ const EXTENSION_EVENT_TYPES = Object.freeze({
   "user-input": true,
 } satisfies Record<AgentEvent["type"], true>);
 
-interface ExtensionRegistryCollections {
-  readonly commands: TuiCommand[];
-  readonly events: RegisteredCodingAgentExtensionEvent[];
-  readonly hooks: RegisteredAgentHooks[];
-  readonly instructions: string[];
-  readonly migrations: ThreadStateMigration[];
-  readonly renderers: ToolRendererMap;
-  readonly tools: ToolSet;
-}
-
 interface CreateExtensionRegistryOptions {
   readonly assertOpen: () => void;
   readonly collections: ExtensionRegistryCollections;
@@ -59,93 +53,130 @@ export function createCodingAgentExtensionRegistry({
   collections,
   extensionId,
 }: CreateExtensionRegistryOptions): CodingAgentExtensionRegistry {
-  const registerTool = (name: string, tool: ToolSet[string]) => {
+  const registerCommand = (value: unknown) => {
     assertOpen();
-    if (UNSAFE_TOOL_NAMES.has(name)) {
-      throw new TypeError(`Unsafe tool name "${name}"`);
+    const command = snapshotCommand(value);
+    assertNoCommandConflicts(
+      collections.commands,
+      [command],
+      collections.owners.commands,
+      extensionId
+    );
+    collections.commands.push(command);
+    recordCommandOwners(collections.owners.commands, [command], extensionId);
+  };
+  const registerInstruction = (value: unknown) => {
+    assertOpen();
+    collections.instructions.push(snapshotInstruction(value));
+  };
+  const registerMigration = (value: unknown) => {
+    assertOpen();
+    const migration = snapshotThreadMigration(extensionId, value);
+    if (collections.migrations.some(({ id }) => id === migration.id)) {
+      const existingOwner =
+        collections.owners.migrations.get(migration.id) ?? extensionId;
+      throw new Error(
+        `Thread migration "${migration.id}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
     }
+    collections.migrations.push(migration);
+    collections.owners.migrations.set(migration.id, extensionId);
+  };
+  const registerRenderer = (toolNameValue: unknown, renderer: unknown) => {
+    assertOpen();
+    const toolName = snapshotToolRendererName(toolNameValue);
+    if (typeof renderer !== "function") {
+      throw new TypeError(`Tool renderer "${toolName}" must be a function`);
+    }
+    if (Object.hasOwn(collections.renderers, toolName)) {
+      const existingOwner =
+        collections.owners.renderers.get(toolName) ?? extensionId;
+      throw new Error(
+        `Tool renderer "${toolName}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
+    }
+    collections.renderers[toolName] = renderer as ToolRendererMap[string];
+    collections.owners.renderers.set(toolName, extensionId);
+  };
+  const registerTool = (nameValue: unknown, definition: unknown) => {
+    assertOpen();
+    const [name, tool] = snapshotToolEntry(nameValue, definition);
     if (Object.hasOwn(collections.tools, name)) {
-      throw new Error(`Duplicate tool "${name}"`);
+      const existingOwner = collections.owners.tools.get(name) ?? extensionId;
+      throw new Error(
+        `Tool "${name}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
     }
     collections.tools[name] = tool;
+    collections.owners.tools.set(name, extensionId);
   };
   const use = (hooks: AgentHooks) => {
     assertOpen();
     collections.hooks.push({ extensionId, hooks });
   };
+  const provide = (capability: ExtensionCapability) => {
+    assertOpen();
+    const validated = validateExtensionCapability(capability, extensionId);
+    switch (validated.kind) {
+      case "command":
+        registerCommand(validated.command);
+        return;
+      case "instructions":
+        for (const fragment of validated.fragments) {
+          registerInstruction(fragment);
+        }
+        return;
+      case "thread-migration":
+        if (
+          collections.migrations.some(({ id }) => id === validated.migration.id)
+        ) {
+          const existingOwner =
+            collections.owners.migrations.get(validated.migration.id) ??
+            extensionId;
+          throw new Error(
+            `Thread migration "${validated.migration.id}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+          );
+        }
+        collections.migrations.push(validated.migration);
+        collections.owners.migrations.set(validated.migration.id, extensionId);
+        return;
+      case "tool-renderer":
+        registerRenderer(validated.toolName, validated.renderer);
+        return;
+      case "tools":
+        for (const [name] of validated.entries) {
+          if (Object.hasOwn(collections.tools, name)) {
+            const existingOwner =
+              collections.owners.tools.get(name) ?? extensionId;
+            throw new Error(
+              `Tool "${name}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+            );
+          }
+        }
+        for (const [name, tool] of validated.entries) {
+          collections.tools[name] = tool;
+          collections.owners.tools.set(name, extensionId);
+        }
+        return;
+      default: {
+        const unreachable: never = validated;
+        throw new TypeError(`Unknown extension capability: ${unreachable}`);
+      }
+    }
+  };
   return {
-    commands: {
-      register: (command) => {
-        assertOpen();
-        if (collections.commands.some(({ name }) => name === command.name)) {
-          throw new Error(`Duplicate command "${command.name}"`);
-        }
-        collections.commands.push(command);
-      },
-    },
-    instructions: {
-      append: (fragment) => {
-        assertOpen();
-        if (fragment.trim().length === 0) {
-          throw new Error("Instruction fragment must not be empty");
-        }
-        collections.instructions.push(fragment);
-      },
-    },
+    commands: { register: registerCommand },
+    instructions: { append: registerInstruction },
     on: (type, handler) => {
       registerEvent(collections.events, extensionId, type, handler, assertOpen);
     },
-    provide: (contribution) => {
-      provide(contribution, registerTool, assertOpen);
-    },
+    provide,
     runtime: { use },
-    storage: {
-      registerThreadMigration: (migration) => {
-        registerThreadMigration(
-          collections.migrations,
-          extensionId,
-          migration,
-          assertOpen
-        );
-      },
-    },
+    storage: { registerThreadMigration: registerMigration },
     tools: { register: registerTool },
-    tui: {
-      registerToolRenderer: (toolName, renderer) => {
-        assertOpen();
-        if (Object.hasOwn(collections.renderers, toolName)) {
-          throw new Error(`Duplicate tool renderer "${toolName}"`);
-        }
-        collections.renderers[toolName] = renderer;
-      },
-    },
+    tui: { registerToolRenderer: registerRenderer },
     use,
   };
-}
-
-function provide(
-  contribution: CodingAgentExtensionContribution,
-  registerTool: (name: string, tool: ToolSet[string]) => void,
-  assertOpen: () => void
-): void {
-  assertOpen();
-  if (
-    !contribution ||
-    typeof contribution !== "object" ||
-    !Object.hasOwn(contribution, "tools") ||
-    !contribution.tools ||
-    typeof contribution.tools !== "object" ||
-    Array.isArray(contribution.tools)
-  ) {
-    throw new TypeError("Extension contribution must provide a tools object");
-  }
-  const keys = Object.keys(contribution);
-  if (keys.length !== 1 || keys[0] !== "tools") {
-    throw new TypeError("Extension contribution only supports tools");
-  }
-  for (const [name, tool] of Object.entries(contribution.tools)) {
-    registerTool(name, tool);
-  }
 }
 
 function registerEvent<Type extends AgentEvent["type"]>(
@@ -175,32 +206,4 @@ function registerEvent<Type extends AgentEvent["type"]>(
     },
     type,
   });
-}
-
-function registerThreadMigration(
-  migrations: ThreadStateMigration[],
-  extensionId: string,
-  migration: ThreadStateMigration,
-  assertOpen: () => void
-): void {
-  assertOpen();
-  if (migration.id.trim().length === 0) {
-    throw new Error("Thread migration id must not be empty");
-  }
-  const id = `${extensionId}/${migration.id}`;
-  if (!THREAD_MIGRATION_ID_PATTERN.test(id)) {
-    throw new TypeError(`Invalid thread migration id: ${id}`);
-  }
-  if (!Number.isSafeInteger(migration.version) || migration.version < 1) {
-    throw new TypeError(
-      `Thread migration "${id}" version must be a positive integer`
-    );
-  }
-  if (typeof migration.migrate !== "function") {
-    throw new TypeError(`Thread migration "${id}" migrate must be a function`);
-  }
-  if (migrations.some((entry) => entry.id === id)) {
-    throw new Error(`Duplicate thread migration id: ${id}`);
-  }
-  migrations.push({ ...migration, id });
 }

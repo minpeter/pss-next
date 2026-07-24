@@ -2,7 +2,7 @@
 
 Small agent runtime workspace.
 
-- `@minpeter/pss-runtime`: runtime, threads, model loop, and plugin kernel.
+- `@minpeter/pss-runtime`: runtime, threads, model loop, core hooks, and instrumentation.
 - `@minpeter/pss-coding-agent`: model wiring, workspace coding tools, the `pss`
   TUI, and the `pss exec` headless runner, with OpenSearch-backed `web_search`
   and `web_fetch` tools enabled by default.
@@ -52,7 +52,8 @@ runtime cross lifecycle boundaries such as `turn-start`, `step-start`, and
 `turn.events()` also emits ephemeral streaming deltas
 (`assistant-output-delta`, `assistant-reasoning-delta`, and three
 `tool-call-input-*` kinds) between `step-start` and a step's committed
-events. Deltas are never persisted and bypass plugins; the committed
+events. Deltas are never persisted and bypass `AgentHooks` interception; live
+stream consumers and instrumentation can still observe them. The committed
 events remain the durable record. See the streaming deltas section of
 [`packages/runtime/README.md`](packages/runtime/README.md#streaming-deltas).
 Use `thread.send(input)` for a new user turn. If a turn is already active, the

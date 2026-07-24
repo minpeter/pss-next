@@ -18,8 +18,10 @@ Coding-agent extensions can be authored as default-export factories receiving
 host composes instructions, tools, commands, UI contributions, lifecycle
 callbacks, runtime hooks, and durable thread migrations with source-attributed
 validation errors. Concise `pss.use()`, `pss.on()`, and `pss.provide()` methods
-register control hooks, named event observers, and declarative tool
-contributions without restoring the legacy plugin runtime.
+register control hooks, named event observers, and branded capabilities for
+instructions, tools, commands, migrations, and renderers without restoring
+the legacy plugin runtime. Factory capabilities validate and publish
+atomically after configuration succeeds.
 
 Add `pss extension install`, `list`, `remove`, `update`, `enable`, and
 `disable` for npm, Git, local package, and loose ESM sources at global or

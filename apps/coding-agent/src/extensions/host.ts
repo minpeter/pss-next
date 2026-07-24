@@ -7,18 +7,19 @@ import type {
 import type { ToolSet } from "ai";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
-import { composeAgentHooks, type RegisteredAgentHooks } from "./compose-hooks";
+import { composeAgentHooks } from "./compose-hooks";
 import { CodingAgentExtensionError } from "./error";
-import {
-  createCodingAgentExtensionInstrumentation,
-  type RegisteredCodingAgentExtensionEvent,
-} from "./events";
+import { createCodingAgentExtensionInstrumentation } from "./events";
 import { normalizeCodingAgentExtension } from "./factory";
 import {
   DEFAULT_EXTENSION_TIMEOUT_MS,
   validateExtensionHostOptions,
 } from "./host-validation";
 import { createCodingAgentExtensionRegistry } from "./registry";
+import {
+  commitExtensionRegistryCollections,
+  createExtensionRegistryCollections,
+} from "./registry-collections";
 import type {
   CodingAgentExtension,
   CodingAgentExtensionActivationContext,
@@ -29,16 +30,10 @@ import type {
 } from "./types";
 
 export class CodingAgentExtensionHost {
-  readonly #commands: TuiCommand[] = [];
+  readonly #collections = createExtensionRegistryCollections();
   readonly #controller = new AbortController();
-  readonly #eventRegistrations: RegisteredCodingAgentExtensionEvent[] = [];
   readonly #extensions: readonly CodingAgentExtension[];
-  readonly #hookRegistrations: RegisteredAgentHooks[] = [];
-  readonly #instructionFragments: string[] = [];
   readonly #timeoutMs: number;
-  readonly #toolRenderers: ToolRendererMap = {};
-  readonly #tools: ToolSet = {};
-  readonly #threadMigrations: ThreadStateMigration[] = [];
   #activated = false;
   #cleanups: { cleanup: CodingAgentExtensionCleanup; id: string }[] = [];
   #disposed = false;
@@ -70,40 +65,48 @@ export class CodingAgentExtensionHost {
   }
 
   get commands(): readonly TuiCommand[] {
-    return [...this.#commands];
+    return [...this.#collections.commands];
   }
 
   get hooks(): AgentHooks | undefined {
-    return this.#hookRegistrations.length === 0
+    return this.#collections.hooks.length === 0
       ? undefined
-      : composeAgentHooks(this.#hookRegistrations);
+      : composeAgentHooks(this.#collections.hooks);
   }
 
   get instrumentations(): readonly AgentInstrumentation[] {
-    return this.#eventRegistrations.length === 0
+    return this.#collections.events.length === 0
       ? []
       : [
           createCodingAgentExtensionInstrumentation(
-            this.#eventRegistrations,
+            this.#collections.events,
             this.#controller.signal
           ),
         ];
   }
 
   get instructionFragments(): readonly string[] {
-    return [...this.#instructionFragments];
+    return [...this.#collections.instructions];
   }
 
   get toolRenderers(): ToolRendererMap {
-    return { ...this.#toolRenderers };
+    return { ...this.#collections.renderers };
   }
 
   get tools(): ToolSet {
-    return { ...this.#tools };
+    return { ...this.#collections.tools };
   }
 
   get threadMigrations(): readonly ThreadStateMigration[] {
-    return [...this.#threadMigrations];
+    return [...this.#collections.migrations];
+  }
+
+  getToolOwner(name: string): string | undefined {
+    return this.#collections.owners.tools.get(name);
+  }
+
+  getToolRendererOwner(name: string): string | undefined {
+    return this.#collections.owners.renderers.get(name);
   }
 
   async activate(agent: Agent, mode: CodingAgentExtensionMode): Promise<void> {
@@ -117,6 +120,7 @@ export class CodingAgentExtensionHost {
       mode,
       signal: this.#controller.signal,
     };
+    Object.freeze(context);
     try {
       for (const extension of this.#extensions) {
         if (!extension.activate) {
@@ -150,7 +154,7 @@ export class CodingAgentExtensionHost {
       }
     }
     this.#cleanups = [];
-    this.#eventRegistrations.length = 0;
+    this.#collections.events.length = 0;
     if (failures.length > 0) {
       throw new AggregateError(
         failures,
@@ -162,8 +166,9 @@ export class CodingAgentExtensionHost {
   async #configure(): Promise<void> {
     for (const extension of this.#extensions) {
       let open = true;
+      const staged = createExtensionRegistryCollections();
       const assertOpen = () => {
-        if (!open) {
+        if (!open || this.#controller.signal.aborted) {
           throw new Error(
             `Coding agent extension "${extension.id}" registration is closed`
           );
@@ -171,23 +176,21 @@ export class CodingAgentExtensionHost {
       };
       const registry = createCodingAgentExtensionRegistry({
         assertOpen,
-        collections: {
-          commands: this.#commands,
-          events: this.#eventRegistrations,
-          hooks: this.#hookRegistrations,
-          instructions: this.#instructionFragments,
-          migrations: this.#threadMigrations,
-          renderers: this.#toolRenderers,
-          tools: this.#tools,
-        },
+        collections: staged,
         extensionId: extension.id,
       });
       try {
-        await this.#run(extension.id, "configure", () =>
-          extension.configure(registry, {
+        await this.#run(extension.id, "configure", async () => {
+          await extension.configure(registry, {
             signal: this.#controller.signal,
-          })
-        );
+          });
+          assertOpen();
+          commitExtensionRegistryCollections(
+            this.#collections,
+            staged,
+            extension.id
+          );
+        });
       } finally {
         open = false;
       }

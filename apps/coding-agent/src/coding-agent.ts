@@ -46,7 +46,12 @@ export function createCodingAgent({
   const selectedTools = tools ?? createCodingAgentTools(webTools);
   const extensionTools = extensionHost?.tools ?? {};
   const workspaceTools = createWorkspaceTools({ workspace });
-  assertNoToolCollisions(selectedTools, extensionTools, workspaceTools);
+  assertNoToolCollisions(
+    selectedTools,
+    extensionTools,
+    workspaceTools,
+    extensionHost
+  );
   const resolvedTools = {
     ...selectedTools,
     ...extensionTools,
@@ -78,14 +83,26 @@ export function createCodingAgent({
   });
 }
 
-function assertNoToolCollisions(...toolSets: readonly ToolSet[]): void {
-  const names = new Set<string>();
-  for (const tools of toolSets) {
-    for (const name of Object.keys(tools)) {
-      if (names.has(name)) {
-        throw new Error(`Duplicate coding agent tool "${name}"`);
-      }
-      names.add(name);
+function assertNoToolCollisions(
+  selectedTools: ToolSet,
+  extensionTools: ToolSet,
+  workspaceTools: ToolSet,
+  extensionHost?: CodingAgentExtensionHost
+): void {
+  for (const name of Object.keys(extensionTools)) {
+    if (
+      Object.hasOwn(selectedTools, name) ||
+      Object.hasOwn(workspaceTools, name)
+    ) {
+      const owner = extensionHost?.getToolOwner(name) ?? "unknown";
+      throw new Error(
+        `Extension "${owner}" tool "${name}" conflicts with built-in tool`
+      );
+    }
+  }
+  for (const name of Object.keys(selectedTools)) {
+    if (Object.hasOwn(workspaceTools, name)) {
+      throw new Error(`Duplicate coding agent built-in tool "${name}"`);
     }
   }
 }
