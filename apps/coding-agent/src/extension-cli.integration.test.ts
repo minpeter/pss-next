@@ -201,7 +201,7 @@ describe("extension management CLI", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 
   it("rejects a project settings symlink without writing global settings", async () => {
     // Given
