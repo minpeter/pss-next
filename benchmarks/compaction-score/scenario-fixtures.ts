@@ -17,6 +17,10 @@ import {
   buildSparseFactFixture,
 } from "./sparse-dense-fixtures";
 import { buildToolStateCjkFixture } from "./tool-state-cjk-fixture";
+import {
+  buildActualCjkFixture,
+  buildEvolvingToolStateFixture,
+} from "./tool-state-projections";
 
 export const BENCHMARK_SCENARIOS = [
   "baseline",
@@ -29,6 +33,8 @@ export const BENCHMARK_SCENARIOS = [
   "tool-state-cjk",
   "sparse-fact",
   "dense-small-range",
+  "evolving-tool-state",
+  "actual-cjk",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
@@ -54,6 +60,10 @@ export function buildScenarioFixture(
     fixture = buildSparseFactFixture(seed);
   } else if (scenario === "dense-small-range") {
     fixture = buildDenseSmallRangeFixture(seed);
+  } else if (scenario === "evolving-tool-state") {
+    fixture = buildEvolvingToolStateFixture(seed);
+  } else if (scenario === "actual-cjk") {
+    fixture = buildActualCjkFixture(seed);
   }
   return validateCompactionFixture(fixture);
 }

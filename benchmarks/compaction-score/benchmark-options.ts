@@ -8,6 +8,7 @@ export interface BenchmarkOptions {
   readonly outputDir: string;
   readonly preflightOnly: boolean;
   readonly providerLabel: string;
+  readonly scenario?: string;
   readonly seed: string;
   readonly summaryMaxOutputTokens: number;
   readonly trials: number;
@@ -21,6 +22,7 @@ Options:
   --max-attempts N              Attempts per fixture/repetition (default: 3)
   --seed STRING                 Base fixture seed
   --provider-label STRING       Sanitized campaign label (default: custom)
+  --scenario ID                 Run one named benchmark scenario
   --omit-summary-seed           Omit seed only after capability preflight
   --preflight-only              Write sanitized reports without fixtures
   --summary-max-output-tokens N Hard summary output cap (default: 1024)
@@ -54,6 +56,9 @@ export function parseBenchmarkOptions(
     ),
     preflightOnly: args.includes("--preflight-only"),
     providerLabel: read("--provider-label", "custom"),
+    ...(args.includes("--scenario")
+      ? { scenario: read("--scenario", "") }
+      : {}),
     seed: read("--seed", "compaction-score-v2"),
     summaryMaxOutputTokens: positiveInteger(
       read("--summary-max-output-tokens", "1024"),

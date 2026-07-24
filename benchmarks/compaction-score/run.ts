@@ -12,13 +12,14 @@ import {
   createCampaignManifest,
   createPreflightReport,
 } from "./campaign-manifest";
-import type { CompactionFixture } from "./fixture";
+import type { BenchmarkScenario, CompactionFixture } from "./fixture";
 import {
   CampaignValidationError,
   sanitizeProviderCampaignIdentity,
 } from "./provider-campaign";
 import { summarizeTrials, type TrialRecord } from "./report";
 import {
+  BENCHMARK_SCENARIOS,
   buildScenarioFixture,
   scenarioForFixtureIndex,
 } from "./scenario-fixtures";
@@ -45,6 +46,7 @@ if (args.includes("--help")) {
 }
 
 async function runBenchmark(options: BenchmarkOptions): Promise<void> {
+  const requestedScenario = selectScenario(options.scenario);
   const model = createCodingLanguageModel({
     providerName: options.providerLabel,
   });
@@ -96,13 +98,12 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
   const fixtureRecords: CompactionFixture[] = [];
   const trialsPath = join(options.outputDir, "trials.jsonl");
   const targetValidTrials = options.fixtures * options.trials;
-
   for (
     let fixtureIndex = 0;
     fixtureIndex < options.fixtures;
     fixtureIndex += 1
   ) {
-    const scenario = scenarioForFixtureIndex(fixtureIndex);
+    const scenario = requestedScenario ?? scenarioForFixtureIndex(fixtureIndex);
     const fixtureSeed = `${options.seed}-${scenario}-${fixtureIndex + 1}`;
     const fixture = buildScenarioFixture(scenario, fixtureSeed);
     fixtureRecords.push(fixture);
@@ -170,4 +171,17 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
 
 function numericSeed(value: string): number {
   return createHash("sha256").update(value).digest().readUInt32BE(0);
+}
+
+function selectScenario(
+  value: string | undefined
+): BenchmarkScenario | undefined {
+  if (value === undefined) {
+    return;
+  }
+  const scenario = BENCHMARK_SCENARIOS.find((item) => item === value);
+  if (scenario === undefined) {
+    throw new TypeError(`Unknown benchmark scenario: ${value}`);
+  }
+  return scenario;
 }

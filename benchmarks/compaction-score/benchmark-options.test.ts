@@ -39,6 +39,12 @@ describe("benchmark options", () => {
     });
   });
 
+  it("parses one direct scenario selection", () => {
+    expect(parseBenchmarkOptions(["--scenario", "actual-cjk"])).toMatchObject({
+      scenario: "actual-cjk",
+    });
+  });
+
   it("documents both campaign flags", () => {
     expect(BENCHMARK_HELP).toContain("--provider-label");
     expect(BENCHMARK_HELP).toContain("--preflight-only");

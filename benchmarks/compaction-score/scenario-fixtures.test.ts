@@ -43,6 +43,8 @@ describe("benchmark scenario registry", () => {
       "tool-state-cjk",
       "sparse-fact",
       "dense-small-range",
+      "evolving-tool-state",
+      "actual-cjk",
     ]);
   });
 

@@ -24,6 +24,7 @@ export interface FixtureQuestion {
 export type BenchmarkScenario =
   | "baseline"
   | "boundary-noise"
+  | "actual-cjk"
   | "giant-message"
   | "lifecycle"
   | "long-session"
@@ -31,6 +32,7 @@ export type BenchmarkScenario =
   | "progressive-five-hop"
   | "sparse-fact"
   | "dense-small-range"
+  | "evolving-tool-state"
   | "tool-state-cjk";
 
 export interface CompactionFixture {
