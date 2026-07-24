@@ -41,6 +41,8 @@ describe("benchmark scenario registry", () => {
       "prompt-injection",
       "giant-message",
       "tool-state-cjk",
+      "sparse-fact",
+      "dense-small-range",
     ]);
   });
 

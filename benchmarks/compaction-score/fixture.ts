@@ -29,6 +29,8 @@ export type BenchmarkScenario =
   | "long-session"
   | "prompt-injection"
   | "progressive-five-hop"
+  | "sparse-fact"
+  | "dense-small-range"
   | "tool-state-cjk";
 
 export interface CompactionFixture {

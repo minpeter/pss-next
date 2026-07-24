@@ -12,6 +12,10 @@ import {
 import { buildLifecycleFixture } from "./lifecycle-fixture";
 import { buildLongSessionFixture } from "./long-session-fixture";
 import { buildProgressiveFiveHopFixture } from "./progressive-five-hop-fixture";
+import {
+  buildDenseSmallRangeFixture,
+  buildSparseFactFixture,
+} from "./sparse-dense-fixtures";
 import { buildToolStateCjkFixture } from "./tool-state-cjk-fixture";
 
 export const BENCHMARK_SCENARIOS = [
@@ -23,6 +27,8 @@ export const BENCHMARK_SCENARIOS = [
   "prompt-injection",
   "giant-message",
   "tool-state-cjk",
+  "sparse-fact",
+  "dense-small-range",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
@@ -44,6 +50,10 @@ export function buildScenarioFixture(
     fixture = buildGiantMessageFixture(seed);
   } else if (scenario === "tool-state-cjk") {
     fixture = buildToolStateCjkFixture(seed);
+  } else if (scenario === "sparse-fact") {
+    fixture = buildSparseFactFixture(seed);
+  } else if (scenario === "dense-small-range") {
+    fixture = buildDenseSmallRangeFixture(seed);
   }
   return validateCompactionFixture(fixture);
 }
