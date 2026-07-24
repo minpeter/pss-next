@@ -54,6 +54,14 @@ interface StabilityGatePayloads {
     readonly scope: "aggregate" | "category" | "scenario";
     readonly total: number;
   };
+  readonly REPORT_CATEGORY_MISSING: {
+    readonly category: string;
+    readonly report: ReportRole;
+  };
+  readonly REPORT_HOP_MISSING: {
+    readonly hop: number;
+    readonly report: ReportRole;
+  };
   readonly REPORT_JSON_INVALID: {
     readonly path: string;
     readonly report: ReportRole;

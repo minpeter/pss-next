@@ -42,6 +42,16 @@ describe("stability quality and compression gates", () => {
     });
   });
 
+  it("fails closed when a category or hop row is omitted", () => {
+    const decision = mutatedDecision((candidate) => {
+      candidate.retention.byCategory.splice(0, 1);
+      candidate.compression.byHop.splice(0, 1);
+    });
+
+    expectCode(decision, "REPORT_CATEGORY_MISSING");
+    expectCode(decision, "REPORT_HOP_MISSING");
+  });
+
   it("rejects aggregate mean ratio regression above +0.05", () => {
     const decision = mutatedDecision((candidate) => {
       candidate.compression.ratio.mean = 0.36;

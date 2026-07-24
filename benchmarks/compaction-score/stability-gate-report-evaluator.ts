@@ -25,6 +25,62 @@ export function addShapeFailures(
 ): void {
   addScenarioShapeFailures(facts, "retention", failures);
   addScenarioShapeFailures(facts, "compression", failures);
+  addRetentionCategoryShapeFailures(facts, failures);
+  addHopShapeFailures(facts, failures);
+}
+
+function addRetentionCategoryShapeFailures(
+  facts: StabilityComparisonFacts,
+  failures: StabilityGateFailure[]
+): void {
+  addMissingRows(
+    facts.baseline.retention?.byCategory.flatMap(({ id }) =>
+      id === undefined ? [] : [id]
+    ),
+    facts.candidate.retention?.byCategory.flatMap(({ id }) =>
+      id === undefined ? [] : [id]
+    ),
+    (category, report) => ({
+      code: "REPORT_CATEGORY_MISSING",
+      payload: { category, report },
+    }),
+    failures
+  );
+}
+
+function addHopShapeFailures(
+  facts: StabilityComparisonFacts,
+  failures: StabilityGateFailure[]
+): void {
+  addMissingRows(
+    facts.baseline.compression?.byHop.map(({ hop }) => hop),
+    facts.candidate.compression?.byHop.map(({ hop }) => hop),
+    (hop, report) => ({
+      code: "REPORT_HOP_MISSING",
+      payload: { hop, report },
+    }),
+    failures
+  );
+}
+
+function addMissingRows<T extends number | string>(
+  baseline: readonly T[] | undefined,
+  candidate: readonly T[] | undefined,
+  failure: (value: T, report: "baseline" | "candidate") => StabilityGateFailure,
+  failures: StabilityGateFailure[]
+): void {
+  const baselineValues = new Set(baseline);
+  const candidateValues = new Set(candidate);
+  for (const value of baselineValues) {
+    if (!candidateValues.has(value)) {
+      failures.push(failure(value, "candidate"));
+    }
+  }
+  for (const value of candidateValues) {
+    if (!baselineValues.has(value)) {
+      failures.push(failure(value, "baseline"));
+    }
+  }
 }
 
 export function addRecallFailures(
