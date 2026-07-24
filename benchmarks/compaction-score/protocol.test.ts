@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FixtureQuestion } from "./fixture";
 import {
+  BATCHED_ANSWER_RULES,
   BatchedAnswerProtocolError,
   buildBatchedQuestionPrompt,
   parseBatchedAnswers,
@@ -30,9 +31,11 @@ describe("batched answer protocol", () => {
   });
 
   it("requires canonical values without task labels or elaboration", () => {
-    expect(buildBatchedQuestionPrompt(questions)).toContain(
-      "For labeled task state, Blocker, or Next action, return only the exact value after the label; omit the label, punctuation, and added context."
-    );
+    expect(BATCHED_ANSWER_RULES.labeledStateMode).toBe("value-only");
+  });
+
+  it("requires whole tool results without dropping status prefixes", () => {
+    expect(BATCHED_ANSWER_RULES.toolResultMode).toBe("complete");
   });
 
   it("parses fenced JSON into question-keyed answers", () => {

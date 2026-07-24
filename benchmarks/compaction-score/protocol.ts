@@ -3,6 +3,11 @@ import type { FixtureQuestion } from "./fixture";
 const CODE_FENCE_START = /^```(?:json)?\s*/i;
 const CODE_FENCE_END = /\s*```$/;
 
+export const BATCHED_ANSWER_RULES = {
+  labeledStateMode: "value-only",
+  toolResultMode: "complete",
+} as const;
+
 export class BatchedAnswerProtocolError extends Error {
   readonly name = "BatchedAnswerProtocolError";
 }
@@ -19,7 +24,8 @@ export function buildBatchedQuestionPrompt(
     "Answer every question using only the preceding conversation.",
     'Return JSON only in this shape: {"answers":[{"id":"q0","answer":"exact value"}]}.',
     "Include every id exactly once. Use the shortest exact value, with no explanation.",
-    "For labeled task state, Blocker, or Next action, return only the exact value after the label; omit the label, punctuation, and added context.",
+    `For labeled task state, Blocker, or Next action, use ${BATCHED_ANSWER_RULES.labeledStateMode} mode: return only the exact value after the label; omit the label, punctuation, and added context.`,
+    `For a tool result, use ${BATCHED_ANSWER_RULES.toolResultMode} mode: return the complete exact result, including leading status counts and error text.`,
     'If the conversation does not contain an answer, use "unknown".',
     "",
     ...lines,
