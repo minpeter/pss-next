@@ -8,13 +8,9 @@ import {
   summaryHistoryForRange,
   type ThreadContextMessage,
 } from "@minpeter/pss-runtime";
-import { generateText, type LanguageModel, type ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import type { CompactionFixture, FixtureQuestion } from "./fixture";
-import {
-  BatchedAnswerProtocolError,
-  buildBatchedQuestionPrompt,
-  parseBatchedAnswers,
-} from "./protocol";
+import { BatchedAnswerProtocolError, parseBatchedAnswers } from "./protocol";
 import type {
   CompactionHopRecord,
   PromptProfileIdentity,
@@ -25,6 +21,7 @@ import {
   FullContextControlError,
   scoreAnswers,
 } from "./scorer";
+import { evaluateArm, stableTrialError } from "./trial-provider-boundary";
 
 type EvaluationArm = "compacted" | "full";
 
@@ -36,7 +33,7 @@ export interface TrialInput {
   readonly model: LanguageModel;
   readonly profile?: PromptProfileIdentity;
   readonly repetition: number;
-  readonly seed: number;
+  readonly seed?: number;
   readonly summaryInstructions?: string;
   readonly summaryMaxOutputTokens: number;
 }
@@ -68,7 +65,7 @@ export async function runCompactionTrial(
         context: contexts[arm],
         model: input.model,
         questions: input.fixture.questions,
-        seed: input.seed,
+        ...(input.seed === undefined ? {} : { seed: input.seed }),
       });
     } catch (cause) {
       return invalidRecord(input, "evaluation-provider-failure", cause);
@@ -155,7 +152,9 @@ async function generateCompactionHops(
             retainTokens: input.summaryMaxOutputTokens * 2,
           }),
           model: input.model,
-          seed: (input.seed + hopIndex) % 4_294_967_296,
+          ...(input.seed === undefined
+            ? {}
+            : { seed: (input.seed + hopIndex) % 4_294_967_296 }),
           temperature: 0,
         },
         ...(input.summaryInstructions === undefined
@@ -203,40 +202,13 @@ async function generateCompactionHops(
   return { finalHop, hops };
 }
 
-async function evaluateArm({
-  context,
-  model,
-  questions,
-  seed,
-}: {
-  readonly context: ModelMessage[];
-  readonly model: LanguageModel;
-  readonly questions: readonly FixtureQuestion[];
-  readonly seed: number;
-}): Promise<string> {
-  const { text } = await generateText({
-    maxOutputTokens: 4096,
-    messages: [
-      ...context,
-      {
-        content: buildBatchedQuestionPrompt(questions),
-        role: "user",
-      },
-    ],
-    model,
-    seed,
-    temperature: 0,
-  });
-  return text;
-}
-
 function invalidRecord(
   input: TrialInput,
   status: Exclude<TrialRecord["status"], "valid">,
   cause: unknown
 ): TrialRecord {
   return {
-    error: cause instanceof Error ? cause.message : String(cause),
+    error: stableTrialError(status, cause),
     fixtureSeed: input.fixtureSeed,
     id: input.id,
     ...(input.profile === undefined ? {} : { profile: input.profile }),

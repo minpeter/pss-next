@@ -68,6 +68,33 @@ describe("runCompactionTrial", () => {
     );
   });
 
+  it("omits seeds for providers that do not support them", async () => {
+    const calls: MockLanguageModelV4CallOptions[] = [];
+    const outputs = [
+      mockLanguageModelV4Text("structured summary"),
+      mockLanguageModelV4Text(answerJson()),
+      mockLanguageModelV4Text(answerJson()),
+    ];
+    const model = createMockLanguageModelV4((options) => {
+      calls.push(options);
+      return Promise.resolve(outputs[calls.length - 1] ?? outputs[0]);
+    });
+
+    const record = await runCompactionTrial({
+      attempt: 1,
+      fixture,
+      fixtureSeed: "trial-runner-test",
+      id: "trial-without-seed",
+      model,
+      repetition: 1,
+      summaryMaxOutputTokens: 768,
+    });
+
+    expect(record.status).toBe("valid");
+    expect(calls).toHaveLength(3);
+    expect(calls.every(({ seed }) => seed === undefined)).toBe(true);
+  });
+
   it("routes a named prompt profile through the production summary path", async () => {
     const calls: MockLanguageModelV4CallOptions[] = [];
     const outputs = [

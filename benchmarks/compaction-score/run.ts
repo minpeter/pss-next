@@ -1,71 +1,101 @@
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readOpenAICompatibleModelEnv } from "@minpeter/pss-coding-agent/env";
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
+import {
+  BENCHMARK_HELP,
+  type BenchmarkOptions,
+  parseBenchmarkOptions,
+} from "./benchmark-options";
+import {
+  createCampaignManifest,
+  createPreflightReport,
+} from "./campaign-manifest";
 import type { CompactionFixture } from "./fixture";
+import {
+  CampaignValidationError,
+  sanitizeProviderCampaignIdentity,
+} from "./provider-campaign";
 import { summarizeTrials, type TrialRecord } from "./report";
 import {
   buildScenarioFixture,
   scenarioForFixtureIndex,
 } from "./scenario-fixtures";
+import { preflightSeedCapability, SeedPreflightError } from "./seed-preflight";
 import { runCompactionTrial } from "./trial-runner";
-
-interface BenchmarkOptions {
-  readonly fixtures: number;
-  readonly maxAttempts: number;
-  readonly outputDir: string;
-  readonly seed: string;
-  readonly summaryMaxOutputTokens: number;
-  readonly trials: number;
-}
-
-const HELP = `Usage: pnpm score -- [options]
-
-Options:
-  --fixtures N                  Independent fixture seeds (default: 3)
-  --trials N                    Valid repetitions per fixture (default: 2)
-  --max-attempts N              Attempts per fixture/repetition (default: 3)
-  --seed STRING                 Base fixture seed
-  --summary-max-output-tokens N Hard summary output cap (default: 1024)
-  --output PATH                 Report directory
-  --help                        Show this help`;
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
-  console.log(HELP);
+  console.log(BENCHMARK_HELP);
 } else {
-  await runBenchmark(parseOptions(args));
+  try {
+    await runBenchmark(parseBenchmarkOptions(args));
+  } catch (error) {
+    if (
+      error instanceof CampaignValidationError ||
+      error instanceof SeedPreflightError
+    ) {
+      console.error(error.code);
+      process.exitCode = 1;
+    } else {
+      throw error;
+    }
+  }
 }
 
 async function runBenchmark(options: BenchmarkOptions): Promise<void> {
-  const model = createCodingLanguageModel();
+  const model = createCodingLanguageModel({
+    providerName: options.providerLabel,
+  });
+  const env = readOpenAICompatibleModelEnv();
+  const provider = sanitizeProviderCampaignIdentity({
+    baseUrl: env.AI_BASE_URL,
+    label: options.providerLabel,
+    modelId: env.AI_MODEL,
+  });
+  const seedCapability = await preflightSeedCapability({
+    model,
+    omitSeed: options.omitSummarySeed,
+  });
+  const manifest = createCampaignManifest({
+    createdAt: new Date().toISOString(),
+    mode: options.preflightOnly ? "preflight" : "benchmark",
+    options: {
+      fixtures: options.fixtures,
+      maxAttempts: options.maxAttempts,
+      omitSummarySeed: options.omitSummarySeed,
+      seed: options.seed,
+      summaryMaxOutputTokens: options.summaryMaxOutputTokens,
+      trials: options.trials,
+    },
+    provider,
+    seedCapability,
+  });
+  const preflightReport = createPreflightReport(provider, seedCapability);
+
+  await mkdir(options.outputDir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      join(options.outputDir, "manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`
+    ),
+    writeFile(
+      join(options.outputDir, "preflight.json"),
+      `${JSON.stringify(preflightReport, null, 2)}\n`
+    ),
+  ]);
+
+  if (options.preflightOnly) {
+    console.log(JSON.stringify(preflightReport, null, 2));
+    console.log(`report: ${options.outputDir}`);
+    return;
+  }
+
   const records: TrialRecord[] = [];
   const fixtureRecords: CompactionFixture[] = [];
   const trialsPath = join(options.outputDir, "trials.jsonl");
   const targetValidTrials = options.fixtures * options.trials;
-
-  await mkdir(options.outputDir, { recursive: true });
-  await writeFile(
-    join(options.outputDir, "manifest.json"),
-    JSON.stringify(
-      {
-        createdAt: new Date().toISOString(),
-        model: process.env.AI_MODEL ?? "default",
-        options,
-        protocol: {
-          answerCallsPerTrial: 2,
-          armOrder: "rotated by repetition",
-          fullControlRequired: true,
-          score: "compacted exact-match retention",
-          summaryCallsPerTrial: "fixture compaction hop count",
-          temperature: 0,
-        },
-      },
-      null,
-      2
-    )
-  );
 
   for (
     let fixtureIndex = 0;
@@ -95,7 +125,9 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
           id,
           model,
           repetition,
-          seed: numericSeed(`${fixtureSeed}:${repetition}:${attempt}`),
+          ...(options.omitSummarySeed
+            ? {}
+            : { seed: numericSeed(`${fixtureSeed}:${repetition}:${attempt}`) }),
           summaryMaxOutputTokens: options.summaryMaxOutputTokens,
         });
         records.push(record);
@@ -134,37 +166,6 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
     );
     process.exitCode = 1;
   }
-}
-
-function parseOptions(args: readonly string[]): BenchmarkOptions {
-  const timestamp = new Date().toISOString().replaceAll(":", "-");
-  const read = (name: string, fallback: string): string => {
-    const index = args.indexOf(name);
-    return index === -1 ? fallback : (args[index + 1] ?? fallback);
-  };
-
-  return {
-    fixtures: positiveInteger(read("--fixtures", "3"), "--fixtures"),
-    maxAttempts: positiveInteger(read("--max-attempts", "3"), "--max-attempts"),
-    outputDir: read(
-      "--output",
-      join(tmpdir(), `compaction-score-${timestamp}`)
-    ),
-    seed: read("--seed", "compaction-score-v2"),
-    summaryMaxOutputTokens: positiveInteger(
-      read("--summary-max-output-tokens", "1024"),
-      "--summary-max-output-tokens"
-    ),
-    trials: positiveInteger(read("--trials", "2"), "--trials"),
-  };
-}
-
-function positiveInteger(value: string, name: string): number {
-  const parsed = Number(value);
-  if (!(Number.isInteger(parsed) && parsed > 0)) {
-    throw new TypeError(`${name} must be a positive integer.`);
-  }
-  return parsed;
 }
 
 function numericSeed(value: string): number {
