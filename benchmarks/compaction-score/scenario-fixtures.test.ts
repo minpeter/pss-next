@@ -38,6 +38,8 @@ describe("benchmark scenario registry", () => {
       "boundary-noise",
       "long-session",
       "progressive-five-hop",
+      "prompt-injection",
+      "giant-message",
     ]);
   });
 

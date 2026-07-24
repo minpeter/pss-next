@@ -5,6 +5,10 @@ import {
   type CompactionFixture,
   validateCompactionFixture,
 } from "./fixture";
+import {
+  buildGiantMessageFixture,
+  buildPromptInjectionFixture,
+} from "./injection-fixtures";
 import { buildLifecycleFixture } from "./lifecycle-fixture";
 import { buildLongSessionFixture } from "./long-session-fixture";
 import { buildProgressiveFiveHopFixture } from "./progressive-five-hop-fixture";
@@ -15,6 +19,8 @@ export const BENCHMARK_SCENARIOS = [
   "boundary-noise",
   "long-session",
   "progressive-five-hop",
+  "prompt-injection",
+  "giant-message",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
@@ -30,6 +36,10 @@ export function buildScenarioFixture(
     fixture = buildLongSessionFixture(seed);
   } else if (scenario === "progressive-five-hop") {
     fixture = buildProgressiveFiveHopFixture(seed);
+  } else if (scenario === "prompt-injection") {
+    fixture = buildPromptInjectionFixture(seed);
+  } else if (scenario === "giant-message") {
+    fixture = buildGiantMessageFixture(seed);
   }
   return validateCompactionFixture(fixture);
 }

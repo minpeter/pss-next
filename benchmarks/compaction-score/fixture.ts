@@ -24,8 +24,10 @@ export interface FixtureQuestion {
 export type BenchmarkScenario =
   | "baseline"
   | "boundary-noise"
+  | "giant-message"
   | "lifecycle"
   | "long-session"
+  | "prompt-injection"
   | "progressive-five-hop";
 
 export interface CompactionFixture {

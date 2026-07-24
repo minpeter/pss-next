@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { BENCHMARK_HELP, parseBenchmarkOptions } from "./benchmark-options";
 
@@ -9,7 +10,7 @@ describe("benchmark options", () => {
       fixtures: 3,
       maxAttempts: 3,
       omitSummarySeed: false,
-      outputDir: "/tmp/compaction-score-2026-07-24T01-02-03.000Z",
+      outputDir: `${tmpdir()}/compaction-score-2026-07-24T01-02-03.000Z`,
       preflightOnly: false,
       providerLabel: "custom",
       seed: "compaction-score-v2",
