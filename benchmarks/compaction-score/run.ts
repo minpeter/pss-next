@@ -24,6 +24,7 @@ import {
   scenarioForFixtureIndex,
 } from "./scenario-fixtures";
 import { preflightSeedCapability, SeedPreflightError } from "./seed-preflight";
+import { trialPromptProfile } from "./trial-prompt-profile";
 import { runCompactionTrial } from "./trial-runner";
 
 const args = process.argv.slice(2);
@@ -47,6 +48,7 @@ if (args.includes("--help")) {
 
 async function runBenchmark(options: BenchmarkOptions): Promise<void> {
   const requestedScenario = selectScenario(options.scenario);
+  const promptConfiguration = trialPromptProfile(options.profileId);
   const model = createCodingLanguageModel({
     providerName: options.providerLabel,
   });
@@ -71,6 +73,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
       summaryMaxOutputTokens: options.summaryMaxOutputTokens,
       trials: options.trials,
     },
+    profile: promptConfiguration.profile,
     provider,
     seedCapability,
   });
@@ -125,6 +128,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
           fixtureSeed,
           id,
           model,
+          ...promptConfiguration,
           repetition,
           ...(options.omitSummarySeed
             ? {}

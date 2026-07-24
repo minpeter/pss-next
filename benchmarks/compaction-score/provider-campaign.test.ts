@@ -4,6 +4,7 @@ import {
   createPreflightReport,
   parseCampaignManifest,
 } from "./campaign-manifest";
+import { getCompactionPromptProfile } from "./prompt-profiles";
 import {
   type CampaignValidationCode,
   CampaignValidationError,
@@ -11,6 +12,11 @@ import {
   validateOptionBCampaigns,
 } from "./provider-campaign";
 
+const productionProfile = getCompactionPromptProfile("production");
+const profile = {
+  hash: productionProfile.hash,
+  id: productionProfile.id,
+} as const;
 const supported = {
   capability: "supported",
   status: "seeded-probe-succeeded",
@@ -173,6 +179,7 @@ describe("campaign manifest", () => {
       createdAt: "2026-07-24T00:00:00.000Z",
       mode: "preflight",
       options: taintedOptions,
+      profile,
       provider,
       seedCapability: supported,
     });
@@ -191,9 +198,28 @@ describe("campaign manifest", () => {
           createdAt: "2026-07-24T00:00:00.000Z",
           mode: "preflight",
           options: { ...options, omitSummarySeed: true },
+          profile,
           provider: identity("gateway", "https://api.example", "model-x"),
           seedCapability: supported,
         }),
+      "campaign-manifest-invalid"
+    );
+  });
+
+  it("requires profile attribution in every manifest", () => {
+    const manifest = createCampaignManifest({
+      createdAt: "2026-07-24T00:00:00.000Z",
+      mode: "preflight",
+      options,
+      profile,
+      provider: identity("gateway", "https://api.example", "model-x"),
+      seedCapability: supported,
+    });
+    const withoutProfile = { ...manifest };
+    Reflect.deleteProperty(withoutProfile, "profile");
+
+    expectValidationCode(
+      () => parseCampaignManifest(withoutProfile),
       "campaign-manifest-invalid"
     );
   });
@@ -205,6 +231,7 @@ describe("campaign manifest", () => {
           createdAt: "2026-07-24T00:00:00.000Z",
           mode: "preflight",
           options,
+          profile,
           protocol: {},
           provider: {
             baseOrigin: "https://api.example",

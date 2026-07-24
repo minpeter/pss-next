@@ -7,6 +7,7 @@ export interface BenchmarkOptions {
   readonly omitSummarySeed: boolean;
   readonly outputDir: string;
   readonly preflightOnly: boolean;
+  readonly profileId: string;
   readonly providerLabel: string;
   readonly scenario?: string;
   readonly seed: string;
@@ -22,6 +23,7 @@ Options:
   --max-attempts N              Attempts per fixture/repetition (default: 3)
   --seed STRING                 Base fixture seed
   --provider-label STRING       Sanitized campaign label (default: custom)
+  --profile ID                  Compaction prompt profile (default: production)
   --scenario ID                 Run one named benchmark scenario
   --omit-summary-seed           Omit seed only after capability preflight
   --preflight-only              Write sanitized reports without fixtures
@@ -55,6 +57,7 @@ export function parseBenchmarkOptions(
       join(tmpdir(), `compaction-score-${timestamp}`)
     ),
     preflightOnly: args.includes("--preflight-only"),
+    profileId: read("--profile", "production"),
     providerLabel: read("--provider-label", "custom"),
     ...(args.includes("--scenario")
       ? { scenario: read("--scenario", "") }

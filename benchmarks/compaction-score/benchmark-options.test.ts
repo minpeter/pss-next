@@ -12,6 +12,7 @@ describe("benchmark options", () => {
       omitSummarySeed: false,
       outputDir: `${tmpdir()}/compaction-score-2026-07-24T01-02-03.000Z`,
       preflightOnly: false,
+      profileId: "production",
       providerLabel: "custom",
       seed: "compaction-score-v2",
       summaryMaxOutputTokens: 1024,
@@ -39,14 +40,23 @@ describe("benchmark options", () => {
     });
   });
 
-  it("parses one direct scenario selection", () => {
-    expect(parseBenchmarkOptions(["--scenario", "actual-cjk"])).toMatchObject({
+  it("parses one direct scenario selection and prompt profile", () => {
+    expect(
+      parseBenchmarkOptions([
+        "--scenario",
+        "actual-cjk",
+        "--profile",
+        "senpi-maximal",
+      ])
+    ).toMatchObject({
+      profileId: "senpi-maximal",
       scenario: "actual-cjk",
     });
   });
 
-  it("documents both campaign flags", () => {
+  it("documents campaign and profile flags", () => {
     expect(BENCHMARK_HELP).toContain("--provider-label");
     expect(BENCHMARK_HELP).toContain("--preflight-only");
+    expect(BENCHMARK_HELP).toContain("--profile");
   });
 });

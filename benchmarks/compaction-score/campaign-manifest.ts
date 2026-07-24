@@ -1,24 +1,27 @@
 import {
-  CampaignValidationError,
-  hasControlCharacters,
-  type ProviderCampaignIdentity,
-  sanitizeProviderCampaignIdentity,
-} from "./provider-campaign";
+  type CampaignBenchmarkOptions,
+  copyManifestCapability,
+  copyManifestOptions,
+  copyManifestProfile,
+  copyManifestProvider,
+  invalidCampaignManifest,
+  isManifestRecord,
+  parseManifestCapability,
+  parseManifestOptions,
+  parseManifestProfile,
+  parseManifestProvider,
+} from "./campaign-manifest-fields";
+import type { ProviderCampaignIdentity } from "./provider-campaign";
+import type { PromptProfileIdentity } from "./report";
 import type { SeedCapabilityReport } from "./seed-preflight";
 
-export interface CampaignBenchmarkOptions {
-  readonly fixtures: number;
-  readonly maxAttempts: number;
-  readonly omitSummarySeed: boolean;
-  readonly seed: string;
-  readonly summaryMaxOutputTokens: number;
-  readonly trials: number;
-}
+export type { CampaignBenchmarkOptions } from "./campaign-manifest-fields";
 
 export interface CampaignManifest {
   readonly createdAt: string;
   readonly mode: "benchmark" | "preflight";
   readonly options: CampaignBenchmarkOptions;
+  readonly profile: PromptProfileIdentity;
   readonly protocol: CampaignProtocol;
   readonly provider: ProviderCampaignIdentity;
   readonly schemaVersion: 1;
@@ -48,6 +51,7 @@ interface CampaignManifestInput {
   readonly createdAt: string;
   readonly mode: CampaignManifest["mode"];
   readonly options: CampaignBenchmarkOptions;
+  readonly profile: PromptProfileIdentity;
   readonly provider: ProviderCampaignIdentity;
   readonly seedCapability: SeedCapabilityReport;
 }
@@ -57,23 +61,17 @@ export function createCampaignManifest(
 ): CampaignManifest {
   const omitted = input.seedCapability.capability === "unsupported";
   if (input.options.omitSummarySeed !== omitted) {
-    return invalidManifest();
+    return invalidCampaignManifest();
   }
   return {
     createdAt: input.createdAt,
     mode: input.mode,
-    options: {
-      fixtures: input.options.fixtures,
-      maxAttempts: input.options.maxAttempts,
-      omitSummarySeed: input.options.omitSummarySeed,
-      seed: input.options.seed,
-      summaryMaxOutputTokens: input.options.summaryMaxOutputTokens,
-      trials: input.options.trials,
-    },
+    options: copyManifestOptions(input.options),
+    profile: copyManifestProfile(input.profile),
     protocol: protocolFor(input.options.omitSummarySeed),
-    provider: providerCopy(input.provider),
+    provider: copyManifestProvider(input.provider),
     schemaVersion: 1,
-    seedCapability: capabilityCopy(input.seedCapability),
+    seedCapability: copyManifestCapability(input.seedCapability),
   };
 }
 
@@ -82,126 +80,43 @@ export function createPreflightReport(
   seedCapability: SeedCapabilityReport
 ): PreflightReport {
   return {
-    provider: providerCopy(provider),
+    provider: copyManifestProvider(provider),
     schemaVersion: 1,
-    seedCapability: capabilityCopy(seedCapability),
+    seedCapability: copyManifestCapability(seedCapability),
     status: "passed",
   };
 }
 
 export function parseCampaignManifest(value: unknown): CampaignManifest {
   try {
-    if (!isRecord(value) || value.schemaVersion !== 1) {
-      return invalidManifest();
+    if (!isManifestRecord(value) || value.schemaVersion !== 1) {
+      return invalidCampaignManifest();
     }
     if (
       typeof value.createdAt !== "string" ||
       !Number.isFinite(Date.parse(value.createdAt))
     ) {
-      return invalidManifest();
+      return invalidCampaignManifest();
     }
     const mode =
       value.mode === "benchmark" || value.mode === "preflight"
         ? value.mode
-        : invalidManifest();
-    const options = parseOptions(value.options);
-    const provider = parseProvider(value.provider);
-    const seedCapability = parseCapability(value.seedCapability);
+        : invalidCampaignManifest();
     const manifest = createCampaignManifest({
       createdAt: value.createdAt,
       mode,
-      options,
-      provider,
-      seedCapability,
+      options: parseManifestOptions(value.options),
+      profile: parseManifestProfile(value.profile),
+      provider: parseManifestProvider(value.provider),
+      seedCapability: parseManifestCapability(value.seedCapability),
     });
     if (!sameProtocol(value.protocol, manifest.protocol)) {
-      return invalidManifest();
+      return invalidCampaignManifest();
     }
     return manifest;
   } catch {
-    return invalidManifest();
+    return invalidCampaignManifest();
   }
-}
-
-function parseOptions(value: unknown): CampaignBenchmarkOptions {
-  if (!isRecord(value)) {
-    return invalidManifest();
-  }
-  const options = {
-    fixtures: positiveInteger(value.fixtures),
-    maxAttempts: positiveInteger(value.maxAttempts),
-    omitSummarySeed:
-      typeof value.omitSummarySeed === "boolean"
-        ? value.omitSummarySeed
-        : invalidManifest(),
-    seed: safeString(value.seed),
-    summaryMaxOutputTokens: positiveInteger(value.summaryMaxOutputTokens),
-    trials: positiveInteger(value.trials),
-  };
-  return options;
-}
-
-function providerCopy(
-  provider: ProviderCampaignIdentity
-): ProviderCampaignIdentity {
-  return sanitizeProviderCampaignIdentity({
-    baseUrl: provider.baseOrigin,
-    label: provider.label,
-    modelId: provider.modelId,
-  });
-}
-
-function parseProvider(value: unknown): ProviderCampaignIdentity {
-  if (!isRecord(value)) {
-    return invalidManifest();
-  }
-  const baseOrigin = safeString(value.baseOrigin);
-  const label = safeString(value.label);
-  const modelId = safeString(value.modelId);
-  const provider = sanitizeProviderCampaignIdentity({
-    baseUrl: baseOrigin,
-    label,
-    modelId,
-  });
-  if (
-    provider.baseOrigin !== baseOrigin ||
-    provider.label !== label ||
-    provider.modelId !== modelId
-  ) {
-    return invalidManifest();
-  }
-  return provider;
-}
-
-function parseCapability(value: unknown): SeedCapabilityReport {
-  if (!isRecord(value)) {
-    return invalidManifest();
-  }
-  if (
-    value.capability === "supported" &&
-    value.status === "seeded-probe-succeeded"
-  ) {
-    return { capability: "supported", status: "seeded-probe-succeeded" };
-  }
-  if (
-    value.capability === "unsupported" &&
-    value.status === "seeded-probe-rejected-seedless-probe-succeeded"
-  ) {
-    return {
-      capability: "unsupported",
-      status: "seeded-probe-rejected-seedless-probe-succeeded",
-    };
-  }
-  return invalidManifest();
-}
-
-function capabilityCopy(value: SeedCapabilityReport): SeedCapabilityReport {
-  return value.capability === "supported"
-    ? { capability: "supported", status: "seeded-probe-succeeded" }
-    : {
-        capability: "unsupported",
-        status: "seeded-probe-rejected-seedless-probe-succeeded",
-      };
 }
 
 function protocolFor(omitSummarySeed: boolean): CampaignProtocol {
@@ -219,32 +134,10 @@ function protocolFor(omitSummarySeed: boolean): CampaignProtocol {
 }
 
 function sameProtocol(value: unknown, expected: CampaignProtocol): boolean {
-  if (!isRecord(value)) {
+  if (!isManifestRecord(value)) {
     return false;
   }
   return (Object.keys(expected) as (keyof CampaignProtocol)[]).every(
     (key) => value[key] === expected[key]
   );
-}
-
-function positiveInteger(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
-    ? value
-    : invalidManifest();
-}
-
-function safeString(value: unknown): string {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    !hasControlCharacters(value)
-    ? value
-    : invalidManifest();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function invalidManifest(): never {
-  throw new CampaignValidationError("campaign-manifest-invalid");
 }
