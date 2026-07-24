@@ -1,9 +1,6 @@
+import { buildCompactionFixture } from "./baseline-fixture";
 import { buildBoundaryNoiseFixture } from "./boundary-noise-fixture";
-import {
-  type BenchmarkScenario,
-  buildCompactionFixture,
-  type CompactionFixture,
-} from "./fixture";
+import type { BenchmarkScenario, CompactionFixture } from "./fixture";
 import { buildLifecycleFixture } from "./lifecycle-fixture";
 
 export const BENCHMARK_SCENARIOS = [
