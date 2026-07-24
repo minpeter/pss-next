@@ -3,6 +3,8 @@ import type { FixtureQuestion } from "./fixture";
 import { summarizeTrials, type TrialRecord } from "./report";
 import { scoreAnswers } from "./scorer";
 
+const SHA256_PATTERN = /^[a-f\d]{64}$/;
+
 const questions: FixtureQuestion[] = [
   {
     answer: "alpha",
@@ -86,13 +88,38 @@ describe("summarizeTrials", () => {
       max: 1,
       mean: 0.75,
       min: 0.5,
+      quantiles: { p50: 0.75, p95: 0.975 },
       standardDeviation: 0.25,
     });
     expect(report.compression.ratio).toEqual({
       max: 0.5,
       mean: 0.375,
       min: 0.25,
+      quantiles: { p50: 0.375, p95: 0.4875 },
       standardDeviation: 0.125,
+    });
+    expect(report.compression).toMatchObject({
+      byScenario: expect.arrayContaining([
+        {
+          ratio: expect.objectContaining({ mean: 0.25 }),
+          scenario: "baseline",
+        },
+        {
+          ratio: expect.objectContaining({ mean: 0.5 }),
+          scenario: "lifecycle",
+        },
+      ]),
+    });
+    expect(report.retention).toMatchObject({
+      disagreements: [
+        expect.objectContaining({
+          arm: "compacted",
+          category: "tool-history",
+          count: 1,
+          fingerprint: expect.stringMatching(SHA256_PATTERN),
+          scenario: "lifecycle",
+        }),
+      ],
     });
     expect(report.retention.byScenario).toEqual(
       expect.arrayContaining([

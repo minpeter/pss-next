@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import type { BenchmarkScenario } from "./fixture";
-import type { CompactionScore, ScoreCount } from "./scorer";
+import type { CompactionScore, ScoreCount, ScoreDisagreement } from "./scorer";
 
 export type InvalidTrialStatus =
+  | "compaction-prompt-failure"
   | "evaluation-provider-failure"
   | "invalid-full-control"
   | "non-compressing-summary"
@@ -42,10 +44,14 @@ export interface InvalidTrialRecord extends TrialIdentity {
 
 export type TrialRecord = InvalidTrialRecord | ValidTrialRecord;
 
-interface Distribution {
+export interface Distribution {
   readonly max: number;
   readonly mean: number;
   readonly min: number;
+  readonly quantiles: {
+    readonly p50: number;
+    readonly p95: number;
+  };
   readonly standardDeviation: number;
 }
 
@@ -54,7 +60,15 @@ interface WilsonInterval {
   readonly low: number;
 }
 
-interface RetentionReport {
+export interface DisagreementFingerprint {
+  readonly arm: ScoreDisagreement["arm"];
+  readonly category: ScoreDisagreement["category"];
+  readonly count: number;
+  readonly fingerprint: string;
+  readonly scenario: BenchmarkScenario;
+}
+
+export interface RetentionReport {
   readonly aggregate: ScoreCount & {
     readonly accuracy: number;
     readonly wilson95: WilsonInterval;
@@ -73,13 +87,18 @@ interface RetentionReport {
     readonly total: number;
     readonly wilson95: WilsonInterval;
   }[];
+  readonly disagreements: readonly DisagreementFingerprint[];
   readonly trialAccuracy: Distribution;
 }
 
-interface CompressionReport {
+export interface CompressionReport {
   readonly byHop: readonly {
     readonly hop: number;
     readonly ratio: Distribution;
+  }[];
+  readonly byScenario: readonly {
+    readonly ratio: Distribution;
+    readonly scenario: BenchmarkScenario;
   }[];
   readonly ratio: Distribution;
   readonly savings: Distribution;
@@ -127,7 +146,12 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
     { correct: 0, total: 0 }
   );
   const categoryCounts = new Map<string, ScoreCount>();
+  const disagreementCounts = new Map<
+    string,
+    Omit<DisagreementFingerprint, "count"> & { count: number }
+  >();
   const scenarioCounts = new Map<BenchmarkScenario, ScoreCount>();
+  const scenarioRatios = new Map<BenchmarkScenario, number[]>();
   for (const record of valid) {
     const previousScenario = scenarioCounts.get(record.scenario) ?? {
       correct: 0,
@@ -137,6 +161,25 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
       correct: previousScenario.correct + record.score.headline.correct,
       total: previousScenario.total + record.score.headline.total,
     });
+    const ratio = record.summaryTokens / record.prefixTokens;
+    scenarioRatios.set(record.scenario, [
+      ...(scenarioRatios.get(record.scenario) ?? []),
+      ratio,
+    ]);
+    for (const disagreement of record.score.disagreements) {
+      const fingerprint = fingerprintDisagreement(
+        record.scenario,
+        disagreement
+      );
+      const previous = disagreementCounts.get(fingerprint);
+      disagreementCounts.set(fingerprint, {
+        arm: disagreement.arm,
+        category: disagreement.category,
+        count: (previous?.count ?? 0) + 1,
+        fingerprint,
+        scenario: record.scenario,
+      });
+    }
     for (const category of record.score.arms.compacted.perCategory) {
       const previous = categoryCounts.get(category.category) ?? {
         correct: 0,
@@ -165,6 +208,10 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
           })
         ),
       })),
+      byScenario: [...scenarioRatios.entries()].map(([scenario, ratios]) => ({
+        ratio: distribution(ratios),
+        scenario,
+      })),
       ratio: distribution(summaryRatios),
       savings: distribution(summaryRatios.map((ratio) => 1 - ratio)),
     },
@@ -186,6 +233,9 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
         ...score,
         wilson95: wilson95(score.correct, score.total),
       })),
+      disagreements: [...disagreementCounts.values()].sort((left, right) =>
+        left.fingerprint.localeCompare(right.fingerprint)
+      ),
       trialAccuracy: distribution(trialAccuracies),
     },
     trials,
@@ -201,8 +251,43 @@ function distribution(values: readonly number[]): Distribution {
     max: Math.max(...values),
     mean,
     min: Math.min(...values),
+    quantiles: {
+      p50: quantile(values, 0.5),
+      p95: quantile(values, 0.95),
+    },
     standardDeviation: Math.sqrt(variance),
   };
+}
+
+function fingerprintDisagreement(
+  scenario: BenchmarkScenario,
+  disagreement: ScoreDisagreement
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        scenario,
+        disagreement.arm,
+        disagreement.category,
+        disagreement.question,
+        disagreement.expected,
+        disagreement.actual,
+      ])
+    )
+    .digest("hex");
+}
+
+function quantile(values: readonly number[], probability: number): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = (sorted.length - 1) * probability;
+  const lowerIndex = Math.floor(index);
+  const upperIndex = Math.ceil(index);
+  const lower = sorted[lowerIndex];
+  const upper = sorted[upperIndex];
+  if (lower === undefined || upper === undefined) {
+    throw new TypeError("Cannot compute a quantile for an empty distribution.");
+  }
+  return lower + (upper - lower) * (index - lowerIndex);
 }
 
 function wilson95(correct: number, total: number): WilsonInterval {
