@@ -40,6 +40,7 @@ describe("benchmark scenario registry", () => {
       "progressive-five-hop",
       "prompt-injection",
       "giant-message",
+      "tool-state-cjk",
     ]);
   });
 

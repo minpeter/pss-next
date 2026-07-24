@@ -28,7 +28,8 @@ export type BenchmarkScenario =
   | "lifecycle"
   | "long-session"
   | "prompt-injection"
-  | "progressive-five-hop";
+  | "progressive-five-hop"
+  | "tool-state-cjk";
 
 export interface CompactionFixture {
   readonly compactionEnds: readonly number[];

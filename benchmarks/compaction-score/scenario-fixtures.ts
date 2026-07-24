@@ -12,6 +12,7 @@ import {
 import { buildLifecycleFixture } from "./lifecycle-fixture";
 import { buildLongSessionFixture } from "./long-session-fixture";
 import { buildProgressiveFiveHopFixture } from "./progressive-five-hop-fixture";
+import { buildToolStateCjkFixture } from "./tool-state-cjk-fixture";
 
 export const BENCHMARK_SCENARIOS = [
   "baseline",
@@ -21,6 +22,7 @@ export const BENCHMARK_SCENARIOS = [
   "progressive-five-hop",
   "prompt-injection",
   "giant-message",
+  "tool-state-cjk",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
@@ -40,6 +42,8 @@ export function buildScenarioFixture(
     fixture = buildPromptInjectionFixture(seed);
   } else if (scenario === "giant-message") {
     fixture = buildGiantMessageFixture(seed);
+  } else if (scenario === "tool-state-cjk") {
+    fixture = buildToolStateCjkFixture(seed);
   }
   return validateCompactionFixture(fixture);
 }
