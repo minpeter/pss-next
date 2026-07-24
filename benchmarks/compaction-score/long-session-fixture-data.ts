@@ -41,10 +41,10 @@ export function buildLongSessionFixtureData(
     `${seed}:tool-output`,
     20
   )}`;
-  const blocker = `Blocker: provider sandbox quota resets at ${
+  const blocker = `provider sandbox quota resets at ${
     9 + (Number.parseInt(sha(`${seed}:hour`, 2), 16) % 10)
   }:30 UTC on 2026-08-04`;
-  const nextAction = `Next action: execute replay shard ${sha(
+  const nextAction = `execute replay shard ${sha(
     `${seed}:next-shard`,
     9
   )} and attach artifact long-session-${sha(`${seed}:next-artifact`, 8)}.json`;
@@ -103,19 +103,19 @@ export function buildLongSessionFixtureData(
     lateFacts: [
       fact(
         "task-continuation",
-        "task-ledger-scan: completed",
+        "completed",
         "What is the exact completed task state?",
         "task-ledger-scan: completed."
       ),
       fact(
         "task-continuation",
-        "task-retention-window: in-progress",
+        "in-progress",
         "What is the exact current task state?",
         "task-retention-window: in-progress."
       ),
       fact(
         "task-continuation",
-        "task-provider-replay: blocked",
+        "blocked",
         "What is the exact blocked task state?",
         "task-provider-replay: blocked."
       ),
@@ -123,13 +123,13 @@ export function buildLongSessionFixtureData(
         "task-continuation",
         blocker,
         "What is the exact Blocker?",
-        `${blocker}.`
+        `Blocker: ${blocker}.`
       ),
       fact(
         "task-continuation",
         nextAction,
         "What is the exact Next action?",
-        `${nextAction}.`
+        `Next action: ${nextAction}.`
       ),
     ],
     negativeFacts: [

@@ -18,7 +18,7 @@ import { runCompactionTrial } from "./trial-runner";
 const SCENARIO = "long-session" as BenchmarkScenario;
 const SEED = "goal5-long-session";
 const EXPECTED_FIXTURE_SHA256 =
-  "ef114daea4fbce4d601bf803bd6c33eb4d2eeaee259d752942c4094cdeed227b";
+  "11bbed89257858e178dc0d868a0be8f6459009bac2fe091b6be01374956e8f51";
 const EXPECTED_PREFIX_TOKENS = 69_297;
 const EXPECTED_CATEGORIES = [
   "exact-recall",
@@ -32,6 +32,17 @@ const EXPECTED_CATEGORIES = [
 ] as const;
 
 describe("long-session retention fixture", () => {
+  it("uses protocol-short task-state answers without redundant labels", () => {
+    const answers = buildScenarioFixture(
+      SCENARIO,
+      "long-session-short-answers"
+    ).questions.map(({ answer }) => answer);
+
+    expect(answers).toEqual(
+      expect.arrayContaining(["completed", "in-progress", "blocked"])
+    );
+  });
+
   it("has deterministic bytes, token estimate, counts, and one boundary", () => {
     const fixture = buildScenarioFixture(SCENARIO, SEED);
     const repeat = buildScenarioFixture(SCENARIO, SEED);

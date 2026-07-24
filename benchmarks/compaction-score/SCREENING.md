@@ -10,15 +10,17 @@ Frozen production profile:
 - Seed capability: seed omitted after the seeded probe was rejected and the
   seedless probe succeeded.
 
-The required campaign failed at `long-session` full-context control, where
-all nine permitted attempts ranged from `13/18` to `16/18`. The evaluator
-therefore could not establish the required 100% control before a
-compaction-profile comparison. Because full-context evaluation is independent
-of the compaction prompt, no Senpi profile can pass this campaign on this
-provider.
+The fixture originally expected redundant task-state labels despite the
+evaluation protocol requiring the shortest exact value. After correcting those
+expected values, the full-context control reaches `18/18`.
+
+All 12 production and Senpi rule-bundle profiles were then screened against
+that repaired long-session control. Their compacted scores ranged from
+`13/18` to `15/18`, below the required 100% recall. The failure is therefore
+in compaction retention rather than the evaluator control.
 
 Decision: **no winner**. Promotion and dependent provider campaigns are
-blocked until a provider can satisfy the frozen full-context control.
+blocked until at least one profile retains every long-session fact.
 
 Raw run evidence is retained in
 `.omo/evidence/ulw/senpi-pss-compaction-stability-v1/G013-13-screen-senpi-rule-bundles-and-sel/a1/`.
