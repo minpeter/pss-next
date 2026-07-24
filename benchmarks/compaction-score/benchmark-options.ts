@@ -9,11 +9,14 @@ export interface BenchmarkOptions {
   readonly preflightOnly: boolean;
   readonly profileId: string;
   readonly providerLabel: string;
+  readonly providerTimeoutMs: number;
   readonly scenario?: string;
   readonly seed: string;
   readonly summaryMaxOutputTokens: number;
   readonly trials: number;
 }
+
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 120_000;
 
 export const BENCHMARK_HELP = `Usage: pnpm score -- [options]
 
@@ -23,6 +26,7 @@ Options:
   --max-attempts N              Attempts per fixture/repetition (default: 3)
   --seed STRING                 Base fixture seed
   --provider-label STRING       Sanitized campaign label (default: custom)
+  --provider-timeout-ms N       Per-call provider timeout (default: 120000)
   --profile ID                  Compaction prompt profile (default: production)
   --scenario ID                 Run one named benchmark scenario
   --omit-summary-seed           Omit seed only after capability preflight
@@ -59,6 +63,10 @@ export function parseBenchmarkOptions(
     preflightOnly: args.includes("--preflight-only"),
     profileId: read("--profile", "production"),
     providerLabel: read("--provider-label", "custom"),
+    providerTimeoutMs: positiveInteger(
+      read("--provider-timeout-ms", String(DEFAULT_PROVIDER_TIMEOUT_MS)),
+      "--provider-timeout-ms"
+    ),
     ...(args.includes("--scenario")
       ? { scenario: read("--scenario", "") }
       : {}),

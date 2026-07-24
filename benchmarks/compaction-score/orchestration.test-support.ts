@@ -15,6 +15,7 @@ const defaultOptions: CampaignBenchmarkOptions = {
   fixtures: 12,
   maxAttempts: 3,
   omitSummarySeed: false,
+  providerTimeoutMs: 120_000,
   seed: "orchestration-test",
   summaryMaxOutputTokens: 1024,
   trials: 3,

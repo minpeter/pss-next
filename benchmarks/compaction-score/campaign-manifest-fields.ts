@@ -13,6 +13,7 @@ export interface CampaignBenchmarkOptions {
   readonly fixtures: number;
   readonly maxAttempts: number;
   readonly omitSummarySeed: boolean;
+  readonly providerTimeoutMs: number;
   readonly seed: string;
   readonly summaryMaxOutputTokens: number;
   readonly trials: number;
@@ -25,6 +26,7 @@ export function copyManifestOptions(
     fixtures: options.fixtures,
     maxAttempts: options.maxAttempts,
     omitSummarySeed: options.omitSummarySeed,
+    providerTimeoutMs: options.providerTimeoutMs,
     seed: options.seed,
     summaryMaxOutputTokens: options.summaryMaxOutputTokens,
     trials: options.trials,
@@ -42,6 +44,7 @@ export function parseManifestOptions(value: unknown): CampaignBenchmarkOptions {
       typeof value.omitSummarySeed === "boolean"
         ? value.omitSummarySeed
         : invalidCampaignManifest(),
+    providerTimeoutMs: positiveInteger(value.providerTimeoutMs),
     seed: safeString(value.seed),
     summaryMaxOutputTokens: positiveInteger(value.summaryMaxOutputTokens),
     trials: positiveInteger(value.trials),

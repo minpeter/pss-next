@@ -105,16 +105,17 @@ export async function summarizeCompactionRange({
   estimateTokens = estimateModelMessagesTokens,
   history,
   model,
+  signal = new AbortController().signal,
   summaryInstructions,
   transformModelContext,
 }: {
   readonly estimateTokens?: (messages: readonly ModelMessage[]) => number;
   readonly history: readonly ThreadContextMessage[];
   readonly model: ModelGenerationOptions;
+  readonly signal?: AbortSignal;
   readonly summaryInstructions?: string;
   readonly transformModelContext?: ThreadModelContextTransform;
 }): Promise<string> {
-  const signal = new AbortController().signal;
   const summaryHistory: readonly ThreadContextMessage[] = [
     {
       content:

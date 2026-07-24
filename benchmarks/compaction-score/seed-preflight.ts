@@ -1,4 +1,5 @@
 import { APICallError, generateText, type LanguageModel } from "ai";
+import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./benchmark-options";
 
 export const PREFLIGHT_SEED = 2_147_483_647;
 
@@ -36,14 +37,16 @@ export type SeedCapabilityReport =
 export interface SeedCapabilityPreflightInput {
   readonly model: LanguageModel;
   readonly omitSeed: boolean;
+  readonly providerTimeoutMs?: number;
 }
 
 export async function preflightSeedCapability({
   model,
   omitSeed,
+  providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
 }: SeedCapabilityPreflightInput): Promise<SeedCapabilityReport> {
   try {
-    await probe(model, PREFLIGHT_SEED);
+    await probe(model, providerTimeoutMs, PREFLIGHT_SEED);
   } catch (error) {
     if (!isSpecificSeedUnsupportedError(error)) {
       throw new SeedPreflightError(classifyProbeFailure(error));
@@ -52,7 +55,7 @@ export async function preflightSeedCapability({
       throw new SeedPreflightError("seed-unsupported-requires-omission");
     }
     try {
-      await probe(model);
+      await probe(model, providerTimeoutMs);
     } catch {
       throw new SeedPreflightError("seedless-health-probe-failure");
     }
@@ -71,8 +74,13 @@ export async function preflightSeedCapability({
   };
 }
 
-async function probe(model: LanguageModel, seed?: number): Promise<void> {
+async function probe(
+  model: LanguageModel,
+  providerTimeoutMs: number,
+  seed?: number
+): Promise<void> {
   await generateText({
+    abortSignal: AbortSignal.timeout(providerTimeoutMs),
     maxOutputTokens: 1,
     maxRetries: 0,
     messages: [

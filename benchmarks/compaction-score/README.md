@@ -65,6 +65,7 @@ Options:
 --trials N
 --max-attempts N
 --seed STRING
+--provider-timeout-ms N
 --summary-max-output-tokens N
 --output PATH
 ```
@@ -75,6 +76,12 @@ Example smoke run:
 pnpm --filter @minpeter/pss-benchmark-compaction-score score -- \
   --fixtures 1 --trials 1 --max-attempts 1
 ```
+
+Provider calls are bounded to 120,000 ms by default, including capability
+preflight, summary generation, and both evaluation arms. Override the per-call
+limit with `--provider-timeout-ms`; the manifest records the selected timeout.
+Timed-out trial calls use the existing summary/evaluation provider-failure
+classifications and remain eligible for normal attempt retries.
 
 The default output directory is
 `/tmp/compaction-score-<ISO timestamp>/`.

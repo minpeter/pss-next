@@ -14,6 +14,7 @@ describe("benchmark options", () => {
       preflightOnly: false,
       profileId: "production",
       providerLabel: "custom",
+      providerTimeoutMs: 120_000,
       seed: "compaction-score-v2",
       summaryMaxOutputTokens: 1024,
       trials: 2,
@@ -29,12 +30,15 @@ describe("benchmark options", () => {
         "--omit-summary-seed",
         "--fixtures",
         "4",
+        "--provider-timeout-ms",
+        "45000",
       ])
     ).toMatchObject({
       fixtures: 4,
       omitSummarySeed: true,
       preflightOnly: true,
       providerLabel: "gateway-a",
+      providerTimeoutMs: 45_000,
       summaryMaxOutputTokens: 1024,
       trials: 2,
     });
@@ -58,5 +62,6 @@ describe("benchmark options", () => {
     expect(BENCHMARK_HELP).toContain("--provider-label");
     expect(BENCHMARK_HELP).toContain("--preflight-only");
     expect(BENCHMARK_HELP).toContain("--profile");
+    expect(BENCHMARK_HELP).toContain("--provider-timeout-ms");
   });
 });

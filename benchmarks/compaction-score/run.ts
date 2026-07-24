@@ -61,6 +61,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
   const seedCapability = await preflightSeedCapability({
     model,
     omitSeed: options.omitSummarySeed,
+    providerTimeoutMs: options.providerTimeoutMs,
   });
   const manifest = createCampaignManifest({
     createdAt: new Date().toISOString(),
@@ -69,6 +70,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
       fixtures: options.fixtures,
       maxAttempts: options.maxAttempts,
       omitSummarySeed: options.omitSummarySeed,
+      providerTimeoutMs: options.providerTimeoutMs,
       seed: options.seed,
       summaryMaxOutputTokens: options.summaryMaxOutputTokens,
       trials: options.trials,
@@ -129,6 +131,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
           id,
           model,
           ...promptConfiguration,
+          providerTimeoutMs: options.providerTimeoutMs,
           repetition,
           ...(options.omitSummarySeed
             ? {}

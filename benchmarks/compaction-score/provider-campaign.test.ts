@@ -25,6 +25,7 @@ const options = {
   fixtures: 3,
   maxAttempts: 3,
   omitSummarySeed: false,
+  providerTimeoutMs: 120_000,
   seed: "compaction-score-v2",
   summaryMaxOutputTokens: 1024,
   trials: 2,
@@ -188,6 +189,7 @@ describe("campaign manifest", () => {
     expect(JSON.stringify({ manifest, report })).not.toContain(
       "MANIFEST_SECRET"
     );
+    expect(manifest.options).toEqual(options);
     expect(parseCampaignManifest(manifest)).toEqual(manifest);
   });
 

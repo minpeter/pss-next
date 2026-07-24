@@ -8,6 +8,7 @@ interface EvaluationInput {
   readonly model: LanguageModel;
   readonly questions: readonly FixtureQuestion[];
   readonly seed?: number;
+  readonly signal: AbortSignal;
 }
 
 export async function evaluateArm({
@@ -15,8 +16,10 @@ export async function evaluateArm({
   model,
   questions,
   seed,
+  signal,
 }: EvaluationInput): Promise<string> {
   const { text } = await generateText({
+    abortSignal: signal,
     maxOutputTokens: 4096,
     messages: [
       ...context,

@@ -9,6 +9,7 @@ import {
   type ThreadContextMessage,
 } from "@minpeter/pss-runtime";
 import type { LanguageModel, ModelMessage } from "ai";
+import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./benchmark-options";
 import type { CompactionFixture, FixtureQuestion } from "./fixture";
 import { BatchedAnswerProtocolError, parseBatchedAnswers } from "./protocol";
 import type {
@@ -32,6 +33,7 @@ export interface TrialInput {
   readonly id: string;
   readonly model: LanguageModel;
   readonly profile?: PromptProfileIdentity;
+  readonly providerTimeoutMs?: number;
   readonly repetition: number;
   readonly seed?: number;
   readonly summaryInstructions?: string;
@@ -66,6 +68,7 @@ export async function runCompactionTrial(
         model: input.model,
         questions: input.fixture.questions,
         ...(input.seed === undefined ? {} : { seed: input.seed }),
+        signal: providerCallSignal(input),
       });
     } catch (cause) {
       return invalidRecord(input, "evaluation-provider-failure", cause);
@@ -157,6 +160,7 @@ async function generateCompactionHops(
             : { seed: (input.seed + hopIndex) % 4_294_967_296 }),
           temperature: 0,
         },
+        signal: providerCallSignal(input),
         ...(input.summaryInstructions === undefined
           ? {}
           : { summaryInstructions: input.summaryInstructions }),
@@ -200,6 +204,12 @@ async function generateCompactionHops(
     );
   }
   return { finalHop, hops };
+}
+
+function providerCallSignal(input: TrialInput): AbortSignal {
+  return AbortSignal.timeout(
+    input.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS
+  );
 }
 
 function invalidRecord(
