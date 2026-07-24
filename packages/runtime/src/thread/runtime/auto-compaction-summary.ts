@@ -9,6 +9,7 @@ import {
 import { ModelMessageHistory } from "../state/history";
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import { messageContentText } from "./auto-compaction-message-text";
+import { withToolEvidenceLedger } from "./auto-compaction-tool-evidence";
 import type {
   AutoCompactionRange,
   ThreadModelContextTransform,
@@ -140,12 +141,13 @@ export async function summarizeCompactionRange({
     signal,
     temperature: model.temperature,
   });
-  const summary = output
+  const generatedSummary = output
     .flatMap((message) =>
       message.role === "assistant" ? messageContentText(message.content) : []
     )
     .join("\n\n")
     .trim();
+  const summary = withToolEvidenceLedger(generatedSummary, history);
   const sourceContext = history.map((message) =>
     message.role === "compaction" ? compactionContextForModel(message) : message
   );
