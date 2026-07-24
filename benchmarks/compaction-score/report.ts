@@ -8,9 +8,15 @@ export type InvalidTrialStatus =
   | "protocol-failure"
   | "summary-provider-failure";
 
+export interface PromptProfileIdentity {
+  readonly hash: string;
+  readonly id: string;
+}
+
 interface TrialIdentity {
   readonly fixtureSeed: string;
   readonly id: string;
+  readonly profile?: PromptProfileIdentity;
   readonly repetition: number;
   readonly scenario: BenchmarkScenario;
 }

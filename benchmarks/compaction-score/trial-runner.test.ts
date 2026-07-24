@@ -68,6 +68,41 @@ describe("runCompactionTrial", () => {
     );
   });
 
+  it("routes a named prompt profile through the production summary path", async () => {
+    const calls: MockLanguageModelV4CallOptions[] = [];
+    const outputs = [
+      mockLanguageModelV4Text("structured summary"),
+      mockLanguageModelV4Text(answerJson()),
+      mockLanguageModelV4Text(answerJson()),
+    ];
+    const model = createMockLanguageModelV4((options) => {
+      calls.push(options);
+      return Promise.resolve(outputs[calls.length - 1] ?? outputs[0]);
+    });
+    const profile = {
+      hash: "sha256:profile-sentinel",
+      id: "senpi-profile-sentinel",
+    };
+
+    const record = await runCompactionTrial({
+      attempt: 1,
+      fixture,
+      fixtureSeed: "trial-runner-test",
+      id: "trial-with-profile",
+      model,
+      profile,
+      repetition: 1,
+      seed: 43,
+      summaryInstructions: "PROFILE_INSTRUCTION_SENTINEL",
+      summaryMaxOutputTokens: 768,
+    });
+
+    expect(JSON.stringify(calls[0]?.prompt)).toContain(
+      "PROFILE_INSTRUCTION_SENTINEL"
+    );
+    expect(record).toMatchObject({ profile, status: "valid" });
+  });
+
   it("invalidates a trial when the full-context arm misses", async () => {
     const model = createMockLanguageModelV4([
       mockLanguageModelV4Text("structured summary"),

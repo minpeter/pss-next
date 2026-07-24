@@ -15,7 +15,11 @@ import {
   buildBatchedQuestionPrompt,
   parseBatchedAnswers,
 } from "./protocol";
-import type { CompactionHopRecord, TrialRecord } from "./report";
+import type {
+  CompactionHopRecord,
+  PromptProfileIdentity,
+  TrialRecord,
+} from "./report";
 import {
   type CompactionScore,
   FullContextControlError,
@@ -30,8 +34,10 @@ export interface TrialInput {
   readonly fixtureSeed: string;
   readonly id: string;
   readonly model: LanguageModel;
+  readonly profile?: PromptProfileIdentity;
   readonly repetition: number;
   readonly seed: number;
+  readonly summaryInstructions?: string;
   readonly summaryMaxOutputTokens: number;
 }
 
@@ -103,6 +109,7 @@ export async function runCompactionTrial(
         input.fixture.compactionEnds.at(-1) ?? fullContext.length
       )
     ),
+    ...(input.profile === undefined ? {} : { profile: input.profile }),
     repetition: input.repetition,
     scenario: input.fixture.scenario,
     score,
@@ -151,6 +158,9 @@ async function generateCompactionHops(
           seed: (input.seed + hopIndex) % 4_294_967_296,
           temperature: 0,
         },
+        ...(input.summaryInstructions === undefined
+          ? {}
+          : { summaryInstructions: input.summaryInstructions }),
       });
     } catch (cause) {
       return invalidRecord(input, classifySummaryFailure(cause), cause);
@@ -229,6 +239,7 @@ function invalidRecord(
     error: cause instanceof Error ? cause.message : String(cause),
     fixtureSeed: input.fixtureSeed,
     id: input.id,
+    ...(input.profile === undefined ? {} : { profile: input.profile }),
     repetition: input.repetition,
     scenario: input.fixture.scenario,
     status,
