@@ -55,6 +55,7 @@ runtime hooks, activation cleanup, and durable thread migrations:
 import {
   command,
   instructions,
+  modelProvider,
   threadMigration,
   toolRenderer,
   tools,
@@ -82,6 +83,11 @@ export default function workspacePolicy(pss: ExtensionAPI) {
       };
     },
   }));
+  pss.provide(modelProvider({
+    id: "acme",
+    models: ["fast"],
+    create: (modelId) => createAcmeModel(modelId),
+  }));
   pss.use({
     beforeToolExecution(checkpoint) {
       if (checkpoint.toolName === "delete_file") {
@@ -99,24 +105,54 @@ export default function workspacePolicy(pss: ExtensionAPI) {
       threadKey: context.threadKey,
     });
   });
-  pss.on("activate", () => {
+  pss.on("activate", async ({ services }) => {
+    services.logger.info("workspace policy active");
+    await services.state.set({ activated: true });
+    const child = await services.agents.create({
+      instructions: "Review the workspace without editing it.",
+      model: { provider: "acme", id: "fast" },
+    });
     const watcher = startWorkspaceWatcher();
-    return () => watcher.close();
+    return async () => {
+      watcher.close();
+      await child.dispose();
+    };
   });
 }
 ```
+
+The factory object deliberately remains only `pss.on`, `pss.use`, and
+`pss.provide`. Static contributions are capability values. Runtime facilities
+are available through activation, event, and extension-command contexts:
+
+- `services.logger` is an extension-attributed structured logger.
+- `services.ui` provides notification/status plus real TUI input, select, and
+  confirmation dialogs. Interactive requests reject in `pss exec`.
+- `services.exec.run()` accepts an executable and argv, not a shell string. Its
+  cwd must stay inside the workspace; lifecycle abort, output bounds, timeout,
+  and API-key filtering are host-owned.
+- `services.agents.create()` creates host-managed child agents. It uses the
+  application model by default or an explicit `modelProvider()` contribution;
+  providers never replace the main agent model implicitly.
+- `services.config` is immutable JSON from the extension's installed settings,
+  and `services.state` persists JSON atomically under an extension-ID-scoped
+  host path.
+
+The existing `toolRenderer()` capability is the renderer boundary. Extensions
+cannot register arbitrary raw TUI components or persisted message/entry
+renderers because those have no extension-owned runtime domain.
 
 Extensions configure sequentially, use stable IDs, and cannot register new
 contributions after the factory resolves. Activation callbacks run after agent
 creation; cleanups run in reverse order. `pss.use()` composes control-flow
 hooks, `pss.on()` observes runtime and activation events, and overloaded
-`pss.provide()` accepts branded instruction, tool, command, migration, and
-renderer capabilities. Each factory's capabilities are validated and staged
-before one atomic publication; unknown capability kinds fail closed. Event
-handlers run serially in extension and registration order. Naming a stream
-event such as `assistant-output-delta` explicitly opts into ephemeral deltas;
-handler failures are attributed to the owning extension and surfaced after
-the original events.
+`pss.provide()` accepts branded instruction, tool, command, migration, model
+provider, and renderer capabilities. Each factory's capabilities are validated
+and staged before one atomic publication; unknown capability kinds fail
+closed. Event handlers run serially in extension and registration order.
+Naming a stream event such as `assistant-output-delta` explicitly opts into
+ephemeral deltas; handler failures are attributed to the owning extension and
+surfaced after the original events.
 
 Install an extension globally or for one project:
 

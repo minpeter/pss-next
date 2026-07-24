@@ -6,7 +6,10 @@ import {
   isStreamAgentEvent,
 } from "@minpeter/pss-runtime";
 import { CodingAgentExtensionError } from "./error";
-import type { CodingAgentExtensionEventContext } from "./types";
+import type {
+  CodingAgentExtensionEventContext,
+  CodingAgentExtensionServices,
+} from "./types";
 
 export interface RegisteredCodingAgentExtensionEvent {
   readonly extensionId: string;
@@ -19,11 +22,12 @@ export interface RegisteredCodingAgentExtensionEvent {
 
 export function createCodingAgentExtensionInstrumentation(
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices
 ): AgentInstrumentation {
   return {
     wrapTurn: (turn, context) =>
-      wrapExtensionEvents(turn, context, registrations, signal),
+      wrapExtensionEvents(turn, context, registrations, signal, getServices),
   };
 }
 
@@ -31,7 +35,8 @@ function wrapExtensionEvents(
   turn: AgentTurn,
   instrumentationContext: AgentInstrumentationContext,
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices
 ): AgentTurn {
   return {
     events: () =>
@@ -40,6 +45,7 @@ function wrapExtensionEvents(
         instrumentationContext,
         registrations,
         signal,
+        getServices,
         turn.runId
       ),
     runId: turn.runId,
@@ -51,22 +57,24 @@ async function* observeEvents(
   instrumentationContext: AgentInstrumentationContext,
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
   signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
   turnRunId: string | undefined
 ): AsyncIterable<AgentEvent> {
   const failures: CodingAgentExtensionError[] = [];
   for await (const event of source) {
     if (!signal.aborted) {
-      const context: CodingAgentExtensionEventContext = Object.freeze({
-        ...instrumentationContext,
-        runId: instrumentationContext.runId ?? turnRunId,
-        signal,
-        stream: isStreamAgentEvent(event),
-      });
       for (const registration of registrations) {
         if (registration.type !== event.type) {
           continue;
         }
         try {
+          const context: CodingAgentExtensionEventContext = Object.freeze({
+            ...instrumentationContext,
+            runId: instrumentationContext.runId ?? turnRunId,
+            services: getServices(registration.extensionId),
+            signal,
+            stream: isStreamAgentEvent(event),
+          });
           await registration.invoke(structuredClone(event), context);
         } catch (error) {
           failures.push(

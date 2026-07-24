@@ -13,6 +13,7 @@ const targetSchema = z.discriminatedUnion("kind", [
 ]);
 
 const entrySchema = z.object({
+  config: z.record(z.string(), z.json()).optional(),
   enabled: z.boolean(),
   id: z.string().min(1),
   installedAt: z.string().min(1),

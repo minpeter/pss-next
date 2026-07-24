@@ -1,8 +1,13 @@
+import type { Agent } from "@minpeter/pss-runtime";
+import type {
+  CodingAgentExtensionMode,
+  CodingAgentExtensionServices,
+} from "../extensions/types";
+
 /**
  * Local slash-command model for the pss TUI. Mirrors the harness `Command`
  * contract plugsuits used, scoped down to what the interactive session needs.
  */
-
 export interface TuiCommandAction {
   type: "new-session";
 }
@@ -13,14 +18,25 @@ export interface TuiCommandResult {
   success: boolean;
 }
 
+export interface TuiCommandContext {
+  readonly agent: Agent;
+  readonly mode: CodingAgentExtensionMode;
+  readonly services: CodingAgentExtensionServices;
+  readonly signal: AbortSignal;
+  readonly workspace: string;
+}
+
 export interface TuiCommand {
   aliases?: readonly string[];
   argumentSuggestions?: readonly string[];
   description: string;
   displayName?: string;
-  execute: (input: {
-    args: string[];
-  }) => Promise<TuiCommandResult> | TuiCommandResult;
+  execute: (
+    input: {
+      args: string[];
+    },
+    context?: TuiCommandContext
+  ) => Promise<TuiCommandResult> | TuiCommandResult;
   name: string;
 }
 

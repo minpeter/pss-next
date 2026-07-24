@@ -5,6 +5,7 @@ import type {
   CodingAgentExtension,
   CodingAgentExtensionFactory,
   CodingAgentExtensionInput,
+  ExtensionJsonValue,
 } from "../types";
 import type { ExtensionTarget, ImportExtensionModule } from "./types";
 
@@ -15,12 +16,14 @@ const PACKAGE_NAME_PATTERN =
 
 export async function loadExtensionTarget({
   cacheBust,
+  config,
   id,
   importer = defaultImportModule,
   installRoot,
   target,
 }: {
   readonly cacheBust?: string;
+  readonly config?: Readonly<Record<string, ExtensionJsonValue>>;
   readonly id: string;
   readonly importer?: ImportExtensionModule;
   readonly installRoot: string;
@@ -42,7 +45,11 @@ export async function loadExtensionTarget({
       ? namespace.default
       : namespace;
   if (isExtensionFactory(candidate)) {
-    return { default: candidate, id };
+    return {
+      ...(config === undefined ? {} : { config }),
+      default: candidate,
+      id,
+    };
   }
   if (isCodingAgentExtension(candidate)) {
     if (candidate.id !== id) {
@@ -50,7 +57,17 @@ export async function loadExtensionTarget({
         `Coding agent extension "${id}" exports conflicting id "${candidate.id}"`
       );
     }
-    return candidate;
+    return {
+      ...candidate,
+      ...(config === undefined
+        ? {}
+        : {
+            config: {
+              ...candidate.config,
+              ...config,
+            },
+          }),
+    };
   }
   throw new TypeError(
     `Coding agent extension "${id}" default export must be a function`

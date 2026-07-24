@@ -9,6 +9,7 @@ import {
   assertNoKeyConflicts,
   recordCommandOwners,
 } from "./registry-conflicts";
+import type { CodingAgentExtensionModelProvider } from "./types";
 
 export interface ExtensionRegistryCollections {
   readonly commands: TuiCommand[];
@@ -16,6 +17,7 @@ export interface ExtensionRegistryCollections {
   readonly hooks: RegisteredAgentHooks[];
   readonly instructions: string[];
   readonly migrations: ThreadStateMigration[];
+  readonly modelProviders: Map<string, CodingAgentExtensionModelProvider>;
   readonly owners: ExtensionContributionOwners;
   readonly renderers: ToolRendererMap;
   readonly tools: ToolSet;
@@ -24,6 +26,7 @@ export interface ExtensionRegistryCollections {
 interface ExtensionContributionOwners {
   readonly commands: Map<string, string>;
   readonly migrations: Map<string, string>;
+  readonly modelProviders: Map<string, string>;
   readonly renderers: Map<string, string>;
   readonly tools: Map<string, string>;
 }
@@ -35,9 +38,11 @@ export function createExtensionRegistryCollections(): ExtensionRegistryCollectio
     hooks: [],
     instructions: [],
     migrations: [],
+    modelProviders: new Map(),
     owners: {
       commands: new Map(),
       migrations: new Map(),
+      modelProviders: new Map(),
       renderers: new Map(),
       tools: new Map(),
     },
@@ -80,11 +85,23 @@ export function commitExtensionRegistryCollections(
       );
     }
   }
+  for (const [id] of staged.modelProviders) {
+    const existingOwner = target.owners.modelProviders.get(id);
+    if (existingOwner !== undefined) {
+      throw new Error(
+        `Model provider "${id}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
+    }
+  }
   target.commands.push(...staged.commands);
   target.events.push(...staged.events);
   target.hooks.push(...staged.hooks);
   target.instructions.push(...staged.instructions);
   target.migrations.push(...staged.migrations);
+  for (const [id, provider] of staged.modelProviders) {
+    target.modelProviders.set(id, provider);
+    target.owners.modelProviders.set(id, extensionId);
+  }
   Object.assign(target.renderers, staged.renderers);
   Object.assign(target.tools, staged.tools);
   recordCommandOwners(target.owners.commands, staged.commands, extensionId);

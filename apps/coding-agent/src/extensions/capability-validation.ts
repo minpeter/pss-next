@@ -9,17 +9,23 @@ import {
   snapshotOptionalStringArray,
   snapshotStringArray,
 } from "./data-validation";
+import { snapshotModelProvider } from "./model-provider-validation";
 import {
   snapshotCommandName,
   snapshotToolName,
   snapshotToolRendererName,
 } from "./name-validation";
+import type { CodingAgentExtensionModelProvider } from "./types";
 
 const MIGRATION_ID_PATTERN = /^[A-Za-z0-9@][A-Za-z0-9@/._:-]*$/;
 
 export type ValidatedCapability =
   | { readonly command: TuiCommand; readonly kind: "command" }
   | { readonly fragments: readonly string[]; readonly kind: "instructions" }
+  | {
+      readonly kind: "model-provider";
+      readonly provider: CodingAgentExtensionModelProvider;
+    }
   | {
       readonly kind: "thread-migration";
       readonly migration: ThreadStateMigration;
@@ -58,6 +64,12 @@ export function validateExtensionCapability(
         }
         return { fragments, kind };
       }
+    case "model-provider":
+      assertKeys(capability, ["kind", "provider"], "Extension capability");
+      return {
+        kind,
+        provider: snapshotModelProvider(capability.provider),
+      };
     case "thread-migration":
       assertKeys(capability, ["kind", "migration"], "Extension capability");
       return {

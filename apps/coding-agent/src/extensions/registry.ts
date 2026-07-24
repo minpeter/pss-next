@@ -6,6 +6,7 @@ import {
   snapshotInstruction,
   snapshotThreadMigration,
   snapshotToolEntry,
+  type ValidatedCapability,
   validateExtensionCapability,
 } from "./capability-validation";
 import type { RegisteredCodingAgentExtensionEvent } from "./events";
@@ -114,6 +115,38 @@ export function createCodingAgentExtensionRegistry({
     assertOpen();
     collections.hooks.push({ extensionId, hooks });
   };
+  const registerModelProvider = (
+    provider: Extract<
+      ValidatedCapability,
+      { readonly kind: "model-provider" }
+    >["provider"]
+  ) => {
+    if (collections.modelProviders.has(provider.id)) {
+      const existingOwner =
+        collections.owners.modelProviders.get(provider.id) ?? extensionId;
+      throw new Error(
+        `Model provider "${provider.id}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
+    }
+    collections.modelProviders.set(provider.id, provider);
+    collections.owners.modelProviders.set(provider.id, extensionId);
+  };
+  const registerProvidedTools = (
+    entries: Extract<ValidatedCapability, { readonly kind: "tools" }>["entries"]
+  ) => {
+    for (const [name] of entries) {
+      if (Object.hasOwn(collections.tools, name)) {
+        const existingOwner = collections.owners.tools.get(name) ?? extensionId;
+        throw new Error(
+          `Tool "${name}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+        );
+      }
+    }
+    for (const [name, tool] of entries) {
+      collections.tools[name] = tool;
+      collections.owners.tools.set(name, extensionId);
+    }
+  };
   const provide = (capability: ExtensionCapability) => {
     assertOpen();
     const validated = validateExtensionCapability(capability, extensionId);
@@ -125,6 +158,9 @@ export function createCodingAgentExtensionRegistry({
         for (const fragment of validated.fragments) {
           registerInstruction(fragment);
         }
+        return;
+      case "model-provider":
+        registerModelProvider(validated.provider);
         return;
       case "thread-migration":
         if (
@@ -144,19 +180,7 @@ export function createCodingAgentExtensionRegistry({
         registerRenderer(validated.toolName, validated.renderer);
         return;
       case "tools":
-        for (const [name] of validated.entries) {
-          if (Object.hasOwn(collections.tools, name)) {
-            const existingOwner =
-              collections.owners.tools.get(name) ?? extensionId;
-            throw new Error(
-              `Tool "${name}" from extension "${extensionId}" conflicts with extension "${existingOwner}"`
-            );
-          }
-        }
-        for (const [name, tool] of validated.entries) {
-          collections.tools[name] = tool;
-          collections.owners.tools.set(name, extensionId);
-        }
+        registerProvidedTools(validated.entries);
         return;
       default: {
         const unreachable: never = validated;

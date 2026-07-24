@@ -1,4 +1,4 @@
-import type { CodingAgentExtensionInput } from "../types";
+import type { CodingAgentExtensionInput, ExtensionJsonValue } from "../types";
 
 export type ExtensionScope = "global" | "project";
 export type ExtensionSourceKind = "git" | "local" | "npm";
@@ -14,6 +14,7 @@ export type ExtensionTarget =
     };
 
 export interface ExtensionSettingsEntry {
+  readonly config?: Readonly<Record<string, ExtensionJsonValue>>;
   readonly enabled: boolean;
   readonly id: string;
   readonly installedAt: string;

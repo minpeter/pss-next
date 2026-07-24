@@ -74,12 +74,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     throw error;
   }
   try {
-    await extensionHost.activate(agent, "tui");
-  } catch (error) {
-    await agent.dispose();
-    throw error;
-  }
-  try {
     let thread = agent.thread(threadConfig.key);
 
     const noticeLines: string[] = [];
@@ -140,6 +134,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           usage.totalTokens ??
           (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
         footer.text = `${formatTokens(usageTotals.totalTokens)} tokens (${formatTokens(usageTotals.inputTokens)} in / ${formatTokens(usageTotals.outputTokens)} out)`;
+      },
+      onExtensionUiReady: async (ui) => {
+        extensionHost.bindUi(ui);
+        await extensionHost.activate(agent, "tui");
       },
       onSetup: () => {
         for (const refresh of deferredRefreshes) {

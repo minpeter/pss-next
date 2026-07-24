@@ -2,6 +2,7 @@ import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
+import type { CodingAgentExtensionModelProvider } from "./types";
 
 declare const capabilityBrand: unique symbol;
 
@@ -32,9 +33,14 @@ export interface ToolRendererCapability extends Capability<"tool-renderer"> {
   readonly toolName: string;
 }
 
+export interface ModelProviderCapability extends Capability<"model-provider"> {
+  readonly provider: CodingAgentExtensionModelProvider;
+}
+
 export type ExtensionCapability =
   | CommandCapability
   | InstructionsCapability
+  | ModelProviderCapability
   | ThreadMigrationCapability
   | ToolRendererCapability
   | ToolsCapability;
@@ -58,6 +64,15 @@ export function command(definition: TuiCommand): CommandCapability {
     command: definition,
     kind: "command",
   }) as CommandCapability;
+}
+
+export function modelProvider(
+  provider: CodingAgentExtensionModelProvider
+): ModelProviderCapability {
+  return Object.freeze({
+    kind: "model-provider",
+    provider,
+  }) as ModelProviderCapability;
 }
 
 export function threadMigration(

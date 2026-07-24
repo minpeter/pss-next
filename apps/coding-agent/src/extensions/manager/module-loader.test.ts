@@ -94,4 +94,25 @@ describe("managed package module loading", () => {
     expect(extension.id).toBe("main-entry");
     expect(extension).toHaveProperty("default");
   });
+
+  it("applies installed configuration to static object extensions", async () => {
+    const staticExtension = {
+      configure: () => undefined,
+      config: { moduleDefault: true },
+      id: "static-extension",
+    };
+
+    const extension = await loadExtensionTarget({
+      config: { installed: true },
+      id: "static-extension",
+      importer: async () => ({ default: staticExtension }),
+      installRoot: process.cwd(),
+      target: { kind: "module", path: "fixture.mjs" },
+    });
+
+    expect(extension).toMatchObject({
+      config: { installed: true, moduleDefault: true },
+      id: "static-extension",
+    });
+  });
 });
