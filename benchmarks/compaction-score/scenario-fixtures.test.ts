@@ -37,6 +37,7 @@ describe("benchmark scenario registry", () => {
       "lifecycle",
       "boundary-noise",
       "long-session",
+      "progressive-five-hop",
     ]);
   });
 

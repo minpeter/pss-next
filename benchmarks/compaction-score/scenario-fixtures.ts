@@ -7,12 +7,14 @@ import {
 } from "./fixture";
 import { buildLifecycleFixture } from "./lifecycle-fixture";
 import { buildLongSessionFixture } from "./long-session-fixture";
+import { buildProgressiveFiveHopFixture } from "./progressive-five-hop-fixture";
 
 export const BENCHMARK_SCENARIOS = [
   "baseline",
   "lifecycle",
   "boundary-noise",
   "long-session",
+  "progressive-five-hop",
 ] as const satisfies readonly BenchmarkScenario[];
 
 export function buildScenarioFixture(
@@ -26,6 +28,8 @@ export function buildScenarioFixture(
     fixture = buildBoundaryNoiseFixture(seed);
   } else if (scenario === "long-session") {
     fixture = buildLongSessionFixture(seed);
+  } else if (scenario === "progressive-five-hop") {
+    fixture = buildProgressiveFiveHopFixture(seed);
   }
   return validateCompactionFixture(fixture);
 }

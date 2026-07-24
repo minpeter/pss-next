@@ -25,7 +25,8 @@ export type BenchmarkScenario =
   | "baseline"
   | "boundary-noise"
   | "lifecycle"
-  | "long-session";
+  | "long-session"
+  | "progressive-five-hop";
 
 export interface CompactionFixture {
   readonly compactionEnds: readonly number[];
