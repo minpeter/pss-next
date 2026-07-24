@@ -29,6 +29,12 @@ describe("batched answer protocol", () => {
     );
   });
 
+  it("requires canonical values without task labels or elaboration", () => {
+    expect(buildBatchedQuestionPrompt(questions)).toContain(
+      "For labeled task state, Blocker, or Next action, return only the exact value after the label; omit the label, punctuation, and added context."
+    );
+  });
+
   it("parses fenced JSON into question-keyed answers", () => {
     const answers = parseBatchedAnswers(
       '```json\n{"answers":[{"id":"q0","answer":"alpha"},{"id":"q1","answer":"beta"}]}\n```',

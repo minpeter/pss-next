@@ -19,6 +19,7 @@ export function buildBatchedQuestionPrompt(
     "Answer every question using only the preceding conversation.",
     'Return JSON only in this shape: {"answers":[{"id":"q0","answer":"exact value"}]}.',
     "Include every id exactly once. Use the shortest exact value, with no explanation.",
+    "For labeled task state, Blocker, or Next action, return only the exact value after the label; omit the label, punctuation, and added context.",
     'If the conversation does not contain an answer, use "unknown".',
     "",
     ...lines,
