@@ -62,7 +62,7 @@ export async function processQueuedInput({
   const durableEvents: DurableThreadEventBuffer = [];
   const recordEvent = (event: AgentEvent) =>
     recordDurableThreadEvent(durableEvents, event);
-  const { transformModelContext, transformModelStep } =
+  const { latestContextTransform, transformModelContext, transformModelStep } =
     createTurnModelTransforms({
       pluginRuntime: execution.pluginRuntime,
       state,
@@ -183,6 +183,7 @@ export async function processQueuedInput({
           transformModelContext,
           transformModelStep,
         }),
+      latestContextTransform,
       state,
       transformModelContext,
     });
@@ -204,6 +205,7 @@ export async function processQueuedInput({
     if (result === "completed" && input) {
       scheduleThreadAutoCompaction({
         compact: (compactionInput) => events.compact(state, compactionInput),
+        latestContextTransform,
         model,
         policy: execution.autoCompaction,
         state,

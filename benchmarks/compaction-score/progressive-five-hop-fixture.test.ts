@@ -63,7 +63,9 @@ describe("progressive five-hop fixture", () => {
     const fixture = buildScenarioFixture(SCENARIO, "five-hop-compressible");
     const firstPrefix = fixture.messages.slice(0, fixture.compactionEnds[0]);
 
-    expect(estimateModelMessagesTokens(firstPrefix)).toBeGreaterThanOrEqual(600);
+    expect(estimateModelMessagesTokens(firstPrefix)).toBeGreaterThanOrEqual(
+      600
+    );
   });
 
   it("records five compaction hops with perfect mock control and recall", async () => {

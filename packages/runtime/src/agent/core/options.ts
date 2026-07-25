@@ -197,6 +197,49 @@ export function normalizeAgentAutoCompactionOptions(
     options.triggerTokens ?? Math.floor(thresholdBudget * 0.8);
   const retainTokens = options.retainTokens ?? Math.floor(triggerTokens / 2);
 
+  assertAutoCompactionBudgets({
+    contextGate,
+    gateBudget,
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
+  });
+
+  if (
+    options.estimateTokens !== undefined &&
+    typeof options.estimateTokens !== "function"
+  ) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.estimateTokens must be a function."
+    );
+  }
+
+  return {
+    ...(contextGate === undefined ? {} : { contextGate }),
+    ...(options.estimateTokens === undefined
+      ? {}
+      : { estimateTokens: options.estimateTokens }),
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
+  };
+}
+
+function assertAutoCompactionBudgets(budgets: {
+  contextGate: AgentAutoCompactionOptions["contextGate"] | undefined;
+  gateBudget: number | undefined;
+  maxInputTokens: number;
+  retainTokens: number;
+  triggerTokens: number;
+}): void {
+  const {
+    contextGate,
+    gateBudget,
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
+  } = budgets;
+
   if (!isPositiveInteger(maxInputTokens)) {
     throw new TypeError(
       "Agent: options.autoCompaction.maxInputTokens must be a positive integer."
@@ -238,25 +281,6 @@ export function normalizeAgentAutoCompactionOptions(
       "Agent: options.autoCompaction.retainTokens must be smaller than triggerTokens."
     );
   }
-
-  if (
-    options.estimateTokens !== undefined &&
-    typeof options.estimateTokens !== "function"
-  ) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.estimateTokens must be a function."
-    );
-  }
-
-  return {
-    ...(contextGate === undefined ? {} : { contextGate }),
-    ...(options.estimateTokens === undefined
-      ? {}
-      : { estimateTokens: options.estimateTokens }),
-    maxInputTokens,
-    retainTokens,
-    triggerTokens,
-  };
 }
 
 function isPositiveInteger(value: unknown): value is number {

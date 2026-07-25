@@ -16,6 +16,7 @@ import type {
   AutoCompactionRange,
   ThreadAutoCompactionOptions,
   ThreadCompactionHandler,
+  ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
 
@@ -23,12 +24,14 @@ const activeCompactions = new WeakSet<ThreadState>();
 
 export function scheduleThreadAutoCompaction({
   compact,
+  latestContextTransform,
   model,
   policy,
   state,
   transformModelContext,
 }: {
   readonly compact?: ThreadCompactionHandler;
+  readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly policy?: ThreadAutoCompactionOptions;
   readonly state: ThreadState;
@@ -45,6 +48,7 @@ export function scheduleThreadAutoCompaction({
   queueMicrotask(() => {
     const backgroundCompaction = compactThreadInBackground({
       compact,
+      latestContextTransform,
       model,
       policy,
       state,
@@ -58,12 +62,14 @@ export function scheduleThreadAutoCompaction({
 
 async function compactThreadInBackground({
   compact,
+  latestContextTransform,
   model,
   policy,
   state,
   transformModelContext,
 }: {
   readonly compact?: ThreadCompactionHandler;
+  readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly policy: ThreadAutoCompactionOptions;
   readonly state: ThreadState;
@@ -75,6 +81,7 @@ async function compactThreadInBackground({
     do {
       compacted = await compactThreadOnce({
         compact,
+        latestContextTransform,
         model,
         policy,
         state,
@@ -93,12 +100,14 @@ async function compactThreadInBackground({
 
 export async function compactThreadBlocking({
   compact,
+  latestContextTransform,
   model,
   policy,
   state,
   transformModelContext,
 }: {
   readonly compact?: ThreadCompactionHandler;
+  readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly policy?: ThreadAutoCompactionOptions;
   readonly state: ThreadState;
@@ -110,6 +119,7 @@ export async function compactThreadBlocking({
 
   return await compactThreadOnce({
     compact,
+    latestContextTransform,
     model,
     policy,
     state,
@@ -119,12 +129,14 @@ export async function compactThreadBlocking({
 
 async function compactThreadOnce({
   compact,
+  latestContextTransform,
   model,
   policy,
   state,
   transformModelContext,
 }: {
   readonly compact?: ThreadCompactionHandler;
+  readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly policy: ThreadAutoCompactionOptions;
   readonly state: ThreadState;
@@ -135,9 +147,9 @@ async function compactThreadOnce({
     const compactions = state.compactionSnapshot();
     const estimation = await estimationContextForCompaction({
       history,
+      latestContextTransform,
       model,
       policy,
-      transformModelContext,
     });
     const range = selectAutoCompactionRange({
       compactions,
@@ -171,9 +183,9 @@ async function compactThreadOnce({
     const latestHistory = state.modelSnapshot();
     const latestEstimation = await estimationContextForCompaction({
       history: latestHistory,
+      latestContextTransform,
       model,
       policy,
-      transformModelContext,
     });
     const latestRange = selectAutoCompactionRange({
       compactions: state.compactionSnapshot(),
@@ -196,14 +208,14 @@ async function compactThreadOnce({
 
 async function estimationContextForCompaction({
   history,
+  latestContextTransform,
   model,
   policy,
-  transformModelContext,
 }: {
   readonly history: readonly ModelMessage[];
+  readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly policy: ThreadAutoCompactionOptions;
-  readonly transformModelContext?: ThreadModelContextTransform;
 }): Promise<{
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens: number;
@@ -213,7 +225,8 @@ async function estimationContextForCompaction({
     model.attachmentStore
   );
   const baseInstructions = instructionTokens(model, policy);
-  if (!transformModelContext) {
+  const observation = latestContextTransform?.();
+  if (!observation) {
     return {
       history: hydrated,
       instructionsTokens: baseInstructions,
@@ -221,14 +234,10 @@ async function estimationContextForCompaction({
   }
 
   const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
-  const transformed = await transformModelContext(
-    hydrated as readonly ThreadContextMessage[],
-    new AbortController().signal
-  );
   const transformOverhead = Math.max(
     0,
-    estimate(modelMessagesForEstimate(transformed)) -
-      estimate(modelMessagesForEstimate(hydrated))
+    estimate(modelMessagesForEstimate(observation.output)) -
+      estimate(modelMessagesForEstimate(observation.input))
   );
   return {
     history: hydrated,
@@ -240,9 +249,7 @@ function modelMessagesForEstimate(
   messages: readonly ThreadContextMessage[] | readonly ModelMessage[]
 ): ModelMessage[] {
   return messages.map((message) =>
-    message.role === "compaction"
-      ? compactionContextForModel(message)
-      : message
+    message.role === "compaction" ? compactionContextForModel(message) : message
   );
 }
 

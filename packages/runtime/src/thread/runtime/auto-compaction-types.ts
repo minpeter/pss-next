@@ -20,6 +20,15 @@ export type ThreadModelContextTransform = (
   signal: AbortSignal
 ) => Promise<readonly ThreadContextMessage[]>;
 
+export interface ThreadContextTransformObservation {
+  readonly input: readonly ThreadContextMessage[];
+  readonly output: readonly ThreadContextMessage[];
+}
+
+export type ThreadContextTransformObserver = () =>
+  | ThreadContextTransformObservation
+  | undefined;
+
 export interface AutoCompactionRange {
   readonly endSeqExclusive: number;
   readonly startSeq: number;

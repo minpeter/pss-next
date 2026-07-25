@@ -24,9 +24,9 @@ import {
   scenarioForFixtureIndex,
 } from "./scenario-fixtures";
 import { preflightSeedCapability, SeedPreflightError } from "./seed-preflight";
+import { resetTrialLog } from "./trial-log";
 import { trialPromptProfile } from "./trial-prompt-profile";
 import { runCompactionTrial } from "./trial-runner";
-import { resetTrialLog } from "./trial-log";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {

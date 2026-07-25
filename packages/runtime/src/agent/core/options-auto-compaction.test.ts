@@ -99,8 +99,8 @@ describe("normalizeAgentAutoCompactionOptions", () => {
     ).toEqual({
       contextGate: { maxInputTokens: 10_000, onOverflow: "error" },
       maxInputTokens: 128_000,
-      retainTokens: 4_000,
-      triggerTokens: 8_000,
+      retainTokens: 4000,
+      triggerTokens: 8000,
     });
   });
 

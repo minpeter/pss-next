@@ -48,9 +48,7 @@ const userMessage = (content: string): ModelMessage => ({
   role: "user",
 });
 
-const attachmentMessage = (
-  ref: RuntimeAttachmentReference
-): ModelMessage => ({
+const attachmentMessage = (ref: RuntimeAttachmentReference): ModelMessage => ({
   content: [
     {
       data: encodeRuntimeAttachmentData(ref),
@@ -124,33 +122,31 @@ describe("compactThreadBlocking context estimation", () => {
     });
   });
 
-  it("applies model context transforms before selecting the compaction range", async () => {
-    const state = await stateWithMessages([
+  it("counts observed model context transform overhead before selecting the compaction range", async () => {
+    const messages = [
       userMessage("u".repeat(100)),
       assistantMessage("a".repeat(100)),
       userMessage("tail"),
-    ]);
+    ];
+    const state = await stateWithMessages(messages);
     const compact = vi.fn(() => Promise.resolve(true));
-    const transformModelContext = vi.fn(
-      async (messages: Parameters<
-        NonNullable<
-          Parameters<typeof compactThreadBlocking>[0]["transformModelContext"]
-        >
-      >[0]) => [userMessage("ephemeral".repeat(70)), ...messages]
-    );
+    const latestContextTransform = vi.fn(() => ({
+      input: messages,
+      output: [userMessage("ephemeral".repeat(70)), ...messages],
+    }));
 
     const compacted = await compactThreadBlocking({
       compact,
+      latestContextTransform,
       model: {
         model: createCallbackModel(() => [assistantMessage("short")]),
       },
       policy: compactionPolicy(),
       state,
-      transformModelContext,
     });
 
     expect(compacted).toBe(true);
-    expect(transformModelContext).toHaveBeenCalled();
+    expect(latestContextTransform).toHaveBeenCalled();
     expect(compact).toHaveBeenCalledWith({
       endSeqExclusive: 2,
       startSeq: 0,
