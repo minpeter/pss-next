@@ -63,6 +63,44 @@ function wrapExtensionEvents(
   };
 }
 
+interface ExtensionEventInvocationOptions {
+  readonly getServices: (extensionId: string) => CodingAgentExtensionServices;
+  readonly instrumentationContext: AgentInstrumentationContext;
+  readonly signal: AbortSignal;
+  readonly timeoutMs: number | undefined;
+  readonly turnRunId: string | undefined;
+}
+
+async function invokeRegistration(
+  registration: RegisteredCodingAgentExtensionEvent,
+  event: AgentEvent,
+  options: ExtensionEventInvocationOptions
+): Promise<CodingAgentExtensionError | undefined> {
+  const { instrumentationContext, signal, getServices, turnRunId, timeoutMs } =
+    options;
+  try {
+    const context: CodingAgentExtensionEventContext = Object.freeze({
+      ...instrumentationContext,
+      runId: instrumentationContext.runId ?? turnRunId,
+      services: getServices(registration.extensionId),
+      signal,
+      stream: isStreamAgentEvent(event),
+    });
+    const task = Promise.resolve(
+      registration.invoke(structuredClone(event), context)
+    );
+    await raceWithExtensionTimeout(registration.extensionId, "event", task, {
+      signal,
+      timeoutMs,
+    });
+    return;
+  } catch (error) {
+    return error instanceof CodingAgentExtensionError
+      ? error
+      : new CodingAgentExtensionError(registration.extensionId, "event", error);
+  }
+}
+
 async function* observeEvents(
   source: AsyncIterable<AgentEvent>,
   instrumentationContext: AgentInstrumentationContext,
@@ -73,39 +111,22 @@ async function* observeEvents(
   timeoutMs: number | undefined
 ): AsyncIterable<AgentEvent> {
   const failures: CodingAgentExtensionError[] = [];
+  const options: ExtensionEventInvocationOptions = {
+    getServices,
+    instrumentationContext,
+    signal,
+    timeoutMs,
+    turnRunId,
+  };
   for await (const event of source) {
     if (!signal.aborted) {
       for (const registration of registrations) {
         if (registration.type !== event.type) {
           continue;
         }
-        try {
-          const context: CodingAgentExtensionEventContext = Object.freeze({
-            ...instrumentationContext,
-            runId: instrumentationContext.runId ?? turnRunId,
-            services: getServices(registration.extensionId),
-            signal,
-            stream: isStreamAgentEvent(event),
-          });
-          const task = Promise.resolve(
-            registration.invoke(structuredClone(event), context)
-          );
-          await raceWithExtensionTimeout(
-            registration.extensionId,
-            "event",
-            task,
-            { signal, timeoutMs }
-          );
-        } catch (error) {
-          failures.push(
-            error instanceof CodingAgentExtensionError
-              ? error
-              : new CodingAgentExtensionError(
-                  registration.extensionId,
-                  "event",
-                  error
-                )
-          );
+        const failure = await invokeRegistration(registration, event, options);
+        if (failure) {
+          failures.push(failure);
         }
       }
     }

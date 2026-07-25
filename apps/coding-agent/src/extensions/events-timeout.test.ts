@@ -27,6 +27,7 @@ describe("extension event timeouts", () => {
     const wrapped = instrumentation.wrapTurn(
       {
         async *events() {
+          await Promise.resolve();
           yield { type: "turn-start" } satisfies AgentEvent;
         },
         runId: "run-1",
@@ -57,6 +58,7 @@ describe("extension event timeouts", () => {
     const wrapped = instrumentation.wrapTurn(
       {
         async *events() {
+          await Promise.resolve();
           yield { type: "turn-end" } satisfies AgentEvent;
         },
         runId: "durable-run",
