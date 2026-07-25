@@ -175,7 +175,7 @@ function addTransientTrace(
   phase: number
 ): void {
   const trace = Array.from(
-    { length: 36 },
+    { length: 16 },
     (_, index) =>
       `TRANSIENT phase=${phase} sample=${index} digest=${createHash("sha256").update(`${seed}:${phase}:${index}`).digest("hex")}; ignore this telemetry when preserving durable state.`
   ).join("\n");

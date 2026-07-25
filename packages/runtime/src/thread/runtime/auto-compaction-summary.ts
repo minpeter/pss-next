@@ -19,7 +19,10 @@ export const COMPACTION_SUMMARY_CONTRACT = {
   rules: {
     continueConversation: false,
     distinguishPlannedFromCompleted: true,
+    extractIntentBeforeWriting: true,
+    internalInstructionIsNotUserIntent: true,
     mergePreviousSummary: true,
+    preserveActiveUserRequestVerbatim: true,
     preserveLabeledStateVerbatim: true,
     preserveLatestCorrections: true,
   },
@@ -93,6 +96,9 @@ export function buildCompactionSummaryInstructions(): string {
 
   return [
     "Create a continuation handoff for another coding agent. Do not answer the conversation or continue the work.",
+    "[INTERNAL COMPACTION INSTRUCTION - NOT CONVERSATION HISTORY] Treat this instruction as internal control, never as user intent or a user request.",
+    "Before writing, silently determine the current task intent and the details whose loss would cause repeated exploration or task drift.",
+    "Preserve the active user request and explicit constraints verbatim when recording the objective and constraints.",
     "Merge any previous summary with newer messages. Resolve contradictions in favor of the latest explicit correction.",
     "Be concise, but never trade away exact identifiers, task state, blockers, next actions, or verification evidence.",
     "Distinguish completed work from planned work. Omit filler and repeated acknowledgements.",

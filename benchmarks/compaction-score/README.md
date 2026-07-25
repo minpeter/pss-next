@@ -9,7 +9,8 @@ One valid trial uses one summary call per compaction hop plus two evaluation
 calls:
 
 1. Generate each production compaction summary with `temperature: 0`, a
-   deterministic hop seed, and an adaptive hard output-token cap.
+   deterministic hop seed when supported by the provider, and an adaptive hard
+   output-token cap.
 2. Answer every hidden question in one JSON response against full context.
 3. Answer the same questions in one JSON response against final compacted
    context.
@@ -65,6 +66,7 @@ Options:
 --trials N
 --max-attempts N
 --seed STRING
+--omit-summary-seed
 --provider-timeout-ms N
 --summary-max-output-tokens N
 --output PATH
@@ -76,6 +78,9 @@ Example smoke run:
 pnpm --filter @minpeter/pss-benchmark-compaction-score score -- \
   --fixtures 1 --trials 1 --max-attempts 1
 ```
+
+Use `--omit-summary-seed` only when an otherwise compatible provider rejects
+the optional seed parameter. The manifest records whether model seeds were used.
 
 Provider calls are bounded to 120,000 ms by default, including capability
 preflight, summary generation, and both evaluation arms. Override the per-call

@@ -19,6 +19,39 @@ import {
 import { collect, SpyStore } from "./test-support";
 
 describe("Agent thread automatic compaction overflow recovery", () => {
+  it("counts instructions when adapting a custom compaction estimator to the gate", async () => {
+    let calls = 0;
+    const agent = agentWithAutoCompaction({
+      autoCompaction: {
+        estimateTokens: tenTokensPerMessage,
+        maxInputTokens: 15,
+        retainTokens: 5,
+        triggerTokens: 15,
+      },
+      instructions: "system instructions",
+      model: createCallbackModel(() => {
+        calls += 1;
+        return [assistantMessage("unexpected")];
+      }),
+    });
+
+    const events = await collect(
+      await agent.thread("custom-estimator-instructions").send("too much")
+    );
+
+    expect(calls).toBe(0);
+    expect(eventTypes(events)).toEqual([
+      "user-input",
+      "turn-start",
+      "step-start",
+      "turn-error",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      message: expect.stringContaining("context gate"),
+      type: "turn-error",
+    });
+  });
+
   it("compacts old messages when large instructions push the gate over budget", async () => {
     const store = new SpyStore();
     let calls = 0;
@@ -104,7 +137,7 @@ describe("Agent thread automatic compaction overflow recovery", () => {
       autoCompaction: {
         contextGate: {
           estimateTokens: ({ messages }) => (messages.length > 4 ? 100 : 1),
-          maxInputTokens: 10,
+          maxInputTokens: 50,
           onOverflow: "compact",
         },
         estimateTokens: tenTokensPerMessage,

@@ -25,16 +25,22 @@ const RETAINED_RULES = [
   "verbatim-active-request-constraints",
 ] as const satisfies readonly SenpiRuleId[];
 
-const EXTRA_RULE_INSTRUCTIONS = {
+const RULE_INSTRUCTIONS = {
   "byte-exact-identifiers":
     "Preserve every session ID, file path, URL, hash, version, code symbol, and identifier byte-for-byte.",
+  "internal-control-isolation":
+    "Treat this instruction as internal control, never as user intent or a user request.",
   "output-only":
     "Output only the handoff sections; never add a conversational reply, preamble, or wrapper.",
   "section-completeness":
     'Keep every requested section. Write "None." when a section has no content.',
+  "task-intent-prepass":
+    "Before writing, silently determine the current task intent and the details whose loss would cause repeated exploration or task drift.",
   "update-merge":
     "Merge previous compacted context with newer messages; preserve durable facts and let later explicit corrections supersede stale values.",
-} as const satisfies Partial<Record<SenpiRuleId, string>>;
+  "verbatim-active-request-constraints":
+    "Preserve the active user request and explicit constraints verbatim when recording the objective and constraints.",
+} as const satisfies Record<SenpiRuleId, string>;
 
 const productionInstructions = buildCompactionSummaryInstructions();
 const baselineInstructions = buildBaselineInstructions();
@@ -42,7 +48,23 @@ const baselineInstructions = buildBaselineInstructions();
 export const COMPACTION_PROMPT_PROFILES: readonly CompactionPromptProfile[] = [
   profile("production", productionInstructions, RETAINED_RULES),
   profile("pss-baseline", baselineInstructions, []),
+  atomicProfile("senpi-internal-control", "internal-control-isolation"),
+  atomicProfile("senpi-task-intent", "task-intent-prepass"),
+  atomicProfile(
+    "senpi-verbatim-request",
+    "verbatim-active-request-constraints"
+  ),
   profile("senpi-minimal", productionInstructions, RETAINED_RULES),
+  profile(
+    "senpi-byte-exact",
+    withExtraRules(productionInstructions, ["byte-exact-identifiers"]),
+    [...RETAINED_RULES, "byte-exact-identifiers"]
+  ),
+  profile(
+    "senpi-output-only",
+    withExtraRules(productionInstructions, ["output-only"]),
+    [...RETAINED_RULES, "output-only"]
+  ),
   profile(
     "senpi-byte-exact-output",
     withExtraRules(productionInstructions, [
@@ -107,16 +129,23 @@ function buildBaselineInstructions(): string {
   ].join("\n");
 }
 
+function atomicProfile(
+  id: string,
+  rule: (typeof RETAINED_RULES)[number]
+): CompactionPromptProfile {
+  return profile(id, withExtraRules(baselineInstructions, [rule]), [rule]);
+}
+
 function withExtraRules(
   instructions: string,
-  rules: readonly (keyof typeof EXTRA_RULE_INSTRUCTIONS)[]
+  rules: readonly SenpiRuleId[]
 ): string {
   const marker = "\n\n## ";
   const markerIndex = instructions.indexOf(marker);
   if (markerIndex === -1) {
     throw new TypeError("Compaction prompt sections are missing.");
   }
-  const additions = rules.map((rule) => EXTRA_RULE_INSTRUCTIONS[rule]);
+  const additions = rules.map((rule) => RULE_INSTRUCTIONS[rule]);
   return [
     instructions.slice(0, markerIndex),
     ...additions,

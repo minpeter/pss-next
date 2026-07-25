@@ -136,6 +136,30 @@ describe("selectAutoCompactionRange", () => {
     ).toEqual({ endSeqExclusive: 6, startSeq: 0 });
   });
 
+  it("uses the latest effective prefix when a newer compaction covers less history", () => {
+    const history = [
+      userMessage("u0"),
+      assistantMessage("a1"),
+      userMessage("u2"),
+      assistantMessage("a3"),
+      userMessage("u4"),
+      assistantMessage("a5"),
+      userMessage("u6"),
+      assistantMessage("a7"),
+    ];
+
+    expect(
+      selectAutoCompactionRange({
+        compactions: [
+          compactionRecord(6, "older wider summary"),
+          compactionRecord(2, "newer shorter summary"),
+        ],
+        history,
+        policy: policy(),
+      })
+    ).toEqual({ endSeqExclusive: 6, startSeq: 0 });
+  });
+
   it("counts the model-facing wrapper around a chained summary", () => {
     const history = [
       userMessage("u0"),

@@ -28,7 +28,10 @@ describe("automatic compaction summary contract", () => {
     expect(COMPACTION_SUMMARY_CONTRACT.rules).toMatchObject({
       continueConversation: false,
       distinguishPlannedFromCompleted: true,
+      extractIntentBeforeWriting: true,
+      internalInstructionIsNotUserIntent: true,
       mergePreviousSummary: true,
+      preserveActiveUserRequestVerbatim: true,
       preserveLabeledStateVerbatim: true,
       preserveLatestCorrections: true,
     });

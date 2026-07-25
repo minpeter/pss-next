@@ -10,15 +10,24 @@ const assistant = (content: string): ModelMessage => ({
 
 export function buildSparseFactFixture(seed: string): CompactionFixture {
   const exactId = `SPARSE-${hash(seed, "id", 10)}`;
-  const toolOnly = `tool-only checksum ${hash(seed, "tool", 16)}`;
-  const boundaryFact = `boundary nonce ${hash(seed, "boundary", 12)}`;
+  const toolChecksum = hash(seed, "tool", 16);
+  const boundaryNonce = hash(seed, "boundary", 12);
   const messages: ModelMessage[] = [
-    user(`Retain exact ID ${exactId}; do not infer missing values.`),
-    assistant("The sparse exact identifier is durable."),
+    user(
+      [
+        "Retain the following sparse durable facts exactly.",
+        `Sparse exact ID: ${exactId}`,
+        "Sparse deployment owner: unknown",
+        "Do not invent values that are not present in this conversation.",
+      ].join("\n")
+    ),
+    assistant(
+      `Recorded Sparse exact ID ${exactId}. Sparse deployment owner remains unknown.`
+    ),
     user("Run sparse inspection."),
     toolCall("sparse-inspection"),
-    toolResult("sparse-inspection", toolOnly),
-    assistant("The tool-only checksum is durable."),
+    toolResult("sparse-inspection", toolChecksum),
+    assistant(`The tool-only checksum is ${toolChecksum}.`),
   ];
   for (let index = 0; index < 250; index += 1) {
     messages.push(
@@ -29,8 +38,8 @@ export function buildSparseFactFixture(seed: string): CompactionFixture {
     );
   }
   messages.push(
-    user(`Keep ${boundaryFact} exactly at the compaction boundary.`),
-    assistant("The boundary fact is durable.")
+    user(`Boundary nonce: ${boundaryNonce}. Keep this exact boundary nonce.`),
+    assistant(`The boundary nonce is ${boundaryNonce}.`)
   );
   const end = messages.length;
   messages.push(
@@ -42,8 +51,8 @@ export function buildSparseFactFixture(seed: string): CompactionFixture {
     messages,
     questions: [
       question("exact-recall", exactId, "What is the sparse exact ID?"),
-      question("tool-history", toolOnly, "What is the tool-only checksum?"),
-      question("boundary-recall", boundaryFact, "What is the boundary nonce?"),
+      question("tool-history", toolChecksum, "What is the tool-only checksum?"),
+      question("boundary-recall", boundaryNonce, "What is the boundary nonce?"),
       question(
         "hallucination-resistance",
         "unknown",

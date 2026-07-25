@@ -68,16 +68,15 @@ export function selectAutoCompactionRange({
 function latestPrefixCompaction(
   compactions: readonly ThreadCompactionRecord[]
 ): ThreadCompactionRecord | undefined {
-  let latest: ThreadCompactionRecord | undefined;
-  for (const record of compactions) {
-    if (record.startSeq !== 0) {
-      continue;
-    }
-    if (!latest || record.endSeqExclusive > latest.endSeqExclusive) {
-      latest = record;
+  // Newest-first matches ModelMessageHistory nonOverlappedCompactions: a later
+  // overlapping prefix wins even when it covers less history.
+  for (let index = compactions.length - 1; index >= 0; index -= 1) {
+    const record = compactions[index];
+    if (record?.startSeq === 0) {
+      return record;
     }
   }
-  return latest;
+  return;
 }
 
 function isSafeCompactionBoundary(

@@ -14,8 +14,8 @@ const CHARACTERIZED_FIXTURES = [
   },
   {
     compactionEnds: [26, 50],
-    digest: "a77bc8f4b01b351921cbe9d3e4846942ca6502a36607c699326939e2a65588a6",
-    messages: 56,
+    digest: "bbe5118d8bb37a65d8e3b9f379d835dc206813958b793045cdf53624d6a8627c",
+    messages: 58,
     questions: 17,
     scenario: "lifecycle",
     seed: "goal2-lifecycle",

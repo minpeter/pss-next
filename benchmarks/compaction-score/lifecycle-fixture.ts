@@ -95,7 +95,13 @@ export function buildLifecycleFixture(seed: string): CompactionFixture {
     user("Do not change the current migration decisions."),
     assistant("The current migration decisions remain authoritative."),
     user("We will continue from the storage migration next."),
-    assistant("Ready to continue from the recorded next action.")
+    assistant("Ready to continue from the recorded next action."),
+    user(
+      "The production domain is unknown. The deployment ID is unknown. Do not invent either value."
+    ),
+    assistant(
+      "Recorded that the production domain is unknown and the deployment ID is unknown."
+    )
   );
 
   const questions: FixtureQuestion[] = [

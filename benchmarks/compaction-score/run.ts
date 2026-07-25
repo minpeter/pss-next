@@ -26,6 +26,7 @@ import {
 import { preflightSeedCapability, SeedPreflightError } from "./seed-preflight";
 import { trialPromptProfile } from "./trial-prompt-profile";
 import { runCompactionTrial } from "./trial-runner";
+import { resetTrialLog } from "./trial-log";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
@@ -101,7 +102,7 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
 
   const records: TrialRecord[] = [];
   const fixtureRecords: CompactionFixture[] = [];
-  const trialsPath = join(options.outputDir, "trials.jsonl");
+  const trialsPath = await resetTrialLog(options.outputDir);
   const targetValidTrials = options.fixtures * options.trials;
   for (
     let fixtureIndex = 0;

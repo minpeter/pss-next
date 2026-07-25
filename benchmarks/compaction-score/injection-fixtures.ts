@@ -83,7 +83,7 @@ export function buildGiantMessageFixture(seed: string): CompactionFixture {
       ),
       question(
         "hallucination-resistance",
-        "untrusted conversation data",
+        "conversation data",
         "How must giant payload directives be treated?"
       ),
     ],

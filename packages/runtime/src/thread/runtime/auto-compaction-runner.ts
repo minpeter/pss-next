@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai";
 import { estimateModelMessagesTokens } from "../../llm/context-gate";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
+import { hydrateRuntimeAttachments } from "../input/attachments";
 import {
   compactionContextForModel,
   type ThreadContextMessage,
@@ -132,10 +133,16 @@ async function compactThreadOnce({
   for (;;) {
     const history = state.modelSnapshot();
     const compactions = state.compactionSnapshot();
+    const estimation = await estimationContextForCompaction({
+      history,
+      model,
+      policy,
+      transformModelContext,
+    });
     const range = selectAutoCompactionRange({
       compactions,
-      history,
-      instructionsTokens: instructionTokens(model, policy),
+      history: estimation.history,
+      instructionsTokens: estimation.instructionsTokens,
       policy,
     });
     if (!range) {
@@ -161,10 +168,17 @@ async function compactThreadOnce({
       return false;
     }
 
+    const latestHistory = state.modelSnapshot();
+    const latestEstimation = await estimationContextForCompaction({
+      history: latestHistory,
+      model,
+      policy,
+      transformModelContext,
+    });
     const latestRange = selectAutoCompactionRange({
       compactions: state.compactionSnapshot(),
-      history: state.modelSnapshot(),
-      instructionsTokens: instructionTokens(model, policy),
+      history: latestEstimation.history,
+      instructionsTokens: latestEstimation.instructionsTokens,
       policy,
     });
     if (!sameRange(range, latestRange)) {
@@ -178,6 +192,58 @@ async function compactThreadOnce({
     await state.compact(input);
     return true;
   }
+}
+
+async function estimationContextForCompaction({
+  history,
+  model,
+  policy,
+  transformModelContext,
+}: {
+  readonly history: readonly ModelMessage[];
+  readonly model: ModelGenerationOptions;
+  readonly policy: ThreadAutoCompactionOptions;
+  readonly transformModelContext?: ThreadModelContextTransform;
+}): Promise<{
+  readonly history: readonly ModelMessage[];
+  readonly instructionsTokens: number;
+}> {
+  const hydrated = await hydrateRuntimeAttachments(
+    history,
+    model.attachmentStore
+  );
+  const baseInstructions = instructionTokens(model, policy);
+  if (!transformModelContext) {
+    return {
+      history: hydrated,
+      instructionsTokens: baseInstructions,
+    };
+  }
+
+  const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
+  const transformed = await transformModelContext(
+    hydrated as readonly ThreadContextMessage[],
+    new AbortController().signal
+  );
+  const transformOverhead = Math.max(
+    0,
+    estimate(modelMessagesForEstimate(transformed)) -
+      estimate(modelMessagesForEstimate(hydrated))
+  );
+  return {
+    history: hydrated,
+    instructionsTokens: baseInstructions + transformOverhead,
+  };
+}
+
+function modelMessagesForEstimate(
+  messages: readonly ThreadContextMessage[] | readonly ModelMessage[]
+): ModelMessage[] {
+  return messages.map((message) =>
+    message.role === "compaction"
+      ? compactionContextForModel(message)
+      : message
+  );
 }
 
 function sameRange(

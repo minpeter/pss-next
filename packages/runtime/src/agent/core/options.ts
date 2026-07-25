@@ -185,10 +185,16 @@ export function normalizeAgentAutoCompactionOptions(
   }
 
   const options = value ?? {};
+  const contextGate = normalizeContextGateOptions(options.contextGate);
   const maxInputTokens =
     options.maxInputTokens ?? DEFAULT_AGENT_MAX_INPUT_TOKENS;
+  const gateBudget =
+    contextGate !== undefined && contextGate !== false
+      ? contextGate.maxInputTokens
+      : undefined;
+  const thresholdBudget = gateBudget ?? maxInputTokens;
   const triggerTokens =
-    options.triggerTokens ?? Math.floor(maxInputTokens * 0.8);
+    options.triggerTokens ?? Math.floor(thresholdBudget * 0.8);
   const retainTokens = options.retainTokens ?? Math.floor(triggerTokens / 2);
 
   if (!isPositiveInteger(maxInputTokens)) {
@@ -206,6 +212,18 @@ export function normalizeAgentAutoCompactionOptions(
   if (triggerTokens > maxInputTokens) {
     throw new TypeError(
       "Agent: options.autoCompaction.triggerTokens must not exceed maxInputTokens."
+    );
+  }
+
+  if (
+    gateBudget !== undefined &&
+    contextGate !== false &&
+    contextGate !== undefined &&
+    contextGate.onOverflow !== "error" &&
+    triggerTokens > gateBudget
+  ) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.triggerTokens must not exceed the contextGate maxInputTokens budget."
     );
   }
 
@@ -229,8 +247,6 @@ export function normalizeAgentAutoCompactionOptions(
       "Agent: options.autoCompaction.estimateTokens must be a function."
     );
   }
-
-  const contextGate = normalizeContextGateOptions(options.contextGate);
 
   return {
     ...(contextGate === undefined ? {} : { contextGate }),

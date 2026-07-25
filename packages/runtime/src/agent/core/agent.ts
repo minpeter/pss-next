@@ -258,8 +258,17 @@ function derivedContextGate(
       ? {}
       : {
           estimateTokens: ({
+            instructions,
             messages,
-          }: ModelContextTokenEstimateInput): number => estimate(messages),
+          }: ModelContextTokenEstimateInput): number => {
+            if (!instructions) {
+              return estimate(messages);
+            }
+            return estimate([
+              { content: instructions, role: "system" },
+              ...messages,
+            ]);
+          },
         }),
     maxInputTokens: autoCompaction.maxInputTokens,
     onOverflow: "compact" as const,

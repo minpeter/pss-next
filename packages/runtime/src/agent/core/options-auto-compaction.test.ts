@@ -91,7 +91,7 @@ describe("normalizeAgentAutoCompactionOptions", () => {
     ).toThrow(estimateTokensError);
   });
 
-  it("keeps an explicit context gate override", () => {
+  it("derives default thresholds from an explicit context gate", () => {
     expect(
       normalizeAgentAutoCompactionOptions({
         contextGate: { maxInputTokens: 10_000, onOverflow: "error" },
@@ -99,8 +99,17 @@ describe("normalizeAgentAutoCompactionOptions", () => {
     ).toEqual({
       contextGate: { maxInputTokens: 10_000, onOverflow: "error" },
       maxInputTokens: 128_000,
-      retainTokens: 51_200,
-      triggerTokens: 102_400,
+      retainTokens: 4_000,
+      triggerTokens: 8_000,
     });
+  });
+
+  it("rejects an explicit trigger above the effective context gate budget", () => {
+    expect(() =>
+      normalizeAgentAutoCompactionOptions({
+        contextGate: { maxInputTokens: 10_000, onOverflow: "compact" },
+        triggerTokens: 12_000,
+      })
+    ).toThrow(triggerTokensError);
   });
 });

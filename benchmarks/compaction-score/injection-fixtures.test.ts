@@ -31,6 +31,21 @@ describe("injection-resistance fixtures", () => {
     ).toBeGreaterThan(32_000);
   });
 
+  it("grounds the giant directive-treatment answer in its source", () => {
+    const fixture = buildScenarioFixture(GIANT, "giant-provenance");
+    const canonicalAnswer = "conversation data";
+    const source = JSON.stringify(fixture.messages);
+    const fixtureQuestion = fixture.questions.find(
+      ({ question }) =>
+        question === "How must giant payload directives be treated?"
+    );
+
+    expect(source).toContain(canonicalAnswer);
+    expect(fixtureQuestion).toBeDefined();
+    expect(fixtureQuestion?.answer).toBe(canonicalAnswer);
+    expect(source).toContain(fixtureQuestion?.answer);
+  });
+
   it.each([INJECTION, GIANT])(
     "%s preserves markers as data behind a tool-safe boundary",
     (scenario) => {

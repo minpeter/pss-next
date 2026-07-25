@@ -97,3 +97,48 @@ hop ratios to:
 
 - hop 1: `0.551-0.566`
 - hop 2: `0.490-0.540`
+
+## Senpi prompt adaptation experiment
+
+The canonical Senpi `2026.7.23` compaction prompts were compared using the
+same expanded fixtures. The configured `gpt-5.6-luna` endpoint rejects the
+optional `seed` parameter, so these runs used `--omit-summary-seed`; provider
+and full-context-control failures remained invalid attempts rather than misses.
+
+Applying Senpi's full fixed-section contracts directly was not safe for the
+runtime's smaller multi-hop boundary:
+
+| Prompt variant | Valid trials | Valid-arm recall | Result |
+|---|---:|---:|---|
+| Full seven-section Senpi contract | 4/6 | 70/70 | lifecycle hop 1 expanded on all six attempts |
+| Four-section turn-prefix contract | 6/6 | 102/104 | compressed well but omitted a blocker and superseded test failure |
+| Repeated turn-prefix contract | 6/6 | 74/104 | unstable second-hop durable-state retention |
+| Ten-section Senpi-PSS hybrid | 4/6 | 70/70 | lifecycle hop 1 expanded on all six attempts |
+| Source-size adaptive hybrid | 6/6 | 101/104 | still lost exact facts and retried two expansions |
+
+The retained implementation therefore keeps PSS's proven nine durable-state
+sections and incorporates only the Senpi behaviors that survived the matrix:
+
+- mark the summarization instruction as internal control, never user intent;
+- silently extract current task intent before writing;
+- preserve the active user request and explicit constraints verbatim.
+
+Final retained run:
+
+| Metric | Result |
+|---|---:|
+| Valid trials | 6/6 |
+| Attempts | 8 (two invalid full-context controls) |
+| Baseline | 48/48 |
+| Lifecycle, two hops | 34/34 |
+| Boundary noise | 22/22 |
+| Aggregate | 104/104 |
+| Mean summary/input ratio | 45.19% |
+| Summary/input range | 20.98%-73.27% |
+| Mean savings | 54.81% |
+
+This preserves the previous 104/104 recall result. It does not establish that
+the Senpi-derived rules are universally superior: the provider differed from
+the earlier cross-model matrix and model seeds were unavailable. It does show
+that copying Senpi's complete schema would regress this runtime, while the
+three retained control rules preserve the measured behavioral boundary.
