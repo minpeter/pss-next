@@ -143,15 +143,26 @@ export class ExtensionHostLifecycle {
           }),
           signal: this.#controller.signal,
         });
-        const cleanup = await this.#run(extension.id, "activate", async () => {
-          const result = await activate(context);
-          if (result !== undefined && typeof result !== "function") {
-            throw new TypeError(
-              `Coding agent extension "${extension.id}" activation handler must return a cleanup function`
-            );
+        const cleanup = await this.#run(
+          extension.id,
+          "activate",
+          async () => {
+            const result = await activate(context);
+            if (result !== undefined && typeof result !== "function") {
+              throw new TypeError(
+                `Coding agent extension "${extension.id}" activation handler must return a cleanup function`
+              );
+            }
+            return result;
+          },
+          {
+            onLateResult: async (result) => {
+              if (typeof result === "function") {
+                await result();
+              }
+            },
           }
-          return result;
-        });
+        );
         if (cleanup !== undefined) {
           if (this.#disposed) {
             await cleanup();
@@ -195,7 +206,10 @@ export class ExtensionHostLifecycle {
   async #run<Result>(
     extensionId: string,
     phase: "activate" | "configure",
-    callback: () => Promise<Result> | Result
+    callback: () => Promise<Result> | Result,
+    extras: {
+      readonly onLateResult?: (result: Result) => void | Promise<void>;
+    } = {}
   ): Promise<Result> {
     return await runExtensionOperation({
       callback,
@@ -203,6 +217,9 @@ export class ExtensionHostLifecycle {
       extensionId,
       hasInteractiveUiRequests: () =>
         this.#services.hasInteractiveUiRequests(extensionId),
+      ...(extras.onLateResult === undefined
+        ? {}
+        : { onLateResult: extras.onLateResult }),
       phase,
       timeoutMs: this.#timeoutMs,
     });

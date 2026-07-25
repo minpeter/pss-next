@@ -3,7 +3,7 @@ import { extensionScopePaths, extensionTrustPath } from "./paths";
 import {
   readExtensionSettings,
   readTrustedProjects,
-  writeExtensionSettings,
+  updateExtensionSettings,
   writeTrustedProjects,
 } from "./settings";
 import type {
@@ -60,22 +60,23 @@ export async function setExtensionEnabled(
     throw new TypeError("Provide extension ids or --all");
   }
   const paths = await extensionScopePaths(context);
-  const document = await readExtensionSettings(paths.settingsPath);
-  const selected = context.all
-    ? new Set(document.extensions.map((entry) => entry.id))
-    : new Set(context.ids);
-  assertIdsExist(document.extensions, selected);
-  const changed = document.extensions.map((entry) =>
-    selected.has(entry.id) ? { ...entry, enabled: context.enabled } : entry
-  );
-  await writeExtensionSettings(paths.settingsPath, {
-    ...document,
-    extensions: changed,
+  const selected = context.all ? null : new Set(context.ids);
+  const next = await updateExtensionSettings(paths.settingsPath, (document) => {
+    const ids =
+      selected ?? new Set(document.extensions.map((entry) => entry.id));
+    assertIdsExist(document.extensions, ids);
+    return {
+      ...document,
+      extensions: document.extensions.map((entry) =>
+        ids.has(entry.id) ? { ...entry, enabled: context.enabled } : entry
+      ),
+    };
   });
   if (context.enabled && context.scope === "project") {
     await trustProject(context);
   }
-  return changed.filter((entry) => selected.has(entry.id));
+  const ids = selected ?? new Set(next.extensions.map((entry) => entry.id));
+  return next.extensions.filter((entry) => ids.has(entry.id));
 }
 
 export async function trustProject(

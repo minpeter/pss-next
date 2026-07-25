@@ -14,6 +14,7 @@ import {
   assertTransformDecision,
 } from "@minpeter/pss-runtime";
 import { CodingAgentExtensionError } from "./error";
+import { raceWithExtensionTimeout } from "./operation-timeout";
 
 export interface RegisteredAgentHooks {
   readonly extensionId: string;
@@ -236,12 +237,6 @@ function invoke<Result>(
   callback: () => Promise<Result> | Result,
   options: { readonly signal?: AbortSignal; readonly timeoutMs?: number }
 ): Promise<Result> {
-  const { signal, timeoutMs } = options;
-  if (signal?.aborted) {
-    return Promise.reject(
-      new CodingAgentExtensionError(extensionId, phase, new Error("aborted"))
-    );
-  }
   const task = (async () => {
     try {
       return await callback();
@@ -252,42 +247,5 @@ function invoke<Result>(
       throw new CodingAgentExtensionError(extensionId, phase, error);
     }
   })();
-  if (
-    timeoutMs === undefined ||
-    !Number.isFinite(timeoutMs) ||
-    timeoutMs <= 0
-  ) {
-    return task;
-  }
-  return Promise.race([
-    task,
-    createTimeout(extensionId, phase, signal, timeoutMs),
-  ]);
-}
-
-function createTimeout(
-  extensionId: string,
-  phase: "hook",
-  signal: AbortSignal | undefined,
-  timeoutMs: number
-): Promise<never> {
-  return new Promise((_, reject) => {
-    const abort = () => {
-      clearTimeout(timer);
-      reject(
-        new CodingAgentExtensionError(extensionId, phase, new Error("aborted"))
-      );
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      reject(
-        new CodingAgentExtensionError(
-          extensionId,
-          phase,
-          new Error(`hook timed out after ${timeoutMs}ms`)
-        )
-      );
-    }, timeoutMs);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
+  return raceWithExtensionTimeout(extensionId, phase, task, options);
 }

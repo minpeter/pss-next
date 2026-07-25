@@ -267,39 +267,9 @@ export class ThreadState {
     let state = decodeStoredThreadState(stored);
     if (stored) {
       if (this.#migrations.length > 0) {
-        const migrated = await applyThreadStateMigrations({
-          migrations: this.#migrations,
-          state,
-          threadKey: this.#persistence.key,
-        });
-        if (migrated.changed) {
-          const result = await this.#persistence.store.commit(
-            this.#persistence.key,
-            {
-              state: encodeThreadSnapshot(
-                migrated.history,
-                migrated.compactions,
-                migrated.appliedMigrations
-              ),
-            },
-            { expectedVersion: stored.version }
-          );
-          if (result.ok) {
-            state = migrated;
-            nextVersion = result.version;
-          } else {
-            // Another writer already committed this migration; reload the
-            // now-migrated snapshot instead of surfacing a spurious conflict.
-            const reloaded = await this.#persistence.store.load(
-              this.#persistence.key
-            );
-            if (reloaded === null) {
-              throw new ThreadCommitConflictError(this.#persistence.key);
-            }
-            state = decodeStoredThreadState(reloaded);
-            nextVersion = reloaded.version;
-          }
-        }
+        const migrated = await this.#migrateStoredThread(state, stored.version);
+        state = migrated.state;
+        nextVersion = migrated.version;
       }
     } else if (this.#migrations.length > 0) {
       // New threads are post-migration state; mark every configured
@@ -317,14 +287,71 @@ export class ThreadState {
       state.compactions
     );
   }
+
+  /**
+   * Apply configured migrations, retrying when a concurrent writer wins the
+   * optimistic commit. After each conflict the latest snapshot is reloaded;
+   * pending migrations are re-applied unless the winner already recorded them.
+   */
+  async #migrateStoredThread(
+    initialState: ReturnType<typeof decodeStoredThreadState>,
+    initialVersion: string
+  ): Promise<{
+    readonly state: ReturnType<typeof decodeStoredThreadState>;
+    readonly version: string;
+  }> {
+    let state = initialState;
+    let expectedVersion = initialVersion;
+    for (let attempt = 0; attempt < MAX_MIGRATION_COMMIT_ATTEMPTS; attempt++) {
+      const migrated = await applyThreadStateMigrations({
+        migrations: this.#migrations,
+        state,
+        threadKey: this.#persistence.key,
+      });
+      if (!migrated.changed) {
+        return { state: migrated, version: expectedVersion };
+      }
+      const result = await this.#persistence.store.commit(
+        this.#persistence.key,
+        {
+          state: encodeThreadSnapshot(
+            migrated.history,
+            migrated.compactions,
+            migrated.appliedMigrations
+          ),
+        },
+        { expectedVersion }
+      );
+      if (result.ok) {
+        return { state: migrated, version: result.version };
+      }
+      const reloaded = await this.#persistence.store.load(
+        this.#persistence.key
+      );
+      if (reloaded === null) {
+        throw new ThreadCommitConflictError(this.#persistence.key);
+      }
+      state = decodeStoredThreadState(reloaded);
+      expectedVersion = reloaded.version;
+    }
+    throw new ThreadCommitConflictError(this.#persistence.key);
+  }
 }
 
-function seedAppliedMigrations(
+const MAX_MIGRATION_COMMIT_ATTEMPTS = 8;
+
+/** @internal exported for unit tests of special-key seeding */
+export function seedAppliedMigrations(
   migrations: readonly ThreadStateMigration[]
 ): AppliedThreadMigrations {
-  const applied: Record<string, number> = {};
+  const applied: Record<string, number> = Object.create(null);
   for (const migration of migrations) {
-    applied[migration.id] = migration.version;
+    Object.defineProperty(applied, migration.id, {
+      configurable: true,
+      enumerable: true,
+      value: migration.version,
+      writable: true,
+    });
   }
   return applied;
 }

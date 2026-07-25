@@ -1,6 +1,8 @@
 import {
   type AgentEvent,
+  type AgentHooks,
   type AgentInstrumentation,
+  type AgentTurn,
   isLifecycleAgentEvent,
   isToolAgentEvent,
 } from "@minpeter/pss-runtime";
@@ -9,6 +11,7 @@ export interface TurnObservabilityEntry {
   readonly event: AgentEvent["type"];
   readonly label?: string;
   readonly message?: string;
+  readonly toolCallId?: string;
   readonly toolName?: string;
 }
 
@@ -30,6 +33,7 @@ export function createTurnEventCollector(): {
   readonly summary: () => TurnObservabilitySummary;
 } {
   const toolCalls: string[] = [];
+  const seenToolCalls = new Set<string>();
   const errors: string[] = [];
   let steps = 0;
 
@@ -39,7 +43,11 @@ export function createTurnEventCollector(): {
         steps += 1;
       }
       if (entry.event === "tool-call" && entry.toolName) {
-        toolCalls.push(entry.toolName);
+        const key = entry.toolCallId ?? entry.toolName;
+        if (!seenToolCalls.has(key)) {
+          seenToolCalls.add(key);
+          toolCalls.push(entry.toolName);
+        }
       }
       if (entry.event === "turn-error" && entry.message) {
         errors.push(entry.message);
@@ -60,7 +68,12 @@ export function describeEvent(
   label?: string
 ): TurnObservabilityEntry | undefined {
   if (isToolAgentEvent(event)) {
-    return { event: event.type, label, toolName: event.toolName };
+    return {
+      event: event.type,
+      label,
+      toolCallId: "toolCallId" in event ? event.toolCallId : undefined,
+      toolName: event.toolName,
+    };
   }
 
   if (isLifecycleAgentEvent(event)) {
@@ -72,17 +85,38 @@ export function describeEvent(
   return;
 }
 
+/**
+ * Records tool attempts before execution so failed/manual-recovery tools still
+ * appear in the wide-event summary even when no public tool-call event is emitted.
+ */
+export function createTurnObservabilityHooks(
+  options: TurnObservabilityOptions = {}
+): AgentHooks {
+  const record = options.log ?? (() => undefined);
+  return {
+    beforeToolExecution(checkpoint) {
+      record({
+        event: "tool-call",
+        label: options.label,
+        toolCallId: checkpoint.toolCallId,
+        toolName: checkpoint.toolName,
+      });
+    },
+  };
+}
+
 export function createTurnObservabilityInstrumentation(
   options: TurnObservabilityOptions = {}
 ): AgentInstrumentation {
   const record = options.log ?? (() => undefined);
 
   return {
-    wrapTurn(turn) {
+    wrapTurn(turn: AgentTurn) {
       return {
         events() {
           return observeEvents(turn.events(), options.label, record);
         },
+        runId: turn.runId,
       };
     },
   };

@@ -6,6 +6,7 @@ import {
   isStreamAgentEvent,
 } from "@minpeter/pss-runtime";
 import { CodingAgentExtensionError } from "./error";
+import { raceWithExtensionTimeout } from "./operation-timeout";
 import type {
   CodingAgentExtensionEventContext,
   CodingAgentExtensionServices,
@@ -23,11 +24,19 @@ export interface RegisteredCodingAgentExtensionEvent {
 export function createCodingAgentExtensionInstrumentation(
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
   signal: AbortSignal,
-  getServices: (extensionId: string) => CodingAgentExtensionServices
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
+  timeoutMs?: number
 ): AgentInstrumentation {
   return {
     wrapTurn: (turn, context) =>
-      wrapExtensionEvents(turn, context, registrations, signal, getServices),
+      wrapExtensionEvents(
+        turn,
+        context,
+        registrations,
+        signal,
+        getServices,
+        timeoutMs
+      ),
   };
 }
 
@@ -36,7 +45,8 @@ function wrapExtensionEvents(
   instrumentationContext: AgentInstrumentationContext,
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
   signal: AbortSignal,
-  getServices: (extensionId: string) => CodingAgentExtensionServices
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
+  timeoutMs: number | undefined
 ): AgentTurn {
   return {
     events: () =>
@@ -46,7 +56,8 @@ function wrapExtensionEvents(
         registrations,
         signal,
         getServices,
-        turn.runId
+        turn.runId,
+        timeoutMs
       ),
     runId: turn.runId,
   };
@@ -58,7 +69,8 @@ async function* observeEvents(
   registrations: readonly RegisteredCodingAgentExtensionEvent[],
   signal: AbortSignal,
   getServices: (extensionId: string) => CodingAgentExtensionServices,
-  turnRunId: string | undefined
+  turnRunId: string | undefined,
+  timeoutMs: number | undefined
 ): AsyncIterable<AgentEvent> {
   const failures: CodingAgentExtensionError[] = [];
   for await (const event of source) {
@@ -75,14 +87,24 @@ async function* observeEvents(
             signal,
             stream: isStreamAgentEvent(event),
           });
-          await registration.invoke(structuredClone(event), context);
+          const task = Promise.resolve(
+            registration.invoke(structuredClone(event), context)
+          );
+          await raceWithExtensionTimeout(
+            registration.extensionId,
+            "event",
+            task,
+            { signal, timeoutMs }
+          );
         } catch (error) {
           failures.push(
-            new CodingAgentExtensionError(
-              registration.extensionId,
-              "event",
-              error
-            )
+            error instanceof CodingAgentExtensionError
+              ? error
+              : new CodingAgentExtensionError(
+                  registration.extensionId,
+                  "event",
+                  error
+                )
           );
         }
       }

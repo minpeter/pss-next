@@ -8,7 +8,7 @@ import {
   removeExtensionPackage,
 } from "./package-installer";
 import { extensionScopePaths } from "./paths";
-import { readExtensionSettings, writeExtensionSettings } from "./settings";
+import { readExtensionSettings, updateExtensionSettings } from "./settings";
 import { parseExtensionSource } from "./source";
 import type {
   ExtensionManagerContext,
@@ -23,21 +23,28 @@ export async function removeExtension(
   }
 ): Promise<ExtensionSettingsEntry> {
   const paths = await extensionScopePaths(context);
-  const document = await readExtensionSettings(paths.settingsPath);
-  const entry = document.extensions.find((item) => item.id === context.id);
-  if (entry === undefined) {
-    throw new Error(`Extension "${context.id}" is not installed`);
-  }
-  await writeExtensionSettings(paths.settingsPath, {
-    ...document,
-    extensions: document.extensions.filter((item) => item.id !== entry.id),
+  let removed: ExtensionSettingsEntry | undefined;
+  let remainingPackages: readonly ExtensionSettingsEntry[] = [];
+  await updateExtensionSettings(paths.settingsPath, (document) => {
+    const entry = document.extensions.find((item) => item.id === context.id);
+    if (entry === undefined) {
+      throw new Error(`Extension "${context.id}" is not installed`);
+    }
+    removed = entry;
+    remainingPackages = document.extensions.filter(
+      (item) => item.id !== entry.id
+    );
+    return {
+      ...document,
+      extensions: remainingPackages,
+    };
   });
+  const entry = removed as ExtensionSettingsEntry;
   if (entry.target.kind === "package") {
     const packageName = entry.target.packageName;
     if (
-      !document.extensions.some(
+      !remainingPackages.some(
         (item) =>
-          item.id !== entry.id &&
           item.target.kind === "package" &&
           item.target.packageName === packageName
       )
@@ -107,10 +114,10 @@ export async function updateExtensions(
     });
   }
   const byId = new Map(updated.map((entry) => [entry.id, entry]));
-  await writeExtensionSettings(paths.settingsPath, {
-    ...document,
-    extensions: document.extensions.map((entry) => byId.get(entry.id) ?? entry),
-  });
+  await updateExtensionSettings(paths.settingsPath, (latest) => ({
+    ...latest,
+    extensions: latest.extensions.map((entry) => byId.get(entry.id) ?? entry),
+  }));
   return updated;
 }
 

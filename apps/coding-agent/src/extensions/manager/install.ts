@@ -9,6 +9,7 @@ import { extensionScopePaths } from "./paths";
 import {
   type ExtensionSettingsDocument,
   readExtensionSettings,
+  updateExtensionSettings,
   writeExtensionSettings,
 } from "./settings";
 import { type ParsedExtensionSource, parseExtensionSource } from "./source";
@@ -128,16 +129,36 @@ async function recordExtensionInstallation({
     target,
   };
   const writeSettings = context.settingsWriter ?? writeExtensionSettings;
-  await writeSettings(settingsPath, {
-    ...document,
-    extensions: [...document.extensions, entry],
-  });
+  // Re-read under the settings lock so concurrent installs cannot drop entries.
+  if (context.settingsWriter === undefined) {
+    await updateExtensionSettings(settingsPath, (latest) => {
+      validateAvailableExtensionId(entry.id, latest.extensions);
+      return {
+        ...latest,
+        extensions: [...latest.extensions, entry],
+      };
+    });
+  } else {
+    await writeSettings(settingsPath, {
+      ...document,
+      extensions: [...document.extensions, entry],
+    });
+  }
   if (context.scope === "project") {
     try {
       await trustProject(context);
     } catch (error) {
       try {
-        await writeSettings(settingsPath, document);
+        if (context.settingsWriter === undefined) {
+          await updateExtensionSettings(settingsPath, (latest) => ({
+            ...latest,
+            extensions: latest.extensions.filter(
+              (item) => item.id !== entry.id
+            ),
+          }));
+        } else {
+          await writeSettings(settingsPath, document);
+        }
       } catch (restoreError) {
         throw new AggregateError(
           [error, restoreError],

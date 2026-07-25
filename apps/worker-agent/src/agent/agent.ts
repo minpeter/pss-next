@@ -12,7 +12,10 @@ import { openTelemetry } from "@minpeter/pss-runtime/otel";
 import { drainAgentTurn } from "@minpeter/pss-runtime/platform/cloudflare";
 
 import type { EnvironmentName } from "../env";
-import { createTurnObservabilityInstrumentation } from "../observability";
+import {
+  createTurnObservabilityHooks,
+  createTurnObservabilityInstrumentation,
+} from "../observability";
 import type { WorkerAgentSessionToolOptions } from "../session/session-tools";
 import { createSessionTools } from "../session/session-tools";
 import {
@@ -138,18 +141,20 @@ export async function createConfiguredAgent(
     name: "custom",
   });
 
+  const observabilityOptions = {
+    label: env.ENVIRONMENT,
+    ...(options.observability?.log ? { log: options.observability.log } : {}),
+  };
   const instrumentations: readonly AgentInstrumentation[] = [
     openTelemetry(),
-    createTurnObservabilityInstrumentation({
-      label: env.ENVIRONMENT,
-      ...(options.observability?.log ? { log: options.observability.log } : {}),
-    }),
+    createTurnObservabilityInstrumentation(observabilityOptions),
   ];
   const tools = createWorkerAgentToolSet(options);
 
   return await createAgent({
     autoCompaction: WORKER_AGENT_AUTO_COMPACTION,
     host,
+    hooks: createTurnObservabilityHooks(observabilityOptions),
     instructions: WORKER_AGENT_INSTRUCTIONS,
     instrumentations,
     model: provider(env.AI_MODEL?.trim() || DEFAULT_MODEL),

@@ -1,8 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 import type { ExtensionSettingsEntry } from "./types";
+
+/** In-process serialization per settings path (complements cross-process lockfile). */
+const settingsQueues = new Map<string, Promise<unknown>>();
 
 const targetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("module"), path: z.string().min(1) }),
@@ -66,6 +77,88 @@ export async function writeExtensionSettings(
     ...document.values,
     extensions: document.extensions,
   });
+}
+
+/**
+ * Serialize read-modify-write updates to a settings file across concurrent
+ * install/update/remove callers (in-process queue + exclusive lockfile).
+ */
+export async function updateExtensionSettings(
+  path: string,
+  update: (
+    document: ExtensionSettingsDocument
+  ) => ExtensionSettingsDocument | Promise<ExtensionSettingsDocument>
+): Promise<ExtensionSettingsDocument> {
+  return await withExtensionSettingsLock(path, async () => {
+    const current = await readExtensionSettings(path);
+    const next = await update(current);
+    await writeExtensionSettings(path, next);
+    return next;
+  });
+}
+
+export async function withExtensionSettingsLock<Result>(
+  path: string,
+  run: () => Promise<Result>
+): Promise<Result> {
+  const previous = settingsQueues.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => gate);
+  settingsQueues.set(path, queued);
+  await previous.catch(() => undefined);
+  try {
+    return await withExclusiveLockfile(`${path}.lock`, run);
+  } finally {
+    release();
+    if (settingsQueues.get(path) === queued) {
+      settingsQueues.delete(path);
+    }
+  }
+}
+
+const LOCK_STALE_MS = 30_000;
+const LOCK_WAIT_MS = 10_000;
+
+async function withExclusiveLockfile<Result>(
+  lockPath: string,
+  run: () => Promise<Result>
+): Promise<Result> {
+  await mkdir(dirname(lockPath), { mode: 0o700, recursive: true });
+  const started = Date.now();
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  while (handle === undefined) {
+    try {
+      handle = await open(lockPath, "wx");
+    } catch (error) {
+      if (!hasErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+      try {
+        const info = await stat(lockPath);
+        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+          await unlink(lockPath).catch(() => undefined);
+          continue;
+        }
+      } catch {
+        // lock disappeared; retry create
+      }
+      if (Date.now() - started > LOCK_WAIT_MS) {
+        throw new Error(
+          `Timed out acquiring extension settings lock: ${lockPath}`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+  }
+  try {
+    return await run();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await unlink(lockPath).catch(() => undefined);
+  }
 }
 
 export async function readTrustedProjects(

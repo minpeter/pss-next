@@ -73,7 +73,9 @@ export class CodingAgentExtensionHost {
 
   get commands(): readonly TuiCommand[] {
     return this.#collections.commands.map((command) => {
-      const extensionId = this.#collections.owners.commands.get(command.name);
+      const extensionId = this.#collections.owners.commands.get(
+        command.name.toLowerCase()
+      );
       if (extensionId === undefined) {
         return command;
       }
@@ -116,7 +118,8 @@ export class CodingAgentExtensionHost {
           createCodingAgentExtensionInstrumentation(
             this.#collections.events,
             this.#lifecycle.signal,
-            (extensionId) => this.#lifecycle.getServices(extensionId)
+            (extensionId) => this.#lifecycle.getServices(extensionId),
+            this.#lifecycle.timeoutMs
           ),
         ];
   }
