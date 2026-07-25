@@ -28,6 +28,10 @@ export async function removeExtension(
   if (entry === undefined) {
     throw new Error(`Extension "${context.id}" is not installed`);
   }
+  await writeExtensionSettings(paths.settingsPath, {
+    ...document,
+    extensions: document.extensions.filter((item) => item.id !== entry.id),
+  });
   if (entry.target.kind === "package") {
     const packageName = entry.target.packageName;
     if (
@@ -47,10 +51,6 @@ export async function removeExtension(
       });
     }
   }
-  await writeExtensionSettings(paths.settingsPath, {
-    ...document,
-    extensions: document.extensions.filter((item) => item.id !== entry.id),
-  });
   return entry;
 }
 

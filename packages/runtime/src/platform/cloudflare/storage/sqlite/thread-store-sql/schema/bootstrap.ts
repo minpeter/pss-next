@@ -8,8 +8,13 @@ export function ensureThreadSchema(sql: SqlStorage): void {
     "CREATE INDEX IF NOT EXISTS pss_thread_message_active ON pss_thread_message (thread_key, active, seq)"
   );
   sql.exec(
-    "CREATE TABLE IF NOT EXISTS pss_thread_meta (thread_key TEXT PRIMARY KEY, version TEXT NOT NULL, message_count INTEGER NOT NULL, next_seq INTEGER NOT NULL, state_blob TEXT)"
+    "CREATE TABLE IF NOT EXISTS pss_thread_meta (thread_key TEXT PRIMARY KEY, version TEXT NOT NULL, message_count INTEGER NOT NULL, next_seq INTEGER NOT NULL, state_blob TEXT, applied_migrations TEXT)"
   );
+  try {
+    sql.exec("ALTER TABLE pss_thread_meta ADD COLUMN applied_migrations TEXT");
+  } catch {
+    // Column already exists on stores created before schemaVersion 3 support.
+  }
   sql.exec(
     "CREATE TABLE IF NOT EXISTS pss_thread_message_chunk (thread_key TEXT NOT NULL, seq INTEGER NOT NULL, chunk_index INTEGER NOT NULL, chunk TEXT NOT NULL, PRIMARY KEY (thread_key, seq, chunk_index))"
   );

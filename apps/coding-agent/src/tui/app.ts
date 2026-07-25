@@ -20,6 +20,7 @@ import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
 import { cliVersion } from "../update/cli-version";
 import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
+import type { TuiCommand } from "./command";
 import { createClearCommand } from "./command-set";
 import { createToolRenderers } from "./renderers/tool-renderers";
 
@@ -73,10 +74,12 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     }
     throw error;
   }
+  let exitCode = 0;
   try {
     let thread = agent.thread(threadConfig.key);
 
     const noticeLines: string[] = [];
+    const builtInCommands = [createClearCommand()];
     const deferredRefreshes: (() => Promise<void>)[] = [];
     const updateNotice = await emitUpdateNotice({
       write: (line) => noticeLines.push(line),
@@ -121,7 +124,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         send: (input) => thread.send(input),
         steer: (input) => thread.steer(input),
       },
-      commands: [createClearCommand(), ...extensionHost.commands],
+      commands: guardExtensionCommands(builtInCommands, extensionHost.commands),
       header: {
         title: "pss",
         subtitle: `${modelId ?? "unknown model"}\n${process.cwd()} · thread ${threadConfig.key} · ${compactionText}`,
@@ -172,16 +175,28 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     }
 
     if (autoUpdate !== undefined) {
-      return runAutoUpdate(autoUpdate, {
+      exitCode = await runAutoUpdate(autoUpdate, {
         platform: process.platform,
         stdout: process.stdout,
       });
     }
-    return 0;
   } finally {
-    await agent.dispose();
-    await extensionHost.dispose();
+    const cleanupFailures: unknown[] = [];
+    for (const cleanup of [
+      () => agent.dispose(),
+      () => extensionHost.dispose(),
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (cleanupFailures.length > 0) {
+      exitCode = 1;
+    }
   }
+  return exitCode;
 }
 
 export function mergeToolRenderers(
@@ -200,6 +215,21 @@ export function mergeToolRenderers(
     merged[toolName] = renderer;
   }
   return merged;
+}
+
+function guardExtensionCommands(
+  builtInCommands: readonly TuiCommand[],
+  extensionCommands: readonly TuiCommand[]
+): TuiCommand[] {
+  const builtInNames = new Set(builtInCommands.map((command) => command.name));
+  for (const command of extensionCommands) {
+    if (builtInNames.has(command.name)) {
+      throw new Error(
+        `Extension command "${command.name}" conflicts with a built-in command`
+      );
+    }
+  }
+  return [...builtInCommands, ...extensionCommands];
 }
 
 function isMainModule(moduleUrl: string, argvPath = process.argv[1]): boolean {

@@ -1,8 +1,16 @@
 import { realpath } from "node:fs/promises";
 import type { CodingAgentExtensionInput } from "../types";
 import { loadExtensionTarget } from "./module-loader";
-import { extensionScopePaths, extensionTrustPath } from "./paths";
-import { readExtensionSettings, readTrustedProjects } from "./settings";
+import {
+  type ExtensionScopePaths,
+  extensionScopePaths,
+  extensionTrustPath,
+} from "./paths";
+import {
+  type ExtensionSettingsDocument,
+  readExtensionSettings,
+  readTrustedProjects,
+} from "./settings";
 import type {
   ExtensionSettingsEntry,
   ImportExtensionModule,
@@ -18,33 +26,68 @@ export async function loadConfiguredCodingAgentExtensions({
   readonly home: string;
   readonly importer?: ImportExtensionModule;
 }): Promise<LoadedConfiguredExtensions> {
-  const [globalPaths, projectPaths] = await Promise.all([
+  const [globalPaths, trustedProjects, project] = await Promise.all([
     extensionScopePaths({ cwd, home, scope: "global" }),
-    extensionScopePaths({ cwd, home, scope: "project" }),
+    readTrustedProjects(extensionTrustPath(home)),
+    realpath(cwd),
   ]);
-  const [globalSettings, projectSettings, trustedProjects, project] =
-    await Promise.all([
-      readExtensionSettings(globalPaths.settingsPath),
-      readExtensionSettings(projectPaths.settingsPath),
-      readTrustedProjects(extensionTrustPath(home)),
-      realpath(cwd),
-    ]);
   const projectTrusted = trustedProjects.includes(project);
+  const globalSettings = await readExtensionSettings(globalPaths.settingsPath);
+  let projectConfiguration:
+    | {
+        readonly paths: ExtensionScopePaths;
+        readonly settings: ExtensionSettingsDocument;
+      }
+    | undefined;
+  let hasBlockedProjectExtension = false;
+  if (projectTrusted) {
+    const paths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "project",
+    });
+    projectConfiguration = {
+      paths,
+      settings: await readExtensionSettings(paths.settingsPath),
+    };
+  } else {
+    try {
+      const paths = await extensionScopePaths({
+        cwd,
+        home,
+        scope: "project",
+      });
+      const settings = await readExtensionSettings(paths.settingsPath);
+      hasBlockedProjectExtension = settings.extensions.some(
+        (entry) => entry.enabled
+      );
+    } catch (error) {
+      if (!(error instanceof TypeError)) {
+        throw error;
+      }
+      hasBlockedProjectExtension = true;
+    }
+  }
+  const enabledProjectIds = new Set(
+    projectConfiguration?.settings.extensions
+      .filter((entry) => entry.enabled)
+      .map((entry) => entry.id) ?? []
+  );
   const globalExtensions = await loadEnabledExtensions({
-    entries: globalSettings.extensions,
+    entries: globalSettings.extensions.filter(
+      (entry) => !enabledProjectIds.has(entry.id)
+    ),
     ...(importer === undefined ? {} : { importer }),
     installRoot: globalPaths.installRoot,
   });
-  const projectExtensions = projectTrusted
-    ? await loadEnabledExtensions({
-        entries: projectSettings.extensions,
-        ...(importer === undefined ? {} : { importer }),
-        installRoot: projectPaths.installRoot,
-      })
-    : [];
-  const hasBlockedProjectExtension =
-    !projectTrusted &&
-    projectSettings.extensions.some((entry) => entry.enabled);
+  const projectExtensions =
+    projectConfiguration === undefined
+      ? []
+      : await loadEnabledExtensions({
+          entries: projectConfiguration.settings.extensions,
+          ...(importer === undefined ? {} : { importer }),
+          installRoot: projectConfiguration.paths.installRoot,
+        });
   return {
     extensions: [...globalExtensions, ...projectExtensions],
     notices: hasBlockedProjectExtension

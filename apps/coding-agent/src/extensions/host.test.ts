@@ -147,6 +147,41 @@ describe("CodingAgentExtensionHost", () => {
     ]);
   });
 
+  it("rejects a non-function activation cleanup", async () => {
+    // Given
+    const host = await createCodingAgentExtensionHost([
+      defineCodingAgentExtension({
+        activate() {
+          return JSON.parse('{"cleanup":"invalid"}');
+        },
+        configure() {
+          return;
+        },
+        id: "invalid-cleanup",
+      }),
+    ]);
+    const provider = createOpenAICompatible({
+      apiKey: "test",
+      baseURL: "https://example.com/v1",
+      name: "test",
+    });
+    const agent = await createAgent({ model: provider("model") });
+
+    // When
+    const activation = host.activate(agent, "exec");
+
+    // Then
+    await expect(activation).rejects.toMatchObject({
+      cause: {
+        message:
+          'Coding agent extension "invalid-cleanup" activation handler must return a cleanup function',
+      },
+      extensionId: "invalid-cleanup",
+      phase: "activate",
+    });
+    await agent.dispose();
+  });
+
   it("rejects duplicate extension identities", async () => {
     const extension = defineCodingAgentExtension({
       configure() {

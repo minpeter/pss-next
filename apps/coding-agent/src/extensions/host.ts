@@ -7,7 +7,7 @@ import type {
 import type { ToolSet } from "ai";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
-import { composeAgentHooks } from "./compose-hooks";
+import { composeAgentHooks, type RegisteredAgentHooks } from "./compose-hooks";
 import { createCodingAgentExtensionInstrumentation } from "./events";
 import { normalizeCodingAgentExtension } from "./factory";
 import { ExtensionHostLifecycle } from "./host-lifecycle";
@@ -88,10 +88,25 @@ export class CodingAgentExtensionHost {
     });
   }
 
+  get hookRegistrations(): readonly RegisteredAgentHooks[] {
+    return [...this.#collections.hooks];
+  }
+
   get hooks(): AgentHooks | undefined {
     return this.#collections.hooks.length === 0
       ? undefined
-      : composeAgentHooks(this.#collections.hooks);
+      : composeAgentHooks(this.#collections.hooks, {
+          signal: this.#lifecycle.signal,
+          timeoutMs: this.#lifecycle.timeoutMs,
+        });
+  }
+
+  get signal(): AbortSignal {
+    return this.#lifecycle.signal;
+  }
+
+  get timeoutMs(): number {
+    return this.#lifecycle.timeoutMs;
   }
 
   get instrumentations(): readonly AgentInstrumentation[] {

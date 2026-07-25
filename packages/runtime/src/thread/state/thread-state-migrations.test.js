@@ -121,7 +121,7 @@ describe("persisted thread migrations", () => {
     expect(store.snapshot().state).toEqual(initialState);
   });
 
-  it("does not expose migrated state after an optimistic conflict", async () => {
+  it("reloads the migrated snapshot instead of surfacing a spurious optimistic conflict", async () => {
     // Given
     const initialState = {
       history: [{ content: "before", role: "user" }],
@@ -149,8 +149,11 @@ describe("persisted thread migrations", () => {
     const loading = state.ensureLoaded();
 
     // Then
-    await expect(loading).rejects.toThrow('Thread "thread:qa" commit conflict');
-    expect(state.modelSnapshot()).toEqual([]);
+    await expect(loading).resolves.toBeUndefined();
+    expect(state.modelSnapshot()).toEqual([
+      { content: "before", role: "user" },
+    ]);
+    expect(store.commits).toBe(1);
     expect(store.snapshot().state).toEqual(initialState);
   });
 });

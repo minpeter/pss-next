@@ -47,6 +47,10 @@ export class ExtensionHostLifecycle {
     return this.#controller.signal;
   }
 
+  get timeoutMs(): number {
+    return this.#timeoutMs;
+  }
+
   bindRuntimeServices(options: {
     readonly model: NonNullable<CodingAgentExtensionHostOptions["model"]>;
     readonly workspace: string;
@@ -125,7 +129,8 @@ export class ExtensionHostLifecycle {
     this.#mode = mode;
     try {
       for (const extension of this.#extensions) {
-        if (!extension.activate) {
+        const activate = extension.activate;
+        if (activate === undefined) {
           continue;
         }
         const context: CodingAgentExtensionActivationContext = Object.freeze({
@@ -138,10 +143,16 @@ export class ExtensionHostLifecycle {
           }),
           signal: this.#controller.signal,
         });
-        const cleanup = await this.#run(extension.id, "activate", () =>
-          extension.activate?.(context)
-        );
-        if (cleanup) {
+        const cleanup = await this.#run(extension.id, "activate", async () => {
+          const result = await activate(context);
+          if (result !== undefined && typeof result !== "function") {
+            throw new TypeError(
+              `Coding agent extension "${extension.id}" activation handler must return a cleanup function`
+            );
+          }
+          return result;
+        });
+        if (cleanup !== undefined) {
           if (this.#disposed) {
             await cleanup();
           } else {

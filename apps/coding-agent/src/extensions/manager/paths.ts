@@ -29,10 +29,16 @@ export async function extensionScopePaths({
 async function safeProjectSettingsRoot(cwd: string): Promise<string> {
   const projectRoot = await realpath(cwd);
   const root = join(projectRoot, ".pss");
+  const installRoot = join(root, "extensions");
   await assertNotSymbolicLink(root, "Project .pss directory");
+  await assertNotSymbolicLink(installRoot, "Project extension package root");
   await assertNotSymbolicLink(
-    join(root, "extensions"),
-    "Project extension package root"
+    join(installRoot, "package.json"),
+    "Project extension package.json"
+  );
+  await assertNotSymbolicLink(
+    join(installRoot, "package-lock.json"),
+    "Project extension package-lock.json"
   );
   await assertNotSymbolicLink(
     join(root, "settings.json"),

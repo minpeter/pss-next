@@ -265,30 +265,49 @@ export class ThreadState {
     const stored = await this.#persistence.store.load(this.#persistence.key);
     let nextVersion = stored?.version;
     let state = decodeStoredThreadState(stored);
-    if (stored && this.#migrations.length > 0) {
-      const migrated = await applyThreadStateMigrations({
-        migrations: this.#migrations,
-        state,
-        threadKey: this.#persistence.key,
-      });
-      if (migrated.changed) {
-        const result = await this.#persistence.store.commit(
-          this.#persistence.key,
-          {
-            state: encodeThreadSnapshot(
-              migrated.history,
-              migrated.compactions,
-              migrated.appliedMigrations
-            ),
-          },
-          { expectedVersion: stored.version }
-        );
-        if (!result.ok) {
-          throw new ThreadCommitConflictError(this.#persistence.key);
+    if (stored) {
+      if (this.#migrations.length > 0) {
+        const migrated = await applyThreadStateMigrations({
+          migrations: this.#migrations,
+          state,
+          threadKey: this.#persistence.key,
+        });
+        if (migrated.changed) {
+          const result = await this.#persistence.store.commit(
+            this.#persistence.key,
+            {
+              state: encodeThreadSnapshot(
+                migrated.history,
+                migrated.compactions,
+                migrated.appliedMigrations
+              ),
+            },
+            { expectedVersion: stored.version }
+          );
+          if (result.ok) {
+            state = migrated;
+            nextVersion = result.version;
+          } else {
+            // Another writer already committed this migration; reload the
+            // now-migrated snapshot instead of surfacing a spurious conflict.
+            const reloaded = await this.#persistence.store.load(
+              this.#persistence.key
+            );
+            if (reloaded === null) {
+              throw new ThreadCommitConflictError(this.#persistence.key);
+            }
+            state = decodeStoredThreadState(reloaded);
+            nextVersion = reloaded.version;
+          }
         }
-        nextVersion = result.version;
       }
-      state = migrated;
+    } else if (this.#migrations.length > 0) {
+      // New threads are post-migration state; mark every configured
+      // migration as already applied so they are not re-applied on restart.
+      state = {
+        ...state,
+        appliedMigrations: seedAppliedMigrations(this.#migrations),
+      };
     }
     this.#appliedMigrations = state.appliedMigrations;
     this.#storeVersion = nextVersion;
@@ -298,4 +317,14 @@ export class ThreadState {
       state.compactions
     );
   }
+}
+
+function seedAppliedMigrations(
+  migrations: readonly ThreadStateMigration[]
+): AppliedThreadMigrations {
+  const applied: Record<string, number> = {};
+  for (const migration of migrations) {
+    applied[migration.id] = migration.version;
+  }
+  return applied;
 }

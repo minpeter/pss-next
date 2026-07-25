@@ -1,6 +1,9 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAgent } from "@minpeter/pss-runtime";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { modelProvider } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionUi } from "./types";
@@ -52,6 +55,14 @@ const deferred = <Value>() => {
   });
   return { promise, resolve };
 };
+
+const cleanupRoots: string[] = [];
+
+afterEach(async () => {
+  for (const root of cleanupRoots.splice(0)) {
+    await rm(root, { force: true, recursive: true });
+  }
+});
 
 describe("extension runtime services", () => {
   it("provides every host-owned service through activation without expanding the factory", async () => {
@@ -121,17 +132,24 @@ describe("extension runtime services", () => {
   });
 
   it("keeps extension process execution inside the workspace", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "pss-runtime-core-hooks-extension-")
+    );
+    cleanupRoots.push(workspace);
     let activation: FutureActivationContext | undefined;
-    const host = await createCodingAgentExtensionHost([
-      {
-        default(pss) {
-          pss.on("activate", (context) => {
-            activation = context as unknown as FutureActivationContext;
-          });
+    const host = await createCodingAgentExtensionHost(
+      [
+        {
+          default(pss) {
+            pss.on("activate", (context) => {
+              activation = context as unknown as FutureActivationContext;
+            });
+          },
+          id: "exec-workspace-boundary",
         },
-        id: "exec-workspace-boundary",
-      },
-    ]);
+      ],
+      { workspace }
+    );
     const agent = await createTestAgent();
 
     try {

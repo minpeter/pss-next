@@ -14,6 +14,15 @@ export {
   type ThreadMetadata,
 } from "./agent/core/agent";
 export { AgentHookError } from "./agent/core/hook-error";
+export {
+  assertCompactionDecision,
+  assertInputDecision,
+  assertInputEvent,
+  assertModelStep,
+  assertToolDecision,
+  assertToolResult,
+  assertTransformDecision,
+} from "./agent/core/hook-validation";
 export type {
   AgentCompactionDecision,
   AgentCompactionEvent,

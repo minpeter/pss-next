@@ -72,6 +72,77 @@ describe("configured extension loading", () => {
     ]);
     expect(trusted.notices).toEqual([]);
   });
+
+  it("uses a trusted project extension instead of a global extension with the same id", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    const globalModule = join(root, "global.mjs");
+    const projectModule = join(root, "project.mjs");
+    await writeFile(
+      globalModule,
+      "export default function globalExtension() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      projectModule,
+      "export default function projectExtension() {}\n",
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    const projectPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "project",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("shared", globalModule, true)],
+      values: {},
+    });
+    await writeExtensionSettings(projectPaths.settingsPath, {
+      extensions: [entry("shared", projectModule, true)],
+      values: {},
+    });
+    await writeTrustedProjects(extensionTrustPath(home), [cwd]);
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(loaded.extensions).toHaveLength(1);
+    const extension = loaded.extensions[0];
+    if (extension === undefined || !("default" in extension)) {
+      throw new Error("Expected a loaded extension module");
+    }
+    expect(extension.default.name).toBe("projectExtension");
+  });
+
+  it("blocks malformed project settings until the project is trusted", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    const projectSettings = join(cwd, ".pss", "settings.json");
+    await mkdir(join(cwd, ".pss"), { recursive: true });
+    await writeFile(projectSettings, "{", "utf8");
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(loaded.extensions).toEqual([]);
+    expect(loaded.notices).toEqual([
+      "Project extensions are blocked until explicitly enabled or installed for this project.",
+    ]);
+  });
 });
 
 function entry(id: string, path: string, enabled: boolean) {

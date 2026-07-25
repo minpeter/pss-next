@@ -196,8 +196,25 @@ export async function runCodingAgentExec({
     state.status = "error";
   } finally {
     clearTimeout(timeout);
-    await agent.dispose();
-    await extensionHost.dispose();
+    const cleanupFailures: unknown[] = [];
+    for (const cleanup of [
+      () => agent.dispose(),
+      () => extensionHost.dispose(),
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (cleanupFailures.length > 0 && state.error === undefined) {
+      state.error = cleanupFailures
+        .map((failure) =>
+          failure instanceof Error ? failure.message : String(failure)
+        )
+        .join("; ");
+      state.status = "error";
+    }
   }
 
   const result: CodingAgentExecResult = {

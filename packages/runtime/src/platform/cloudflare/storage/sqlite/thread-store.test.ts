@@ -131,7 +131,13 @@ describe("DurableObjectSqliteThreadStore", () => {
       state,
       version: "1",
     });
-    expect(readRows(storage, "migrated")).toEqual([]);
+    expect(readRows(storage, "migrated")).toEqual([
+      {
+        active: 1,
+        message: JSON.stringify({ content: "sanitized", role: "user" }),
+        seq: 0,
+      },
+    ]);
   });
 
   it("keeps the previous durable rows when compaction payload validation rejects", async () => {

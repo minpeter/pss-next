@@ -54,6 +54,47 @@ export function assertInputEvent(
       "Agent input transform must return a user-input or runtime-input event"
     );
   }
+  if (value.type === "runtime-input") {
+    assertInputPayload(
+      value.input,
+      "Agent input transform runtime-input must include a user-input payload"
+    );
+    if (
+      value.placement !== "turn-start" &&
+      value.placement !== "step-start" &&
+      value.placement !== "step-end"
+    ) {
+      throw new TypeError(
+        "Agent input transform runtime-input must include a placement"
+      );
+    }
+    return;
+  }
+  assertInputPayload(
+    value,
+    "Agent input transform user-input must include text or content"
+  );
+}
+
+function assertInputPayload(
+  value: unknown,
+  message: string
+): asserts value is { readonly type: "user-input" } {
+  assertRecord(value);
+  if (value.type !== "user-input") {
+    throw new TypeError(message);
+  }
+  const text = (value as { readonly text?: unknown }).text;
+  const textValid =
+    typeof text === "string" ||
+    (Array.isArray(text) && text.every((item) => typeof item === "string"));
+  if (textValid) {
+    return;
+  }
+  if (Array.isArray((value as { readonly content?: unknown }).content)) {
+    return;
+  }
+  throw new TypeError(message);
 }
 
 export function assertTurnStartEvent(
@@ -74,7 +115,9 @@ function isModelMessage(value: unknown): value is ModelMessage {
         value.role === "user" ||
         value.role === "assistant" ||
         value.role === "tool") &&
-      "content" in value
+      "content" in value &&
+      (typeof (value as { readonly content: unknown }).content === "string" ||
+        Array.isArray((value as { readonly content: unknown }).content))
   );
 }
 

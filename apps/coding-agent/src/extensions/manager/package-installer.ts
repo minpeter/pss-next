@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { CommandResult, RunExtensionCommand } from "./types";
 
 export interface InstalledExtensionPackage {
@@ -46,6 +46,7 @@ export async function installExtensionPackage({
   readonly packageName?: string;
   readonly runCommand?: RunExtensionCommand;
 }): Promise<InstalledExtensionPackage> {
+  rejectUnsafeInstallSpec(installSpec);
   await ensurePackageRoot(installRoot);
   const before = await readDependencies(installRoot);
   const result = await runCommand("npm", [
@@ -57,6 +58,7 @@ export async function installExtensionPackage({
     "--install-links",
     "--no-audit",
     "--no-fund",
+    "--",
     installSpec,
   ]);
   assertCommandSucceeded("install", result);
@@ -94,16 +96,29 @@ export async function rollbackExtensionPackage({
     installRoot,
     installSpec: rollbackInstallSpec(
       installed.packageName,
-      installed.previousSpec
+      installed.previousSpec,
+      installRoot
     ),
     packageName: installed.packageName,
     runCommand,
   });
 }
 
-function rollbackInstallSpec(packageName: string, spec: string): string {
+const ABSOLUTE_FILE_TARGET_PATTERN = /^[A-Za-z]:[\\/]/;
+
+function rollbackInstallSpec(
+  packageName: string,
+  spec: string,
+  installRoot: string
+): string {
+  if (spec.startsWith("file:")) {
+    const target = spec.slice("file:".length);
+    if (target.startsWith("/") || ABSOLUTE_FILE_TARGET_PATTERN.test(target)) {
+      return spec;
+    }
+    return `file:${resolve(installRoot, target)}`;
+  }
   if (
-    spec.startsWith("file:") ||
     spec.startsWith("git+") ||
     spec.startsWith("git@") ||
     spec.startsWith("github:") ||
@@ -127,6 +142,7 @@ export async function removeExtensionPackage({
   readonly packageName: string;
   readonly runCommand?: RunExtensionCommand;
 }): Promise<void> {
+  rejectUnsafeInstallSpec(packageName);
   const result = await runCommand("npm", [
     "uninstall",
     "--prefix",
@@ -134,6 +150,7 @@ export async function removeExtensionPackage({
     "--ignore-scripts",
     "--no-audit",
     "--no-fund",
+    "--",
     packageName,
   ]);
   assertCommandSucceeded("remove", result);
@@ -208,6 +225,12 @@ function assertCommandSucceeded(
     throw new Error(
       `Extension package ${action} failed${detail ? `: ${detail}` : ""}`
     );
+  }
+}
+
+function rejectUnsafeInstallSpec(spec: string): void {
+  if (spec.startsWith("-")) {
+    throw new Error("Extension install spec must not start with '-'");
   }
 }
 

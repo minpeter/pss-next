@@ -113,6 +113,7 @@ export function createCodingAgentExtensionRegistry({
   };
   const use = (hooks: AgentHooks) => {
     assertOpen();
+    assertValidAgentHooks(extensionId, hooks);
     collections.hooks.push({ extensionId, hooks });
   };
   const registerModelProvider = (
@@ -201,6 +202,32 @@ export function createCodingAgentExtensionRegistry({
     tui: { registerToolRenderer: registerRenderer },
     use,
   };
+}
+
+const HOOK_PROPERTY_NAMES = [
+  "acceptInput",
+  "beforeCompaction",
+  "beforeToolExecution",
+  "beforeTurnStart",
+  "transformModelContext",
+  "transformModelStep",
+  "transformToolResult",
+] as const satisfies readonly (keyof AgentHooks)[];
+
+function assertValidAgentHooks(extensionId: string, hooks: AgentHooks): void {
+  if (typeof hooks !== "object" || hooks === null || Array.isArray(hooks)) {
+    throw new TypeError(
+      `Coding agent extension "${extensionId}" hooks must be an object`
+    );
+  }
+  for (const name of HOOK_PROPERTY_NAMES) {
+    const value = hooks[name];
+    if (value !== undefined && typeof value !== "function") {
+      throw new TypeError(
+        `Coding agent extension "${extensionId}" hook "${name}" must be a function`
+      );
+    }
+  }
 }
 
 function registerEvent<Type extends AgentEvent["type"]>(

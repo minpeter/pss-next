@@ -62,6 +62,11 @@ export class AgentHookRuntime {
       const transformed =
         decision?.action === "transform" ? decision.value : event;
       assertInputEvent(transformed);
+      if (transformed.type !== event.type) {
+        throw new TypeError(
+          "Agent input transform must preserve the input event kind"
+        );
+      }
       return clone(transformed);
     });
   }

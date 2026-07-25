@@ -62,9 +62,7 @@ export function createCodingAgent({
   const extensionInstrumentations = extensionHost?.instrumentations ?? [];
   const hookRegistrations = [
     ...(hooks ? [{ extensionId: "coding-agent", hooks }] : []),
-    ...(extensionHost?.hooks
-      ? [{ extensionId: "coding-agent-extensions", hooks: extensionHost.hooks }]
-      : []),
+    ...(extensionHost?.hookRegistrations ?? []),
   ];
 
   return createAgent({
@@ -73,7 +71,10 @@ export function createCodingAgent({
     hooks:
       hookRegistrations.length === 0
         ? undefined
-        : composeAgentHooks(hookRegistrations),
+        : composeAgentHooks(
+            hookRegistrations,
+            extensionHookOptions(extensionHost)
+          ),
     instructions: [instructions, ...instructionFragments].join("\n\n"),
     instrumentations: extensionInstrumentations,
     model,
@@ -82,6 +83,16 @@ export function createCodingAgent({
       : {}),
     tools: resolvedTools,
   });
+}
+
+function extensionHookOptions(extensionHost?: CodingAgentExtensionHost): {
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+} {
+  if (extensionHost === undefined) {
+    return {};
+  }
+  return { signal: extensionHost.signal, timeoutMs: extensionHost.timeoutMs };
 }
 
 function assertNoToolCollisions(

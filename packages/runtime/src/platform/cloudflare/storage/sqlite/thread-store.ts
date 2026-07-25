@@ -74,24 +74,31 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
       this.#ensureSchema();
       const key = this.#rowKey(threadKey);
 
-      const prepared =
-        isAgentThreadSnapshot(next.state) && next.state.schemaVersion !== 3
-          ? {
-              kind: "snapshot" as const,
-              compactions: serializeThreadCompactions(
-                next.state.schemaVersion === 2 ? next.state.compactions : [],
-                this.#maxPayloadBytes
-              ),
-              state: next.state,
-            }
-          : {
-              kind: "opaque" as const,
-              stateBlob: stringifyJsonPayloadWithinBudget(
-                "thread-state",
-                next.state ?? null,
-                this.#maxPayloadBytes
-              ),
-            };
+      const prepared = isAgentThreadSnapshot(next.state)
+        ? {
+            kind: "snapshot" as const,
+            compactions: serializeThreadCompactions(
+              next.state.schemaVersion === 1 ? [] : next.state.compactions,
+              this.#maxPayloadBytes
+            ),
+            state: next.state,
+            appliedMigrationsJson:
+              next.state.schemaVersion === 3
+                ? stringifyJsonPayloadWithinBudget(
+                    "thread-applied-migrations",
+                    next.state.appliedMigrations,
+                    this.#maxPayloadBytes
+                  )
+                : null,
+          }
+        : {
+            kind: "opaque" as const,
+            stateBlob: stringifyJsonPayloadWithinBudget(
+              "thread-state",
+              next.state ?? null,
+              this.#maxPayloadBytes
+            ),
+          };
 
       return await this.#enqueueWrite(() =>
         this.#transaction(() => {
@@ -116,6 +123,7 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
             });
             writeThreadCompactions(this.#sql, key, prepared.compactions);
             writeThreadMeta(this.#sql, key, {
+              applied_migrations: prepared.appliedMigrationsJson,
               message_count: prepared.state.history.length,
               next_seq: nextSeq,
               state_blob: null,
@@ -125,6 +133,7 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
             softDeleteActiveThreadRows(this.#sql, key);
             deleteThreadCompactions(this.#sql, key);
             writeThreadMeta(this.#sql, key, {
+              applied_migrations: null,
               message_count: 0,
               next_seq: nextSeqStart,
               state_blob: prepared.stateBlob,
@@ -168,6 +177,18 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
       (row) => JSON.parse(row.message)
     );
     const compactions = readThreadCompactions(this.#sql, key);
+    if (meta.applied_migrations !== null) {
+      const appliedMigrations = parseAppliedMigrations(meta.applied_migrations);
+      return Promise.resolve({
+        state: {
+          appliedMigrations,
+          compactions,
+          history,
+          schemaVersion: 3,
+        } as const,
+        version,
+      });
+    }
     if (compactions.length > 0) {
       return Promise.resolve({
         state: { compactions, history, schemaVersion: 2 },
@@ -202,6 +223,28 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
 function versionCounter(version: string | undefined): number {
   const parsed = Number(version);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseAppliedMigrations(
+  serialized: string
+): Readonly<Record<string, number>> {
+  try {
+    const value: unknown = JSON.parse(serialized);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const result: Record<string, number> = {};
+      for (const [key, item] of Object.entries(
+        value as Record<string, unknown>
+      )) {
+        if (typeof item === "number" && Number.isFinite(item)) {
+          result[key] = item;
+        }
+      }
+      return result;
+    }
+  } catch {
+    return {};
+  }
+  return {};
 }
 
 function createStorageTransaction(
