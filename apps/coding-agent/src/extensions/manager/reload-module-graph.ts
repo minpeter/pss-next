@@ -91,6 +91,13 @@ export interface CommonJsReloadTransaction {
  * Pass loose-module directories and managed package roots explicitly;
  * `node_modules` trees nested below a root (real dependencies) are left
  * untouched for the same reasons the ESM hook skips them.
+ *
+ * Known limitation: the CommonJS cache is process-wide, so between eviction
+ * and a failed reload's rollback the still-active previous runtime could
+ * observe a freshly re-executed helper through a *lazy* `require()` issued
+ * during that window. Modules loaded during activation keep their original
+ * references and are unaffected. Full isolation needs a separate module
+ * context (worker/vm) and is tracked as follow-up work.
  */
 export function beginCommonJsReloadTransaction(
   roots: readonly string[]

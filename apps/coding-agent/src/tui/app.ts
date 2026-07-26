@@ -240,20 +240,34 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       const previousEmit = providerEmitter.current;
       const previousUi = extensionUi;
       const previousUiAbort = extensionUiAbort;
-      providerEmitter.current = (type, payload) => {
+      const installedEmit = (
+        type: string,
+        payload: Parameters<
+          NonNullable<ProviderObservationEmitter["current"]>
+        >[1]
+      ) => {
         host.emitHostEvent(type, payload);
       };
+      providerEmitter.current = installedEmit;
+      let installedUi: CodingAgentExtensionUi | undefined;
       try {
         if (createExtensionUiForHost !== undefined) {
           extensionUiAbort = new AbortController();
-          extensionUi = createExtensionUiForHost(extensionUiAbort.signal);
-          host.bindUi(extensionUi);
+          installedUi = createExtensionUiForHost(extensionUiAbort.signal);
+          extensionUi = installedUi;
+          host.bindUi(installedUi);
         }
         await host.activate(nextAgent, "tui");
       } catch (error) {
-        providerEmitter.current = previousEmit;
-        extensionUi = previousUi;
-        extensionUiAbort = previousUiAbort;
+        // A detached activation can reject long after recovery installed a
+        // new runtime; only roll back bindings this attempt still owns.
+        if (providerEmitter.current === installedEmit) {
+          providerEmitter.current = previousEmit;
+        }
+        if (installedUi !== undefined && extensionUi === installedUi) {
+          extensionUi = previousUi;
+          extensionUiAbort = previousUiAbort;
+        }
         throw error;
       }
     };
