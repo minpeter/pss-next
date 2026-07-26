@@ -1,8 +1,12 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadExtensionTarget } from "./module-loader";
+
+const execFileAsync = promisify(execFile);
 
 const cleanupRoots: string[] = [];
 
@@ -113,6 +117,59 @@ describe("managed package module loading", () => {
     expect(extension).toMatchObject({
       config: { installed: true, moduleDefault: true },
       id: "static-extension",
+    });
+  });
+
+  // Runs in a child Node process because module customization hooks do not
+  // intercept imports issued through vitest's own module runner.
+  it("reloads transitive helper modules when cache busting", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-module-loader-"));
+    cleanupRoots.push(root);
+    const helperPath = join(root, "helper.mjs");
+    const entryPath = join(root, "entry.mjs");
+    await writeFile(helperPath, 'export const marker = "one";\n', "utf8");
+    await writeFile(
+      entryPath,
+      [
+        'import { marker } from "./helper.mjs";',
+        "export default function extension() {}",
+        "extension.marker = marker;",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const script = [
+      `import { ensureReloadModuleGraphHooks } from ${JSON.stringify(
+        new URL("./reload-module-graph.ts", import.meta.url).href
+      )};`,
+      'import { writeFile } from "node:fs/promises";',
+      'import { pathToFileURL } from "node:url";',
+      "ensureReloadModuleGraphHooks();",
+      `const entryPath = ${JSON.stringify(entryPath)};`,
+      `const helperPath = ${JSON.stringify(helperPath)};`,
+      "const importBusted = async (cacheBust) => {",
+      "  const url = pathToFileURL(entryPath);",
+      "  url.searchParams.set('pss-extension-update', cacheBust);",
+      "  return await import(url.href);",
+      "};",
+      "const first = await importBusted('1');",
+      "await writeFile(helperPath, 'export const marker = \"two\";\\n');",
+      "const second = await importBusted('2');",
+      "console.log(JSON.stringify({ first: first.default.marker, second: second.default.marker }));",
+    ].join("\n");
+
+    // When
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { timeout: 30_000 }
+    );
+
+    // Then
+    expect(JSON.parse(stdout.trim())).toEqual({
+      first: "one",
+      second: "two",
     });
   });
 });

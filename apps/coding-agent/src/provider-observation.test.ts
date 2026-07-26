@@ -46,7 +46,7 @@ describe("provider observation fetch", () => {
 
     // When
     const response = await observed(
-      "https://user:pass@gateway.example/v1/chat?api-key=leak",
+      "https://user:pass@gateway.example/v1/chat?api-key=leak#token=fragment",
       { body: '{"secret":true}', method: "post" }
     );
 

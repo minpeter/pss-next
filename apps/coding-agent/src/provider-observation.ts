@@ -80,6 +80,7 @@ function redactedUrl(input: RequestInfo | URL): string {
   const raw = rawUrl(input);
   try {
     const url = new URL(raw);
+    url.hash = "";
     url.password = "";
     url.search = "";
     url.username = "";

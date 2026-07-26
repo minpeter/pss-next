@@ -207,10 +207,21 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         CodingAgentExtensionHost
       >({
         activateHost: async (host, nextAgent) => {
-          if (extensionUi !== undefined) {
-            host.bindUi(extensionUi);
+          // Bind provider observations to the replacement host before its
+          // extensions activate so they observe their own model traffic.
+          const previousEmit = providerEmitter.current;
+          providerEmitter.current = (type, payload) => {
+            host.emitHostEvent(type, payload);
+          };
+          try {
+            if (extensionUi !== undefined) {
+              host.bindUi(extensionUi);
+            }
+            await host.activate(nextAgent, "tui");
+          } catch (error) {
+            providerEmitter.current = previousEmit;
+            throw error;
           }
-          await host.activate(nextAgent, "tui");
         },
         createAgent: (host) =>
           Promise.resolve(
