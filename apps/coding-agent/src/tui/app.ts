@@ -114,9 +114,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     const modelId = resolveModelSubtitle();
-    const compactionText = threadConfig.autoCompaction
-      ? `compaction min=${threadConfig.autoCompaction.minMessages} retain=${threadConfig.autoCompaction.retainMessages}`
-      : "compaction off";
+    const compactionText = `compaction auto max=${threadConfig.autoCompaction?.maxInputTokens ?? "default"}`;
 
     const tuiConfig: AgentTUIConfig = {
       thread: {

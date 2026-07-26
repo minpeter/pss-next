@@ -27,8 +27,11 @@ export interface ModelGenerationOptions {
   contextGate?: false | ModelContextGateOptions;
   diagnostics?: RuntimeDiagnosticsSink;
   instructions?: string;
+  maxOutputTokens?: number;
   model: LanguageModel;
   prepareModelStep?: PrepareModelStep;
+  seed?: number;
+  temperature?: number;
   toolChoice?: AgentToolChoice;
   toolOrder?: readonly string[];
   tools?: ToolSet;

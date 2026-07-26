@@ -36,6 +36,11 @@ export type {
   AgentTransformDecision,
   AgentTurnStartEvent,
 } from "./agent/core/hooks";
+export {
+  DEFAULT_AGENT_MAX_INPUT_TOKENS,
+  type NormalizedAgentAutoCompactionOptions,
+  normalizeAgentAutoCompactionOptions,
+} from "./agent/core/options";
 export { threadStoreKey } from "./agent/core/thread-entry";
 export {
   type ModelToolCacheFingerprintMetadata,
@@ -50,6 +55,10 @@ export type {
   ThreadEventCursor,
   ThreadEventReadOptions,
 } from "./execution/host/types";
+export {
+  ContextBudgetExceededError,
+  estimateModelMessagesTokens,
+} from "./llm/context-gate";
 export { ModelToolSelectionError } from "./llm/model-step-error";
 export type {
   PrepareModelStep,
@@ -147,11 +156,21 @@ export {
   streamAgentEventTypes,
 } from "./thread/protocol/events";
 export type { AgentTurn } from "./thread/protocol/turn";
+export { selectSummaryOutputTokenLimit } from "./thread/runtime/auto-compaction-runner";
+export {
+  buildCompactionSummaryInstructions,
+  COMPACTION_SUMMARY_CONTRACT,
+  CompactionSummaryNotSmallerError,
+  summarizeCompactionRange,
+  summaryHistoryForRange,
+} from "./thread/runtime/auto-compaction-summary";
 export { ThreadEventReplayUnsupportedError } from "./thread/runtime/thread-event-replay";
 export type {
   CompactionContextMessage,
   ThreadContextMessage,
 } from "./thread/state/context";
+export { compactionContextForModel } from "./thread/state/context";
+export { ModelMessageHistory } from "./thread/state/history";
 export {
   type ThreadMigrationContext,
   ThreadMigrationError,

@@ -17,6 +17,7 @@ import { userTextToModelMessage } from "../protocol/mapping";
 import {
   agentWithAutoCompaction,
   storedAssistantOutput,
+  tokenCompactionPolicy,
   waitForModelCalls,
 } from "./automatic-compaction.test-support";
 import { collect, SpyStore } from "./test-support";
@@ -28,7 +29,7 @@ describe("Agent thread automatic compaction", () => {
     const preparedStepIndices: number[] = [];
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -93,7 +94,7 @@ describe("Agent thread automatic compaction", () => {
     const { storage, store } = createStore();
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;
@@ -131,7 +132,7 @@ describe("Agent thread automatic compaction", () => {
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -184,7 +185,7 @@ describe("Agent thread automatic compaction", () => {
     const summaryRelease = createDeferred();
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 1 },
+      autoCompaction: tokenCompactionPolicy({ retain: 10, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(async () => {
         calls += 1;

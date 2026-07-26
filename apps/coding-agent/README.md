@@ -369,13 +369,13 @@ The TUI persists runtime-owned thread state to files by default:
 - `PSS_THREAD_DIR` overrides the store directory. Default: `~/.pss/threads`.
 - `PSS_THREAD_KEY` overrides the conversation key. Default: `cwd:<current working directory>`.
 
-Local auto-compaction is disabled unless both thresholds are set:
+Automatic compaction is always on: once the estimated context approaches the
+model window, older messages are summarized in the background and the summary
+replaces them in future prompts. The full history stays on disk.
 
-- `PSS_AUTO_COMPACTION_MIN_MESSAGES` starts compaction once stored history reaches this count.
-- `PSS_AUTO_COMPACTION_RETAIN_MESSAGES` keeps this many newest messages outside the summary.
-
-Both values must be positive integers, and retain messages must be smaller than
-minimum messages.
+- `PSS_MODEL_CONTEXT_WINDOW` overrides the assumed context window in tokens.
+  Default: 128000. Compaction triggers at 80% of the window and keeps a
+  recent tail of about 40%.
 
 Examples:
 
@@ -383,7 +383,7 @@ Examples:
 pss
 PSS_THREAD_KEY=workspace:demo pss
 PSS_THREAD_DIR=.pss/threads pss
-PSS_AUTO_COMPACTION_MIN_MESSAGES=24 PSS_AUTO_COMPACTION_RETAIN_MESSAGES=8 pss
+PSS_MODEL_CONTEXT_WINDOW=64000 pss
 PSS_THREAD_KEY=workspace:demo pss inspect-thread
 ```
 

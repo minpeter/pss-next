@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "customConditions": ["@minpeter/pss-source"],
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

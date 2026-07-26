@@ -159,8 +159,9 @@ describe("runtime public exports", () => {
         maxInputTokens: 120_000,
         onOverflow: "compact",
       },
-      minMessages: 12,
-      retainMessages: 4,
+      maxInputTokens: 128_000,
+      retainTokens: 40_000,
+      triggerTokens: 100_000,
     } satisfies AgentAutoCompactionOptions;
     const model = {} as AgentOptions["model"];
     const attachmentStore = {} as HostAttachmentStore;
@@ -179,10 +180,6 @@ describe("runtime public exports", () => {
       instrumentations: [instrumentation],
       model,
       notificationOverlays: ["runtime context"],
-    } satisfies AgentOptions;
-    const disabledOptions = {
-      autoCompaction: false,
-      model,
     } satisfies AgentOptions;
     const compaction = {
       endSeqExclusive: 8,
@@ -227,7 +224,6 @@ describe("runtime public exports", () => {
     expect(enabledOptions.attachmentStore).toBe(attachmentStore);
     expect(enabledOptions.instrumentations).toEqual([instrumentation]);
     expect(enabledOptions.notificationOverlays).toEqual(["runtime context"]);
-    expect(disabledOptions.autoCompaction).toBe(false);
     expect(compaction.startSeq).toBe(0);
     expect(contextCompaction.role).toBe("compaction");
   });

@@ -13,8 +13,11 @@ export interface ModelStepStreamOptions {
   readonly abortSignal?: AbortSignal;
   readonly activeTools?: readonly string[];
   readonly instructions?: string;
+  readonly maxOutputTokens?: number;
   readonly messages: ModelMessage[];
   readonly model: LanguageModel;
+  readonly seed?: number;
+  readonly temperature?: number;
   readonly toolChoice?: ToolChoice<ToolSet>;
   readonly toolOrder?: readonly string[];
   readonly tools?: ToolSet;

@@ -13,14 +13,19 @@ import {
   agentWithAutoCompaction,
   nextMacrotask,
   storedAssistantOutput,
+  tokenCompactionPolicy,
+  waitForModelCalls,
 } from "./automatic-compaction.test-support";
 import { collect, SpyStore } from "./test-support";
 
-const minMessagesError = /autoCompaction\.minMessages/;
-const retainMessagesError = /autoCompaction\.retainMessages/;
+const autoCompactionError = /autoCompaction/;
+const triggerTokensError = /autoCompaction\.triggerTokens/;
+const retainTokensError = /autoCompaction\.retainTokens/;
+
+const largeUserText = (): string => "x".repeat(90_000);
 
 describe("Agent thread automatic compaction policy", () => {
-  it("is disabled by default", async () => {
+  it("compacts by default once the default context budget fills", async () => {
     const store = new SpyStore();
     let calls = 0;
     const agent = new Agent({
@@ -30,20 +35,23 @@ describe("Agent thread automatic compaction policy", () => {
         return [assistantMessage(`DONE ${calls}`)];
       }),
     });
-    const thread = agent.thread("default-disabled");
+    const thread = agent.thread("default-enabled");
 
-    await collect(await thread.send("old"));
-    await collect(await thread.send("next"));
+    for (let turn = 0; turn < 5; turn += 1) {
+      await collect(await thread.send(largeUserText()));
+    }
+    await waitForModelCalls(() => calls, 6);
 
-    expect(calls).toBe(2);
-    expect(store.threads.get("default-disabled")?.state).toEqual({
-      history: [
-        userTextToModelMessage(userText("old")),
-        storedAssistantOutput("DONE 1"),
-        userTextToModelMessage(userText("next")),
-        storedAssistantOutput("DONE 2"),
+    expect(store.threads.get("default-enabled")?.state).toMatchObject({
+      compactions: [
+        {
+          endSeqExclusive: 4,
+          schemaVersion: 1,
+          startSeq: 0,
+          summary: { content: "DONE 6", role: "system" },
+        },
       ],
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
   });
 
@@ -51,7 +59,7 @@ describe("Agent thread automatic compaction policy", () => {
     const store = new SpyStore();
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 8, retainMessages: 1 },
+      autoCompaction: tokenCompactionPolicy({ retain: 10, trigger: 80 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;
@@ -71,30 +79,29 @@ describe("Agent thread automatic compaction policy", () => {
     });
   });
 
-  it("rejects malformed automatic compaction thresholds during AgentOptions validation", () => {
+  it("rejects malformed automatic compaction options during AgentOptions validation", () => {
     const model = createCallbackModel(() => [assistantMessage("unused")]);
-
-    for (const minMessages of [
-      0,
-      -1,
-      1.5,
-      Number.NaN,
-      Number.POSITIVE_INFINITY,
-    ]) {
-      expect(() =>
-        agentWithAutoCompaction({
-          autoCompaction: { minMessages, retainMessages: 1 },
-          model,
-        })
-      ).toThrow(minMessagesError);
-    }
 
     expect(() =>
       agentWithAutoCompaction({
-        autoCompaction: { minMessages: 2, retainMessages: 2 },
+        autoCompaction: false as unknown as Record<string, never>,
         model,
       })
-    ).toThrow(retainMessagesError);
+    ).toThrow(autoCompactionError);
+
+    expect(() =>
+      agentWithAutoCompaction({
+        autoCompaction: { maxInputTokens: 100_000, triggerTokens: 200_000 },
+        model,
+      })
+    ).toThrow(triggerTokensError);
+
+    expect(() =>
+      agentWithAutoCompaction({
+        autoCompaction: { retainTokens: 60_000, triggerTokens: 50_000 },
+        model,
+      })
+    ).toThrow(retainTokensError);
   });
 
   it("does not schedule automatic compaction for notify-only turns", async () => {
@@ -116,7 +123,7 @@ describe("Agent thread automatic compaction policy", () => {
         }),
       },
       { key: "notify-only-auto-skip", store },
-      { autoCompaction: { minMessages: 4, retainMessages: 2 } }
+      { autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }) }
     );
 
     await collect(await thread.notify("first notification"));

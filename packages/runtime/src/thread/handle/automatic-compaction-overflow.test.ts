@@ -11,11 +11,87 @@ import {
 import { userTextToModelMessage } from "../protocol/mapping";
 import {
   agentWithAutoCompaction,
+  nextMacrotask,
   storedAssistantOutput,
+  tenTokensPerMessage,
+  tokenCompactionPolicy,
 } from "./automatic-compaction.test-support";
 import { collect, SpyStore } from "./test-support";
 
 describe("Agent thread automatic compaction overflow recovery", () => {
+  it("counts instructions when adapting a custom compaction estimator to the gate", async () => {
+    let calls = 0;
+    const agent = agentWithAutoCompaction({
+      autoCompaction: {
+        estimateTokens: tenTokensPerMessage,
+        maxInputTokens: 15,
+        retainTokens: 5,
+        triggerTokens: 15,
+      },
+      instructions: "system instructions",
+      model: createCallbackModel(() => {
+        calls += 1;
+        return [assistantMessage("unexpected")];
+      }),
+    });
+
+    const events = await collect(
+      await agent.thread("custom-estimator-instructions").send("too much")
+    );
+
+    expect(calls).toBe(0);
+    expect(eventTypes(events)).toEqual([
+      "user-input",
+      "turn-start",
+      "step-start",
+      "turn-error",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      message: expect.stringContaining("context gate"),
+      type: "turn-error",
+    });
+  });
+
+  it("compacts old messages when large instructions push the gate over budget", async () => {
+    const store = new SpyStore();
+    let calls = 0;
+    const agent = agentWithAutoCompaction({
+      autoCompaction: {
+        maxInputTokens: 2000,
+        retainTokens: 700,
+        triggerTokens: 1500,
+      },
+      host: hostWithThreads(store),
+      instructions: "i".repeat(2400),
+      model: createCallbackModel(() => {
+        calls += 1;
+        return [assistantMessage(`DONE ${calls}`)];
+      }),
+    });
+    const thread = agent.thread("instructions-overflow");
+
+    await collect(await thread.send("x".repeat(500)));
+    await collect(await thread.send("y".repeat(500)));
+    const events = await collect(await thread.send("z".repeat(4400)));
+
+    expect(events.at(-1)).toEqual({ type: "turn-end" });
+    const storedCompactions = () =>
+      (
+        store.threads.get("instructions-overflow")?.state as
+          | { compactions?: unknown[] }
+          | undefined
+      )?.compactions;
+    for (let tick = 0; tick < 20; tick += 1) {
+      await nextMacrotask();
+      if (storedCompactions()) {
+        break;
+      }
+    }
+    expect(storedCompactions()).toMatchObject([
+      { endSeqExclusive: 4, schemaVersion: 1, startSeq: 0 },
+    ]);
+  });
+
   it("rejects before provider calls when the context gate overflows with error", async () => {
     let calls = 0;
     const agent = agentWithAutoCompaction({
@@ -25,8 +101,10 @@ describe("Agent thread automatic compaction overflow recovery", () => {
           maxInputTokens: 1,
           onOverflow: "error",
         },
-        minMessages: 5,
-        retainMessages: 2,
+        estimateTokens: tenTokensPerMessage,
+        maxInputTokens: 10_000,
+        retainTokens: 20,
+        triggerTokens: 50,
       },
       model: createCallbackModel(() => {
         calls += 1;
@@ -59,11 +137,13 @@ describe("Agent thread automatic compaction overflow recovery", () => {
       autoCompaction: {
         contextGate: {
           estimateTokens: ({ messages }) => (messages.length > 4 ? 100 : 1),
-          maxInputTokens: 10,
+          maxInputTokens: 50,
           onOverflow: "compact",
         },
-        minMessages: 5,
-        retainMessages: 2,
+        estimateTokens: tenTokensPerMessage,
+        maxInputTokens: 10_000,
+        retainTokens: 20,
+        triggerTokens: 50,
       },
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
@@ -121,7 +201,7 @@ describe("Agent thread automatic compaction overflow recovery", () => {
     let calls = 0;
     const preparedStepIndices: number[] = [];
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 5, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 50 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         calls += 1;
@@ -196,7 +276,7 @@ describe("Agent thread automatic compaction overflow recovery", () => {
     const call = toolCallPart("call-before-overflow");
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 5, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 50 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;

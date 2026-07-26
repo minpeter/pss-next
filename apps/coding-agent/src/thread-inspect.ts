@@ -59,7 +59,7 @@ export function storageFileForThread(directory: string, key: string): string {
 function formatAutoCompaction(
   autoCompaction: CodingAgentThreadConfig["autoCompaction"]
 ): string {
-  return autoCompaction
-    ? `min=${autoCompaction.minMessages} retain=${autoCompaction.retainMessages}`
-    : "off";
+  return autoCompaction?.maxInputTokens === undefined
+    ? "auto"
+    : `auto max=${autoCompaction.maxInputTokens}`;
 }

@@ -1161,8 +1161,9 @@ const agent = await createAgent({
       maxInputTokens: 120_000,
       onOverflow: "compact",
     },
-    minMessages: 24,
-    retainMessages: 8,
+    maxInputTokens: 128_000,
+    retainTokens: 51_200,
+    triggerTokens: 102_400,
   },
   model,
 });

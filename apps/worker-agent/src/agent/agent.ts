@@ -33,8 +33,9 @@ export const WORKER_AGENT_NAMESPACE = "worker-agent";
 export const DEFAULT_MODEL = "minimax/MiniMax-M2.7";
 
 export const WORKER_AGENT_AUTO_COMPACTION: AgentAutoCompactionOptions = {
-  minMessages: 48,
-  retainMessages: 16,
+  maxInputTokens: 128_000,
+  retainTokens: 32_000,
+  triggerTokens: 96_000,
 };
 
 export const WORKER_AGENT_INSTRUCTIONS =

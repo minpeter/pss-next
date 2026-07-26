@@ -1,0 +1,23 @@
+{
+  "name": "@minpeter/pss-benchmark-compaction-score",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "campaigns": "tsx --conditions=@minpeter/pss-source campaign-aggregation.ts",
+    "compare": "tsx --conditions=@minpeter/pss-source compare-reports.ts",
+    "packets": "tsx --conditions=@minpeter/pss-source export-packets.ts",
+    "score": "tsx --conditions=@minpeter/pss-source run.ts",
+    "screen": "tsx --conditions=@minpeter/pss-source profile-screening.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@minpeter/pss-coding-agent": "workspace:*",
+    "@minpeter/pss-runtime": "workspace:*",
+    "ai": "7.0.34"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.9"
+  }
+}

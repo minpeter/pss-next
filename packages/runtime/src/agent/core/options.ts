@@ -7,6 +7,7 @@ import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
+import type { ThreadTokenEstimator } from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -18,18 +19,29 @@ import {
 } from "./instrumentation";
 
 export interface AgentAutoCompactionOptions {
-  readonly background?: boolean;
   readonly contextGate?: false | AgentContextGateOptions;
-  readonly minMessages: number;
-  readonly retainMessages: number;
+  readonly estimateTokens?: ThreadTokenEstimator;
+  readonly maxInputTokens?: number;
+  readonly retainTokens?: number;
+  readonly triggerTokens?: number;
 }
+
+export interface NormalizedAgentAutoCompactionOptions {
+  readonly contextGate?: false | AgentContextGateOptions;
+  readonly estimateTokens?: ThreadTokenEstimator;
+  readonly maxInputTokens: number;
+  readonly retainTokens: number;
+  readonly triggerTokens: number;
+}
+
+export const DEFAULT_AGENT_MAX_INPUT_TOKENS = 128_000;
 
 export type AgentContextGateOptions = ModelContextGateOptions;
 
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
-  readonly autoCompaction?: AgentAutoCompactionOptions | false;
+  readonly autoCompaction?: AgentAutoCompactionOptions;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
   readonly instructions?: string;
@@ -145,47 +157,114 @@ function assertToolNameList(
 
 export function normalizeAgentAutoCompactionOptions(
   value: AgentOptions["autoCompaction"]
-): AgentAutoCompactionOptions | undefined {
-  if (value === undefined || value === false) {
-    return;
+): NormalizedAgentAutoCompactionOptions {
+  if ((value as unknown) === false) {
+    throw new TypeError(
+      "Agent: options.autoCompaction no longer accepts false; automatic compaction is always enabled."
+    );
   }
 
-  if (value === null || typeof value !== "object") {
+  if (value === null || (value !== undefined && typeof value !== "object")) {
     throw new TypeError("Agent: invalid options.autoCompaction.");
   }
 
-  if (!isPositiveInteger(value.minMessages)) {
+  const options = value ?? {};
+  const contextGate = normalizeContextGateOptions(options.contextGate);
+  const maxInputTokens =
+    options.maxInputTokens ?? DEFAULT_AGENT_MAX_INPUT_TOKENS;
+  const gateBudget =
+    contextGate !== undefined && contextGate !== false
+      ? contextGate.maxInputTokens
+      : undefined;
+  const thresholdBudget = gateBudget ?? maxInputTokens;
+  const triggerTokens =
+    options.triggerTokens ?? Math.floor(thresholdBudget * 0.8);
+  const retainTokens = options.retainTokens ?? Math.floor(triggerTokens / 2);
+
+  assertAutoCompactionBudgets({
+    contextGate,
+    gateBudget,
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
+  });
+
+  if (
+    options.estimateTokens !== undefined &&
+    typeof options.estimateTokens !== "function"
+  ) {
     throw new TypeError(
-      "Agent: options.autoCompaction.minMessages must be a positive integer."
+      "Agent: options.autoCompaction.estimateTokens must be a function."
     );
   }
-
-  if (!isPositiveInteger(value.retainMessages)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.retainMessages must be a positive integer."
-    );
-  }
-
-  if (value.retainMessages >= value.minMessages) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.retainMessages must be smaller than minMessages."
-    );
-  }
-
-  if (value.background !== undefined && typeof value.background !== "boolean") {
-    throw new TypeError(
-      "Agent: options.autoCompaction.background must be a boolean."
-    );
-  }
-
-  const contextGate = normalizeContextGateOptions(value.contextGate);
 
   return {
-    ...(value.background === undefined ? {} : { background: value.background }),
     ...(contextGate === undefined ? {} : { contextGate }),
-    minMessages: value.minMessages,
-    retainMessages: value.retainMessages,
+    ...(options.estimateTokens === undefined
+      ? {}
+      : { estimateTokens: options.estimateTokens }),
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
   };
+}
+
+function assertAutoCompactionBudgets(budgets: {
+  contextGate: AgentAutoCompactionOptions["contextGate"] | undefined;
+  gateBudget: number | undefined;
+  maxInputTokens: number;
+  retainTokens: number;
+  triggerTokens: number;
+}): void {
+  const {
+    contextGate,
+    gateBudget,
+    maxInputTokens,
+    retainTokens,
+    triggerTokens,
+  } = budgets;
+
+  if (!isPositiveInteger(maxInputTokens)) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.maxInputTokens must be a positive integer."
+    );
+  }
+
+  if (!isPositiveInteger(triggerTokens)) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.triggerTokens must be a positive integer."
+    );
+  }
+
+  if (triggerTokens > maxInputTokens) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.triggerTokens must not exceed maxInputTokens."
+    );
+  }
+
+  if (
+    gateBudget !== undefined &&
+    contextGate !== false &&
+    contextGate !== undefined &&
+    contextGate.onOverflow !== "error" &&
+    triggerTokens > gateBudget
+  ) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.triggerTokens must not exceed the contextGate maxInputTokens budget."
+    );
+  }
+
+  if (!isPositiveInteger(retainTokens)) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.retainTokens must be a positive integer."
+    );
+  }
+
+  if (retainTokens >= triggerTokens) {
+    throw new TypeError(
+      "Agent: options.autoCompaction.retainTokens must be smaller than triggerTokens."
+    );
+  }
 }
 
 function isPositiveInteger(value: unknown): value is number {
