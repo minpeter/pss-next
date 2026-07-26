@@ -12,21 +12,22 @@ The TUI gains a `/reload` command that rebuilds the extension runtime from
 disk without restarting the session. Extensions are rediscovered across
 managed installs, local modules, and `-e` paths, re-imported past the module
 cache, and activated against a replacement agent while the durable thread
-keeps its history. The swap is fail-safe: the replacement host, agent,
-command set, and renderer set are fully constructed and activated before
-anything is swapped, so a failing reload leaves the current session
-untouched and reports the error in chat. Reload cache busting propagates
-through the extension-owned module graph via a module customization hook,
-including CommonJS helpers, so edited sibling modules are re-imported too;
-CommonJS eviction is transactional and restored when a reload fails, and
-dependencies under `node_modules` keep their loaded versions so repeated
-reloads do not accumulate duplicate dependency graphs. Cleanup of the
-previous runtime is bounded by a timeout so an unresponsive extension
-cannot hang the reload command.
-The runtime exports `validateThreadStateMigrations` and `/reload` uses it to
-prove reloaded migrations accept the stored thread before the swap commits;
-a failed reload also refreshes the surviving thread handle so replacement
-activation writes cannot strand the old session on a stale revision.
+keeps its history. Reload is staged for safety: discovery, configuration,
+validation, and agent construction happen while the previous runtime keeps
+running, the previous runtime is then disposed under a bounded timeout
+before the replacement activates (so old cleanup can never overwrite the
+replacement's extension state), and an activation failure rebuilds a
+runtime from the previous extensions so the session stays usable. Cache
+busting propagates through the extension-owned module graph via a module
+customization hook, including CommonJS helpers and a managed package's own
+modules; CommonJS eviction is transactional and restored when a reload
+fails, and dependency trees under `node_modules` keep their loaded versions
+so repeated reloads do not accumulate duplicate dependency graphs. The
+runtime exports `commitThreadStateMigrations`, which `/reload` uses to run
+and commit reloaded migrations for the stored thread before the swap,
+preserving exactly-once migration semantics; a failed reload also refreshes
+the surviving thread handle so it cannot commit on a stale revision. The
+command is offered only when the host can rediscover extensions, and
 `reload` joins the reserved command names extensions cannot register.
 
 Extension services gain `services.events`, a shared publish/subscribe bus

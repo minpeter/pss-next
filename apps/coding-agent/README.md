@@ -216,11 +216,18 @@ In the TUI, `/reload` rebuilds the extension runtime from disk without
 restarting the session: extensions are rediscovered (managed installs, local
 modules, and `-e` paths), re-imported past the module cache, and activated
 against a replacement agent while the durable thread keeps its history. The
-swap is fail-safe — if any extension fails to load, configure, or activate,
-the current session keeps running unchanged (including its CommonJS module
-cache) and the error is shown in chat. Reload refreshes extension-owned
-files only; dependencies under `node_modules` keep their loaded versions, so
-updating a dependency still requires `pss extension update` or a restart.
+previous runtime is cleaned up before the replacement activates so old
+cleanup can never overwrite the replacement's extension state; if loading,
+configuration, or validation fails, the current session keeps running
+unchanged (including its CommonJS module cache), and if activation itself
+fails, a runtime is rebuilt from the previous extensions so the session
+stays usable. Reloaded thread migrations are committed for the current
+thread before the swap, preserving exactly-once semantics. Reload refreshes
+extension-owned files only (including a managed package's own helpers);
+dependencies under `node_modules` keep their loaded versions, so updating a
+dependency still requires `pss extension update` or a restart. The command
+appears only when the session was started through the `pss` CLI, which can
+rediscover extensions.
 
 ### Inter-extension events
 

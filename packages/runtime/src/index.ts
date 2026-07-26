@@ -152,7 +152,7 @@ export type {
   CompactionContextMessage,
   ThreadContextMessage,
 } from "./thread/state/context";
-export { validateThreadStateMigrations } from "./thread/state/migration-validation";
+export { commitThreadStateMigrations } from "./thread/state/migration-validation";
 export {
   type ThreadMigrationContext,
   ThreadMigrationError,

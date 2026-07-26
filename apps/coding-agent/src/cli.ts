@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { runExecCli } from "./exec-cli";
 import { runExtensionCli } from "./extension-cli";
 import type {
@@ -14,6 +14,7 @@ import {
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { extensionScopePaths } from "./extensions/manager/paths";
 import { beginCommonJsReloadTransaction } from "./extensions/manager/reload-module-graph";
+import { readExtensionSettings } from "./extensions/manager/settings";
 import { resolveCodingAgentThreadConfig } from "./thread-config";
 import {
   formatThreadInspectionReport,
@@ -216,14 +217,29 @@ async function reloadCacheRoots({
   readonly home: string;
   readonly targets: readonly { readonly path: string }[];
 }): Promise<readonly string[]> {
-  const roots = [
-    (await extensionScopePaths({ cwd, home, scope: "global" })).installRoot,
-    ...targets.map((target) => dirname(target.path)),
-  ];
+  const roots = targets.map((target) => dirname(target.path));
+  const addScope = async (scope: "global" | "project"): Promise<void> => {
+    const paths = await extensionScopePaths({ cwd, home, scope });
+    roots.push(paths.installRoot);
+    // Managed extensions live at <installRoot>/node_modules/<package>; add
+    // each package root so its own CommonJS helpers reload while nested
+    // dependency trees stay cached.
+    const settings = await readExtensionSettings(paths.settingsPath);
+    for (const entry of settings.extensions) {
+      if (entry.target.kind === "package") {
+        roots.push(
+          join(
+            paths.installRoot,
+            "node_modules",
+            ...entry.target.packageName.split("/")
+          )
+        );
+      }
+    }
+  };
+  await addScope("global");
   try {
-    roots.push(
-      (await extensionScopePaths({ cwd, home, scope: "project" })).installRoot
-    );
+    await addScope("project");
   } catch {
     // Untrusted or malformed project layouts simply contribute no root.
   }

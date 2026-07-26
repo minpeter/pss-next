@@ -1,15 +1,45 @@
 import { describe, expect, it } from "vitest";
-import type { StoredThread } from "../store/types";
-import { validateThreadStateMigrations } from "./migration-validation";
-import { ThreadMigrationError } from "./migrations";
+import type {
+  CommitResult,
+  StoredThread,
+  ThreadStoreCommit,
+} from "../store/types";
+import { commitThreadStateMigrations } from "./migration-validation";
+import {
+  ThreadMigrationError,
+  type ThreadMigrationSnapshot,
+} from "./migrations";
 
-function storeWith(stored: StoredThread | null): {
+const conflictPattern = /changed while committing migrations/u;
+
+function storeWith(
+  stored: StoredThread | null,
+  commitResult: CommitResult = { ok: true, version: "v2" }
+): {
+  commit(
+    key: string,
+    next: ThreadStoreCommit,
+    options: { expectedVersion: string | null }
+  ): Promise<CommitResult>;
+  readonly commits: {
+    readonly expectedVersion: string | null;
+    readonly state: unknown;
+  }[];
   load(key: string): Promise<StoredThread | null>;
   readonly loads: string[];
 } {
   const loads: string[] = [];
+  const commits: { expectedVersion: string | null; state: unknown }[] = [];
   return {
-    load: (key: string) => {
+    commit: (_key, next, options) => {
+      commits.push({
+        expectedVersion: options.expectedVersion,
+        state: next.state,
+      });
+      return Promise.resolve(commitResult);
+    },
+    commits,
+    load: (key) => {
       loads.push(key);
       return Promise.resolve(stored);
     },
@@ -25,13 +55,13 @@ const storedThread: StoredThread = {
   version: "v1",
 };
 
-describe("validateThreadStateMigrations", () => {
+describe("commitThreadStateMigrations", () => {
   it("skips loading when no migrations are configured", async () => {
     // Given
     const store = storeWith(storedThread);
 
     // When
-    await validateThreadStateMigrations({
+    await commitThreadStateMigrations({
       migrations: [],
       store,
       threadKey: "thread-1",
@@ -39,47 +69,96 @@ describe("validateThreadStateMigrations", () => {
 
     // Then
     expect(store.loads).toEqual([]);
+    expect(store.commits).toEqual([]);
   });
 
-  it("accepts missing threads and passing migrations without committing", async () => {
+  it("commits migrated state with applied markers exactly once", async () => {
     // Given
-    const empty = storeWith(null);
     const store = storeWith(storedThread);
-    const seen: unknown[] = [];
+    const runs: unknown[] = [];
     const migration = {
       id: "sanitize",
-      migrate: (snapshot: unknown) => {
-        seen.push(snapshot);
-        return snapshot as never;
+      migrate: (snapshot: ThreadMigrationSnapshot) => {
+        runs.push(snapshot);
+        return {
+          compactions: snapshot.compactions,
+          history: [{ content: "sanitized", role: "user" as const }],
+        };
       },
       version: 1,
     };
 
     // When
-    await validateThreadStateMigrations({
-      migrations: [migration],
-      store: empty,
-      threadKey: "thread-1",
-    });
-    await validateThreadStateMigrations({
+    await commitThreadStateMigrations({
       migrations: [migration],
       store,
       threadKey: "thread-1",
     });
 
     // Then
-    expect(empty.loads).toEqual(["thread-1"]);
-    expect(store.loads).toEqual(["thread-1"]);
-    expect(seen).toHaveLength(1);
+    expect(runs).toHaveLength(1);
+    expect(store.commits).toHaveLength(1);
+    expect(store.commits[0]?.expectedVersion).toBe("v1");
+    expect(store.commits[0]?.state).toMatchObject({
+      appliedMigrations: { sanitize: 1 },
+      history: [{ content: "sanitized", role: "user" }],
+    });
   });
 
-  it("surfaces rejecting migrations as ThreadMigrationError", async () => {
+  it("does not commit when nothing changes or the thread is missing", async () => {
+    // Given
+    const empty = storeWith(null);
+    const alreadyApplied = storeWith({
+      state: {
+        appliedMigrations: { sanitize: 1 },
+        compactions: [],
+        history: [],
+        schemaVersion: 3,
+      },
+      version: "v3",
+    });
+    const migration = {
+      id: "sanitize",
+      migrate: (snapshot: ThreadMigrationSnapshot) => snapshot,
+      version: 1,
+    };
+
+    // When
+    await commitThreadStateMigrations({
+      migrations: [migration],
+      store: empty,
+      threadKey: "thread-1",
+    });
+    await commitThreadStateMigrations({
+      migrations: [migration],
+      store: alreadyApplied,
+      threadKey: "thread-1",
+    });
+
+    // Then
+    expect(empty.commits).toEqual([]);
+    expect(alreadyApplied.commits).toEqual([]);
+  });
+
+  it("surfaces rejecting migrations and commit conflicts", async () => {
     // Given
     const store = storeWith(storedThread);
+    const conflicted = storeWith(storedThread, {
+      ok: false,
+      reason: "conflict",
+    });
+    const passing = {
+      id: "pass",
+      migrate: (snapshot: ThreadMigrationSnapshot) => ({
+        compactions: snapshot.compactions,
+        history: [],
+      }),
+      version: 1,
+    };
 
     // When / Then
     await expect(
-      validateThreadStateMigrations({
+      commitThreadStateMigrations({
         migrations: [
           {
             id: "rejects",
@@ -93,5 +172,12 @@ describe("validateThreadStateMigrations", () => {
         threadKey: "thread-1",
       })
     ).rejects.toBeInstanceOf(ThreadMigrationError);
+    await expect(
+      commitThreadStateMigrations({
+        migrations: [passing],
+        store: conflicted,
+        threadKey: "thread-1",
+      })
+    ).rejects.toThrow(conflictPattern);
   });
 });

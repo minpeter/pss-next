@@ -3,8 +3,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   type AgentOptions,
+  commitThreadStateMigrations,
   threadStoreKey,
-  validateThreadStateMigrations,
 } from "@minpeter/pss-runtime";
 import { createFileHost } from "@minpeter/pss-runtime/platform/file";
 import type { ToolSet } from "ai";
@@ -108,7 +108,16 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     let extensionUi: CodingAgentExtensionUi | undefined;
 
     const noticeLines: string[] = [];
-    const builtInCommands = [createClearCommand(), createReloadCommand()];
+    // `/reload` is only offered when the entrypoint provided a rediscovery
+    // loader; embedded starts without one would advertise a dead command.
+    const builtInCommands = [
+      createClearCommand(),
+      ...(options.reloadExtensions === undefined
+        ? []
+        : [createReloadCommand()]),
+    ];
+    let currentExtensionInputs: readonly CodingAgentExtensionInput[] =
+      options.extensions ?? [];
     const deferredRefreshes: (() => Promise<void>)[] = [];
     const updateNotice = await emitUpdateNotice({
       write: (line) => noticeLines.push(line),
@@ -212,6 +221,51 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       ),
     };
 
+    const activateReplacementHost = async (
+      host: CodingAgentExtensionHost,
+      nextAgent: Awaited<ReturnType<typeof createCodingAgent>>
+    ): Promise<void> => {
+      // Bind provider observations to the replacement host before its
+      // extensions activate so they observe their own model traffic.
+      const previousEmit = providerEmitter.current;
+      providerEmitter.current = (type, payload) => {
+        host.emitHostEvent(type, payload);
+      };
+      try {
+        if (extensionUi !== undefined) {
+          host.bindUi(extensionUi);
+        }
+        await host.activate(nextAgent, "tui");
+      } catch (error) {
+        providerEmitter.current = previousEmit;
+        throw error;
+      }
+    };
+
+    const createReplacementAgent = (host: CodingAgentExtensionHost) =>
+      createCodingAgent({
+        autoCompaction: threadConfig.autoCompaction,
+        extensionHost: host,
+        host: createFileHost({ directory: threadConfig.directory }),
+        model,
+        tools: options.tools,
+        webTools: { onWebToolsDisabled: () => undefined },
+        workspace: process.cwd(),
+      });
+
+    const installRuntime = (
+      host: CodingAgentExtensionHost,
+      nextAgent: Awaited<ReturnType<typeof createCodingAgent>>,
+      commands: readonly TuiCommand[],
+      toolRenderers: NonNullable<AgentTUIConfig["toolRenderers"]>
+    ): void => {
+      agent = nextAgent;
+      extensionHost = host;
+      thread = agent.thread(threadConfig.key);
+      tuiConfig.commands = [...commands];
+      tuiConfig.toolRenderers = toolRenderers;
+    };
+
     const reloadExtensionRuntime = async (): Promise<void> => {
       const reloadExtensions = options.reloadExtensions;
       if (reloadExtensions === undefined) {
@@ -220,41 +274,23 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       const reloadFileHost = createFileHost({
         directory: threadConfig.directory,
       });
+      const previous = { agent, host: extensionHost, thread };
       const swap = await buildReloadedExtensionRuntime<
         Awaited<ReturnType<typeof createCodingAgent>>,
         CodingAgentExtensionHost
       >({
-        activateHost: async (host, nextAgent) => {
-          // Bind provider observations to the replacement host before its
-          // extensions activate so they observe their own model traffic.
-          const previousEmit = providerEmitter.current;
-          providerEmitter.current = (type, payload) => {
-            host.emitHostEvent(type, payload);
-          };
-          try {
-            if (extensionUi !== undefined) {
-              host.bindUi(extensionUi);
-            }
-            await host.activate(nextAgent, "tui");
-          } catch (error) {
-            providerEmitter.current = previousEmit;
-            throw error;
-          }
-        },
-        createAgent: (host) =>
-          Promise.resolve(
-            createCodingAgent({
-              autoCompaction: threadConfig.autoCompaction,
-              extensionHost: host,
-              host: reloadFileHost,
-              model,
-              tools: options.tools,
-              webTools: { onWebToolsDisabled: () => undefined },
-              workspace: process.cwd(),
-            })
-          ),
+        activateHost: activateReplacementHost,
+        createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
         createHost: (loaded) =>
           createCodingAgentExtensionHost(loaded.extensions),
+        disposePrevious: () => {
+          previous.thread.interrupt();
+          return disposePreviousExtensionRuntime({
+            agent: previous.agent,
+            disposeThread: () => previous.thread.dispose(),
+            host: previous.host,
+          });
+        },
         loadExtensions: reloadExtensions,
         mergeCommands: (host) =>
           guardExtensionCommands(builtInCommands, host.commands),
@@ -264,28 +300,48 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             host.toolRenderers,
             (name) => host.getToolRendererOwner(name)
           ),
-        // Prove reloaded migrations accept the stored thread before swapping
-        // so a rejecting migration cannot strand the next prompt.
+        // Rebuild a runtime from the previous inputs so the session stays
+        // usable when replacement activation fails after old cleanup ran.
+        recoverPrevious: async () => {
+          const recoveredHost = await createCodingAgentExtensionHost(
+            currentExtensionInputs
+          );
+          try {
+            const recoveredAgent = await createReplacementAgent(recoveredHost);
+            const commands = guardExtensionCommands(
+              builtInCommands,
+              recoveredHost.commands
+            );
+            const toolRenderers = mergeToolRenderers(
+              createToolRenderers(),
+              recoveredHost.toolRenderers,
+              (name) => recoveredHost.getToolRendererOwner(name)
+            );
+            await activateReplacementHost(recoveredHost, recoveredAgent);
+            installRuntime(
+              recoveredHost,
+              recoveredAgent,
+              commands,
+              toolRenderers
+            );
+          } catch (error) {
+            await recoveredHost.dispose().catch(() => undefined);
+            throw error;
+          }
+        },
+        // Commit reloaded migrations for the stored thread before swapping so
+        // a rejecting migration cannot strand the next prompt and stateful
+        // migrations never re-run on the next load.
         validateHost: (host) =>
-          validateThreadStateMigrations({
+          commitThreadStateMigrations({
             migrations: host.threadMigrations,
             store: reloadFileHost.store.threads,
             threadKey: threadStoreKey(threadConfig.key),
           }),
       });
-      const previous = { agent, host: extensionHost, thread };
-      agent = swap.agent;
-      extensionHost = swap.host;
-      thread = agent.thread(threadConfig.key);
-      tuiConfig.commands = [...swap.commands];
-      tuiConfig.toolRenderers = swap.toolRenderers;
-      previous.thread.interrupt();
-      const cleanupNotices = await disposePreviousExtensionRuntime({
-        agent: previous.agent,
-        disposeThread: () => previous.thread.dispose(),
-        host: previous.host,
-      });
-      for (const notice of [...swap.notices, ...cleanupNotices]) {
+      installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);
+      currentExtensionInputs = swap.loadedExtensions;
+      for (const notice of swap.notices) {
         extensionUi?.notify(notice);
       }
     };

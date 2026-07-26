@@ -8,17 +8,29 @@ import { sep } from "node:path";
  * entry points while sibling and helper modules stayed pinned in Node's
  * module cache.
  *
- * Dependencies under `node_modules` keep their stable URLs: Node retains
- * every distinct ESM URL for the process lifetime, so re-versioning large
- * dependency graphs on each reload would leak memory. Reload therefore
- * refreshes extension-owned files only; updating a dependency still requires
- * `pss extension update` or a restart.
+ * Managed extensions live at `<installRoot>/node_modules/<package>`, so the
+ * marker follows imports that stay inside the same package (the extension's
+ * own helpers) but stops at imports that cross into a different package
+ * (real dependencies). Node retains every distinct ESM URL for the process
+ * lifetime, so re-versioning dependency graphs on each reload would leak
+ * memory; updating a dependency still requires `pss extension update` or a
+ * restart.
  *
  * The hook is pass-through for every resolution whose parent does not carry
  * the marker parameter, so regular imports keep their normal behavior.
  */
 const HOOK_SOURCE = `
 const MARKER = /[?&]pss-extension-update=([^&#]+)/;
+const packageRootOf = (url) => {
+  const index = url.lastIndexOf("/node_modules/");
+  if (index === -1) {
+    return;
+  }
+  const start = index + "/node_modules/".length;
+  const segments = url.slice(start).split("/");
+  const packageLength = segments[0]?.startsWith("@") ? 2 : 1;
+  return url.slice(0, start) + segments.slice(0, packageLength).join("/");
+};
 export async function resolve(specifier, context, nextResolve) {
   const resolved = await nextResolve(specifier, context);
   const parent = context.parentURL;
@@ -32,7 +44,8 @@ export async function resolve(specifier, context, nextResolve) {
   if (!resolved.url.startsWith("file:")) {
     return resolved;
   }
-  if (resolved.url.includes("/node_modules/")) {
+  const resolvedRoot = packageRootOf(resolved.url);
+  if (resolvedRoot !== undefined && resolvedRoot !== packageRootOf(parent)) {
     return resolved;
   }
   if (MARKER.test(resolved.url)) {
@@ -75,8 +88,9 @@ export interface CommonJsReloadTransaction {
  * evicted entries first. The ESM resolve hook cannot reach the CommonJS
  * cache because Node keys it by filesystem path rather than URL.
  *
- * Entries under `node_modules` are left untouched for the same reasons the
- * ESM hook skips them.
+ * Pass loose-module directories and managed package roots explicitly;
+ * `node_modules` trees nested below a root (real dependencies) are left
+ * untouched for the same reasons the ESM hook skips them.
  */
 export function beginCommonJsReloadTransaction(
   roots: readonly string[]
@@ -86,8 +100,12 @@ export function beginCommonJsReloadTransaction(
     root.endsWith(sep) ? root : `${root}${sep}`
   );
   const owned = (key: string): boolean =>
-    !key.includes(`${sep}node_modules${sep}`) &&
-    prefixes.some((prefix) => key.startsWith(prefix));
+    prefixes.some(
+      (prefix) =>
+        key.startsWith(prefix) &&
+        !key.slice(prefix.length).includes(`${sep}node_modules${sep}`) &&
+        !key.slice(prefix.length).startsWith(`node_modules${sep}`)
+    );
   const snapshot = new Map<string, NodeJS.Module>();
   for (const key of Object.keys(require.cache)) {
     if (!owned(key)) {
