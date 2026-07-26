@@ -184,6 +184,30 @@ Loose local modules must be runnable `.js` or `.mjs` files and require
 default stable ID and must ship runnable ESM. Dependency lifecycle scripts are
 disabled during managed installation.
 
+### Local extensions without installing
+
+Drop loose modules into an extensions directory and they load automatically:
+
+- `~/.pss/extensions/<name>.<ts|mts|js|mjs>` (global, every project)
+- `~/.pss/extensions/<name>/index.*` (global, directory form)
+- `<project>/.pss/extensions/<name>.*` (project, loads only after trust)
+
+TypeScript files run directly through Node's native type stripping — no build
+step. The file or directory name is the extension id and must match
+`[a-z0-9][a-z0-9._-]*`. Symbolic links are skipped, and a local id that
+collides with an installed extension is skipped with a startup notice.
+Project-local files override global-local files with the same id.
+
+For one run only, pass `-e`/`--extension` (repeatable) to the TUI or exec:
+
+```sh
+pss -e ./review-guard.ts
+pss exec --prompt "..." -e ./review-guard.ts -e ./metrics
+```
+
+CLI extensions load without trust gating (running them is an explicit user
+action) and take precedence over configured extensions with the same id.
+
 Programmatic static-object extensions remain supported through
 `defineCodingAgentExtension()` and the `extensions` option on `startTui()` or
 `runCodingAgentExec()`. Their existing `registry.runtime.use()` API remains an

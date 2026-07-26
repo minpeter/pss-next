@@ -4,12 +4,17 @@ import { resolve } from "node:path";
 import { config } from "dotenv";
 import type { CodingAgentRuntimeEnv } from "./env";
 import { runCodingAgentExec } from "./exec";
+import {
+  loadCliExtensions,
+  mergeCliExtensions,
+} from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { createOpenAICompatibleModelFromEnv } from "./model";
 import type { WebToolsAvailability } from "./tools";
 
 interface ExecArguments {
   readonly baseUrl?: string;
+  readonly extensionPaths: readonly string[];
   readonly help: boolean;
   readonly model?: string;
   readonly prompt?: string;
@@ -23,6 +28,7 @@ interface ExecArguments {
 
 interface MutableExecArguments {
   baseUrl?: string;
+  extensionPaths: string[];
   help: boolean;
   model?: string;
   prompt?: string;
@@ -44,6 +50,7 @@ interface RunExecCliOptions {
 
 const VALUE_FLAGS = new Set([
   "--base-url",
+  "--extension",
   "--model",
   "--prompt",
   "--prompt-file",
@@ -86,6 +93,9 @@ function setValueOption(
       return;
     case "--base-url":
       options.baseUrl = value;
+      return;
+    case "--extension":
+      options.extensionPaths.push(value);
       return;
     case "--result-file":
       options.resultFile = resolve(cwd, value);
@@ -132,6 +142,7 @@ export function parseExecArguments(
   cwd = process.cwd()
 ): ExecArguments {
   const options: MutableExecArguments = {
+    extensionPaths: [],
     help: false,
     readStdin: false,
     timeoutSeconds: 1200,
@@ -148,10 +159,11 @@ export function parseExecArguments(
       options.readStdin = true;
       continue;
     }
-    if (!VALUE_FLAGS.has(flag)) {
+    const valueFlag = flag === "-e" ? "--extension" : flag;
+    if (!VALUE_FLAGS.has(valueFlag)) {
       throw new Error(`Unknown pss exec option: ${flag}`);
     }
-    setValueOption(options, flag, requiredValue(argv, index, flag), cwd);
+    setValueOption(options, valueFlag, requiredValue(argv, index, flag), cwd);
     index += 1;
   }
   validateArguments(options);
@@ -171,6 +183,7 @@ export function formatExecUsage(): string {
     "Usage: pss exec --workspace <dir> (--prompt <text> | --prompt-file <file> | --stdin)",
     "                [--model <id>] [--base-url <url>] [--timeout-seconds <1-1200>]",
     "                [--web-tools disabled|optional|required] [--result-file <file>]",
+    "                [-e|--extension <path>]...",
   ].join("\n");
 }
 
@@ -207,8 +220,15 @@ export async function runExecCli({
       `${JSON.stringify({ message: notice, type: "extension_notice" })}\n`
     );
   }
+  const extensions =
+    args.extensionPaths.length === 0
+      ? configured.extensions
+      : mergeCliExtensions(
+          configured.extensions,
+          await loadCliExtensions({ cwd, paths: args.extensionPaths })
+        );
   const result = await runCodingAgentExec({
-    extensions: configured.extensions,
+    extensions,
     model: createOpenAICompatibleModelFromEnv({ runtimeEnv }),
     prompt,
     ...(args.resultFile === undefined ? {} : { resultFile: args.resultFile }),
