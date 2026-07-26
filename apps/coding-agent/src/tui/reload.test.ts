@@ -121,6 +121,31 @@ describe("buildReloadedExtensionRuntime", () => {
     expect(host.disposed).toEqual([true]);
   });
 
+  it("aborts before creating the agent when validation fails", async () => {
+    // Given
+    const host = fakeHost();
+    let agentCreated = false;
+
+    // When / Then
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>({
+        activateHost: () => Promise.resolve(),
+        createAgent: () => {
+          agentCreated = true;
+          return Promise.resolve(fakeAgent());
+        },
+        createHost: () => Promise.resolve(host),
+        loadExtensions: () => Promise.resolve(loaded),
+        mergeCommands: () => [command],
+        mergeToolRenderers: () => ({}),
+        validateHost: () =>
+          Promise.reject(new Error("migration rejected history")),
+      })
+    ).rejects.toThrow("migration rejected history");
+    expect(agentCreated).toBe(false);
+    expect(host.disposed).toEqual([true]);
+  });
+
   it("aborts before creating the agent when command merging fails", async () => {
     // Given
     const host = fakeHost();

@@ -122,6 +122,58 @@ describe("managed package module loading", () => {
 
   // Runs in a child Node process because module customization hooks do not
   // intercept imports issued through vitest's own module runner.
+  it("reloads commonjs helpers when cache busting", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-module-loader-"));
+    cleanupRoots.push(root);
+    const helperPath = join(root, "helper.cjs");
+    const entryPath = join(root, "entry.mjs");
+    await writeFile(helperPath, 'module.exports = { marker: "one" };\n');
+    await writeFile(
+      entryPath,
+      [
+        'import helper from "./helper.cjs";',
+        "export default function extension() {}",
+        "extension.marker = helper.marker;",
+        "",
+      ].join("\n")
+    );
+    const script = [
+      `import { ensureReloadModuleGraphHooks, purgeCommonJsCacheUnder } from ${JSON.stringify(
+        new URL("./reload-module-graph.ts", import.meta.url).href
+      )};`,
+      'import { writeFile } from "node:fs/promises";',
+      'import { pathToFileURL } from "node:url";',
+      "ensureReloadModuleGraphHooks();",
+      `const root = ${JSON.stringify(root)};`,
+      `const entryPath = ${JSON.stringify(entryPath)};`,
+      `const helperPath = ${JSON.stringify(helperPath)};`,
+      "const importBusted = async (cacheBust) => {",
+      "  purgeCommonJsCacheUnder([root]);",
+      "  const url = pathToFileURL(entryPath);",
+      "  url.searchParams.set('pss-extension-update', cacheBust);",
+      "  return await import(url.href);",
+      "};",
+      "const first = await importBusted('1');",
+      "await writeFile(helperPath, 'module.exports = { marker: \"two\" };\\n');",
+      "const second = await importBusted('2');",
+      "console.log(JSON.stringify({ first: first.default.marker, second: second.default.marker }));",
+    ].join("\n");
+
+    // When
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { timeout: 30_000 }
+    );
+
+    // Then
+    expect(JSON.parse(stdout.trim())).toEqual({
+      first: "one",
+      second: "two",
+    });
+  });
+
   it("reloads transitive helper modules when cache busting", async () => {
     // Given
     const root = await mkdtemp(join(tmpdir(), "pss-module-loader-"));

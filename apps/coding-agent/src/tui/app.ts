@@ -1,7 +1,11 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentOptions } from "@minpeter/pss-runtime";
+import {
+  type AgentOptions,
+  threadStoreKey,
+  validateThreadStateMigrations,
+} from "@minpeter/pss-runtime";
 import { createFileHost } from "@minpeter/pss-runtime/platform/file";
 import type { ToolSet } from "ai";
 import { createCodingAgent } from "../coding-agent";
@@ -175,7 +179,18 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       },
       onCommandAction: async (action) => {
         if (action.type === "reload") {
-          await reloadExtensionRuntime();
+          try {
+            await reloadExtensionRuntime();
+          } catch (error) {
+            // Replacement activation may have written to the durable thread
+            // before failing; refresh the handle so the surviving session
+            // re-reads the store instead of committing on a stale revision.
+            const stale = thread;
+            thread = agent.thread(threadConfig.key);
+            stale.interrupt();
+            await stale.dispose().catch(() => undefined);
+            throw error;
+          }
           return;
         }
         if (action.type !== "new-session") {
@@ -202,6 +217,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       if (reloadExtensions === undefined) {
         throw new Error("Extension reload is unavailable in this session.");
       }
+      const reloadFileHost = createFileHost({
+        directory: threadConfig.directory,
+      });
       const swap = await buildReloadedExtensionRuntime<
         Awaited<ReturnType<typeof createCodingAgent>>,
         CodingAgentExtensionHost
@@ -228,7 +246,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             createCodingAgent({
               autoCompaction: threadConfig.autoCompaction,
               extensionHost: host,
-              host: createFileHost({ directory: threadConfig.directory }),
+              host: reloadFileHost,
               model,
               tools: options.tools,
               webTools: { onWebToolsDisabled: () => undefined },
@@ -246,6 +264,14 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             host.toolRenderers,
             (name) => host.getToolRendererOwner(name)
           ),
+        // Prove reloaded migrations accept the stored thread before swapping
+        // so a rejecting migration cannot strand the next prompt.
+        validateHost: (host) =>
+          validateThreadStateMigrations({
+            migrations: host.threadMigrations,
+            store: reloadFileHost.store.threads,
+            threadKey: threadStoreKey(threadConfig.key),
+          }),
       });
       const previous = { agent, host: extensionHost, thread };
       agent = swap.agent;

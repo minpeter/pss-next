@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+
+const invalidUrlPattern = /Invalid URL/u;
+
 import type { ExtensionJsonValue } from "./extensions";
 import {
   createProviderObservationFetch,
@@ -99,6 +102,35 @@ describe("provider observation fetch", () => {
         type: "provider:error",
       },
     ]);
+  });
+
+  it("scrubs URL-like tokens from transport error messages", async () => {
+    // Given
+    const { emitter, events } = createRecorder();
+    const observed = createProviderObservationFetch(emitter, () =>
+      Promise.reject(
+        new Error(
+          `Invalid URL: https://user:secret@gateway.example/v1?api-key=leak (${"x".repeat(400)})`
+        )
+      )
+    );
+
+    // When / Then
+    await expect(observed("https://gateway.example/v1/chat")).rejects.toThrow(
+      invalidUrlPattern
+    );
+    const errorEvent = events.find((event) => event.type === "provider:error");
+    const message =
+      errorEvent !== undefined &&
+      typeof errorEvent.payload === "object" &&
+      errorEvent.payload !== null &&
+      "message" in errorEvent.payload
+        ? String(errorEvent.payload.message)
+        : "";
+    expect(message).toContain("<redacted-url>");
+    expect(message).not.toContain("secret");
+    expect(message).not.toContain("api-key=leak");
+    expect(message.length).toBeLessThanOrEqual(256);
   });
 
   it("never breaks traffic when the emitter is unbound or throws", async () => {

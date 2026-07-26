@@ -40,6 +40,8 @@ export async function buildReloadedExtensionRuntime<
   readonly loadExtensions: () => Promise<LoadedConfiguredExtensions>;
   readonly mergeCommands: (host: Host) => readonly TuiCommand[];
   readonly mergeToolRenderers: (host: Host) => ToolRendererMap;
+  /** Pre-swap validation, e.g. proving migrations accept the stored thread. */
+  readonly validateHost?: (host: Host) => Promise<void>;
 }): Promise<ExtensionRuntimeSwap<Agent, Host>> {
   const loaded = await options.loadExtensions();
   const host = await options.createHost(loaded);
@@ -48,6 +50,7 @@ export async function buildReloadedExtensionRuntime<
     // Validate TUI-facing merges before activation so conflicts abort early.
     const commands = options.mergeCommands(host);
     const toolRenderers = options.mergeToolRenderers(host);
+    await options.validateHost?.(host);
     agent = await options.createAgent(host);
     await options.activateHost(host, agent);
     return {

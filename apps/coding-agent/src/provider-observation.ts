@@ -9,6 +9,8 @@ export interface ProviderObservationEmitter {
   current?: (type: string, payload: ExtensionJsonValue) => void;
 }
 
+const URL_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"')]+/gi;
+const MAX_ERROR_MESSAGE_LENGTH = 256;
 const SAFE_RESPONSE_HEADERS = new Set([
   "content-type",
   "retry-after",
@@ -42,7 +44,7 @@ export function createProviderObservationFetch(
       response = await baseFetch(input, init);
     } catch (error) {
       emit("provider:error", {
-        message: error instanceof Error ? error.message : String(error),
+        message: redactedErrorMessage(error),
         url,
       });
       throw error;
@@ -88,6 +90,17 @@ function redactedUrl(input: RequestInfo | URL): string {
   } catch {
     return "invalid-url";
   }
+}
+
+/**
+ * Transport errors can embed the raw request URL (including credentials or
+ * query API keys); scrub URL-like tokens before publishing to observers.
+ */
+function redactedErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(URL_LIKE_PATTERN, "<redacted-url>")
+    .slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
 function safeResponseHeaders(

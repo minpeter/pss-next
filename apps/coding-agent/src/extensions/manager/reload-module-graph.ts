@@ -1,4 +1,5 @@
-import { register } from "node:module";
+import { createRequire, register } from "node:module";
+import { sep } from "node:path";
 
 /**
  * Module customization hook that propagates the `pss-extension-update`
@@ -50,4 +51,22 @@ export function ensureReloadModuleGraphHooks(): void {
     return;
   }
   register(`data:text/javascript,${encodeURIComponent(HOOK_SOURCE)}`);
+}
+
+/**
+ * Drop CommonJS modules cached under the given roots so cache-busted ESM
+ * imports re-execute `.cjs` helpers and their `require()` descendants. The
+ * ESM resolve hook cannot reach the CommonJS cache because Node keys it by
+ * filesystem path rather than URL.
+ */
+export function purgeCommonJsCacheUnder(roots: readonly string[]): void {
+  const require = createRequire(import.meta.url);
+  const prefixes = roots.map((root) =>
+    root.endsWith(sep) ? root : `${root}${sep}`
+  );
+  for (const key of Object.keys(require.cache)) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      delete require.cache[key];
+    }
+  }
 }
