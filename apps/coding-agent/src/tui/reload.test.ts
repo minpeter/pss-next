@@ -44,6 +44,7 @@ const loaded: LoadedConfiguredExtensions = {
 };
 
 const recoveryPattern = /could not be recovered/u;
+const revertFailedPattern = /could not be reverted/u;
 
 const command: TuiCommand = {
   description: "noop",
@@ -266,6 +267,29 @@ describe("buildReloadedExtensionRuntime", () => {
     expect(agent.disposed).toEqual([true]);
     expect(host.disposed).toEqual([true]);
     expect(rollbacks).toEqual([true]);
+    expect(recoveries).toEqual([true]);
+  });
+
+  it("recovers the previous runtime even when the migration revert fails", async () => {
+    // Given
+    const recoveries: boolean[] = [];
+
+    // When / Then
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>(
+        baseOptions({
+          activateHost: () => Promise.reject(new Error("activation exploded")),
+          recoverPrevious: () => {
+            recoveries.push(true);
+            return Promise.resolve();
+          },
+          validateHost: () =>
+            Promise.resolve(() =>
+              Promise.reject(new Error("revert conflicted"))
+            ),
+        })
+      )
+    ).rejects.toThrow(revertFailedPattern);
     expect(recoveries).toEqual([true]);
   });
 

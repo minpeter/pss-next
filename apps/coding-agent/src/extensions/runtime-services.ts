@@ -17,6 +17,8 @@ import type {
 
 export interface ExtensionServiceScope {
   readonly dispose: () => Promise<void>;
+  /** Reject further state writes; used after cleanup ran or was detached. */
+  readonly revokeStateWrites: () => void;
   readonly services: CodingAgentExtensionServices;
 }
 
@@ -34,6 +36,7 @@ export function createExtensionServiceScope(options: {
 }): ExtensionServiceScope {
   const logger = createExtensionLogger(options.extensionId);
   const children: Agent[] = [];
+  let stateWritesRevoked = false;
   const agents: CodingAgentExtensionAgents = {
     create: async (
       input: Parameters<CodingAgentExtensionAgents["create"]>[0]
@@ -63,13 +66,17 @@ export function createExtensionServiceScope(options: {
     logger,
     state: createExtensionJsonState({
       extensionId: options.extensionId,
+      isRevoked: () => stateWritesRevoked,
       root: options.dataRoot ?? join(homedir(), ".pss", "extension-state"),
-      signal: options.signal,
     }),
     ui: options.ui ?? createNoninteractiveExtensionUi(options.mode, logger),
   });
   return {
+    revokeStateWrites: () => {
+      stateWritesRevoked = true;
+    },
     dispose: async () => {
+      stateWritesRevoked = true;
       const results = await Promise.allSettled(
         children.reverse().map(async (agent) => await agent.dispose())
       );

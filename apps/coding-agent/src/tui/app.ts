@@ -284,13 +284,19 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
         createHost: (loaded) =>
           createCodingAgentExtensionHost(loaded.extensions),
-        disposePrevious: () => {
+        disposePrevious: async () => {
           previous.thread.interrupt();
-          return disposePreviousExtensionRuntime({
-            agent: previous.agent,
-            disposeThread: () => previous.thread.dispose(),
-            host: previous.host,
-          });
+          try {
+            return await disposePreviousExtensionRuntime({
+              agent: previous.agent,
+              disposeThread: () => previous.thread.dispose(),
+              host: previous.host,
+            });
+          } finally {
+            // Even when cleanup was detached by the timeout, late writes
+            // must not touch state the replacement runtime now owns.
+            previous.host.revokeExtensionState();
+          }
         },
         loadExtensions: reloadExtensions,
         mergeCommands: (host) =>

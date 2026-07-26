@@ -52,6 +52,24 @@ describe("extension host event bus", () => {
     expect(other).toEqual([]);
   });
 
+  it("snapshots payloads at publication time", async () => {
+    // Given
+    const bus = createBus();
+    const received: unknown[] = [];
+    bus.subscribe("listener", "topic", (payload) => {
+      received.push(payload);
+    });
+    const payload = { count: 1 };
+
+    // When — the publisher mutates the payload right after emit().
+    bus.emitFromExtension("emitter", "topic", payload);
+    payload.count = 99;
+    await settle();
+
+    // Then
+    expect(received).toEqual([{ count: 1 }]);
+  });
+
   it("supports unsubscribe and dispose", async () => {
     // Given
     const bus = createBus();

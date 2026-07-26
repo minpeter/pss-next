@@ -161,6 +161,14 @@ export class CodingAgentExtensionHost {
     this.#lifecycle.emitHostEvent(type, payload);
   }
 
+  /**
+   * Reject further extension state writes, e.g. after this host's disposal
+   * was detached by a reload timeout and a replacement now owns the state.
+   */
+  revokeExtensionState(): void {
+    this.#lifecycle.revokeExtensionState();
+  }
+
   getToolOwner(name: string): string | undefined {
     return this.#collections.owners.tools.get(name);
   }

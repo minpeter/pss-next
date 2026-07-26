@@ -107,11 +107,15 @@ export class ExtensionHostEventBus {
     if (payload !== undefined) {
       assertJsonValue(payload, `Extension event "${type}" payload`);
     }
+    // Snapshot at publication time so publisher mutations after emit() are
+    // never observed and cloning failures surface to the publisher.
+    const snapshot =
+      payload === undefined ? undefined : structuredClone(payload);
     for (const subscription of [...this.#subscriptions]) {
       if (subscription.type !== type) {
         continue;
       }
-      this.#deliver(subscription, payload);
+      this.#deliver(subscription, snapshot);
     }
   }
 

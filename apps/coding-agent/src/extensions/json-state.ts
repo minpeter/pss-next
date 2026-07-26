@@ -14,11 +14,12 @@ export function createExtensionJsonState(options: {
   readonly extensionId: string;
   readonly root: string;
   /**
-   * When aborted (host disposal or a runtime swap), writes are rejected so
-   * detached cleanup from a previous runtime cannot overwrite state that a
-   * replacement runtime now owns.
+   * Reports whether writes are revoked. Revocation happens after all
+   * registered cleanups ran (or were detached by a timeout), so ordinary
+   * cleanup can persist final state while detached post-disposal work
+   * cannot overwrite state that a replacement runtime now owns.
    */
-  readonly signal?: AbortSignal;
+  readonly isRevoked?: () => boolean;
 }): CodingAgentExtensionState {
   const path = join(
     options.root,
@@ -34,7 +35,7 @@ export function createExtensionJsonState(options: {
     return result;
   };
   const assertWritable = (): void => {
-    if (options.signal?.aborted) {
+    if (options.isRevoked?.()) {
       throw new Error(
         `Extension "${options.extensionId}" state is read-only after its runtime was disposed`
       );

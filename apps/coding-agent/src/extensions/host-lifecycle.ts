@@ -50,6 +50,15 @@ export class ExtensionHostLifecycle {
     this.#services = new ExtensionHostServices(options, this.#bus);
   }
 
+  /**
+   * Reject further extension state writes. Called when disposal was
+   * detached by a timeout so late cleanup cannot overwrite state that a
+   * replacement runtime now owns.
+   */
+  revokeExtensionState(): void {
+    this.#services.revokeStateWrites();
+  }
+
   /** Publish a host-originated bus event such as a provider observation. */
   emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
     if (this.#disposed) {

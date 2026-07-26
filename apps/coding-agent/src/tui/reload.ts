@@ -72,7 +72,7 @@ export async function buildReloadedExtensionRuntime<
   let commands: readonly TuiCommand[];
   let toolRenderers: ToolRendererMap;
   let revertValidation: (() => Promise<void>) | undefined;
-  const revertSideEffects = async (cause: unknown): Promise<void> => {
+  const revertSideEffects = async (): Promise<unknown | undefined> => {
     // The live runtime keeps running (or is being recovered), so hand back
     // the CommonJS modules and durable state the failed reload changed.
     loaded.rollbackModuleCache?.();
@@ -81,11 +81,9 @@ export async function buildReloadedExtensionRuntime<
     }
     try {
       await revertValidation();
+      return;
     } catch (revertError) {
-      throw new AggregateError(
-        [cause, revertError],
-        "Extension reload failed and its committed migrations could not be reverted; manual inspection required"
-      );
+      return revertError;
     }
   };
   try {
@@ -97,7 +95,13 @@ export async function buildReloadedExtensionRuntime<
     agent = await options.createAgent(host);
   } catch (error) {
     await disposeSettled(agent, host);
-    await revertSideEffects(error);
+    const revertFailure = await revertSideEffects();
+    if (revertFailure !== undefined) {
+      throw new AggregateError(
+        [error, revertFailure],
+        "Extension reload failed and its committed migrations could not be reverted; manual inspection required"
+      );
+    }
     throw error;
   }
   const cleanupNotices = await options.disposePrevious();
@@ -105,13 +109,26 @@ export async function buildReloadedExtensionRuntime<
     await options.activateHost(host, agent);
   } catch (activationError) {
     await disposeSettled(agent, host);
-    await revertSideEffects(activationError);
+    // Recovery must run even when the revert conflicts (for example when
+    // replacement activation already advanced the stored thread version);
+    // the session otherwise stays backed by the disposed old runtime.
+    const revertFailure = await revertSideEffects();
+    const failures: unknown[] = [activationError];
+    if (revertFailure !== undefined) {
+      failures.push(revertFailure);
+    }
     try {
       await options.recoverPrevious();
     } catch (recoveryError) {
       throw new AggregateError(
-        [activationError, recoveryError],
+        [...failures, recoveryError],
         "Extension reload activation failed and the previous runtime could not be recovered; restart pss"
+      );
+    }
+    if (failures.length > 1) {
+      throw new AggregateError(
+        failures,
+        "Extension reload failed and its committed migrations could not be reverted; inspect the thread state"
       );
     }
     throw activationError;

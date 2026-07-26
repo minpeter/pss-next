@@ -105,6 +105,13 @@ export class ExtensionHostServices {
     ).services;
   }
 
+  /** Reject further extension state writes across every service scope. */
+  revokeStateWrites(): void {
+    for (const scope of this.#scopes.values()) {
+      scope.revokeStateWrites();
+    }
+  }
+
   async dispose(): Promise<readonly unknown[]> {
     const failures: unknown[] = [];
     const scopes = [...this.#scopes.entries()].reverse();
