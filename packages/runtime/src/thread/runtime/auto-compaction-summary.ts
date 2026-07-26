@@ -9,7 +9,10 @@ import {
 import { ModelMessageHistory } from "../state/history";
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import { messageContentText } from "./auto-compaction-message-text";
-import { withToolEvidenceLedger } from "./auto-compaction-tool-evidence";
+import {
+  buildToolEvidenceLedger,
+  withToolEvidenceLedger,
+} from "./auto-compaction-tool-evidence";
 import type {
   AutoCompactionRange,
   ThreadModelContextTransform,
@@ -88,6 +91,13 @@ export class CompactionSummaryNotSmallerError extends Error {
   readonly name = "CompactionSummaryNotSmallerError";
 }
 
+/** Share of the source context the deterministic tool ledger may occupy. */
+const LEDGER_SOURCE_SHARE = 0.25;
+/** Lower bound for the model-written part of a compaction summary. */
+const SUMMARY_OUTPUT_FLOOR_TOKENS = 128;
+/** Estimation slack between token heuristics and provider tokenizers. */
+const SUMMARY_BUDGET_MARGIN_TOKENS = 64;
+
 export function buildCompactionSummaryInstructions(): string {
   const sections = COMPACTION_SUMMARY_CONTRACT.sections.flatMap((section) => [
     `## ${section.title}`,
@@ -123,6 +133,23 @@ export async function summarizeCompactionRange({
   readonly summaryInstructions?: string;
   readonly transformModelContext?: ThreadModelContextTransform;
 }): Promise<string> {
+  const sourceContext = history.map((message) =>
+    message.role === "compaction" ? compactionContextForModel(message) : message
+  );
+  const sourceTokens = estimateTokens(sourceContext);
+  const measureTokens = (text: string) =>
+    estimateTokens([{ content: text, role: "system" }]);
+  const ledger = buildToolEvidenceLedger(history, {
+    budgetTokens: Math.floor(sourceTokens * LEDGER_SOURCE_SHARE),
+    measureTokens,
+  });
+  const maxOutputTokens = summaryOutputBudget({
+    history,
+    ledger,
+    modelMaxOutputTokens: model.maxOutputTokens,
+    estimateTokens,
+    sourceTokens,
+  });
   const summaryHistory: readonly ThreadContextMessage[] = [
     {
       content:
@@ -141,7 +168,7 @@ export async function summarizeCompactionRange({
     contextGate: false,
     history: transformedHistory,
     instructions: model.instructions,
-    maxOutputTokens: model.maxOutputTokens,
+    maxOutputTokens,
     model: model.model,
     seed: model.seed,
     signal,
@@ -153,11 +180,7 @@ export async function summarizeCompactionRange({
     )
     .join("\n\n")
     .trim();
-  const summary = withToolEvidenceLedger(generatedSummary, history);
-  const sourceContext = history.map((message) =>
-    message.role === "compaction" ? compactionContextForModel(message) : message
-  );
-  const sourceTokens = estimateTokens(sourceContext);
+  const summary = withToolEvidenceLedger(generatedSummary, ledger);
   const summaryTokens = estimateTokens([
     compactionContextForModel({
       endSeqExclusive: history.length,
@@ -172,6 +195,41 @@ export async function summarizeCompactionRange({
     );
   }
   return summary;
+}
+
+/**
+ * Bound the model-written summary so ledger + wrapper + summary text stays
+ * structurally below the source context, keeping the non-expansion guard a
+ * safety net instead of a routine failure on tool-heavy ranges.
+ */
+function summaryOutputBudget({
+  estimateTokens,
+  history,
+  ledger,
+  modelMaxOutputTokens,
+  sourceTokens,
+}: {
+  readonly estimateTokens: (messages: readonly ModelMessage[]) => number;
+  readonly history: readonly ThreadContextMessage[];
+  readonly ledger: string;
+  readonly modelMaxOutputTokens: number | undefined;
+  readonly sourceTokens: number;
+}): number {
+  const wrapperTokens = estimateTokens([
+    compactionContextForModel({
+      endSeqExclusive: history.length,
+      role: "compaction",
+      startSeq: 0,
+      summary: ledger,
+    }),
+  ]);
+  const budget = Math.max(
+    SUMMARY_OUTPUT_FLOOR_TOKENS,
+    sourceTokens - wrapperTokens - SUMMARY_BUDGET_MARGIN_TOKENS
+  );
+  return modelMaxOutputTokens === undefined
+    ? budget
+    : Math.min(modelMaxOutputTokens, budget);
 }
 
 export function summaryHistoryForRange({

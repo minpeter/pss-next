@@ -55,7 +55,7 @@ describe("automatic compaction summary contract", () => {
     await expect(
       summarizeCompactionRange({
         history: [
-          { content: "project is orbit. ".repeat(20), role: "user" },
+          { content: "project is orbit. ".repeat(200), role: "user" },
           { content: "all project facts noted", role: "assistant" },
         ],
         model: {
@@ -147,6 +147,65 @@ describe("automatic compaction summary contract", () => {
     ).resolves.toBe(
       '5 passed, 4 failed\n## Deterministic Tool Evidence\n"5 passed, 4 failed"'
     );
+  });
+
+  it("still compresses when tool output dominates the source context", async () => {
+    const noisyValue = [
+      "FINAL_ROOT_CAUSE=case-sensitive import mismatch",
+      ...Array.from(
+        { length: 200 },
+        (_, index) =>
+          `[debug:${index}] provisional=abcdef0123456789 status=ignored`
+      ),
+      "FINAL_ARTIFACT_SHA=194ea49130ed8f60",
+    ].join("\n");
+    const model = createMockLanguageModelV4(() =>
+      Promise.resolve(mockLanguageModelV4Text("## Progress\nDiagnosed."))
+    );
+
+    const summary = await summarizeCompactionRange({
+      history: [
+        { content: "inspect the log", role: "user" },
+        {
+          content: [
+            {
+              output: { type: "text", value: noisyValue },
+              toolCallId: "tool-1",
+              toolName: "inspect_log",
+              type: "tool-result",
+            },
+          ],
+          role: "tool",
+        },
+        { content: "diagnosis recorded", role: "assistant" },
+      ],
+      model: { model },
+    });
+
+    expect(summary).toContain("FINAL_ARTIFACT_SHA=194ea49130ed8f60");
+    expect(summary).toContain(
+      "FINAL_ROOT_CAUSE=case-sensitive import mismatch"
+    );
+  });
+
+  it("clamps the summary output budget below the estimated source size", async () => {
+    let captured: MockLanguageModelV4CallOptions | undefined;
+    const model = createMockLanguageModelV4((options) => {
+      captured = options;
+      return Promise.resolve(mockLanguageModelV4Text("summary"));
+    });
+
+    await summarizeCompactionRange({
+      history: [
+        { content: "fact ".repeat(300), role: "user" },
+        { content: "noted", role: "assistant" },
+      ],
+      model: { maxOutputTokens: 100_000, model },
+    });
+
+    const maxOutputTokens = captured?.maxOutputTokens;
+    expect(maxOutputTokens).toBeGreaterThanOrEqual(128);
+    expect(maxOutputTokens).toBeLessThan(1000);
   });
 
   it("rejects a summary that does not reduce the source context", async () => {

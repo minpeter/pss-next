@@ -11,6 +11,13 @@ import type {
   ThreadAutoCompactionOptions,
 } from "./auto-compaction-types";
 
+/**
+ * A compaction summary always pays the model-facing wrapper overhead, so a
+ * source range smaller than one empty wrapper can never compress and is
+ * skipped before spending a summary model call.
+ */
+export const MIN_SOURCE_WRAPPER_MULTIPLE = 1;
+
 export function selectAutoCompactionRange({
   compactions,
   history,
@@ -59,6 +66,23 @@ export function selectAutoCompactionRange({
   }
 
   if (endSeqExclusive <= coveredEnd) {
+    return;
+  }
+
+  const sourceTokens =
+    summaryTokens +
+    suffixTokens
+      .slice(0, endSeqExclusive - coveredEnd)
+      .reduce((sum, tokens) => sum + tokens, 0);
+  const wrapperFloorTokens = estimate([
+    compactionContextForModel({
+      endSeqExclusive,
+      role: "compaction",
+      startSeq: 0,
+      summary: "",
+    }),
+  ]);
+  if (sourceTokens < wrapperFloorTokens * MIN_SOURCE_WRAPPER_MULTIPLE) {
     return;
   }
 

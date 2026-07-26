@@ -190,6 +190,34 @@ describe("selectAutoCompactionRange", () => {
     ).toEqual({ endSeqExclusive: 4, startSeq: 0 });
   });
 
+  it("skips ranges whose source is smaller than one compaction wrapper", () => {
+    const contentLengthEstimator = (messages: readonly ModelMessage[]) =>
+      messages.reduce(
+        (total, message) =>
+          total +
+          (typeof message.content === "string" ? message.content.length : 0),
+        0
+      );
+    const history = [
+      userMessage("u0"),
+      assistantMessage("a1"),
+      userMessage("tail ".repeat(30)),
+    ];
+
+    expect(
+      selectAutoCompactionRange({
+        compactions: [],
+        history,
+        policy: policy({
+          estimateTokens: contentLengthEstimator,
+          maxInputTokens: 400,
+          retainTokens: 0,
+          triggerTokens: 100,
+        }),
+      })
+    ).toBeUndefined();
+  });
+
   it("does not compact again when only the summary and a small tail remain", () => {
     const history = [
       userMessage("u0"),
