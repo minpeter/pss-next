@@ -142,3 +142,50 @@ the Senpi-derived rules are universally superior: the provider differed from
 the earlier cross-model matrix and model seeds were unavailable. It does show
 that copying Senpi's complete schema would regress this runtime, while the
 three retained control rules preserve the measured behavioral boundary.
+
+## Head-to-head vs pi-coding-agent default compaction
+
+`compare-pi.ts` replicates the pi-coding-agent summarization protocol
+verbatim (serialized `<conversation>` text with 2,000-char tool-result
+truncation, pi's summarization system/user prompts, `<previous-summary>`
+update-merge on later hops, `<read-files>`/`<modified-files>` appendix,
+0.8 × 16,384-token output budget) and runs it against the runtime pipeline
+on identical fixtures, cut points, evaluator, and scorer.
+
+An earlier run exposed two validity problems that were fixed before the
+final matrix:
+
+1. The runtime's unbudgeted tool-evidence ledger made summaries larger
+   than tool-dominated sources, so the non-expansion guard rejected
+   compaction entirely (3/6 trials). The ledger now takes at most 25% of
+   the source, the model summary budget subtracts ledger and wrapper cost,
+   and sub-wrapper ranges are skipped.
+2. The ledger's salient-line keywords mirrored the fixtures' vocabulary.
+   Salience is now template-frequency based: identifiers, hashes, and
+   counters are masked, lines cluster by masked template, and only rare
+   templates survive. No keyword list remains.
+
+The audit matrix adds three blind hold-out scenarios that share no surface
+patterns with the originals (JSON-lines noise, Korean prose noise,
+timestamped INFO logs) plus a paraphrase-tolerant LLM-judge secondary
+score applied symmetrically to both arms. Hold-outs were scored one-shot:
+no implementation changes after observing their results.
+
+| Matrix (exact / semantic) | pss | pi default |
+|---|---|---|
+| Hold-outs, gpt-5.6-luna | 36/42 / 38/42 | 18/42 / 22/42 |
+| Hold-outs, gpt-5.6-terra | 38/42 / 41/42 | 19/42 / 23/42 |
+| Overall, gpt-5.6-luna | 139/146 / 142/146 | 101/146 / 111/146 |
+| Overall, gpt-5.6-terra | 140/146 / 144/146 | 107/146 / 113/146 |
+
+All 24 trials per model were valid for both arms. Mean summary/input
+ratios were stable across models: pss ≈ 0.47, pi ≈ 0.31 (pi compresses
+about 2× harder on noisy tool logs, 0.15 vs 0.34 on hold-outs). Every
+exact identifier (checksums, undo commands, regions, snapshot tags)
+survived the pss ledger on the hold-outs; remaining pss misses were
+Korean phrasing variants of semantically correct answers.
+
+Interpretation limits: two sibling models from one provider, n=12 valid
+trials per arm per model, provider rejects seeds, and pi's live
+mitigations (20k-token keep-recent window, re-deriving lost values via
+tools) are out of scope for a summarizer-quality benchmark.
