@@ -1,10 +1,10 @@
 import type { ModelMessage } from "ai";
+import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import type {
   RuntimeToolExecutionCheckpoint,
   RuntimeToolExecutionDecision,
   RuntimeToolExecutionResult,
 } from "../../llm/tool-execution-types";
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
 import type {
   HostAttachmentStore,
   RuntimeAttachmentReference,
@@ -13,16 +13,15 @@ import type {
   AgentEvent,
   ModelUsage,
   StreamAgentEvent,
-  ToolResult,
 } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import type { ThreadCompactionInput, ThreadState } from "../state/thread-state";
-import { beforeToolCallEvent, interceptAgentEvent } from "./event-interception";
+import { interceptAgentEvent } from "./event-interception";
 
 interface ThreadEventDispatcherOptions {
   readonly attachmentStore?: HostAttachmentStore;
   readonly history: () => readonly ModelMessage[];
-  readonly pluginRuntime?: PluginRuntime;
+  readonly hookRuntime: AgentHookRuntime;
   readonly signal: () => AbortSignal | undefined;
   readonly threadKey: string;
 }
@@ -35,14 +34,14 @@ export class ThreadEventDispatcher {
   readonly #attachmentStore: HostAttachmentStore | undefined;
   readonly #history: () => readonly ModelMessage[];
   #observerEventBuffer?: AgentEvent[];
-  readonly #pluginRuntime: PluginRuntime | undefined;
+  readonly #hookRuntime: AgentHookRuntime;
   readonly #signal: () => AbortSignal | undefined;
   readonly #threadKey: string;
 
   constructor(options: ThreadEventDispatcherOptions) {
     this.#attachmentStore = options.attachmentStore;
     this.#history = options.history;
-    this.#pluginRuntime = options.pluginRuntime;
+    this.#hookRuntime = options.hookRuntime;
     this.#signal = options.signal;
     this.#threadKey = options.threadKey;
   }
@@ -101,30 +100,20 @@ export class ThreadEventDispatcher {
     options: { readonly awaitAck?: boolean } = {}
   ): Promise<void> {
     const processed =
-      event.type === "turn-start" && this.#pluginRuntime
-        ? await this.#pluginRuntime.beforeTurnStart(
+      event.type === "turn-start"
+        ? await this.#hookRuntime.beforeTurnStart(
             this.#threadKey,
             event,
             this.#history(),
             this.#activeSignal()
           )
         : event;
-    await this.observeRunEvent(processed);
     if (options.awaitAck === false) {
       run.emit(processed);
       return;
     }
 
     await run.emitBoundary(processed);
-  }
-
-  async observeRunEvent(event: AgentEvent): Promise<void> {
-    await this.#pluginRuntime?.observeAgentEvent(
-      this.#threadKey,
-      event,
-      this.#history(),
-      this.#activeSignal()
-    );
   }
 
   async emitRunEvent(
@@ -150,17 +139,15 @@ export class ThreadEventDispatcher {
     } finally {
       run.emit(event);
     }
-    await this.observeRunEvent(event);
     return event;
   }
 
   async interceptBeforeToolCall(
     checkpoint: RuntimeToolExecutionCheckpoint
   ): Promise<RuntimeToolExecutionDecision> {
-    const event = beforeToolCallEvent(checkpoint);
-    return await this.#pluginRuntime?.beforeToolExecution(
+    return await this.#hookRuntime.beforeToolExecution(
       this.#threadKey,
-      event,
+      checkpoint,
       this.#history(),
       this.#activeSignal()
     );
@@ -169,68 +156,31 @@ export class ThreadEventDispatcher {
   async interceptAfterToolCall(
     checkpoint: RuntimeToolExecutionCheckpoint & { readonly output: unknown }
   ): Promise<RuntimeToolExecutionResult | undefined> {
-    if (!this.#pluginRuntime) {
-      return;
-    }
-    const event: ToolResult = {
-      output: checkpoint.output,
-      toolCallId: checkpoint.toolCallId,
-      toolName: checkpoint.toolName,
-      type: "tool-result",
-    };
-    const transformed = await this.#pluginRuntime.afterToolExecution(
+    return await this.#hookRuntime.transformToolResult(
       this.#threadKey,
-      event,
+      checkpoint,
       this.#history(),
       this.#activeSignal()
     );
-    return { output: transformed.output };
   }
 
   async compact(
     state: ThreadState,
     input: ThreadCompactionInput
   ): Promise<boolean> {
-    const decision = this.#pluginRuntime
-      ? await this.#pluginRuntime.beforeCompact(
-          this.#threadKey,
-          input,
-          this.#history(),
-          this.#activeSignal()
-        )
-      : { cancelled: false, input };
-    if (decision.cancelled) {
-      return false;
-    }
-
-    await state.compact(decision.input);
-    await this.#pluginRuntime?.notifyCompacted(
+    const decision = await this.#hookRuntime.beforeCompaction(
       this.#threadKey,
-      decision.input,
+      input,
       this.#history(),
       this.#activeSignal()
     );
+    if (decision?.action === "cancel") {
+      return false;
+    }
+    const compactedInput =
+      decision?.action === "transform" ? decision.input : input;
+    await state.compact(compactedInput);
     return true;
-  }
-
-  startThread(): Promise<void> {
-    return (
-      this.#pluginRuntime?.startThread(
-        this.#threadKey,
-        this.#history(),
-        new AbortController().signal
-      ) ?? Promise.resolve()
-    );
-  }
-
-  shutdownThread(): Promise<void> {
-    return (
-      this.#pluginRuntime?.shutdownThread(
-        this.#threadKey,
-        this.#history(),
-        new AbortController().signal
-      ) ?? Promise.resolve()
-    );
   }
 
   async interceptEvent(
@@ -240,7 +190,7 @@ export class ThreadEventDispatcher {
     return await interceptAgentEvent(event, {
       attachmentStore: this.#attachmentStore,
       history: this.#history,
-      pluginRuntime: this.#pluginRuntime,
+      hookRuntime: this.#hookRuntime,
       signal: () => this.#activeSignal(),
       stagedRefs: options.stagedRefs,
       threadKey: this.#threadKey,

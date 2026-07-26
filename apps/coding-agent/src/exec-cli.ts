@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { config } from "dotenv";
 import type { CodingAgentRuntimeEnv } from "./env";
 import { runCodingAgentExec } from "./exec";
+import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { createOpenAICompatibleModelFromEnv } from "./model";
 import type { WebToolsAvailability } from "./tools";
 
@@ -36,6 +38,7 @@ interface RunExecCliOptions {
   readonly argv: readonly string[];
   readonly cwd: string;
   readonly env: CodingAgentRuntimeEnv;
+  readonly home?: string;
   readonly stdout: { write(text: string): unknown };
 }
 
@@ -175,6 +178,7 @@ export async function runExecCli({
   argv,
   cwd,
   env,
+  home = homedir(),
   stdout,
 }: RunExecCliOptions): Promise<number> {
   const args = parseExecArguments(argv, cwd);
@@ -194,7 +198,17 @@ export async function runExecCli({
     (args.promptFile === undefined
       ? await readAllStdin()
       : await readFile(resolve(cwd, args.promptFile), "utf8"));
+  const configured = await loadConfiguredCodingAgentExtensions({
+    cwd: args.workspace,
+    home,
+  });
+  for (const notice of configured.notices) {
+    stdout.write(
+      `${JSON.stringify({ message: notice, type: "extension_notice" })}\n`
+    );
+  }
   const result = await runCodingAgentExec({
+    extensions: configured.extensions,
     model: createOpenAICompatibleModelFromEnv({ runtimeEnv }),
     prompt,
     ...(args.resultFile === undefined ? {} : { resultFile: args.resultFile }),

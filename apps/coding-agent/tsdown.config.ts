@@ -17,6 +17,7 @@ export default defineConfig({
     "src/index.ts",
     "src/cli.ts",
     "src/env.ts",
+    "src/extensions/index.ts",
     "src/model.ts",
     "src/thread-config.ts",
     "src/thread-inspect.ts",

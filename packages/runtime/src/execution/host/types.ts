@@ -1,4 +1,4 @@
-import type { RuntimeDiagnosticsSink } from "../../plugins/diagnostics";
+import type { RuntimeDiagnosticsSink } from "../../diagnostics";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentEvent, UserInput } from "../../thread/protocol/events";
 import type { ThreadStore } from "../../thread/store/types";

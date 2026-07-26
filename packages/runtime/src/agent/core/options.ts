@@ -1,13 +1,17 @@
 import type { LanguageModel, ToolSet } from "ai";
+import type { RuntimeDiagnosticsSink } from "../../diagnostics";
 import type { AgentHost } from "../../execution/host/types";
 import type { ModelContextGateOptions } from "../../llm/context-gate";
 import type { PrepareModelStep } from "../../llm/model-step-preparation";
 import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
-import type { PluginDefinition } from "../../plugins/api";
-import type { RuntimeDiagnosticsSink } from "../../plugins/diagnostics";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
+import {
+  normalizeThreadStateMigrations,
+  type ThreadStateMigration,
+} from "../../thread/state/migrations";
+import type { AgentHooks } from "./hooks";
 import {
   type AgentInstrumentation,
   normalizeAgentInstrumentations,
@@ -26,43 +30,21 @@ export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
   readonly autoCompaction?: AgentAutoCompactionOptions | false;
+  readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
   readonly instructions?: string;
   readonly instrumentations?: readonly AgentInstrumentation[];
   readonly model: LanguageModel;
   readonly namespace?: string;
   readonly notificationOverlays?: readonly (AgentInput | UserInput)[];
-  readonly pluginFactoryTimeoutMs?: number;
-  readonly pluginHookTimeoutMs?: number;
-  readonly plugins?: readonly PluginDefinition[];
   readonly prepareModelStep?: PrepareModelStep;
+  readonly threadMigrations?: readonly ThreadStateMigration[];
   readonly toolChoice?: AgentToolChoice;
   readonly toolOrder?: readonly string[];
   readonly tools?: ToolSet;
 }
 
 export type CreateAgentOptions = AgentOptions;
-
-export interface NormalizedPluginTimeoutOptions {
-  readonly factoryTimeoutMs: number;
-  readonly hookTimeoutMs: number;
-}
-
-export function normalizePluginTimeoutOptions(
-  options: Pick<AgentOptions, "pluginFactoryTimeoutMs" | "pluginHookTimeoutMs">
-): NormalizedPluginTimeoutOptions {
-  const factoryTimeoutMs = options.pluginFactoryTimeoutMs ?? 10_000;
-  const hookTimeoutMs = options.pluginHookTimeoutMs ?? 10_000;
-  for (const [name, value] of [
-    ["pluginFactoryTimeoutMs", factoryTimeoutMs],
-    ["pluginHookTimeoutMs", hookTimeoutMs],
-  ] as const) {
-    if (!(Number.isFinite(value) && value >= 0)) {
-      throw new TypeError(`Agent: options.${name} must be non-negative.`);
-    }
-  }
-  return { factoryTimeoutMs, hookTimeoutMs };
-}
 
 export type AgentModelOptions = Pick<
   AgentOptions,
@@ -101,6 +83,7 @@ export function assertAgentOptions(
     readonly autoCompaction?: AgentOptions["autoCompaction"];
     readonly instrumentations?: AgentOptions["instrumentations"];
     readonly prepareModelStep?: AgentOptions["prepareModelStep"];
+    readonly threadMigrations?: AgentOptions["threadMigrations"];
     readonly toolOrder?: AgentOptions["toolOrder"];
     readonly tools?: AgentOptions["tools"];
   };
@@ -115,6 +98,7 @@ export function assertAgentOptions(
   }
   normalizeAgentAutoCompactionOptions(candidate.autoCompaction);
   normalizeAgentInstrumentations(candidate.instrumentations);
+  normalizeThreadStateMigrations(candidate.threadMigrations);
 }
 
 function assertToolNameList(

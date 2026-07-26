@@ -1,13 +1,16 @@
 import type { AgentHost, NotificationRecord } from "../../execution/host/types";
 import { createInMemoryHost } from "../../platform/memory";
-import { noopRuntimeDiagnostics } from "../../plugins/diagnostics";
-import { PluginRuntime } from "../../plugins/plugin-runtime";
 import { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentInput } from "../../thread/input/input";
 import type { AgentTurn } from "../../thread/protocol/turn";
+import {
+  normalizeThreadStateMigrations,
+  type ThreadStateMigration,
+} from "../../thread/state/migrations";
 import type { ThreadStore } from "../../thread/store/types";
 import { stableAgentNamespace } from "../identity/namespace";
 import { resumeAgentTurn } from "../resume/resume";
+import { AgentHookRuntime } from "./hook-runtime";
 import { threadStoreForHost } from "./host-thread-store";
 import {
   type AgentInstrumentation,
@@ -22,7 +25,6 @@ import {
   assertAgentOptions,
   type CreateAgentOptions,
   normalizeAgentAutoCompactionOptions,
-  normalizePluginTimeoutOptions,
 } from "./options";
 import {
   type AgentThreadEntry,
@@ -51,8 +53,7 @@ export type {
   ThreadMetadata,
 } from "./thread-entry";
 
-/** Options for `new Agent(...)`. Plugins are only accepted via `createAgent`. */
-export type AgentConstructorOptions = Omit<AgentOptions, "plugins">;
+export type AgentConstructorOptions = AgentOptions;
 
 export class Agent {
   readonly #modelOptions: AgentModelOptions;
@@ -61,12 +62,13 @@ export class Agent {
   readonly #store: ThreadStore;
   readonly #host: AgentHost;
   readonly #instrumentations: readonly AgentInstrumentation[];
-  readonly #pluginRuntime?: PluginRuntime;
+  readonly #hookRuntime: AgentHookRuntime;
   readonly #notificationOverlays?: AgentOptions["notificationOverlays"];
+  readonly #threadMigrations: readonly ThreadStateMigration[];
   readonly #autoCompaction?: AgentAutoCompactionOptions;
   readonly host: AgentHost;
   readonly namespace?: string;
-  constructor(options: AgentConstructorOptions, pluginRuntime?: PluginRuntime) {
+  constructor(options: AgentConstructorOptions) {
     assertAgentOptions(options);
 
     const providedHost = options.host;
@@ -80,7 +82,10 @@ export class Agent {
     this.#instrumentations = normalizeAgentInstrumentations(
       options.instrumentations
     );
-    this.#pluginRuntime = pluginRuntime;
+    this.#threadMigrations = normalizeThreadStateMigrations(
+      options.threadMigrations
+    );
+    this.#hookRuntime = new AgentHookRuntime(options.hooks);
     this.#notificationOverlays = options.notificationOverlays;
     this.#autoCompaction = normalizeAgentAutoCompactionOptions(
       options.autoCompaction
@@ -98,7 +103,7 @@ export class Agent {
       prepareModelStep: options.prepareModelStep,
       toolChoice: options.toolChoice,
       toolOrder: options.toolOrder,
-      tools: pluginRuntime?.tools ?? options.tools,
+      tools: options.tools,
     };
   }
 
@@ -150,7 +155,6 @@ export class Agent {
       }
     }
     this.#threads.clear();
-    await this.#pluginRuntime?.dispose();
     if (failure !== undefined) {
       throw failure;
     }
@@ -165,11 +169,11 @@ export class Agent {
     let thread: AgentThread | undefined;
     thread = new AgentThread(
       this.#modelOptions,
-      { key, store: this.#store },
+      { key, migrations: this.#threadMigrations, store: this.#store },
       {
         autoCompaction: this.#autoCompaction,
         executionHost: this.#host,
-        pluginRuntime: this.#pluginRuntime,
+        hookRuntime: this.#hookRuntime,
       }
     );
     const publicHandle = createThreadPublicHandle({
@@ -177,7 +181,6 @@ export class Agent {
       instrumentations: this.#instrumentations,
       key,
       namespace: this.namespace,
-      pluginRuntime: this.#pluginRuntime,
       thread,
     });
     const entry: AgentThreadEntry = {
@@ -225,20 +228,5 @@ export class Agent {
 
 export async function createAgent(options: CreateAgentOptions): Promise<Agent> {
   assertAgentOptions(options);
-  const definitions = options.plugins ?? [];
-  if (definitions.length === 0) {
-    return new Agent(options);
-  }
-  const timeouts = normalizePluginTimeoutOptions(options);
-  const runtime = await PluginRuntime.create(definitions, {
-    diagnostics: options.host?.diagnostics ?? noopRuntimeDiagnostics,
-    ...timeouts,
-    tools: options.tools,
-  });
-  try {
-    return new Agent(options, runtime);
-  } catch (cause) {
-    await runtime.dispose();
-    throw cause;
-  }
+  return await new Agent(options);
 }

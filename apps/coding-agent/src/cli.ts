@@ -1,5 +1,11 @@
 import { homedir } from "node:os";
 import { runExecCli } from "./exec-cli";
+import { runExtensionCli } from "./extension-cli";
+import type {
+  CodingAgentExtensionInput,
+  LoadedConfiguredExtensions,
+} from "./extensions";
+import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { resolveCodingAgentThreadConfig } from "./thread-config";
 import {
   formatThreadInspectionReport,
@@ -14,8 +20,12 @@ interface RunCodingAgentCliOptions {
   readonly cwd?: string;
   readonly env?: Parameters<typeof resolveCodingAgentThreadConfig>[0];
   readonly exec?: (args: readonly string[]) => Promise<number>;
+  readonly extension?: (args: readonly string[]) => Promise<number>;
   readonly home?: string;
-  readonly start?: () => Promise<number>;
+  readonly loadExtensions?: () => Promise<LoadedConfiguredExtensions>;
+  readonly start?: (
+    extensions: readonly CodingAgentExtensionInput[]
+  ) => Promise<number>;
   readonly stdout?: { write(text: string): void };
   readonly update?: (args: readonly string[]) => Promise<number>;
 }
@@ -25,8 +35,10 @@ export async function runCodingAgentCli({
   cwd = process.cwd(),
   env = process.env,
   exec,
+  extension,
+  loadExtensions,
   home = homedir(),
-  start = startTui,
+  start,
   stdout = process.stdout,
   update = (args: readonly string[]) =>
     runUpdateCommand({
@@ -41,7 +53,19 @@ export async function runCodingAgentCli({
   const command = argv[0];
 
   if (command === undefined) {
-    return start();
+    const configured =
+      (await loadExtensions?.()) ??
+      (start
+        ? { extensions: [], notices: [] }
+        : await loadConfiguredCodingAgentExtensions({ cwd, home }));
+    for (const notice of configured.notices) {
+      stdout.write(`${notice}\n`);
+    }
+    return await (
+      start ??
+      ((extensions: readonly CodingAgentExtensionInput[]) =>
+        startTui({ extensions }))
+    )(configured.extensions);
   }
 
   if (command === "help" || command === "--help" || command === "-h") {
@@ -53,7 +77,15 @@ export async function runCodingAgentCli({
     return (
       exec ??
       ((args: readonly string[]) =>
-        runExecCli({ argv: args, cwd, env, stdout }))
+        runExecCli({ argv: args, cwd, env, home, stdout }))
+    )(argv.slice(1));
+  }
+
+  if (command === "extension") {
+    return (
+      extension ??
+      ((args: readonly string[]) =>
+        runExtensionCli({ argv: args, cwd, home, stdout }))
     )(argv.slice(1));
   }
 
@@ -79,6 +111,7 @@ function formatUsage(): string {
     "Commands:",
     "  (no command)     Start the interactive TUI",
     "  exec             Run one headless coding task",
+    "  extension        Manage coding-agent extensions",
     "  inspect-thread   Print a report for the configured thread",
     "  update           Update pss (--check, --channel <tag>)",
     "  help             Show this help message",

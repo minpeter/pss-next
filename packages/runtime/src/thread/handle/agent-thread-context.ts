@@ -1,4 +1,4 @@
-import { mapPrepareModelStepModel } from "../../llm/model-step-selection";
+import { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type {
   QueuedInput,
@@ -45,22 +45,9 @@ export function createAgentThreadContext(
   persistence: ThreadPersistenceOptions,
   execution: ThreadExecutionOptions
 ): AgentThreadContext {
-  const pluginRuntime = execution.pluginRuntime;
-  const threadModel = pluginRuntime
-    ? {
-        ...model,
-        model: pluginRuntime.wrapModel(model.model, persistence.key),
-        ...(model.prepareModelStep
-          ? {
-              prepareModelStep: mapPrepareModelStepModel(
-                model.prepareModelStep,
-                (preparedModel) =>
-                  pluginRuntime.wrapModel(preparedModel, persistence.key)
-              ),
-            }
-          : {}),
-      }
-    : model;
+  const hookRuntime = execution.hookRuntime ?? new AgentHookRuntime();
+  const resolvedExecution = { ...execution, hookRuntime };
+  const threadModel = model;
   const state = new ThreadState(persistence);
   let context: AgentThreadContext;
 
@@ -75,11 +62,11 @@ export function createAgentThreadContext(
     events: new ThreadEventDispatcher({
       attachmentStore: model.attachmentStore,
       history: () => state.modelSnapshot(),
-      pluginRuntime: execution.pluginRuntime,
+      hookRuntime,
       signal: () => context.activeAbort?.signal,
       threadKey: persistence.key,
     }),
-    execution,
+    execution: resolvedExecution,
     inputAdmissionQueue: Promise.resolve(),
     inputQueue: [],
     killed: false,

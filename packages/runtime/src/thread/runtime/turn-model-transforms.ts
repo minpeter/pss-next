@@ -1,5 +1,5 @@
+import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import type { RunAgentLoopOptions } from "../../agent/loop/types";
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
 import type { ThreadState } from "../state/thread-state";
 
 interface TurnModelTransforms {
@@ -8,32 +8,28 @@ interface TurnModelTransforms {
 }
 
 export function createTurnModelTransforms({
-  pluginRuntime,
+  hookRuntime,
   state,
   threadKey,
 }: {
-  readonly pluginRuntime?: PluginRuntime;
+  readonly hookRuntime: AgentHookRuntime;
   readonly state: ThreadState;
   readonly threadKey: string;
 }): TurnModelTransforms {
   return {
-    transformModelContext: pluginRuntime
-      ? (messages, signal) =>
-          pluginRuntime.transformModelContext(
-            threadKey,
-            messages,
-            state.modelSnapshot(),
-            signal
-          )
-      : undefined,
-    transformModelStep: pluginRuntime
-      ? (messages, signal) =>
-          pluginRuntime.transformModelStep(
-            threadKey,
-            messages,
-            state.modelSnapshot(),
-            signal
-          )
-      : undefined,
+    transformModelContext: (messages, signal) =>
+      hookRuntime.transformModelContext(
+        threadKey,
+        { messages },
+        state.modelSnapshot(),
+        signal
+      ),
+    transformModelStep: (messages, signal) =>
+      hookRuntime.transformModelStep(
+        threadKey,
+        messages,
+        state.modelSnapshot(),
+        signal
+      ),
   };
 }

@@ -1,3 +1,4 @@
+import { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import { runAgentLoop } from "../../agent/loop/run";
 import { stageUserInputAttachments } from "../input/attachments";
 import {
@@ -64,7 +65,7 @@ export async function processQueuedInput({
     recordDurableThreadEvent(durableEvents, event);
   const { transformModelContext, transformModelStep } =
     createTurnModelTransforms({
-      pluginRuntime: execution.pluginRuntime,
+      hookRuntime: execution.hookRuntime ?? new AgentHookRuntime(),
       state,
       threadKey,
     });
@@ -223,7 +224,6 @@ export async function processQueuedInput({
       error,
       executionHost: execution.executionHost,
       executionRun,
-      events,
       historySnapshot,
       recordEvent,
       run,

@@ -15,6 +15,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
+import type { CodingAgentExtensionUi } from "../extensions/types";
 import { agentEventStreamParts } from "./agent-event-stream";
 import { createAliasAwareAutocompleteProvider } from "./autocomplete";
 import {
@@ -26,6 +27,7 @@ import {
 } from "./command";
 import { buildTuiCommandSet } from "./command-set";
 import { createTuiErrorPresentation } from "./error-presentation";
+import { createExtensionUi } from "./extension-ui";
 import {
   dispatchUserInput,
   type InputPreprocessHooks,
@@ -523,6 +525,7 @@ export interface AgentTUIConfig {
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
+  onExtensionUiReady?: (ui: CodingAgentExtensionUi) => void | Promise<void>;
   onModelUsage?: (usage: ModelUsage) => void;
   onSetup?: () => void | Promise<void>;
   onStreamStart?: () => void | Promise<void>;
@@ -623,6 +626,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
   let commandInputListenerActive = false;
+  const extensionUiController = new AbortController();
 
   const clearStatus = (): void => {
     foregroundStatusMessage = null;
@@ -653,6 +657,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const requestExit = (): void => {
     shouldExit = true;
+    extensionUiController.abort();
     cancelActiveTurn();
     clearStatus();
     if (inputResolver) {
@@ -1156,6 +1161,18 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.start();
 
   try {
+    await config.onExtensionUiReady?.(
+      createExtensionUi({
+        restoreFocus: clearPromptInput,
+        showMessage: (message) => addSystemMessage(chatContainer, message),
+        showStatus: (message) => {
+          showLoader(message);
+          return clearStatus;
+        },
+        signal: extensionUiController.signal,
+        tui,
+      })
+    );
     for (const message of config.setupMessages ?? []) {
       addSystemMessage(chatContainer, message);
     }
@@ -1174,6 +1191,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
+    extensionUiController.abort();
     clearStatus();
     footerStatusBar.stop();
     const pendingResolver: unknown = inputResolver;

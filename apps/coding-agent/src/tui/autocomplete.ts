@@ -23,7 +23,7 @@ export const createAutocompleteCommands = (
 ): SlashAutocompleteEntry[] => {
   const createCommandSuggestion = (
     command: {
-      argumentSuggestions?: string[];
+      argumentSuggestions?: readonly string[];
       description: string;
       name: string;
     },

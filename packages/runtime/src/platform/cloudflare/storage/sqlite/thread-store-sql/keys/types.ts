@@ -2,6 +2,7 @@ import type { SqlStorage } from "../../../../sql/ports/storage-port";
 import { storeKey } from "../../../execution/records";
 
 export interface ThreadMetaRow {
+  readonly applied_migrations: string | null;
   readonly message_count: number;
   readonly next_seq: number;
   readonly state_blob: string | null;

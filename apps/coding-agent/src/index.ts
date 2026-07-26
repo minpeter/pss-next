@@ -16,6 +16,7 @@ export {
   runCodingAgentExec,
 } from "./exec";
 export { formatExecUsage, parseExecArguments, runExecCli } from "./exec-cli";
+export * from "./extensions";
 export { CODING_AGENT_INSTRUCTIONS } from "./instructions";
 export type {
   CreateOpenAICompatibleModelFromDotenvOptions,

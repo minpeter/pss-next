@@ -1,5 +1,17 @@
 ## @minpeter/pss-runtime@0.3.0-next.3 (next)
 
+### Move extension composition out of the runtime core
+
+Replace the runtime factory extension kernel with one application-owned
+`AgentHooks` callback object. Preserve atomic input, turn, model, tool, and
+compaction interception while removing core ownership of extension identity,
+ordering, lifecycle, tools, and state.
+
+Move multi-extension composition to
+`@minpeter/pss-coding-agent/extension`, including stable IDs, bounded
+configuration and activation, reverse cleanup, runtime hook chaining, tools,
+instruction fragments, commands, and TUI tool renderers.
+
 ### Add the app-owned channel adapter contract
 
 Expose `@minpeter/pss-runtime/channel` with typed inbound channel messages and

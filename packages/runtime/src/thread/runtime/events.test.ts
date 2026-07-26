@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { AgentHookRuntime } from "../../agent/core/hook-runtime";
+import type { AgentHooks } from "../../agent/core/hooks";
 import { MemoryAttachmentStore } from "../../platform/memory";
-import { definePlugin } from "../../plugins/api";
-import { noopRuntimeDiagnostics } from "../../plugins/diagnostics";
-import { PluginRuntime } from "../../plugins/plugin-runtime";
 import {
   decodeRuntimeAttachmentData,
   isRuntimeAttachmentData,
@@ -10,19 +9,14 @@ import {
 import { BufferedAgentTurn } from "../protocol/turn";
 import { ThreadEventDispatcher } from "./thread-event-dispatcher";
 
-async function createDispatcher(
-  plugins: ReturnType<typeof definePlugin>[],
+function createDispatcher(
+  hooks: AgentHooks = {},
   attachmentStore?: MemoryAttachmentStore
-): Promise<ThreadEventDispatcher> {
-  const pluginRuntime = await PluginRuntime.create(plugins, {
-    diagnostics: noopRuntimeDiagnostics,
-    factoryTimeoutMs: 10_000,
-    hookTimeoutMs: 10_000,
-  });
+): ThreadEventDispatcher {
   return new ThreadEventDispatcher({
     attachmentStore,
     history: () => [],
-    pluginRuntime,
+    hookRuntime: new AgentHookRuntime(hooks),
     signal: () => undefined,
     threadKey: "test-thread",
   });
@@ -30,8 +24,8 @@ async function createDispatcher(
 
 describe("ThreadEventDispatcher.emitRunEvent", () => {
   it("returns transformed user-input and emits the transformed event", async () => {
-    const transformPlugin = definePlugin((pss) => {
-      pss.on("input.accept", (event) => {
+    const hooks: AgentHooks = {
+      acceptInput: (event) => {
         if (
           event.type !== "user-input" ||
           !("text" in event) ||
@@ -43,9 +37,9 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
           action: "transform",
           value: { ...event, text: `TAG:${event.text}` },
         };
-      });
-    });
-    const dispatcher = await createDispatcher([transformPlugin]);
+      },
+    };
+    const dispatcher = createDispatcher(hooks);
     const run = new BufferedAgentTurn();
 
     const emitted = await dispatcher.emitRunEvent(run, {
@@ -62,10 +56,10 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
     await iterator.return?.();
   });
 
-  it("stages plugin-transformed file bytes before emitting user-input", async () => {
+  it("stages hook-transformed file bytes before emitting user-input", async () => {
     const attachmentStore = new MemoryAttachmentStore();
-    const transformPlugin = definePlugin((pss) => {
-      pss.on("input.accept", (event) => {
+    const hooks: AgentHooks = {
+      acceptInput: (event) => {
         if (event.type !== "user-input") {
           return;
         }
@@ -82,12 +76,9 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
             type: "user-input",
           },
         };
-      });
-    });
-    const dispatcher = await createDispatcher(
-      [transformPlugin],
-      attachmentStore
-    );
+      },
+    };
+    const dispatcher = createDispatcher(hooks, attachmentStore);
     const run = new BufferedAgentTurn();
 
     const emitted = await dispatcher.emitRunEvent(run, {
@@ -115,10 +106,10 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
     await iterator.return?.();
   });
 
-  it("stages plugin-transformed file bytes before returning runtime-input", async () => {
+  it("stages hook-transformed file bytes before returning runtime-input", async () => {
     const attachmentStore = new MemoryAttachmentStore();
-    const transformPlugin = definePlugin((pss) => {
-      pss.on("input.accept", (event) => {
+    const hooks: AgentHooks = {
+      acceptInput: (event) => {
         if (event.type !== "runtime-input") {
           return;
         }
@@ -139,12 +130,9 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
             type: "runtime-input",
           },
         };
-      });
-    });
-    const dispatcher = await createDispatcher(
-      [transformPlugin],
-      attachmentStore
-    );
+      },
+    };
+    const dispatcher = createDispatcher(hooks, attachmentStore);
 
     const emitted = await dispatcher.interceptEvent({
       input: { text: "hint", type: "user-input" },
@@ -173,10 +161,9 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
   });
 
   it("returns handled without emitting user-input to the run", async () => {
-    const handledPlugin = definePlugin((pss) => {
-      pss.on("input.accept", () => ({ action: "handled" }));
+    const dispatcher = createDispatcher({
+      acceptInput: () => ({ action: "handled" }),
     });
-    const dispatcher = await createDispatcher([handledPlugin]);
     const run = new BufferedAgentTurn();
 
     const emitted = await dispatcher.emitRunEvent(run, {
@@ -192,20 +179,8 @@ describe("ThreadEventDispatcher.emitRunEvent", () => {
 });
 
 describe("ThreadEventDispatcher.emitObserverEvent", () => {
-  it("emits observer events to the active run and plugins", async () => {
-    const pluginEventTypes: string[] = [];
-    const observerPlugin = definePlugin((pss) => {
-      pss.on("message.start", (event) => {
-        pluginEventTypes.push(event.type);
-      });
-      pss.on("message.update", (event) => {
-        pluginEventTypes.push(event.type);
-      });
-      pss.on("message.end", (event) => {
-        pluginEventTypes.push(event.type);
-      });
-    });
-    const dispatcher = await createDispatcher([observerPlugin]);
+  it("emits observer events to the active run", async () => {
+    const dispatcher = createDispatcher();
     const run = new BufferedAgentTurn();
 
     await dispatcher.emitObserverEvent(run, {
@@ -219,15 +194,10 @@ describe("ThreadEventDispatcher.emitObserverEvent", () => {
       type: "assistant-reasoning",
     });
     await iterator.return?.();
-    expect(pluginEventTypes).toEqual([
-      "assistant-reasoning",
-      "assistant-reasoning",
-      "assistant-reasoning",
-    ]);
   });
 
   it("buffers observer events during capture", async () => {
-    const dispatcher = await createDispatcher([]);
+    const dispatcher = createDispatcher();
     const run = new BufferedAgentTurn();
 
     const captured = await dispatcher.captureObserverEvents(run, async () => {
@@ -247,14 +217,14 @@ describe("ThreadEventDispatcher.emitObserverEvent", () => {
 });
 
 describe("ThreadEventDispatcher.emitRunBoundaryEvent", () => {
-  it("observes turn.start on boundary emit without rewriting the event", async () => {
+  it("runs beforeTurnStart on boundary emit without rewriting the event", async () => {
     const observed: string[] = [];
-    const observerPlugin = definePlugin((pss) => {
-      pss.on("turn.start", (event) => {
+    const dispatcher = createDispatcher({
+      beforeTurnStart: (event) => {
         observed.push(event.type);
-      });
+        return { action: "continue" };
+      },
     });
-    const dispatcher = await createDispatcher([observerPlugin]);
     const run = new BufferedAgentTurn();
 
     const iterator = run.events()[Symbol.asyncIterator]();

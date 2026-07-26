@@ -275,7 +275,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  examples/plugin:
+  examples/hooks:
     dependencies:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.14

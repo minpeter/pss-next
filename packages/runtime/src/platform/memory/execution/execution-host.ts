@@ -1,3 +1,4 @@
+import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { ResumeThreadOptions } from "../../../execution/host/scheduler-options";
 import type { AgentHost, HostScheduler } from "../../../execution/host/types";
 import {
@@ -5,7 +6,6 @@ import {
   type ScheduledThreadPrompt,
   threadPromptScheduledWorkId,
 } from "../../../execution/scheduled-work";
-import { noopRuntimeDiagnostics } from "../../../plugins/diagnostics";
 import { MemoryAttachmentStore } from "../storage/memory-attachment-store";
 import { InMemoryExecutionStore } from "./store";
 

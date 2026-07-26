@@ -23,6 +23,7 @@ describe("coding-agent CLI", () => {
     expect(output).toContain("Usage: pss [command]\n");
     expect(output).toContain("exec");
     expect(output).toContain("inspect-thread");
+    expect(output).toContain("extension");
     expect(output).toContain("update");
   });
 

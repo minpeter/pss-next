@@ -18,6 +18,7 @@ import type {
   Agent,
   AgentAutoCompactionOptions,
   AgentEvent,
+  AgentHooks,
   AgentInput,
   AgentInstrumentation,
   AgentInstrumentationContext,
@@ -26,8 +27,6 @@ import type {
   CompactionContextMessage,
   HostAttachmentStore,
   ModelToolCacheFingerprintMetadata,
-  ModelUsage,
-  PluginEventMap,
   PrepareModelStep,
   PrepareModelStepInput,
   PrepareModelStepResult,
@@ -37,10 +36,10 @@ import type {
   ThreadHandle,
 } from "../index";
 import {
+  AgentHookError,
   createAgent,
   isStreamAgentEvent,
   ModelToolSelectionError,
-  registerTool,
   threadStoreKey as runtimeThreadStoreKey,
   ThreadEventReplayUnsupportedError,
 } from "../index";
@@ -83,8 +82,8 @@ describe("runtime public exports", () => {
     const runStreamExport = ["Agent", "Run", "Stream"].join("");
 
     expect(runtime).toHaveProperty("createAgent", createAgent);
-    expect(runtime).toHaveProperty("registerTool", registerTool);
-    expect(runtime).not.toHaveProperty("pluginTool");
+    expect(runtime).toHaveProperty("AgentHookError", AgentHookError);
+    expect(runtime).not.toHaveProperty("definePlugin");
     expect(runtime).not.toHaveProperty("Agent");
     expect(runtime).not.toHaveProperty("tool");
     expect(runtime).not.toHaveProperty("runPluginsForEvent");
@@ -114,20 +113,20 @@ describe("runtime public exports", () => {
     expect(emptyHostIsRejected).toBe(false);
   });
 
-  it("types flattened plugin event payloads by event name", () => {
-    expectTypeOf<PluginEventMap["turn.end"]>().toEqualTypeOf<{
-      type: "turn-end";
-    }>();
-    expectTypeOf<PluginEventMap["input.accept"]["type"]>().toEqualTypeOf<
-      "runtime-input" | "user-input"
+  it("types the single host hook contract", () => {
+    expectTypeOf<NonNullable<AgentHooks["acceptInput"]>>().toBeFunction();
+    expectTypeOf<
+      NonNullable<AgentHooks["beforeToolExecution"]>
+    >().toBeFunction();
+    expectTypeOf<keyof AgentHooks>().toEqualTypeOf<
+      | "acceptInput"
+      | "beforeCompaction"
+      | "beforeToolExecution"
+      | "beforeTurnStart"
+      | "transformModelContext"
+      | "transformModelStep"
+      | "transformToolResult"
     >();
-    expectTypeOf<
-      PluginEventMap["tool.call.before"]["type"]
-    >().toEqualTypeOf<"tool.call.before">();
-    expectTypeOf<PluginEventMap["model.usage"]>().toEqualTypeOf<ModelUsage>();
-    expectTypeOf<
-      Extract<AgentEvent, { type: "tool.call.before" }>
-    >().toEqualTypeOf<never>();
   });
 
   it("does not expose runtime-owned subagent helpers from the package root", async () => {
@@ -200,9 +199,11 @@ describe("runtime public exports", () => {
     expectTypeOf<
       Parameters<ThreadHandle["compact"]>[0]
     >().toEqualTypeOf<ThreadCompactionInput>();
-    expectTypeOf<PluginEventMap["model.context"]["messages"]>().toEqualTypeOf<
-      readonly ThreadContextMessage[]
-    >();
+    expectTypeOf<
+      Parameters<
+        NonNullable<AgentHooks["transformModelContext"]>
+      >[0]["messages"]
+    >().toEqualTypeOf<readonly ThreadContextMessage[]>();
     expectTypeOf<
       Parameters<ThreadHandle["overlay"]>[0]
     >().toEqualTypeOf<AgentInput>();

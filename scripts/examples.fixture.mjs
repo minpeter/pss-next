@@ -5,8 +5,8 @@ export const examplePackages = [
     requiredSource: "src/index.ts",
   },
   {
-    name: "@minpeter/pss-example-plugin",
-    path: "examples/plugin",
+    name: "@minpeter/pss-example-hooks",
+    path: "examples/hooks",
     requiredSource: "src/index.ts",
   },
   {

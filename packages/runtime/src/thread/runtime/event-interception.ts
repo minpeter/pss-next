@@ -1,10 +1,6 @@
 import type { ModelMessage } from "ai";
-import type { RuntimeToolExecutionCheckpoint } from "../../llm/tool-execution-types";
-import type {
-  InputAcceptEvent,
-  PluginToolCallBeforeEvent,
-} from "../../plugins/api";
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
+import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
+import type { AgentInputEvent } from "../../agent/core/hooks";
 import {
   type HostAttachmentStore,
   type RuntimeAttachmentReference,
@@ -15,7 +11,7 @@ import type { AgentEvent } from "../protocol/events";
 interface InterceptAgentEventOptions {
   readonly attachmentStore?: HostAttachmentStore;
   readonly history: () => readonly ModelMessage[];
-  readonly pluginRuntime?: PluginRuntime;
+  readonly hookRuntime: AgentHookRuntime;
   readonly signal: () => AbortSignal;
   readonly stagedRefs?: RuntimeAttachmentReference[];
   readonly threadKey: string;
@@ -25,16 +21,9 @@ export async function interceptAgentEvent(
   event: AgentEvent,
   options: InterceptAgentEventOptions
 ): Promise<AgentEvent | "handled"> {
-  let processed: AgentEvent | "handled" = event;
-  if (isInputAcceptEvent(event) && options.pluginRuntime) {
-    processed = await options.pluginRuntime.interceptInput(
-      options.threadKey,
-      event,
-      options.history(),
-      options.signal()
-    );
-  } else {
-    await options.pluginRuntime?.observeAgentEvent(
+  let processed: AgentEvent | undefined = event;
+  if (isInputAcceptEvent(event)) {
+    processed = await options.hookRuntime.acceptInput(
       options.threadKey,
       event,
       options.history(),
@@ -42,7 +31,7 @@ export async function interceptAgentEvent(
     );
   }
 
-  if (processed === "handled") {
+  if (processed === undefined) {
     return "handled";
   }
   return stageAgentEventAttachments(processed, options.attachmentStore, {
@@ -51,20 +40,6 @@ export async function interceptAgentEvent(
   });
 }
 
-export function beforeToolCallEvent(
-  checkpoint: RuntimeToolExecutionCheckpoint
-): PluginToolCallBeforeEvent {
-  return {
-    attempt: checkpoint.attempt,
-    idempotencyKey: checkpoint.idempotencyKey,
-    input: checkpoint.input,
-    policy: checkpoint.policy,
-    toolCallId: checkpoint.toolCallId,
-    toolName: checkpoint.toolName,
-    type: "tool.call.before",
-  };
-}
-
-function isInputAcceptEvent(event: AgentEvent): event is InputAcceptEvent {
+function isInputAcceptEvent(event: AgentEvent): event is AgentInputEvent {
   return event.type === "runtime-input" || event.type === "user-input";
 }

@@ -1,4 +1,3 @@
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
 import type { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentTurn } from "../../thread/protocol/turn";
 import {
@@ -13,14 +12,12 @@ export function createThreadPublicHandle({
   instrumentations,
   key,
   namespace,
-  pluginRuntime,
   thread,
 }: {
   readonly evict: (key: string) => void;
   readonly instrumentations: readonly AgentInstrumentation[];
   readonly key: string;
   readonly namespace: string | undefined;
-  readonly pluginRuntime: PluginRuntime | undefined;
   readonly thread: AgentThread;
 }): ThreadHandle {
   const instrumentTurn = (
@@ -32,19 +29,11 @@ export function createThreadPublicHandle({
     compact: (input) => thread.compact(input),
     delete: async () => {
       evict(key);
-      try {
-        await thread.delete();
-      } finally {
-        pluginRuntime?.clearThread(key);
-      }
+      await thread.delete();
     },
     dispose: async () => {
       evict(key);
-      try {
-        await thread.dispose();
-      } finally {
-        pluginRuntime?.clearThread(key);
-      }
+      await thread.dispose();
     },
     events: (options) => thread.events(options),
     interrupt: () => thread.interrupt(),
