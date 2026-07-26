@@ -163,10 +163,31 @@ async function runTuiCommand({
       return 1;
     }
   }
+  const reloadExtensions = async (): Promise<LoadedConfiguredExtensions> => {
+    const cacheBust = Date.now().toString(36);
+    const targets = await resolveCliExtensionTargets({
+      cwd,
+      paths: extensionPaths,
+    });
+    const targetIds = new Set(targets.map((target) => target.id));
+    const reloaded = await loadConfiguredCodingAgentExtensions({
+      cacheBust,
+      cwd,
+      ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
+      home,
+    });
+    return {
+      extensions: mergeCliExtensions(
+        reloaded.extensions,
+        await importCliExtensions({ cacheBust, targets })
+      ),
+      notices: reloaded.notices,
+    };
+  };
   return await (
     start ??
     ((loaded: readonly CodingAgentExtensionInput[]) =>
-      startTui({ extensions: loaded }))
+      startTui({ extensions: loaded, reloadExtensions }))
   )(extensions);
 }
 

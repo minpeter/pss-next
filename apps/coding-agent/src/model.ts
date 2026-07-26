@@ -7,17 +7,22 @@ import {
 } from "./env";
 
 export interface CreateOpenAICompatibleModelFromEnvOptions {
+  /** Custom fetch, e.g. for provider observation. */
+  fetch?: typeof globalThis.fetch;
   providerName?: string;
   runtimeEnv?: CodingAgentRuntimeEnv;
 }
 
 export interface CreateOpenAICompatibleModelFromDotenvOptions {
+  /** Custom fetch, e.g. for provider observation. */
+  fetch?: typeof globalThis.fetch;
   override?: boolean;
   providerName?: string;
   quiet?: boolean;
 }
 
 export function createOpenAICompatibleModelFromEnv({
+  fetch,
   providerName = "custom",
   runtimeEnv = process.env,
 }: CreateOpenAICompatibleModelFromEnvOptions = {}): LanguageModel {
@@ -26,12 +31,14 @@ export function createOpenAICompatibleModelFromEnv({
     name: providerName,
     apiKey: env.AI_API_KEY,
     baseURL: env.AI_BASE_URL,
+    ...(fetch === undefined ? {} : { fetch }),
   });
 
   return provider(env.AI_MODEL);
 }
 
 export function createCodingLanguageModel({
+  fetch,
   override = true,
   providerName = "custom",
   quiet = true,
@@ -39,6 +46,7 @@ export function createCodingLanguageModel({
   config({ override, quiet });
 
   return createOpenAICompatibleModelFromEnv({
+    ...(fetch === undefined ? {} : { fetch }),
     providerName,
   });
 }

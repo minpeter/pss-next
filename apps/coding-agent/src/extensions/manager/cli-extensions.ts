@@ -52,9 +52,12 @@ export async function resolveCliExtensionTargets({
  * gating and take precedence over configured extensions with the same id.
  */
 export async function importCliExtensions({
+  cacheBust,
   importer,
   targets,
 }: {
+  /** Import-cache buster used by `/reload` to re-import changed modules. */
+  readonly cacheBust?: string;
   readonly importer?: ImportExtensionModule;
   readonly targets: readonly ResolvedCliExtension[];
 }): Promise<readonly CodingAgentExtensionInput[]> {
@@ -62,6 +65,7 @@ export async function importCliExtensions({
   for (const target of targets) {
     extensions.push(
       await loadExtensionTarget({
+        ...(cacheBust === undefined ? {} : { cacheBust }),
         id: target.id,
         ...(importer === undefined ? {} : { importer }),
         installRoot: dirname(target.path),

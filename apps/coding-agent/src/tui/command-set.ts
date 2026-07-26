@@ -81,3 +81,13 @@ export const createClearCommand = (): TuiCommand => ({
   description: "Start a new session",
   execute: () => newSessionAction(),
 });
+
+export const createReloadCommand = (): TuiCommand => ({
+  name: "reload",
+  description: "Reload extensions from disk",
+  execute: (): TuiCommandResult => ({
+    action: { type: "reload" },
+    message: "Extensions reloaded.",
+    success: true,
+  }),
+});

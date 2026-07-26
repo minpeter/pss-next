@@ -7,7 +7,10 @@ import {
   isStreamAgentEvent,
 } from "@minpeter/pss-runtime";
 import { createCodingAgent } from "./coding-agent";
-import type { CodingAgentExtensionInput } from "./extensions";
+import type {
+  CodingAgentExtensionInput,
+  ExtensionJsonValue,
+} from "./extensions";
 import { createCodingAgentExtensionHost } from "./extensions";
 import type { WebToolsAvailability } from "./tools";
 
@@ -42,6 +45,10 @@ export interface CodingAgentExecResult {
 }
 
 export interface RunCodingAgentExecOptions {
+  /** Receives a host-bound emitter for provider observation bus events. */
+  readonly bindProviderObservation?: (
+    emit: (type: string, payload: ExtensionJsonValue) => void
+  ) => void;
   readonly extensions?: readonly CodingAgentExtensionInput[];
   readonly model: AgentOptions["model"];
   readonly prompt: string;
@@ -105,6 +112,7 @@ function recordEvent(
 }
 
 export async function runCodingAgentExec({
+  bindProviderObservation,
   extensions = [],
   model,
   prompt,
@@ -131,6 +139,9 @@ export async function runCodingAgentExec({
   };
   const absoluteWorkspace = resolve(workspace);
   const extensionHost = await createCodingAgentExtensionHost(extensions);
+  bindProviderObservation?.((type, payload) => {
+    extensionHost.emitHostEvent(type, payload);
+  });
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   try {
     agent = await createCodingAgent({

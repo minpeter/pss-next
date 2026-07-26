@@ -11,9 +11,17 @@ import {
   readOpenAICompatibleModelEnv,
 } from "../env";
 import {
+  type CodingAgentExtensionHost,
   type CodingAgentExtensionInput,
+  type CodingAgentExtensionUi,
   createCodingAgentExtensionHost,
+  type LoadedConfiguredExtensions,
 } from "../extensions";
+import { createCodingLanguageModel } from "../model";
+import {
+  createProviderObservationFetch,
+  type ProviderObservationEmitter,
+} from "../provider-observation";
 import { resolveCodingAgentThreadConfig } from "../thread-config";
 import { planAutoUpdate, runAutoUpdate } from "../update/auto-update";
 import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
@@ -21,13 +29,19 @@ import { cliVersion } from "../update/cli-version";
 import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
-import { createClearCommand } from "./command-set";
+import { createClearCommand, createReloadCommand } from "./command-set";
+import {
+  buildReloadedExtensionRuntime,
+  disposePreviousExtensionRuntime,
+} from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
 
 export interface StartTuiOptions {
   readonly extensions?: readonly CodingAgentExtensionInput[];
   /** Overrides the language model (tests and scripted QA). */
   readonly model?: AgentOptions["model"];
+  /** Re-runs extension discovery for `/reload`; absent means unavailable. */
+  readonly reloadExtensions?: () => Promise<LoadedConfiguredExtensions>;
   /** Replaces the TUI's default optional OpenSearch tools. */
   readonly tools?: ToolSet;
 }
@@ -50,16 +64,26 @@ const resolveModelSubtitle = (): string | undefined => {
 export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   const startupNotices: string[] = [];
   const threadConfig = resolveCodingAgentThreadConfig();
-  const extensionHost = await createCodingAgentExtensionHost(
+  const providerEmitter: ProviderObservationEmitter = {};
+  let model: AgentOptions["model"];
+  let extensionHost = await createCodingAgentExtensionHost(
     options.extensions ?? []
   );
+  providerEmitter.current = (type, payload) => {
+    extensionHost.emitHostEvent(type, payload);
+  };
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   try {
+    model =
+      options.model ??
+      createCodingLanguageModel({
+        fetch: createProviderObservationFetch(providerEmitter),
+      });
     agent = await createCodingAgent({
       autoCompaction: threadConfig.autoCompaction,
       extensionHost,
       host: createFileHost({ directory: threadConfig.directory }),
-      ...(options.model === undefined ? {} : { model: options.model }),
+      model,
       tools: options.tools,
       webTools: {
         onWebToolsDisabled: (message) => startupNotices.push(message),
@@ -77,9 +101,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   let exitCode = 0;
   try {
     let thread = agent.thread(threadConfig.key);
+    let extensionUi: CodingAgentExtensionUi | undefined;
 
     const noticeLines: string[] = [];
-    const builtInCommands = [createClearCommand()];
+    const builtInCommands = [createClearCommand(), createReloadCommand()];
     const deferredRefreshes: (() => Promise<void>)[] = [];
     const updateNotice = await emitUpdateNotice({
       write: (line) => noticeLines.push(line),
@@ -139,6 +164,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         footer.text = `${formatTokens(usageTotals.totalTokens)} tokens (${formatTokens(usageTotals.inputTokens)} in / ${formatTokens(usageTotals.outputTokens)} out)`;
       },
       onExtensionUiReady: async (ui) => {
+        extensionUi = ui;
         extensionHost.bindUi(ui);
         await extensionHost.activate(agent, "tui");
       },
@@ -148,6 +174,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         }
       },
       onCommandAction: async (action) => {
+        if (action.type === "reload") {
+          await reloadExtensionRuntime();
+          return;
+        }
         if (action.type !== "new-session") {
           return;
         }
@@ -165,6 +195,62 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         extensionHost.toolRenderers,
         (toolName) => extensionHost.getToolRendererOwner(toolName)
       ),
+    };
+
+    const reloadExtensionRuntime = async (): Promise<void> => {
+      const reloadExtensions = options.reloadExtensions;
+      if (reloadExtensions === undefined) {
+        throw new Error("Extension reload is unavailable in this session.");
+      }
+      const swap = await buildReloadedExtensionRuntime<
+        Awaited<ReturnType<typeof createCodingAgent>>,
+        CodingAgentExtensionHost
+      >({
+        activateHost: async (host, nextAgent) => {
+          if (extensionUi !== undefined) {
+            host.bindUi(extensionUi);
+          }
+          await host.activate(nextAgent, "tui");
+        },
+        createAgent: (host) =>
+          Promise.resolve(
+            createCodingAgent({
+              autoCompaction: threadConfig.autoCompaction,
+              extensionHost: host,
+              host: createFileHost({ directory: threadConfig.directory }),
+              model,
+              tools: options.tools,
+              webTools: { onWebToolsDisabled: () => undefined },
+              workspace: process.cwd(),
+            })
+          ),
+        createHost: (loaded) =>
+          createCodingAgentExtensionHost(loaded.extensions),
+        loadExtensions: reloadExtensions,
+        mergeCommands: (host) =>
+          guardExtensionCommands(builtInCommands, host.commands),
+        mergeToolRenderers: (host) =>
+          mergeToolRenderers(
+            createToolRenderers(),
+            host.toolRenderers,
+            (name) => host.getToolRendererOwner(name)
+          ),
+      });
+      const previous = { agent, host: extensionHost, thread };
+      agent = swap.agent;
+      extensionHost = swap.host;
+      thread = agent.thread(threadConfig.key);
+      tuiConfig.commands = [...swap.commands];
+      tuiConfig.toolRenderers = swap.toolRenderers;
+      previous.thread.interrupt();
+      const cleanupNotices = await disposePreviousExtensionRuntime({
+        agent: previous.agent,
+        disposeThread: () => previous.thread.dispose(),
+        host: previous.host,
+      });
+      for (const notice of [...swap.notices, ...cleanupNotices]) {
+        extensionUi?.notify(notice);
+      }
     };
 
     try {

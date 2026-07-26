@@ -6,6 +6,7 @@ import { assertJsonValue, createExtensionJsonState } from "./json-state";
 import { createExtensionExec } from "./process-exec";
 import type {
   CodingAgentExtensionAgents,
+  CodingAgentExtensionEvents,
   CodingAgentExtensionLogger,
   CodingAgentExtensionMode,
   CodingAgentExtensionModelProvider,
@@ -22,6 +23,7 @@ export interface ExtensionServiceScope {
 export function createExtensionServiceScope(options: {
   readonly config?: Readonly<Record<string, ExtensionJsonValue>>;
   readonly dataRoot?: string;
+  readonly events: CodingAgentExtensionEvents;
   readonly extensionId: string;
   readonly mode: CodingAgentExtensionMode;
   readonly model?: LanguageModel;
@@ -53,6 +55,7 @@ export function createExtensionServiceScope(options: {
   const services: CodingAgentExtensionServices = Object.freeze({
     agents,
     config: snapshotConfig(options.config),
+    events: options.events,
     exec: createExtensionExec({
       signal: options.signal,
       workspace: options.workspace ?? process.cwd(),

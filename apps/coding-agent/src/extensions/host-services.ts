@@ -1,6 +1,7 @@
 import type { Agent } from "@minpeter/pss-runtime";
 import type { TuiCommandContext } from "../tui/command";
 import { CodingAgentExtensionError } from "./error";
+import type { ExtensionHostEventBus } from "./event-bus";
 import {
   createExtensionServiceScope,
   type ExtensionServiceScope,
@@ -27,6 +28,7 @@ interface ExtensionCommandContext {
 }
 
 export class ExtensionHostServices {
+  readonly #bus: ExtensionHostEventBus;
   readonly #config: CodingAgentExtensionHostOptions["config"];
   readonly #dataRoot: string | undefined;
   readonly #interactiveUiRequests = new Map<string, number>();
@@ -35,7 +37,11 @@ export class ExtensionHostServices {
   #ui: CodingAgentExtensionUi | undefined;
   #workspace: string | undefined;
 
-  constructor(options: CodingAgentExtensionHostOptions) {
+  constructor(
+    options: CodingAgentExtensionHostOptions,
+    bus: ExtensionHostEventBus
+  ) {
+    this.#bus = bus;
     this.#config = options.config;
     this.#dataRoot = options.dataRoot;
     this.#model = options.model;
@@ -140,6 +146,16 @@ export class ExtensionHostServices {
     const scope = createExtensionServiceScope({
       config: this.#config?.[extensionId],
       ...(this.#dataRoot === undefined ? {} : { dataRoot: this.#dataRoot }),
+      events: Object.freeze({
+        emit: (
+          type: string,
+          payload?: Parameters<ExtensionHostEventBus["emitFromExtension"]>[2]
+        ) => this.#bus.emitFromExtension(extensionId, type, payload),
+        on: (
+          type: string,
+          handler: Parameters<ExtensionHostEventBus["subscribe"]>[2]
+        ) => this.#bus.subscribe(extensionId, type, handler),
+      }),
       extensionId,
       mode: options.mode,
       model: this.#model,

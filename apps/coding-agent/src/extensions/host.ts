@@ -22,6 +22,7 @@ import type {
   CodingAgentExtensionInput,
   CodingAgentExtensionMode,
   CodingAgentExtensionUi,
+  ExtensionJsonValue,
 } from "./types";
 
 export class CodingAgentExtensionHost {
@@ -149,6 +150,15 @@ export class CodingAgentExtensionHost {
 
   bindUi(ui: CodingAgentExtensionUi): void {
     this.#lifecycle.bindUi(ui);
+  }
+
+  /**
+   * Publish a host-originated bus event (for example `provider:response`).
+   * Extensions subscribe via `services.events.on(...)`; they cannot publish
+   * into host-reserved namespaces themselves.
+   */
+  emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
+    this.#lifecycle.emitHostEvent(type, payload);
   }
 
   getToolOwner(name: string): string | undefined {

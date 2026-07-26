@@ -210,6 +210,44 @@ pss exec --prompt "..." -e ./review-guard.ts -e ./metrics
 CLI extensions load without trust gating (running them is an explicit user
 action) and take precedence over configured extensions with the same id.
 
+### Reloading extensions
+
+In the TUI, `/reload` rebuilds the extension runtime from disk without
+restarting the session: extensions are rediscovered (managed installs, local
+modules, and `-e` paths), re-imported past the module cache, and activated
+against a replacement agent while the durable thread keeps its history. The
+swap is fail-safe — if any extension fails to load, configure, or activate,
+the current session keeps running unchanged and the error is shown in chat.
+
+### Inter-extension events
+
+`services.events` is a shared bus for extension-to-extension communication:
+
+```ts
+const unsubscribe = services.events.on("checkpoint:saved", (payload) => {
+  services.logger.info("checkpoint", payload);
+});
+services.events.emit("checkpoint:saved", { revision: 7 });
+```
+
+Payloads are JSON values cloned per delivery, handlers run under the host
+timeout/abort boundary, and failures are attributed to the subscribing
+extension without affecting the publisher. The `host:` and `provider:`
+namespaces are reserved for host-originated events; extensions can subscribe
+to them but cannot publish into them.
+
+### Provider observations
+
+The host publishes read-only provider HTTP observations on the bus:
+
+- `provider:request` — `{ method, url }` before each model call
+- `provider:response` — `{ status, url, headers }` after each response
+- `provider:error` — `{ message, url }` when the request fails
+
+URLs are stripped of credentials and query strings, request bodies and
+headers are never exposed, and response headers pass a safelist
+(`content-type`, `retry-after`, `x-request-id`, and rate-limit headers).
+
 Programmatic static-object extensions remain supported through
 `defineCodingAgentExtension()` and the `extensions` option on `startTui()` or
 `runCodingAgentExec()`. Their existing `registry.runtime.use()` API remains an

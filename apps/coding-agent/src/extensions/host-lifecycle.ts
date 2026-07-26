@@ -1,6 +1,7 @@
 import type { Agent } from "@minpeter/pss-runtime";
 import type { TuiCommandContext } from "../tui/command";
 import { CodingAgentExtensionError } from "./error";
+import { ExtensionHostEventBus } from "./event-bus";
 import { runExtensionOperation } from "./host-operation";
 import { ExtensionHostServices } from "./host-services";
 import { DEFAULT_EXTENSION_TIMEOUT_MS } from "./host-validation";
@@ -18,11 +19,13 @@ import type {
   CodingAgentExtensionMode,
   CodingAgentExtensionServices,
   CodingAgentExtensionUi,
+  ExtensionJsonValue,
 } from "./types";
 
 export class ExtensionHostLifecycle {
   #activated = false;
   #agent: Agent | undefined;
+  readonly #bus: ExtensionHostEventBus;
   #cleanups: { cleanup: CodingAgentExtensionCleanup; id: string }[] = [];
   readonly #collections: ExtensionRegistryCollections;
   readonly #controller = new AbortController();
@@ -39,8 +42,20 @@ export class ExtensionHostLifecycle {
   ) {
     this.#collections = collections;
     this.#extensions = extensions;
-    this.#services = new ExtensionHostServices(options);
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_EXTENSION_TIMEOUT_MS;
+    this.#bus = new ExtensionHostEventBus({
+      signal: this.#controller.signal,
+      timeoutMs: this.#timeoutMs,
+    });
+    this.#services = new ExtensionHostServices(options, this.#bus);
+  }
+
+  /** Publish a host-originated bus event such as a provider observation. */
+  emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
+    if (this.#disposed) {
+      return;
+    }
+    this.#bus.emitFromHost(type, payload);
   }
 
   get signal(): AbortSignal {
@@ -183,6 +198,7 @@ export class ExtensionHostLifecycle {
     }
     this.#disposed = true;
     this.#controller.abort();
+    this.#bus.dispose();
     const failures: unknown[] = [];
     for (const { cleanup, id } of this.#cleanups.reverse()) {
       try {
