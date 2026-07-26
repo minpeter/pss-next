@@ -35,6 +35,7 @@ import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createClearCommand, createReloadCommand } from "./command-set";
 import {
+  boundedReloadOperation,
   buildReloadedExtensionRuntime,
   disposePreviousExtensionRuntime,
   type ReloadableExtensions,
@@ -50,6 +51,8 @@ export interface StartTuiOptions {
   /** Replaces the TUI's default optional OpenSearch tools. */
   readonly tools?: ToolSet;
 }
+
+const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
 
 const formatTokens = (n: number): string => {
   if (n >= 1000) {
@@ -353,8 +356,11 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           const recoveredHost = await createCodingAgentExtensionHost(
             currentExtensionInputs
           );
+          let recoveredAgent:
+            | Awaited<ReturnType<typeof createCodingAgent>>
+            | undefined;
           try {
-            const recoveredAgent = await createReplacementAgent(recoveredHost);
+            recoveredAgent = await createReplacementAgent(recoveredHost);
             const commands = guardExtensionCommands(
               builtInCommands,
               recoveredHost.commands
@@ -364,7 +370,14 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
               recoveredHost.toolRenderers,
               (name) => recoveredHost.getToolRendererOwner(name)
             );
-            await activateReplacementHost(recoveredHost, recoveredAgent);
+            // Recovery activation needs the same boundary as replacement
+            // activation; a hanging recovered cleanup must fail recovery
+            // instead of freezing the session.
+            await boundedReloadOperation(
+              activateReplacementHost(recoveredHost, recoveredAgent),
+              RECOVERY_ACTIVATION_TIMEOUT_MS,
+              "Recovered extension activation"
+            );
             installRuntime(
               recoveredHost,
               recoveredAgent,
@@ -372,7 +385,21 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
               toolRenderers
             );
           } catch (error) {
-            await recoveredHost.dispose().catch(() => undefined);
+            recoveredHost.revokeExtensionState();
+            await Promise.allSettled([
+              recoveredAgent === undefined
+                ? Promise.resolve()
+                : boundedReloadOperation(
+                    recoveredAgent.dispose(),
+                    RECOVERY_ACTIVATION_TIMEOUT_MS,
+                    "Recovered agent disposal"
+                  ),
+              boundedReloadOperation(
+                recoveredHost.dispose(),
+                RECOVERY_ACTIVATION_TIMEOUT_MS,
+                "Recovered host disposal"
+              ),
+            ]);
             throw error;
           }
         },

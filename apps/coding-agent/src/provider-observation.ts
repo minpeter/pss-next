@@ -16,6 +16,10 @@ const URL_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"')]+/gi;
  * token carrying a `?` or `#` suffix is redacted wholesale.
  */
 const QUERY_TOKEN_PATTERN = /[^\s"')?#]*[?#][^\s"')]+/g;
+/** Credential-bearing authorities (`//user:secret@host`, `user:pw@host`). */
+const AUTHORITY_CREDENTIAL_PATTERN = /[^\s"')@]*@[^\s"')]+/g;
+/** Scheme-relative tokens (`//host/path`) that carry the raw input. */
+const SCHEME_RELATIVE_PATTERN = /\/\/[^\s"')]+/g;
 const MAX_ERROR_MESSAGE_LENGTH = 256;
 const SAFE_RESPONSE_HEADERS = new Set([
   "content-type",
@@ -110,6 +114,8 @@ function redactedErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(URL_LIKE_PATTERN, "<redacted-url>")
+    .replace(SCHEME_RELATIVE_PATTERN, "<redacted-url>")
+    .replace(AUTHORITY_CREDENTIAL_PATTERN, "<redacted-url>")
     .replace(QUERY_TOKEN_PATTERN, "<redacted-url>")
     .slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }

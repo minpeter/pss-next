@@ -34,6 +34,7 @@ export class ExtensionHostServices {
   readonly #interactiveUiRequests = new Map<string, number>();
   #model: CodingAgentExtensionHostOptions["model"];
   readonly #scopes = new Map<string, ExtensionServiceScope>();
+  readonly #statusDisposers = new Set<() => void>();
   #ui: CodingAgentExtensionUi | undefined;
   readonly #uiRevokedController = new AbortController();
   #workspace: string | undefined;
@@ -120,6 +121,14 @@ export class ExtensionHostServices {
    */
   revokeInteractiveUi(): void {
     this.#uiRevokedController.abort();
+    for (const dispose of [...this.#statusDisposers]) {
+      try {
+        dispose();
+      } catch {
+        // Clearing a stale status must never fail revocation.
+      }
+    }
+    this.#statusDisposers.clear();
   }
 
   async dispose(): Promise<readonly unknown[]> {
@@ -202,10 +211,27 @@ export class ExtensionHostServices {
         await this.#withInteractiveUi(extensionId, () =>
           this.#raceUiRevocation(() => ui.input(input), undefined)
         ),
+      notify: (message: string) => {
+        if (!this.#uiRevokedController.signal.aborted) {
+          ui.notify(message);
+        }
+      },
       select: async (input: Parameters<CodingAgentExtensionUi["select"]>[0]) =>
         await this.#withInteractiveUi(extensionId, () =>
           this.#raceUiRevocation(() => ui.select(input), undefined)
         ),
+      status: (message: string) => {
+        if (this.#uiRevokedController.signal.aborted) {
+          return () => undefined;
+        }
+        const dispose = ui.status(message);
+        const tracked = () => {
+          this.#statusDisposers.delete(tracked);
+          dispose();
+        };
+        this.#statusDisposers.add(tracked);
+        return tracked;
+      },
     });
   }
 
