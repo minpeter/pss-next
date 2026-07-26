@@ -58,6 +58,15 @@ export async function buildReloadedExtensionRuntime<
   /** Rebuild a runtime from the previous inputs after activation failure. */
   readonly recoverPrevious: () => Promise<void>;
   /**
+   * Snapshot shared extension state right before activation so a failed
+   * activation cannot leave partially upgraded state for the recovered
+   * runtime. Returns restore/discard handles.
+   */
+  readonly snapshotState?: () => Promise<{
+    discard(): Promise<void>;
+    restore(): Promise<void>;
+  }>;
+  /**
    * Pre-swap validation, e.g. committing migrations for the stored thread.
    * May return a revert callback invoked when a later phase fails so
    * durable side effects do not outlive a failed reload.
@@ -105,17 +114,27 @@ export async function buildReloadedExtensionRuntime<
     throw error;
   }
   const cleanupNotices = await options.disposePrevious();
+  // Snapshot after old cleanup finished writing and before the replacement
+  // can touch the shared per-extension state files.
+  const stateSnapshot = await options.snapshotState?.();
   try {
     await options.activateHost(host, agent);
   } catch (activationError) {
     await disposeSettled(agent, host);
-    // Recovery must run even when the revert conflicts (for example when
+    // Recovery must run even when the reverts conflict (for example when
     // replacement activation already advanced the stored thread version);
     // the session otherwise stays backed by the disposed old runtime.
-    const revertFailure = await revertSideEffects();
     const failures: unknown[] = [activationError];
+    const revertFailure = await revertSideEffects();
     if (revertFailure !== undefined) {
       failures.push(revertFailure);
+    }
+    if (stateSnapshot !== undefined) {
+      try {
+        await stateSnapshot.restore();
+      } catch (stateRestoreError) {
+        failures.push(stateRestoreError);
+      }
     }
     try {
       await options.recoverPrevious();
@@ -128,11 +147,12 @@ export async function buildReloadedExtensionRuntime<
     if (failures.length > 1) {
       throw new AggregateError(
         failures,
-        "Extension reload failed and its committed migrations could not be reverted; inspect the thread state"
+        "Extension reload failed and some of its side effects could not be reverted; inspect the thread and extension state"
       );
     }
     throw activationError;
   }
+  await stateSnapshot?.discard().catch(() => undefined);
   return {
     agent,
     commands,

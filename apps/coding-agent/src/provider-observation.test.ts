@@ -104,6 +104,25 @@ describe("provider observation fetch", () => {
     ]);
   });
 
+  it("scrubs scheme-less query and fragment tokens", async () => {
+    // Given
+    const { emitter, events } = createRecorder();
+    const observed = createProviderObservationFetch(emitter, () =>
+      Promise.reject(
+        new Error(
+          "Failed to parse gateway.example/v1?secret-token and host/path#secret"
+        )
+      )
+    );
+
+    // When / Then
+    await expect(observed("gateway.example/v1?secret-token")).rejects.toThrow();
+    const errorEvent = events.find((event) => event.type === "provider:error");
+    const message = JSON.stringify(errorEvent?.payload ?? "");
+    expect(message).not.toContain("secret-token");
+    expect(message).not.toContain("#secret");
+  });
+
   it("scrubs URL-like tokens from transport error messages", async () => {
     // Given
     const { emitter, events } = createRecorder();

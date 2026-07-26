@@ -11,6 +11,7 @@ import {
 } from "./migrations";
 
 const conflictPattern = /changed while committing migrations/u;
+const abortedPattern = /migration was aborted/u;
 
 function storeWith(
   stored: StoredThread | null,
@@ -167,6 +168,59 @@ describe("commitThreadStateMigrations", () => {
 
     // Then
     expect(committed).toBeUndefined();
+  });
+
+  it("never writes once the abort signal fires", async () => {
+    // Given
+    const store = storeWith(storedThread);
+    const controller = new AbortController();
+    const migration = {
+      id: "slow",
+      migrate: (snapshot: ThreadMigrationSnapshot) => {
+        // The host stops waiting (timeout) while the migration still runs.
+        controller.abort();
+        return { compactions: snapshot.compactions, history: [] };
+      },
+      version: 1,
+    };
+
+    // When / Then
+    await expect(
+      commitThreadStateMigrations({
+        migrations: [migration],
+        signal: controller.signal,
+        store,
+        threadKey: "thread-1",
+      })
+    ).rejects.toThrow(abortedPattern);
+    expect(store.commits).toEqual([]);
+  });
+
+  it("never reverts once the revert abort signal fires", async () => {
+    // Given
+    const store = storeWith(storedThread);
+    const committed = await commitThreadStateMigrations({
+      migrations: [
+        {
+          id: "pass",
+          migrate: (snapshot: ThreadMigrationSnapshot) => ({
+            compactions: snapshot.compactions,
+            history: [],
+          }),
+          version: 1,
+        },
+      ],
+      store,
+      threadKey: "thread-1",
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    // When / Then
+    await expect(
+      committed?.revert({ signal: controller.signal })
+    ).rejects.toThrow(abortedPattern);
+    expect(store.commits).toHaveLength(1);
   });
 
   it("surfaces rejecting migrations and commit conflicts", async () => {

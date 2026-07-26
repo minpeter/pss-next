@@ -13,7 +13,7 @@ export interface CommittedThreadMigrations {
    * the history it was built for and a corrected retry re-runs the
    * migration instead of skipping its applied-version marker.
    */
-  revert(): Promise<void>;
+  revert(options?: { readonly signal?: AbortSignal }): Promise<void>;
 }
 
 /**
@@ -34,10 +34,17 @@ export interface CommittedThreadMigrations {
  */
 export async function commitThreadStateMigrations({
   migrations,
+  signal,
   store,
   threadKey,
 }: {
   readonly migrations: readonly ThreadStateMigration[];
+  /**
+   * Checked immediately before each durable write. Hosts abort the signal
+   * when they stop waiting (for example a reload timeout) so a detached
+   * migration task can never commit after its reload already failed.
+   */
+  readonly signal?: AbortSignal;
   readonly store: Pick<ThreadStore, "commit" | "load">;
   readonly threadKey: string;
 }): Promise<CommittedThreadMigrations | undefined> {
@@ -57,6 +64,7 @@ export async function commitThreadStateMigrations({
   if (!migrated.changed) {
     return;
   }
+  assertNotAborted(signal, threadKey, "committing");
   const result = await store.commit(
     threadKey,
     {
@@ -75,7 +83,8 @@ export async function commitThreadStateMigrations({
   }
   const committedVersion = result.version;
   return {
-    revert: async () => {
+    revert: async (options?: { readonly signal?: AbortSignal }) => {
+      assertNotAborted(options?.signal, threadKey, "reverting");
       const restored = await store.commit(
         threadKey,
         { state: stored.state },
@@ -88,4 +97,16 @@ export async function commitThreadStateMigrations({
       }
     },
   };
+}
+
+function assertNotAborted(
+  signal: AbortSignal | undefined,
+  threadKey: string,
+  phase: string
+): void {
+  if (signal?.aborted) {
+    throw new Error(
+      `Thread "${threadKey}" migration was aborted before ${phase}; no state was written`
+    );
+  }
 }

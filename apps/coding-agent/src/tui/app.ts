@@ -20,6 +20,7 @@ import {
   type CodingAgentExtensionUi,
   createCodingAgentExtensionHost,
 } from "../extensions";
+import { snapshotExtensionState } from "../extensions/state-snapshot";
 import { createCodingLanguageModel } from "../model";
 import {
   createProviderObservationFetch,
@@ -308,6 +309,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             host.toolRenderers,
             (name) => host.getToolRendererOwner(name)
           ),
+        // Snapshot shared extension state so a failed activation cannot
+        // leave partially upgraded state for the recovered runtime.
+        snapshotState: () => snapshotExtensionState(),
         // Rebuild a runtime from the previous inputs so the session stays
         // usable when replacement activation fails after old cleanup ran.
         recoverPrevious: async () => {
@@ -344,24 +348,37 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         validateHost: async (host) => {
           // Migration callbacks are extension-controlled; bound them like
           // every other extension operation so a hanging migration fails
-          // the reload instead of freezing the session.
+          // the reload instead of freezing the session. The abort signal is
+          // checked before every durable write, so a timed-out migration
+          // task can never commit after the reload already failed.
+          const commitAbort = new AbortController();
           const committed = await boundedReloadOperation(
             commitThreadStateMigrations({
               migrations: host.threadMigrations,
+              signal: commitAbort.signal,
               store: reloadFileHost.store.threads,
               threadKey: threadStoreKey(threadConfig.key),
             }),
             host.timeoutMs,
             "Thread migration validation"
-          );
-          return committed === undefined
-            ? undefined
-            : () =>
-                boundedReloadOperation(
-                  committed.revert(),
-                  host.timeoutMs,
-                  "Thread migration revert"
-                );
+          ).catch((error: unknown) => {
+            commitAbort.abort();
+            throw error;
+          });
+          if (committed === undefined) {
+            return;
+          }
+          return () => {
+            const revertAbort = new AbortController();
+            return boundedReloadOperation(
+              committed.revert({ signal: revertAbort.signal }),
+              host.timeoutMs,
+              "Thread migration revert"
+            ).catch((error: unknown) => {
+              revertAbort.abort();
+              throw error;
+            });
+          };
         },
       });
       installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);

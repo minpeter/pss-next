@@ -10,8 +10,12 @@ export interface ProviderObservationEmitter {
 }
 
 const URL_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"')]+/gi;
-/** Scheme-less inputs still leak query secrets through error messages. */
-const QUERY_TOKEN_PATTERN = /[^\s"')?]*\?[^\s"')]*=[^\s"')]*/g;
+/**
+ * Scheme-less inputs still leak query/fragment secrets through error
+ * messages (`gateway.example/v1?secret-token`, `host/path#secret`), so any
+ * token carrying a `?` or `#` suffix is redacted wholesale.
+ */
+const QUERY_TOKEN_PATTERN = /[^\s"')?#]*[?#][^\s"')]+/g;
 const MAX_ERROR_MESSAGE_LENGTH = 256;
 const SAFE_RESPONSE_HEADERS = new Set([
   "content-type",

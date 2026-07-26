@@ -62,6 +62,10 @@ function baseOptions(overrides: {
   >;
   readonly mergeCommands?: () => readonly TuiCommand[];
   readonly recoverPrevious?: () => Promise<void>;
+  readonly snapshotState?: () => Promise<{
+    discard(): Promise<void>;
+    restore(): Promise<void>;
+  }>;
   readonly validateHost?: () => Promise<(() => Promise<void>) | undefined>;
 }) {
   return {
@@ -75,6 +79,9 @@ function baseOptions(overrides: {
     mergeCommands: overrides.mergeCommands ?? (() => [command]),
     mergeToolRenderers: () => ({}),
     recoverPrevious: overrides.recoverPrevious ?? (() => Promise.resolve()),
+    ...(overrides.snapshotState === undefined
+      ? {}
+      : { snapshotState: overrides.snapshotState }),
     ...(overrides.validateHost === undefined
       ? {}
       : { validateHost: overrides.validateHost }),
@@ -291,6 +298,37 @@ describe("buildReloadedExtensionRuntime", () => {
       )
     ).rejects.toThrow(revertFailedPattern);
     expect(recoveries).toEqual([true]);
+  });
+
+  it("restores the state snapshot on activation failure and discards it on success", async () => {
+    // Given
+    const events: string[] = [];
+    const snapshotState = () =>
+      Promise.resolve({
+        discard: () => {
+          events.push("discard");
+          return Promise.resolve();
+        },
+        restore: () => {
+          events.push("restore");
+          return Promise.resolve();
+        },
+      });
+
+    // When — success discards.
+    await buildReloadedExtensionRuntime<FakeAgent, FakeHost>(
+      baseOptions({ snapshotState })
+    );
+    // When / Then — activation failure restores.
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>(
+        baseOptions({
+          activateHost: () => Promise.reject(new Error("activation exploded")),
+          snapshotState,
+        })
+      )
+    ).rejects.toThrow("activation exploded");
+    expect(events).toEqual(["discard", "restore"]);
   });
 
   it("aggregates activation and recovery failures", async () => {
