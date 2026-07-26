@@ -72,14 +72,30 @@ export function createProviderObservationFetch(
   };
 }
 
+/** Methods that Fetch byte-uppercases; every other token keeps its case. */
+const FETCH_NORMALIZED_METHODS = new Set([
+  "DELETE",
+  "GET",
+  "HEAD",
+  "OPTIONS",
+  "POST",
+  "PUT",
+]);
+
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
   if (init?.method !== undefined) {
-    return init.method.toUpperCase();
+    return normalizedMethod(init.method);
   }
   if (input instanceof Request) {
-    return input.method.toUpperCase();
+    // Request normalizes standard methods at construction time.
+    return input.method;
   }
   return "GET";
+}
+
+function normalizedMethod(method: string): string {
+  const uppercase = method.toUpperCase();
+  return FETCH_NORMALIZED_METHODS.has(uppercase) ? uppercase : method;
 }
 
 function rawUrl(input: RequestInfo | URL): string {

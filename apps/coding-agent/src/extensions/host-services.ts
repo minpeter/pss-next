@@ -107,11 +107,14 @@ export class ExtensionHostServices {
     ).services;
   }
 
-  /** Reject further extension state writes across every service scope. */
-  revokeStateWrites(): void {
-    for (const scope of this.#scopes.values()) {
-      scope.revokeStateWrites();
-    }
+  /**
+   * Reject further extension state writes across every service scope and
+   * drain writes already admitted, so none can land after this resolves.
+   */
+  async revokeStateWrites(): Promise<void> {
+    await Promise.allSettled(
+      [...this.#scopes.values()].map((scope) => scope.revokeStateWrites())
+    );
   }
 
   /**
@@ -225,7 +228,14 @@ export class ExtensionHostServices {
           return () => undefined;
         }
         const dispose = ui.status(message);
+        // Idempotent so a disposer retained by detached cleanup cannot
+        // clear a status the replacement runtime published later.
+        let disposed = false;
         const tracked = () => {
+          if (disposed) {
+            return;
+          }
+          disposed = true;
           this.#statusDisposers.delete(tracked);
           dispose();
         };

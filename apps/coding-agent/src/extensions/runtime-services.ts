@@ -17,8 +17,12 @@ import type {
 
 export interface ExtensionServiceScope {
   readonly dispose: () => Promise<void>;
-  /** Reject further state writes; used after cleanup ran or was detached. */
-  readonly revokeStateWrites: () => void;
+  /**
+   * Reject further state writes and drain writes already admitted to the
+   * serial queue, so once this resolves no write from this scope can land
+   * behind a replacement runtime or a restored snapshot.
+   */
+  readonly revokeStateWrites: () => Promise<void>;
   readonly services: CodingAgentExtensionServices;
 }
 
@@ -72,8 +76,11 @@ export function createExtensionServiceScope(options: {
     ui: options.ui ?? createNoninteractiveExtensionUi(options.mode, logger),
   });
   return {
-    revokeStateWrites: () => {
+    revokeStateWrites: async () => {
       stateWritesRevoked = true;
+      // Reads queue behind admitted writes, so awaiting one fences every
+      // write that passed the revocation check before the flag was set.
+      await services.state.get().catch(() => undefined);
     },
     dispose: async () => {
       stateWritesRevoked = true;

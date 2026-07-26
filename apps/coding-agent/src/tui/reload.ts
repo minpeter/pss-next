@@ -9,7 +9,7 @@ interface ReloadableAgent {
 interface ReloadableHost {
   dispose(): Promise<void>;
   /** Revoke state/UI access after disposal was detached by a timeout. */
-  revokeExtensionState?(): void;
+  revokeExtensionState?(): Promise<void> | void;
 }
 
 export interface ExtensionRuntimeSwap<
@@ -143,7 +143,7 @@ export async function buildReloadedExtensionRuntime<
     // Disposal may have been detached by its timeout while a replacement
     // cleanup is still live; revoke its state/UI access so it cannot write
     // behind the restored snapshot or the recovered runtime.
-    host.revokeExtensionState?.();
+    await host.revokeExtensionState?.();
     // Recovery must run even when the reverts conflict (for example when
     // replacement activation already advanced the stored thread version);
     // the session otherwise stays backed by the disposed old runtime.

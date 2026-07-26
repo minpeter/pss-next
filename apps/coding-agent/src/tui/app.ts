@@ -333,8 +333,8 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             // Even when cleanup was detached by the timeout, late writes
             // must not touch state the replacement runtime now owns, and
             // stale prompts must release the terminal.
-            previous.host.revokeExtensionState();
             previous.uiAbort?.abort();
+            await previous.host.revokeExtensionState();
           }
         },
         loadExtensions: reloadExtensions,
@@ -385,7 +385,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
               toolRenderers
             );
           } catch (error) {
-            recoveredHost.revokeExtensionState();
+            await recoveredHost.revokeExtensionState().catch(() => undefined);
             await Promise.allSettled([
               recoveredAgent === undefined
                 ? Promise.resolve()
