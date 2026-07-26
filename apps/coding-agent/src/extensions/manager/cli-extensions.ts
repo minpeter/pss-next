@@ -54,15 +54,23 @@ export async function resolveCliExtensionTargets({
 export async function importCliExtensions({
   cacheBust,
   importer,
+  signal,
   targets,
 }: {
   /** Import-cache buster used by `/reload` to re-import changed modules. */
   readonly cacheBust?: string;
   readonly importer?: ImportExtensionModule;
+  /** Aborting stops importing further modules, e.g. after a reload timeout. */
+  readonly signal?: AbortSignal;
   readonly targets: readonly ResolvedCliExtension[];
 }): Promise<readonly CodingAgentExtensionInput[]> {
   const extensions: CodingAgentExtensionInput[] = [];
   for (const target of targets) {
+    if (signal?.aborted) {
+      throw new Error(
+        "Extension loading was cancelled; no further modules were imported"
+      );
+    }
     extensions.push(
       await loadExtensionTarget({
         ...(cacheBust === undefined ? {} : { cacheBust }),

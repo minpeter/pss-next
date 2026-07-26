@@ -12,6 +12,7 @@ import {
 
 const conflictPattern = /changed while committing migrations/u;
 const abortedPattern = /migration was aborted/u;
+const timeoutPattern = /did not settle within/u;
 
 function storeWith(
   stored: StoredThread | null,
@@ -168,6 +169,28 @@ describe("commitThreadStateMigrations", () => {
 
     // Then
     expect(committed).toBeUndefined();
+  });
+
+  it("times out hanging migrations without writing", async () => {
+    // Given
+    const store = storeWith(storedThread);
+
+    // When / Then
+    await expect(
+      commitThreadStateMigrations({
+        migrations: [
+          {
+            id: "hangs",
+            migrate: () => new Promise<never>(() => undefined),
+            version: 1,
+          },
+        ],
+        store,
+        threadKey: "thread-1",
+        timeoutMs: 20,
+      })
+    ).rejects.toThrow(timeoutPattern);
+    expect(store.commits).toEqual([]);
   });
 
   it("never writes once the abort signal fires", async () => {

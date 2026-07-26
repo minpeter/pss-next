@@ -35,7 +35,6 @@ import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createClearCommand, createReloadCommand } from "./command-set";
 import {
-  boundedReloadOperation,
   buildReloadedExtensionRuntime,
   disposePreviousExtensionRuntime,
   type ReloadableExtensions,
@@ -107,7 +106,11 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   let exitCode = 0;
   try {
     let thread = agent.thread(threadConfig.key);
+    let createExtensionUiForHost:
+      | ((hostSignal?: AbortSignal) => CodingAgentExtensionUi)
+      | undefined;
     let extensionUi: CodingAgentExtensionUi | undefined;
+    let extensionUiAbort: AbortController | undefined;
 
     const noticeLines: string[] = [];
     // `/reload` is only offered when the entrypoint provided a rediscovery
@@ -178,9 +181,11 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
         footer.text = `${formatTokens(usageTotals.totalTokens)} tokens (${formatTokens(usageTotals.inputTokens)} in / ${formatTokens(usageTotals.outputTokens)} out)`;
       },
-      onExtensionUiReady: async (ui) => {
-        extensionUi = ui;
-        extensionHost.bindUi(ui);
+      onExtensionUiReady: async (createUi) => {
+        createExtensionUiForHost = createUi;
+        extensionUiAbort = new AbortController();
+        extensionUi = createUi(extensionUiAbort.signal);
+        extensionHost.bindUi(extensionUi);
         await extensionHost.activate(agent, "tui");
       },
       onSetup: () => {
@@ -229,18 +234,26 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       nextAgent: Awaited<ReturnType<typeof createCodingAgent>>
     ): Promise<void> => {
       // Bind provider observations to the replacement host before its
-      // extensions activate so they observe their own model traffic.
+      // extensions activate so they observe their own model traffic, and
+      // give the replacement its own host-scoped UI so detached prompts
+      // from a previous runtime can be cancelled independently.
       const previousEmit = providerEmitter.current;
+      const previousUi = extensionUi;
+      const previousUiAbort = extensionUiAbort;
       providerEmitter.current = (type, payload) => {
         host.emitHostEvent(type, payload);
       };
       try {
-        if (extensionUi !== undefined) {
+        if (createExtensionUiForHost !== undefined) {
+          extensionUiAbort = new AbortController();
+          extensionUi = createExtensionUiForHost(extensionUiAbort.signal);
           host.bindUi(extensionUi);
         }
         await host.activate(nextAgent, "tui");
       } catch (error) {
         providerEmitter.current = previousEmit;
+        extensionUi = previousUi;
+        extensionUiAbort = previousUiAbort;
         throw error;
       }
     };
@@ -277,7 +290,12 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       const reloadFileHost = createFileHost({
         directory: threadConfig.directory,
       });
-      const previous = { agent, host: extensionHost, thread };
+      const previous = {
+        agent,
+        host: extensionHost,
+        thread,
+        uiAbort: extensionUiAbort,
+      };
       const swap = await buildReloadedExtensionRuntime<
         Awaited<ReturnType<typeof createCodingAgent>>,
         CodingAgentExtensionHost
@@ -296,8 +314,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             });
           } finally {
             // Even when cleanup was detached by the timeout, late writes
-            // must not touch state the replacement runtime now owns.
+            // must not touch state the replacement runtime now owns, and
+            // stale prompts must release the terminal.
             previous.host.revokeExtensionState();
+            previous.uiAbort?.abort();
           }
         },
         loadExtensions: reloadExtensions,
@@ -347,39 +367,17 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         // migrations never re-run on the next load. The returned revert
         // restores the snapshot if a later reload phase fails.
         validateHost: async (host) => {
-          // Migration callbacks are extension-controlled; bound them like
-          // every other extension operation so a hanging migration fails
-          // the reload instead of freezing the session. The abort signal is
-          // checked before every durable write, so a timed-out migration
-          // task can never commit after the reload already failed.
-          const commitAbort = new AbortController();
-          const committed = await boundedReloadOperation(
-            commitThreadStateMigrations({
-              migrations: host.threadMigrations,
-              signal: commitAbort.signal,
-              store: reloadFileHost.store.threads,
-              threadKey: threadStoreKey(threadConfig.key),
-            }),
-            host.timeoutMs,
-            "Thread migration validation"
-          ).catch((error: unknown) => {
-            commitAbort.abort();
-            throw error;
+          // Migration callbacks are extension-controlled and bounded by the
+          // host timeout; the durable commit itself is awaited to
+          // completion so the reported reload outcome always matches the
+          // stored thread state.
+          const committed = await commitThreadStateMigrations({
+            migrations: host.threadMigrations,
+            store: reloadFileHost.store.threads,
+            threadKey: threadStoreKey(threadConfig.key),
+            timeoutMs: host.timeoutMs,
           });
-          if (committed === undefined) {
-            return;
-          }
-          return () => {
-            const revertAbort = new AbortController();
-            return boundedReloadOperation(
-              committed.revert({ signal: revertAbort.signal }),
-              host.timeoutMs,
-              "Thread migration revert"
-            ).catch((error: unknown) => {
-              revertAbort.abort();
-              throw error;
-            });
-          };
+          return committed === undefined ? undefined : () => committed.revert();
         },
       });
       installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);

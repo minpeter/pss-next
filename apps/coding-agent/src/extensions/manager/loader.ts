@@ -28,6 +28,7 @@ export async function loadConfiguredCodingAgentExtensions({
   excludeIds,
   home,
   importer,
+  signal,
 }: {
   /** Import-cache buster used by `/reload` to re-import changed modules. */
   readonly cacheBust?: string;
@@ -36,6 +37,8 @@ export async function loadConfiguredCodingAgentExtensions({
   readonly excludeIds?: ReadonlySet<string>;
   readonly home: string;
   readonly importer?: ImportExtensionModule;
+  /** Aborting stops importing further modules, e.g. after a reload timeout. */
+  readonly signal?: AbortSignal;
 }): Promise<LoadedConfiguredExtensions> {
   const [globalPaths, trustedProjects, project] = await Promise.all([
     extensionScopePaths({ cwd, home, scope: "global" }),
@@ -88,9 +91,11 @@ export async function loadConfiguredCodingAgentExtensions({
   const shared: {
     readonly cacheBust?: string;
     readonly importer?: ImportExtensionModule;
+    readonly signal?: AbortSignal;
   } = {
     ...(cacheBust === undefined ? {} : { cacheBust }),
     ...(importer === undefined ? {} : { importer }),
+    ...(signal === undefined ? {} : { signal }),
   };
   const globalExtensions = await loadEnabledExtensions({
     ...shared,
@@ -146,6 +151,7 @@ async function loadLocalExtensions(options: {
   readonly importer?: ImportExtensionModule;
   readonly managedIds: ReadonlySet<string>;
   readonly projectInstallRoot?: string | undefined;
+  readonly signal?: AbortSignal;
 }): Promise<{
   readonly globalExtensions: readonly CodingAgentExtensionInput[];
   readonly notices: readonly string[];
@@ -186,11 +192,13 @@ async function loadLocalExtensions(options: {
   const shared: {
     readonly cacheBust?: string;
     readonly importer?: ImportExtensionModule;
+    readonly signal?: AbortSignal;
   } = {
     ...(options.cacheBust === undefined
       ? {}
       : { cacheBust: options.cacheBust }),
     ...(options.importer === undefined ? {} : { importer: options.importer }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
   return {
     globalExtensions: await loadLocalCandidates({
@@ -208,6 +216,14 @@ async function loadLocalExtensions(options: {
             installRoot: options.projectInstallRoot,
           }),
   };
+}
+
+function assertLoadNotCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new Error(
+      "Extension loading was cancelled; no further modules were imported"
+    );
+  }
 }
 
 function selectLocalCandidates(
@@ -231,9 +247,11 @@ async function loadLocalCandidates(options: {
   readonly candidates: readonly LocalExtensionCandidate[];
   readonly importer?: ImportExtensionModule;
   readonly installRoot: string;
+  readonly signal?: AbortSignal;
 }): Promise<readonly CodingAgentExtensionInput[]> {
   const extensions: CodingAgentExtensionInput[] = [];
   for (const candidate of options.candidates) {
+    assertLoadNotCancelled(options.signal);
     extensions.push(
       await loadExtensionTarget({
         ...(options.cacheBust === undefined
@@ -256,9 +274,11 @@ async function loadEnabledExtensions(options: {
   readonly entries: readonly ExtensionSettingsEntry[];
   readonly importer?: ImportExtensionModule;
   readonly installRoot: string;
+  readonly signal?: AbortSignal;
 }): Promise<readonly CodingAgentExtensionInput[]> {
   const extensions: CodingAgentExtensionInput[] = [];
   for (const entry of options.entries) {
+    assertLoadNotCancelled(options.signal);
     if (!entry.enabled) {
       continue;
     }

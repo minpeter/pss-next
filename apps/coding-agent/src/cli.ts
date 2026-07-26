@@ -183,18 +183,25 @@ async function runTuiCommand({
     const transaction = beginCommonJsReloadTransaction(
       await reloadCacheRoots({ cwd, home, targets })
     );
+    // Bound imports so an edited extension with a never-settling top-level
+    // await fails the reload instead of freezing the session; the abort
+    // signal stops the detached task from importing further modules after
+    // the timeout so it cannot repopulate the rolled-back module cache.
+    const importAbort = new AbortController();
     try {
-      // Bound imports so an edited extension with a never-settling
-      // top-level await fails the reload instead of freezing the session
-      // with the CommonJS cache already evicted.
       const { cliExtensions, reloaded } = await boundedReloadOperation(
         (async () => ({
-          cliExtensions: await importCliExtensions({ cacheBust, targets }),
+          cliExtensions: await importCliExtensions({
+            cacheBust,
+            signal: importAbort.signal,
+            targets,
+          }),
           reloaded: await loadConfiguredCodingAgentExtensions({
             cacheBust,
             cwd,
             ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
             home,
+            signal: importAbort.signal,
           }),
         }))(),
         RELOAD_IMPORT_TIMEOUT_MS,
@@ -206,6 +213,7 @@ async function runTuiCommand({
         rollbackModuleCache: () => transaction.rollback(),
       };
     } catch (error) {
+      importAbort.abort();
       transaction.rollback();
       throw error;
     }

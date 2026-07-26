@@ -525,7 +525,9 @@ export interface AgentTUIConfig {
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
-  onExtensionUiReady?: (ui: CodingAgentExtensionUi) => void | Promise<void>;
+  onExtensionUiReady?: (
+    createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
+  ) => void | Promise<void>;
   onModelUsage?: (usage: ModelUsage) => void;
   onSetup?: () => void | Promise<void>;
   onStreamStart?: () => void | Promise<void>;
@@ -1198,7 +1200,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.start();
 
   try {
-    await config.onExtensionUiReady?.(
+    await config.onExtensionUiReady?.((hostSignal) =>
       createExtensionUi({
         restoreFocus: clearPromptInput,
         showMessage: (message) => addSystemMessage(chatContainer, message),
@@ -1206,7 +1208,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           showLoader(message);
           return clearStatus;
         },
-        signal: extensionUiController.signal,
+        // Host-scoped signals let a runtime swap cancel prompts that a
+        // detached previous host still has on screen.
+        signal:
+          hostSignal === undefined
+            ? extensionUiController.signal
+            : AbortSignal.any([extensionUiController.signal, hostSignal]),
         tui,
       })
     );

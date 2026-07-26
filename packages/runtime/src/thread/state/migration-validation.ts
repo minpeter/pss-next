@@ -37,16 +37,25 @@ export async function commitThreadStateMigrations({
   signal,
   store,
   threadKey,
+  timeoutMs,
 }: {
   readonly migrations: readonly ThreadStateMigration[];
   /**
    * Checked immediately before each durable write. Hosts abort the signal
-   * when they stop waiting (for example a reload timeout) so a detached
-   * migration task can never commit after its reload already failed.
+   * when they stop waiting so a detached migration task can never commit
+   * after its reload already failed.
    */
   readonly signal?: AbortSignal;
   readonly store: Pick<ThreadStore, "commit" | "load">;
   readonly threadKey: string;
+  /**
+   * Bounds migration callback execution only. The durable commit itself is
+   * intentionally unbounded: once every callback settled inside the budget
+   * the write is awaited to completion, so the reported outcome always
+   * matches the stored state and a timed-out validation can never commit
+   * in the background after failure was reported.
+   */
+  readonly timeoutMs?: number;
 }): Promise<CommittedThreadMigrations | undefined> {
   const normalized = normalizeThreadStateMigrations(migrations);
   if (normalized.length === 0) {
@@ -56,11 +65,15 @@ export async function commitThreadStateMigrations({
   if (stored === null) {
     return;
   }
-  const migrated = await applyThreadStateMigrations({
-    migrations: normalized,
-    state: decodeStoredThreadState(stored),
+  const migrated = await boundedMigrationRun(
+    applyThreadStateMigrations({
+      migrations: normalized,
+      state: decodeStoredThreadState(stored),
+      threadKey,
+    }),
     threadKey,
-  });
+    timeoutMs
+  );
   if (!migrated.changed) {
     return;
   }
@@ -109,4 +122,36 @@ function assertNotAborted(
       `Thread "${threadKey}" migration was aborted before ${phase}; no state was written`
     );
   }
+}
+
+function boundedMigrationRun<Value>(
+  task: Promise<Value>,
+  threadKey: string,
+  timeoutMs: number | undefined
+): Promise<Value> {
+  if (timeoutMs === undefined) {
+    return task;
+  }
+  task.catch(() => undefined);
+  return new Promise<Value>((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      rejectPromise(
+        new Error(
+          `Thread "${threadKey}" migrations did not settle within ${timeoutMs}ms; no state was written`
+        )
+      );
+    }, timeoutMs);
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolvePromise(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        rejectPromise(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+    );
+  });
 }
