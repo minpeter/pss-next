@@ -24,10 +24,13 @@ import type {
 
 export async function loadConfiguredCodingAgentExtensions({
   cwd,
+  excludeIds,
   home,
   importer,
 }: {
   readonly cwd: string;
+  /** IDs supplied via `-e`; matching configured modules are never imported. */
+  readonly excludeIds?: ReadonlySet<string>;
   readonly home: string;
   readonly importer?: ImportExtensionModule;
 }): Promise<LoadedConfiguredExtensions> {
@@ -78,9 +81,10 @@ export async function loadConfiguredCodingAgentExtensions({
       .filter((entry) => entry.enabled)
       .map((entry) => entry.id) ?? []
   );
+  const skippedIds = excludeIds ?? new Set<string>();
   const globalExtensions = await loadEnabledExtensions({
     entries: globalSettings.extensions.filter(
-      (entry) => !enabledProjectIds.has(entry.id)
+      (entry) => !(enabledProjectIds.has(entry.id) || skippedIds.has(entry.id))
     ),
     ...(importer === undefined ? {} : { importer }),
     installRoot: globalPaths.installRoot,
@@ -89,17 +93,21 @@ export async function loadConfiguredCodingAgentExtensions({
     projectConfiguration === undefined
       ? []
       : await loadEnabledExtensions({
-          entries: projectConfiguration.settings.extensions,
+          entries: projectConfiguration.settings.extensions.filter(
+            (entry) => !skippedIds.has(entry.id)
+          ),
           ...(importer === undefined ? {} : { importer }),
           installRoot: projectConfiguration.paths.installRoot,
         });
   const local = await loadLocalExtensions({
+    excludeIds: skippedIds,
     globalInstallRoot: globalPaths.installRoot,
     ...(importer === undefined ? {} : { importer }),
     managedIds: new Set(
-      [...globalExtensions, ...projectExtensions].map(
-        (extension) => extension.id
-      )
+      [
+        ...globalSettings.extensions,
+        ...(projectConfiguration?.settings.extensions ?? []),
+      ].map((entry) => entry.id)
     ),
     projectInstallRoot: projectConfiguration?.paths.installRoot,
   });
@@ -122,6 +130,7 @@ export async function loadConfiguredCodingAgentExtensions({
 }
 
 async function loadLocalExtensions(options: {
+  readonly excludeIds: ReadonlySet<string>;
   readonly globalInstallRoot: string;
   readonly importer?: ImportExtensionModule;
   readonly managedIds: ReadonlySet<string>;
@@ -143,7 +152,9 @@ async function loadLocalExtensions(options: {
     ...projectDiscovery.notices,
   ];
   const projectCandidates = selectLocalCandidates(
-    projectDiscovery.candidates,
+    projectDiscovery.candidates.filter(
+      (candidate) => !options.excludeIds.has(candidate.id)
+    ),
     options.managedIds,
     notices
   );
@@ -152,7 +163,11 @@ async function loadLocalExtensions(options: {
   );
   const globalCandidates = selectLocalCandidates(
     globalDiscovery.candidates.filter(
-      (candidate) => !projectLocalIds.has(candidate.id)
+      (candidate) =>
+        !(
+          projectLocalIds.has(candidate.id) ||
+          options.excludeIds.has(candidate.id)
+        )
     ),
     options.managedIds,
     notices

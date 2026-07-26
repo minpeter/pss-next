@@ -3,11 +3,14 @@ import { join } from "node:path";
 
 const LOCAL_EXTENSION_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const MODULE_FILE_EXTENSIONS = [".ts", ".mts", ".js", ".mjs"] as const;
+const DECLARATION_FILE_SUFFIXES = [".d.ts", ".d.mts"] as const;
 const RESERVED_ENTRY_NAMES = new Set([
   "node_modules",
   "package.json",
   "package-lock.json",
 ]);
+/** IDs the extension host rejects as unsafe; never derive them locally. */
+const UNSAFE_EXTENSION_IDS = new Set(["__proto__", "constructor", "prototype"]);
 
 /** One loose extension module found in a local extensions directory. */
 export interface LocalExtensionCandidate {
@@ -60,7 +63,25 @@ export async function discoverLocalExtensions(
       );
     }
   }
-  return { candidates, notices };
+  return { candidates: dedupeCandidates(candidates, notices), notices };
+}
+
+function dedupeCandidates(
+  candidates: readonly LocalExtensionCandidate[],
+  notices: string[]
+): readonly LocalExtensionCandidate[] {
+  const byId = new Map<string, LocalExtensionCandidate>();
+  for (const candidate of candidates) {
+    const first = byId.get(candidate.id);
+    if (first === undefined) {
+      byId.set(candidate.id, candidate);
+      continue;
+    }
+    notices.push(
+      `Skipped local extension "${candidate.path}": duplicate id "${candidate.id}" (already provided by "${first.path}").`
+    );
+  }
+  return [...byId.values()];
 }
 
 /**
@@ -81,6 +102,9 @@ export async function hasLocalExtensionCandidates(
 
 /** Derive the stable extension id used for one loose module path. */
 export function localExtensionIdFromName(name: string): string | undefined {
+  if (UNSAFE_EXTENSION_IDS.has(name)) {
+    return;
+  }
   return LOCAL_EXTENSION_ID_PATTERN.test(name) ? name : undefined;
 }
 
@@ -102,6 +126,9 @@ function collectFileCandidate(
   candidates: LocalExtensionCandidate[],
   notices: string[]
 ): void {
+  if (DECLARATION_FILE_SUFFIXES.some((suffix) => fileName.endsWith(suffix))) {
+    return;
+  }
   const moduleExtension = MODULE_FILE_EXTENSIONS.find((extension) =>
     fileName.endsWith(extension)
   );
@@ -127,24 +154,35 @@ async function collectDirectoryCandidate(
   candidates: LocalExtensionCandidate[],
   notices: string[]
 ): Promise<void> {
-  const indexPath = await directoryIndexModule(join(directory, directoryName));
-  if (indexPath === undefined) {
+  const index = await directoryIndexModule(join(directory, directoryName));
+  if (index === undefined) {
+    return;
+  }
+  if (index.symlink) {
+    notices.push(
+      `Skipped local extension entry "${index.path}": symbolic links are not loaded.`
+    );
     return;
   }
   const id = localExtensionIdFromName(directoryName);
   if (id === undefined) {
     notices.push(
-      `Skipped local extension "${indexPath}": directory name must match ${LOCAL_EXTENSION_ID_PATTERN}.`
+      `Skipped local extension "${index.path}": directory name must match ${LOCAL_EXTENSION_ID_PATTERN}.`
     );
     return;
   }
-  candidates.push({ id, path: indexPath });
+  candidates.push({ id, path: index.path });
+}
+
+export interface DirectoryIndexModule {
+  readonly path: string;
+  readonly symlink: boolean;
 }
 
 /** Resolve `<dir>/index.*` for directory-shaped local extensions. */
 export async function directoryIndexModule(
   directory: string
-): Promise<string | undefined> {
+): Promise<DirectoryIndexModule | undefined> {
   const entries = await readDirectoryEntries(directory);
   if (entries === undefined) {
     return;
@@ -153,10 +191,13 @@ export async function directoryIndexModule(
     const indexName = `index${moduleExtension}`;
     const match = entries.find(
       (entry) =>
-        entry.name === indexName && entry.isFile() && !entry.isSymbolicLink()
+        entry.name === indexName && (entry.isFile() || entry.isSymbolicLink())
     );
     if (match !== undefined) {
-      return join(directory, indexName);
+      return {
+        path: join(directory, indexName),
+        symlink: match.isSymbolicLink(),
+      };
     }
   }
   return;

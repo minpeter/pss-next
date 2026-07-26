@@ -102,6 +102,72 @@ describe("local extension discovery", () => {
     expect(combined).toContain("Bad Name.ts");
   });
 
+  it("ignores declaration files", async () => {
+    // Given
+    const root = await temporaryDirectory();
+    await writeFile(join(root, "guard.d.ts"), "declare const x: number;");
+    await writeFile(join(root, "guard.d.mts"), "declare const y: number;");
+    await writeFile(join(root, "guard.js"), "export default () => {};");
+
+    // When
+    const discovered = await discoverLocalExtensions(root);
+
+    // Then
+    expect(discovered.candidates).toEqual([
+      { id: "guard", path: join(root, "guard.js") },
+    ]);
+    expect(discovered.notices).toEqual([]);
+  });
+
+  it("keeps the first candidate per id and reports duplicates", async () => {
+    // Given
+    const root = await temporaryDirectory();
+    await writeFile(join(root, "guard.js"), "export default () => {};");
+    await writeFile(join(root, "guard.ts"), "export default () => {};");
+
+    // When
+    const discovered = await discoverLocalExtensions(root);
+
+    // Then
+    expect(discovered.candidates).toEqual([
+      { id: "guard", path: join(root, "guard.js") },
+    ]);
+    expect(discovered.notices).toHaveLength(1);
+    expect(discovered.notices[0]).toContain('duplicate id "guard"');
+  });
+
+  it("rejects host-reserved ids with a notice", async () => {
+    // Given
+    const root = await temporaryDirectory();
+    await writeFile(join(root, "constructor.mjs"), "export default () => {};");
+    await writeFile(join(root, "prototype.mjs"), "export default () => {};");
+
+    // When
+    const discovered = await discoverLocalExtensions(root);
+
+    // Then
+    expect(discovered.candidates).toEqual([]);
+    expect(discovered.notices).toHaveLength(2);
+  });
+
+  it("reports symlinked directory index modules with a notice", async () => {
+    // Given
+    const root = await temporaryDirectory();
+    const outside = join(root, "outside.mjs");
+    await writeFile(outside, "export default () => {};");
+    const extensionsDirectory = join(root, "extensions");
+    await mkdir(join(extensionsDirectory, "guard"), { recursive: true });
+    await symlink(outside, join(extensionsDirectory, "guard", "index.mjs"));
+
+    // When
+    const discovered = await discoverLocalExtensions(extensionsDirectory);
+
+    // Then
+    expect(discovered.candidates).toEqual([]);
+    expect(discovered.notices).toHaveLength(1);
+    expect(discovered.notices[0]).toContain("symbolic links");
+  });
+
   it("skips directories without an index module", async () => {
     // Given
     const root = await temporaryDirectory();

@@ -6,8 +6,9 @@ import type {
   LoadedConfiguredExtensions,
 } from "./extensions";
 import {
-  loadCliExtensions,
+  importCliExtensions,
   mergeCliExtensions,
+  resolveCliExtensionTargets,
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { resolveCodingAgentThreadConfig } from "./thread-config";
@@ -127,20 +128,35 @@ async function runTuiCommand({
     stdout.write(`${errorMessage(error)}\n\n${formatUsage()}\n`);
     return 1;
   }
+  let cliTargets: Awaited<ReturnType<typeof resolveCliExtensionTargets>>;
+  try {
+    cliTargets = await resolveCliExtensionTargets({
+      cwd,
+      paths: extensionPaths,
+    });
+  } catch (error) {
+    stdout.write(`${errorMessage(error)}\n`);
+    return 1;
+  }
+  const excludeIds = new Set(cliTargets.map((target) => target.id));
   const configured =
     (await loadExtensions?.()) ??
     (start
       ? { extensions: [], notices: [] }
-      : await loadConfiguredCodingAgentExtensions({ cwd, home }));
+      : await loadConfiguredCodingAgentExtensions({
+          cwd,
+          ...(excludeIds.size === 0 ? {} : { excludeIds }),
+          home,
+        }));
   for (const notice of configured.notices) {
     stdout.write(`${notice}\n`);
   }
   let extensions = configured.extensions;
-  if (extensionPaths.length > 0) {
+  if (cliTargets.length > 0) {
     try {
       extensions = mergeCliExtensions(
         configured.extensions,
-        await loadCliExtensions({ cwd, paths: extensionPaths })
+        await importCliExtensions({ targets: cliTargets })
       );
     } catch (error) {
       stdout.write(`${errorMessage(error)}\n`);

@@ -194,9 +194,11 @@ Drop loose modules into an extensions directory and they load automatically:
 
 TypeScript files run directly through Node's native type stripping — no build
 step. The file or directory name is the extension id and must match
-`[a-z0-9][a-z0-9._-]*`. Symbolic links are skipped, and a local id that
-collides with an installed extension is skipped with a startup notice.
-Project-local files override global-local files with the same id.
+`[a-z0-9][a-z0-9._-]*` (reserved names such as `constructor` are rejected;
+declaration files like `guard.d.ts` are ignored). Symbolic links, duplicate
+ids, and ids that collide with an installed extension — enabled or disabled —
+are skipped with startup notices. Project-local files override global-local
+files with the same id.
 
 For one run only, pass `-e`/`--extension` (repeatable) to the TUI or exec:
 

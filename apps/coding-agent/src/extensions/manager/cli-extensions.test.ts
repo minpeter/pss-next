@@ -105,6 +105,10 @@ describe("loadCliExtensions", () => {
     await expect(
       loadCliExtensions({ cwd: root, paths: ["Bad Name.mjs"] })
     ).rejects.toThrow(invalidIdPattern);
+    await writeFile(join(root, "constructor.mjs"), "export default () => {};");
+    await expect(
+      loadCliExtensions({ cwd: root, paths: ["constructor.mjs"] })
+    ).rejects.toThrow(invalidIdPattern);
     await expect(
       loadCliExtensions({ cwd: root, paths: ["dup.mjs", "nested/dup.mjs"] })
     ).rejects.toThrow(duplicateIdPattern);

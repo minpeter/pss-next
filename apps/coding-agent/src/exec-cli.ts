@@ -5,8 +5,9 @@ import { config } from "dotenv";
 import type { CodingAgentRuntimeEnv } from "./env";
 import { runCodingAgentExec } from "./exec";
 import {
-  loadCliExtensions,
+  importCliExtensions,
   mergeCliExtensions,
+  resolveCliExtensionTargets,
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { createOpenAICompatibleModelFromEnv } from "./model";
@@ -211,8 +212,14 @@ export async function runExecCli({
     (args.promptFile === undefined
       ? await readAllStdin()
       : await readFile(resolve(cwd, args.promptFile), "utf8"));
+  const cliTargets = await resolveCliExtensionTargets({
+    cwd,
+    paths: args.extensionPaths,
+  });
+  const excludeIds = new Set(cliTargets.map((target) => target.id));
   const configured = await loadConfiguredCodingAgentExtensions({
     cwd: args.workspace,
+    ...(excludeIds.size === 0 ? {} : { excludeIds }),
     home,
   });
   for (const notice of configured.notices) {
@@ -221,11 +228,11 @@ export async function runExecCli({
     );
   }
   const extensions =
-    args.extensionPaths.length === 0
+    cliTargets.length === 0
       ? configured.extensions
       : mergeCliExtensions(
           configured.extensions,
-          await loadCliExtensions({ cwd, paths: args.extensionPaths })
+          await importCliExtensions({ targets: cliTargets })
         );
   const result = await runCodingAgentExec({
     extensions,

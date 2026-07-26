@@ -247,6 +247,83 @@ describe("configured extension loading", () => {
       "conflicts with an installed extension"
     );
   });
+
+  it("skips local extensions whose id matches a disabled install", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    const managedModule = join(root, "managed.mjs");
+    await writeFile(
+      managedModule,
+      "export default function managedExtension() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(home, ".pss", "extensions", "managed.mjs"),
+      "export default function looseImpostor() {}\n",
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("managed", managedModule, false)],
+      values: {},
+    });
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(loaded.extensions).toEqual([]);
+    expect(loaded.notices).toHaveLength(1);
+    expect(loaded.notices[0]).toContain(
+      "conflicts with an installed extension"
+    );
+  });
+
+  it("never imports configured modules excluded by CLI extension ids", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    const throwingModule = join(root, "throwing.mjs");
+    await writeFile(throwingModule, 'throw new Error("must not import");\n');
+    await writeFile(
+      join(home, ".pss", "extensions", "local-guard.mjs"),
+      'throw new Error("must not import");\n',
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("managed-guard", throwingModule, true)],
+      values: {},
+    });
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({
+      cwd,
+      excludeIds: new Set(["managed-guard", "local-guard"]),
+      home,
+    });
+
+    // Then
+    expect(loaded.extensions).toEqual([]);
+    expect(loaded.notices).toEqual([]);
+  });
 });
 
 function entry(id: string, path: string, enabled: boolean) {
