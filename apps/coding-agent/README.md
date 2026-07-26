@@ -1,8 +1,9 @@
 # @minpeter/pss-coding-agent
 
-Model wiring and the `pss` TUI for pss-next. The TUI includes OpenSearch-backed
-`web_search` and `web_fetch` tools by default when `TINYFISH_API_KEY` is
-configured.
+Model wiring and the `pss` TUI for pss-next. The TUI includes
+`@minpeter/opensearch`-backed `web_search` and `web_fetch` tools by default;
+OpenSearch picks its search/fetch providers from the environment and falls
+back to keyless engines when no provider API key is configured.
 
 ```ts
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
@@ -374,25 +375,19 @@ auto-update as well.
 
 ## Web tools availability
 
-The web tools are backed by `@minpeter/opensearch` and need `TINYFISH_API_KEY`
-(one or more `;`-separated keys). `createCodingAgentTools()` gates on the key
-before wiring the OpenSearch client, controlled by `webToolsAvailability`:
+The web tools are backed by `@minpeter/opensearch`, which resolves its own
+search and fetch providers from the environment (keyed engines such as
+TinyFish, Exa, Brave, Tavily, ... via their respective API key variables, plus
+keyless fallbacks like DuckDuckGo). No provider API key is required for the
+tools to register; `webToolsAvailability` only controls registration:
 
-- `optional` (default): when the key is missing, the web tools are omitted
-  instead of advertised, and the omission is reported through
-  `onWebToolsDisabled` (default: `console.warn` logs
-  `web tools disabled: missing TINYFISH_API_KEY`; the `pss` TUI overrides the
-  handler and renders the message as a dim scrollback line at startup).
-  Startup still succeeds, so environments without a key behave exactly as
-  before minus the unusable tools.
-- `required`: throw `CodingAgentWebToolsUnavailableError` during tool/agent
-  initialization when the key is missing, so a model can never be offered a
-  tool that cannot execute.
+- `optional` (default) and `required`: register the web tools and let
+  OpenSearch pick the best available provider per call.
 - `disabled`: never register the web tools.
 
-The key is read from `openSearchOptions.env` when provided, otherwise from
-`process.env`. An injected `client` counts as provider configuration in
-`optional` and `required` modes.
+Provider configuration is read from `openSearchOptions.env` when provided,
+otherwise from `process.env`. An injected `client` replaces the OpenSearch
+client entirely.
 
 ```ts
 const tools = createCodingAgentTools({ webToolsAvailability: "required" });

@@ -1,5 +1,3 @@
-export const TINYFISH_API_KEY_ENV = "TINYFISH_API_KEY";
-
 type CodingAgentToolName = "web_fetch" | "web_search";
 
 export class CodingAgentToolsConfigError extends Error {
@@ -8,15 +6,6 @@ export class CodingAgentToolsConfigError extends Error {
   constructor() {
     super("Provide either client or openSearchOptions, not both.");
     this.name = "CodingAgentToolsConfigError";
-  }
-}
-
-export class CodingAgentWebToolsUnavailableError extends Error {
-  readonly code = "web-tools-config-missing";
-
-  constructor() {
-    super(`web tools required: missing ${TINYFISH_API_KEY_ENV}`);
-    this.name = "CodingAgentWebToolsUnavailableError";
   }
 }
 
