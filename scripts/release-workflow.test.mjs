@@ -11,7 +11,7 @@ describe("release workflow", () => {
     expect(packageJson.scripts.changeset).toBeUndefined();
     expect(packageJson.scripts["version-packages"]).toBeUndefined();
     expect(packageJson.scripts["release:v0.1"]).toBeUndefined();
-    expect(packageJson.devDependencies.tegami).toBe("1.2.5");
+    expect(packageJson.devDependencies.tegami).toBe("1.2.6");
     expect(packageJson.devDependencies["@changesets/cli"]).toBeUndefined();
     expect(packageJson.engines.node).toBe(">=24");
     expect(readFileSync(".node-version", "utf8").trim()).toBe("24");

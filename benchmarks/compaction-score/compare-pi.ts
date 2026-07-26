@@ -582,10 +582,11 @@ function formatFileOperations(fileOps: {
   edited: Set<string>;
   read: Set<string>;
 }): string {
-  const modified = [...fileOps.edited].sort();
+  const compareFiles = (a: string, b: string) => a.localeCompare(b);
+  const modified = [...fileOps.edited].sort(compareFiles);
   const readOnly = [...fileOps.read]
     .filter((file) => !fileOps.edited.has(file))
-    .sort();
+    .sort(compareFiles);
   const sections: string[] = [];
   if (readOnly.length > 0) {
     sections.push(`<read-files>\n${readOnly.join("\n")}\n</read-files>`);

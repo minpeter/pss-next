@@ -95,7 +95,7 @@
     "@jsquash/avif": "^2.1.1",
     "@jsquash/webp": "^1.5.0",
     "@opentelemetry/api": "^1.9.1",
-    "ai": "7.0.34",
+    "ai": "7.0.37",
     "fast-png": "^8.0.0",
     "heic-decode": "^2.1.0",
     "jpeg-js": "^0.4.4",
@@ -103,8 +103,8 @@
   },
   "devDependencies": {
     "agents": "0.17.4",
-    "tsdown": "^0.22.12",
+    "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

@@ -82,13 +82,13 @@
     "@minpeter/opensearch": "0.0.4",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",
-    "ai": "7.0.34",
+    "ai": "7.0.37",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "tsdown": "^0.22.12",
+    "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }
