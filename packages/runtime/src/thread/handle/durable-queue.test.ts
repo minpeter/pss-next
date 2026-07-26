@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { AgentHookRuntime } from "../../agent/core/hook-runtime";
+import type { AgentHooks } from "../../agent/core/hooks";
 import type {
   AgentHost,
   ThreadInputInbox,
@@ -6,9 +8,6 @@ import type {
 } from "../../execution/host/types";
 import { createInMemoryHost } from "../../platform/memory";
 import { MemoryAttachmentStore } from "../../platform/memory/storage/memory-attachment-store";
-import { definePlugin } from "../../plugins/api";
-import { noopRuntimeDiagnostics } from "../../plugins/diagnostics";
-import { PluginRuntime } from "../../plugins/plugin-runtime";
 import { solidTestPng } from "../../testing/valid-image-fixture";
 import type {
   HostAttachmentStore,
@@ -22,17 +21,15 @@ import { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
 import { createQueuedSendInput } from "./durable-queue-send";
 
 describe("createQueuedSendInput", () => {
-  it("deletes plugin-transformed attachment bytes when durable admission dedupes", async () => {
+  it("deletes hook-transformed attachment bytes when durable admission dedupes", async () => {
     const attachmentStore = new TrackingAttachmentStore();
-    const pluginRuntime = await createPluginRuntime([
-      transformTextToFileInputPlugin(),
-    ]);
+    const hookRuntime = new AgentHookRuntime(transformTextToFileInputHooks());
     const events = new ThreadEventDispatcher({
       attachmentStore,
       history: () => [],
-      pluginRuntime,
+      hookRuntime,
       signal: () => undefined,
-      threadKey: "plugin-duplicate",
+      threadKey: "hook-duplicate",
     });
 
     const result = await createQueuedSendInput({
@@ -44,7 +41,7 @@ describe("createQueuedSendInput", () => {
       pendingOverlays: [],
       pendingRuntimeInputs: [],
       run: new BufferedAgentTurn(),
-      threadKey: "plugin-duplicate",
+      threadKey: "hook-duplicate",
     });
 
     expect(result.kind).toBe("handled");
@@ -52,22 +49,20 @@ describe("createQueuedSendInput", () => {
     expect(attachmentStore.deletedRefs).toHaveLength(1);
     const ref = attachmentStore.deletedRefs[0];
     if (!ref) {
-      throw new Error("expected plugin-transformed attachment ref cleanup");
+      throw new Error("expected hook-transformed attachment ref cleanup");
     }
     await expect(attachmentStore.get(ref)).resolves.toBeNull();
   });
 
-  it("deletes staged attachment bytes dropped by a successful plugin transform", async () => {
+  it("deletes staged attachment bytes dropped by a successful hook transform", async () => {
     const attachmentStore = new TrackingAttachmentStore();
-    const pluginRuntime = await createPluginRuntime([
-      transformAnyInputToTextPlugin(),
-    ]);
+    const hookRuntime = new AgentHookRuntime(transformAnyInputToTextHooks());
     const events = new ThreadEventDispatcher({
       attachmentStore,
       history: () => [],
-      pluginRuntime,
+      hookRuntime,
       signal: () => undefined,
-      threadKey: "plugin-transform",
+      threadKey: "hook-transform",
     });
 
     const result = await createQueuedSendInput({
@@ -86,7 +81,7 @@ describe("createQueuedSendInput", () => {
       pendingOverlays: [],
       pendingRuntimeInputs: [],
       run: new BufferedAgentTurn(),
-      threadKey: "plugin-dropped",
+      threadKey: "hook-dropped",
     });
 
     expect(result.kind).toBe("queued");
@@ -100,19 +95,9 @@ describe("createQueuedSendInput", () => {
   });
 });
 
-async function createPluginRuntime(
-  definitions: ReturnType<typeof definePlugin>[]
-) {
-  return await PluginRuntime.create(definitions, {
-    diagnostics: noopRuntimeDiagnostics,
-    factoryTimeoutMs: 10_000,
-    hookTimeoutMs: 10_000,
-  });
-}
-
-function transformTextToFileInputPlugin() {
-  return definePlugin((pss) => {
-    pss.on("input.accept", (event) => {
+function transformTextToFileInputHooks(): AgentHooks {
+  return {
+    acceptInput: (event) => {
       if (event.type !== "user-input") {
         return { action: "continue" };
       }
@@ -123,7 +108,7 @@ function transformTextToFileInputPlugin() {
           content: [
             {
               data: solidTestPng(),
-              filename: "plugin.png",
+              filename: "hook.png",
               mediaType: "image/png",
               type: "file",
             },
@@ -131,13 +116,13 @@ function transformTextToFileInputPlugin() {
           type: "user-input",
         },
       };
-    });
-  });
+    },
+  };
 }
 
-function transformAnyInputToTextPlugin() {
-  return definePlugin((pss) => {
-    pss.on("input.accept", (event) => {
+function transformAnyInputToTextHooks(): AgentHooks {
+  return {
+    acceptInput: (event) => {
       if (event.type !== "user-input") {
         return { action: "continue" };
       }
@@ -145,12 +130,12 @@ function transformAnyInputToTextPlugin() {
       return {
         action: "transform",
         value: {
-          text: "plugin replacement",
+          text: "hook replacement",
           type: "user-input",
         },
       };
-    });
-  });
+    },
+  };
 }
 
 function duplicateAdmissionHost(): AgentHost {
@@ -197,7 +182,7 @@ function threadInputRecord(
     kind,
     messageId,
     status: "pending",
-    threadKey: "plugin-duplicate",
+    threadKey: "hook-duplicate",
   };
 }
 

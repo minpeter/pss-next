@@ -1,6 +1,6 @@
+import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { AgentHost, HostScheduler } from "../../../execution";
 import type { ThreadStore } from "../../../index";
-import { noopRuntimeDiagnostics } from "../../../plugins/diagnostics";
 import { CloudflareAttachmentStore } from "../storage/attachment-store";
 import {
   InMemoryCloudflareDurableObjectStorage as BaseInMemoryCloudflareDurableObjectStorage,

@@ -96,12 +96,12 @@ describe("examples workspace packages", () => {
     );
   });
 
-  it("includes plugin and basic runtime API usage examples", () => {
+  it("includes hooks and basic runtime API usage examples", () => {
     const basicSetupSource = readText("examples/basic/src/setup.ts");
     const basicIndexSource = readText("examples/basic/src/index.ts");
-    const pluginSource = readText("examples/plugin/src/index.ts");
+    const hooksSource = readText("examples/hooks/src/index.ts");
 
-    for (const source of [basicSetupSource, pluginSource]) {
+    for (const source of [basicSetupSource, hooksSource]) {
       expect(source).toContain("createOpenAICompatible");
       expect(source).toContain('loadEnv({ path: ".env"');
       expect(source).not.toContain("RuntimeLlm");
@@ -114,22 +114,22 @@ describe("examples workspace packages", () => {
     expect(basicIndexSource).toContain("/quit");
     expect(basicIndexSource).toContain("drain(");
 
-    expect(pluginSource).toContain(".send(");
-    expect(pluginSource.trim()).toMatch(finalRunEventsLoopPattern);
-    expect(pluginSource).toContain("plugins:");
-    expect(pluginSource).toContain("definePlugin(");
-    expect(pluginSource).toContain("pss.on(");
-    expect(pluginSource).toContain("event.type");
-    expect(pluginSource).not.toContain("process.argv");
+    expect(hooksSource).toContain(".send(");
+    expect(hooksSource.trim()).toMatch(finalRunEventsLoopPattern);
+    expect(hooksSource).toContain("hooks:");
+    expect(hooksSource).toContain("AgentHooks");
+    expect(hooksSource).toContain("acceptInput(");
+    expect(hooksSource).toContain("event.type");
+    expect(hooksSource).not.toContain("process.argv");
   });
 
-  it("keeps the sync-subagent example focused on conversation plugins and file reads", () => {
+  it("keeps the sync-subagent example focused on conversation hooks and file reads", () => {
     const packageJson = readJson("examples/sync-subagent/package.json");
     const indexSource = readText("examples/sync-subagent/src/index.ts");
     const setupSource = readText("examples/sync-subagent/src/setup.ts");
     const agentsSource = readText("examples/sync-subagent/src/agents.ts");
-    const conversationPluginSource = readText(
-      "examples/sync-subagent/src/conversation-plugin.ts"
+    const conversationHooksSource = readText(
+      "examples/sync-subagent/src/conversation-hooks.ts"
     );
     const delegateToolSource = readText(
       "examples/sync-subagent/src/delegate-tool.ts"
@@ -152,13 +152,13 @@ describe("examples workspace packages", () => {
     expect(indexSource).toContain("kb/");
 
     expect(agentsSource).toContain('namespace: "reader"');
-    expect(agentsSource).toContain("plugins:");
-    expect(agentsSource).toContain("createConversationTagPlugin");
+    expect(agentsSource).toContain("hooks:");
+    expect(agentsSource).toContain("createConversationHooks");
     expect(agentsSource).toContain("createDelegateToReaderTool");
     expect(agentsSource).toContain("read_file: createReadFileTool()");
 
-    expect(conversationPluginSource).toContain('action: "transform"');
-    expect(conversationPluginSource).toContain("user-input");
+    expect(conversationHooksSource).toContain('action: "transform"');
+    expect(conversationHooksSource).toContain("user-input");
 
     expect(delegateToolSource).toContain("delegate_to_reader");
     expect(delegateToolSource).toContain("delegateUserInput");
@@ -220,7 +220,7 @@ describe("examples workspace packages", () => {
 
     expect(agentsSource).toContain("background_output");
     expect(agentsSource).toContain("createDelegateToReaderTool");
-    expect(agentsSource).toContain("createConversationTagPlugin");
+    expect(agentsSource).toContain("createConversationHooks");
 
     expect(delegateToolSource).toContain("launchDurableBackgroundDelegation");
     expect(backgroundDelegationSource).toContain("task_id");

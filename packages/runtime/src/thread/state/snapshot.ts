@@ -19,9 +19,20 @@ export interface AgentThreadSnapshotV2 {
   readonly schemaVersion: 2;
 }
 
-export type AgentThreadSnapshot = AgentThreadSnapshotV1 | AgentThreadSnapshotV2;
+export interface AgentThreadSnapshotV3 {
+  readonly appliedMigrations: Readonly<Record<string, number>>;
+  readonly compactions: ThreadCompactionRecord[];
+  readonly history: ModelMessage[];
+  readonly schemaVersion: 3;
+}
+
+export type AgentThreadSnapshot =
+  | AgentThreadSnapshotV1
+  | AgentThreadSnapshotV2
+  | AgentThreadSnapshotV3;
 
 export interface DecodedThreadState {
+  readonly appliedMigrations: Readonly<Record<string, number>>;
   readonly compactions: ThreadCompactionRecord[];
   readonly history: ModelMessage[];
 }
@@ -41,17 +52,27 @@ export class ThreadStateValidationError extends Error {
 }
 
 export function encodeThreadSnapshot(
-  history: ModelMessage[],
-  compactions: readonly ThreadCompactionRecord[] = []
+  history: readonly ModelMessage[],
+  compactions: readonly ThreadCompactionRecord[] = [],
+  appliedMigrations: Readonly<Record<string, number>> = {}
 ): AgentThreadSnapshot {
   const clonedHistory = history.map(validateModelMessage);
+  const clonedCompactions = compactions.map((record) =>
+    validateThreadCompactionRecord(record, clonedHistory.length)
+  );
+  const clonedMigrations = validateAppliedMigrations(appliedMigrations);
+  if (Object.keys(clonedMigrations).length > 0) {
+    return {
+      appliedMigrations: clonedMigrations,
+      compactions: clonedCompactions,
+      history: clonedHistory,
+      schemaVersion: 3,
+    };
+  }
   if (compactions.length === 0) {
     return { schemaVersion: 1, history: clonedHistory };
   }
 
-  const clonedCompactions = compactions.map((record) =>
-    validateThreadCompactionRecord(record, clonedHistory.length)
-  );
   return {
     compactions: clonedCompactions,
     history: clonedHistory,
@@ -69,12 +90,13 @@ export function decodeStoredThreadState(
   stored: StoredThread | null
 ): DecodedThreadState {
   if (!stored) {
-    return { compactions: [], history: [] };
+    return { appliedMigrations: {}, compactions: [], history: [] };
   }
 
   const snapshot = stored.state;
   if (isThreadSnapshotV1(snapshot)) {
     return {
+      appliedMigrations: {},
       compactions: [],
       history: snapshot.history.map(validateModelMessage),
     };
@@ -85,7 +107,19 @@ export function decodeStoredThreadState(
     const compactions = snapshot.compactions.map((record) =>
       validateThreadCompactionRecord(record, history.length)
     );
-    return { compactions, history };
+    return { appliedMigrations: {}, compactions, history };
+  }
+
+  if (isThreadSnapshotV3(snapshot)) {
+    const history = snapshot.history.map(validateModelMessage);
+    const compactions = snapshot.compactions.map((record) =>
+      validateThreadCompactionRecord(record, history.length)
+    );
+    return {
+      appliedMigrations: validateAppliedMigrations(snapshot.appliedMigrations),
+      compactions,
+      history,
+    };
   }
 
   throw new Error("Unsupported stored thread state");
@@ -94,7 +128,11 @@ export function decodeStoredThreadState(
 export function isAgentThreadSnapshot(
   value: unknown
 ): value is AgentThreadSnapshot {
-  return isThreadSnapshotV1(value) || isThreadSnapshotV2(value);
+  return (
+    isThreadSnapshotV1(value) ||
+    isThreadSnapshotV2(value) ||
+    isThreadSnapshotV3(value)
+  );
 }
 
 export function validateThreadCompactionRecord(
@@ -164,6 +202,47 @@ function isThreadSnapshotV2(value: unknown): value is AgentThreadSnapshotV2 {
     "compactions" in value &&
     Array.isArray(value.compactions) &&
     value.compactions.every(isThreadCompactionRecordShape)
+  );
+}
+
+function isThreadSnapshotV3(value: unknown): value is AgentThreadSnapshotV3 {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "schemaVersion" in value &&
+    value.schemaVersion === 3 &&
+    "history" in value &&
+    Array.isArray(value.history) &&
+    "compactions" in value &&
+    Array.isArray(value.compactions) &&
+    value.compactions.every(isThreadCompactionRecordShape) &&
+    "appliedMigrations" in value &&
+    isAppliedMigrations(value.appliedMigrations)
+  );
+}
+
+function validateAppliedMigrations(
+  value: Readonly<Record<string, number>>
+): Readonly<Record<string, number>> {
+  if (!isAppliedMigrations(value)) {
+    throw new ThreadStateValidationError(
+      "Thread applied migrations must map ids to positive integer versions"
+    );
+  }
+  return structuredClone(value);
+}
+
+function isAppliedMigrations(
+  value: unknown
+): value is Readonly<Record<string, number>> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(
+      ([id, version]) =>
+        id.length > 0 && Number.isSafeInteger(version) && version > 0
+    )
   );
 }
 

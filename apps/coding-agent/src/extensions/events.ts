@@ -1,0 +1,144 @@
+import {
+  type AgentEvent,
+  type AgentInstrumentation,
+  type AgentInstrumentationContext,
+  type AgentTurn,
+  isStreamAgentEvent,
+} from "@minpeter/pss-runtime";
+import { CodingAgentExtensionError } from "./error";
+import { raceWithExtensionTimeout } from "./operation-timeout";
+import type {
+  CodingAgentExtensionEventContext,
+  CodingAgentExtensionServices,
+} from "./types";
+
+export interface RegisteredCodingAgentExtensionEvent {
+  readonly extensionId: string;
+  readonly invoke: (
+    event: AgentEvent,
+    context: CodingAgentExtensionEventContext
+  ) => Promise<void>;
+  readonly type: AgentEvent["type"];
+}
+
+export function createCodingAgentExtensionInstrumentation(
+  registrations: readonly RegisteredCodingAgentExtensionEvent[],
+  signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
+  timeoutMs?: number
+): AgentInstrumentation {
+  return {
+    wrapTurn: (turn, context) =>
+      wrapExtensionEvents(
+        turn,
+        context,
+        registrations,
+        signal,
+        getServices,
+        timeoutMs
+      ),
+  };
+}
+
+function wrapExtensionEvents(
+  turn: AgentTurn,
+  instrumentationContext: AgentInstrumentationContext,
+  registrations: readonly RegisteredCodingAgentExtensionEvent[],
+  signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
+  timeoutMs: number | undefined
+): AgentTurn {
+  return {
+    events: () =>
+      observeEvents(
+        turn.events(),
+        instrumentationContext,
+        registrations,
+        signal,
+        getServices,
+        turn.runId,
+        timeoutMs
+      ),
+    runId: turn.runId,
+  };
+}
+
+interface ExtensionEventInvocationOptions {
+  readonly getServices: (extensionId: string) => CodingAgentExtensionServices;
+  readonly instrumentationContext: AgentInstrumentationContext;
+  readonly signal: AbortSignal;
+  readonly timeoutMs: number | undefined;
+  readonly turnRunId: string | undefined;
+}
+
+async function invokeRegistration(
+  registration: RegisteredCodingAgentExtensionEvent,
+  event: AgentEvent,
+  options: ExtensionEventInvocationOptions
+): Promise<CodingAgentExtensionError | undefined> {
+  const { instrumentationContext, signal, getServices, turnRunId, timeoutMs } =
+    options;
+  try {
+    const context: CodingAgentExtensionEventContext = Object.freeze({
+      ...instrumentationContext,
+      runId: instrumentationContext.runId ?? turnRunId,
+      services: getServices(registration.extensionId),
+      signal,
+      stream: isStreamAgentEvent(event),
+    });
+    const task = Promise.resolve(
+      registration.invoke(structuredClone(event), context)
+    );
+    await raceWithExtensionTimeout(registration.extensionId, "event", task, {
+      signal,
+      timeoutMs,
+    });
+    return;
+  } catch (error) {
+    return error instanceof CodingAgentExtensionError
+      ? error
+      : new CodingAgentExtensionError(registration.extensionId, "event", error);
+  }
+}
+
+async function* observeEvents(
+  source: AsyncIterable<AgentEvent>,
+  instrumentationContext: AgentInstrumentationContext,
+  registrations: readonly RegisteredCodingAgentExtensionEvent[],
+  signal: AbortSignal,
+  getServices: (extensionId: string) => CodingAgentExtensionServices,
+  turnRunId: string | undefined,
+  timeoutMs: number | undefined
+): AsyncIterable<AgentEvent> {
+  const failures: CodingAgentExtensionError[] = [];
+  const options: ExtensionEventInvocationOptions = {
+    getServices,
+    instrumentationContext,
+    signal,
+    timeoutMs,
+    turnRunId,
+  };
+  for await (const event of source) {
+    if (!signal.aborted) {
+      for (const registration of registrations) {
+        if (registration.type !== event.type) {
+          continue;
+        }
+        const failure = await invokeRegistration(registration, event, options);
+        if (failure) {
+          failures.push(failure);
+        }
+      }
+    }
+    yield event;
+  }
+  if (failures.length === 1) {
+    throw failures[0];
+  }
+  if (failures.length > 1) {
+    throw new AggregateError(
+      failures,
+      "Coding agent extension event handlers failed"
+    );
+  }
+}

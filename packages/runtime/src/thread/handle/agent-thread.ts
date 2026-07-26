@@ -202,8 +202,7 @@ export class AgentThread {
   #ensureStarted(): Promise<void> {
     this.#context.startPromise ??= this.#context.state
       .ensureLoaded()
-      .then(async () => {
-        await this.#context.events.startThread();
+      .then(() => {
         this.#context.started = true;
       });
     return this.#context.startPromise;
@@ -221,15 +220,12 @@ export class AgentThread {
     if (!this.#context.startPromise) {
       return;
     }
-    this.#context.shutdownPromise = this.#context.startPromise.then(
-      async () => {
-        if (!this.#context.started) {
-          return;
-        }
-        await this.#context.events.shutdownThread();
-        this.#context.started = false;
+    this.#context.shutdownPromise = this.#context.startPromise.then(() => {
+      if (!this.#context.started) {
+        return;
       }
-    );
+      this.#context.started = false;
+    });
     return await this.#context.shutdownPromise;
   }
 }

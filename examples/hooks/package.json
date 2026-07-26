@@ -1,0 +1,20 @@
+{
+  "name": "@minpeter/pss-example-hooks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx --conditions=@minpeter/pss-source src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.14",
+    "@minpeter/pss-runtime": "workspace:*",
+    "@t3-oss/env-core": "^0.13.11",
+    "dotenv": "^17.4.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4",
+    "typescript": "^7.0.2"
+  }
+}

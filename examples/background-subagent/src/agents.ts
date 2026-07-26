@@ -2,7 +2,7 @@ import { type AgentHost, createAgent } from "@minpeter/pss-runtime";
 import { parentThreadNamespace } from "@minpeter/pss-runtime/namespace";
 import type { LanguageModel } from "ai";
 import { createBackgroundOutputTool } from "./background-output-tool";
-import { createConversationTagPlugin } from "./conversation-plugin";
+import { createConversationHooks } from "./conversation-hooks";
 import { createDelegateToReaderTool } from "./delegate-tool";
 import { createReadFileTool } from "./read-file-tool";
 
@@ -40,7 +40,7 @@ export async function createCoordinatorAgent(
     ].join(" "),
     model,
     namespace: coordinatorNamespace,
-    plugins: [createConversationTagPlugin()],
+    hooks: createConversationHooks(),
     tools: {
       background_output: createBackgroundOutputTool({
         executionHost: options.executionHost,

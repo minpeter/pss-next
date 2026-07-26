@@ -105,6 +105,39 @@ describe("thread snapshot", () => {
     ]);
   });
 
+  it("encodes and decodes v3 snapshots with applied migrations", () => {
+    const history = [assistantMessage("sanitized")];
+    const snapshot = encodeThreadSnapshot(history, [], {
+      "workspace/sanitize": 2,
+    });
+
+    expect(snapshot).toEqual({
+      appliedMigrations: { "workspace/sanitize": 2 },
+      compactions: [],
+      history,
+      schemaVersion: 3,
+    });
+    expect(decodeStoredThreadState({ state: snapshot, version: "3" })).toEqual({
+      appliedMigrations: { "workspace/sanitize": 2 },
+      compactions: [],
+      history,
+    });
+  });
+
+  it("rejects malformed applied migration versions", () => {
+    expect(() =>
+      decodeStoredThreadState({
+        state: {
+          appliedMigrations: { "workspace/sanitize": 0 },
+          compactions: [],
+          history: [],
+          schemaVersion: 3,
+        },
+        version: "3",
+      })
+    ).toThrow("Unsupported stored thread state");
+  });
+
   it("prefers newer overlapping compactions in model context", () => {
     const history = [
       userTextToModelMessage(userText("old 1")),

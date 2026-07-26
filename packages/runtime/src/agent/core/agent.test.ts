@@ -37,13 +37,11 @@ const forbiddenAgentSubagentSurface = [
 const acceptsModelOptions: AgentOptions = {
   instructions: "Use the injected model.",
   model: fakeModel,
-  plugins: [],
   toolChoice: "auto",
   tools: {},
 };
 const functionModelOptions = {
   model: functionModel,
-  plugins: [],
 } as const;
 
 type AssertFalse<T extends false> = T;

@@ -7,6 +7,8 @@ import {
   isStreamAgentEvent,
 } from "@minpeter/pss-runtime";
 import { createCodingAgent } from "./coding-agent";
+import type { CodingAgentExtensionInput } from "./extensions";
+import { createCodingAgentExtensionHost } from "./extensions";
 import type { WebToolsAvailability } from "./tools";
 
 interface TokenUsageSummary {
@@ -40,6 +42,7 @@ export interface CodingAgentExecResult {
 }
 
 export interface RunCodingAgentExecOptions {
+  readonly extensions?: readonly CodingAgentExtensionInput[];
   readonly model: AgentOptions["model"];
   readonly prompt: string;
   readonly resultFile?: string;
@@ -102,6 +105,7 @@ function recordEvent(
 }
 
 export async function runCodingAgentExec({
+  extensions = [],
   model,
   prompt,
   resultFile,
@@ -126,11 +130,37 @@ export async function runCodingAgentExec({
     },
   };
   const absoluteWorkspace = resolve(workspace);
-  const agent = await createCodingAgent({
-    model,
-    webTools: { webToolsAvailability },
-    workspace: absoluteWorkspace,
-  });
+  const extensionHost = await createCodingAgentExtensionHost(extensions);
+  let agent: Awaited<ReturnType<typeof createCodingAgent>>;
+  try {
+    agent = await createCodingAgent({
+      extensionHost,
+      model,
+      webTools: { webToolsAvailability },
+      workspace: absoluteWorkspace,
+    });
+  } catch (error) {
+    await extensionHost.dispose();
+    throw error;
+  }
+  try {
+    await extensionHost.activate(agent, "exec");
+  } catch (error) {
+    const cleanupResults = await Promise.allSettled([
+      agent.dispose(),
+      extensionHost.dispose(),
+    ]);
+    const cleanupErrors = cleanupResults.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : []
+    );
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        "Coding agent extension activation and cleanup failed"
+      );
+    }
+    throw error;
+  }
   const thread = agent.thread(`exec:${randomUUID()}`);
   let timeoutFired = false;
   const timeout = setTimeout(() => {
@@ -166,7 +196,25 @@ export async function runCodingAgentExec({
     state.status = "error";
   } finally {
     clearTimeout(timeout);
-    await agent.dispose();
+    const cleanupFailures: unknown[] = [];
+    for (const cleanup of [
+      () => agent.dispose(),
+      () => extensionHost.dispose(),
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (cleanupFailures.length > 0 && state.error === undefined) {
+      state.error = cleanupFailures
+        .map((failure) =>
+          failure instanceof Error ? failure.message : String(failure)
+        )
+        .join("; ");
+      state.status = "error";
+    }
   }
 
   const result: CodingAgentExecResult = {

@@ -1,5 +1,5 @@
+import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import type { RunAgentLoopOptions } from "../../agent/loop/types";
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
 import type { ThreadState } from "../state/thread-state";
 import type {
   ThreadContextTransformObservation,
@@ -13,37 +13,33 @@ interface TurnModelTransforms {
 }
 
 export function createTurnModelTransforms({
-  pluginRuntime,
+  hookRuntime,
   state,
   threadKey,
 }: {
-  readonly pluginRuntime?: PluginRuntime;
+  readonly hookRuntime: AgentHookRuntime;
   readonly state: ThreadState;
   readonly threadKey: string;
 }): TurnModelTransforms {
   let latestObservation: ThreadContextTransformObservation | undefined;
   return {
     latestContextTransform: () => latestObservation,
-    transformModelContext: pluginRuntime
-      ? async (messages, signal) => {
-          const output = await pluginRuntime.transformModelContext(
-            threadKey,
-            messages,
-            state.modelSnapshot(),
-            signal
-          );
-          latestObservation = { input: messages, output };
-          return output;
-        }
-      : undefined,
-    transformModelStep: pluginRuntime
-      ? (messages, signal) =>
-          pluginRuntime.transformModelStep(
-            threadKey,
-            messages,
-            state.modelSnapshot(),
-            signal
-          )
-      : undefined,
+    transformModelContext: async (messages, signal) => {
+      const output = await hookRuntime.transformModelContext(
+        threadKey,
+        { messages },
+        state.modelSnapshot(),
+        signal
+      );
+      latestObservation = { input: messages, output };
+      return output;
+    },
+    transformModelStep: (messages, signal) =>
+      hookRuntime.transformModelStep(
+        threadKey,
+        messages,
+        state.modelSnapshot(),
+        signal
+      ),
   };
 }

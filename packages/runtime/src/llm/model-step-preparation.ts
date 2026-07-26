@@ -1,5 +1,5 @@
 import type { LanguageModel, ToolSet } from "ai";
-import type { RuntimeDiagnosticsSink } from "../plugins/diagnostics";
+import type { RuntimeDiagnosticsSink } from "../diagnostics";
 import type { ThreadContextMessage } from "../thread/state/context";
 import { ModelToolSelectionError } from "./model-step-error";
 import type {

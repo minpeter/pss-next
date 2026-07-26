@@ -43,6 +43,11 @@
       "@minpeter/pss-source": "./src/tui/app.ts",
       "types": "./dist/tui/app.d.ts",
       "import": "./dist/tui/app.js"
+    },
+    "./extension": {
+      "@minpeter/pss-source": "./src/extensions/index.ts",
+      "types": "./dist/extensions/index.d.ts",
+      "import": "./dist/extensions/index.js"
     }
   },
   "bin": {

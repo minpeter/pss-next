@@ -1,7 +1,7 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "../../agent/core/agent";
-import { definePlugin } from "../../plugins/api";
+import type { AgentHooks } from "../../agent/core/hooks";
 import {
   assistantMessage,
   committedEvents,
@@ -16,44 +16,37 @@ import type { AgentEvent } from "../protocol/events";
 import { userTextToModelMessage } from "../protocol/mapping";
 
 describe("Agent thread runtime input windows", () => {
-  it("orders event plugins around runtime input windows", async () => {
-    const pluginCalls: string[] = [];
+  it("orders hooks around runtime input windows", async () => {
+    const hookCalls: string[] = [];
     const trace: string[] = [];
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
-    const observerPlugin = definePlugin((pss) => {
-      pss.on("input.accept", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-        return { action: "continue" };
-      });
-      pss.on("turn.start", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-      pss.on("step.start", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-      pss.on("model.usage", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-      pss.on("message.end", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-      pss.on("step.end", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-      pss.on("turn.end", (event, { history }) => {
-        pluginCalls.push(`${event.type}:${history.length}`);
-        trace.push(`plugin:${event.type}`);
-      });
-    });
+    const hooks: AgentHooks = {
+      acceptInput: (event, { history }) => {
+        hookCalls.push(`${event.type}:${history.length}`);
+        trace.push(`hook:${event.type}`);
+        return { action: "continue" as const };
+      },
+      beforeTurnStart: (event, { history }) => {
+        hookCalls.push(`${event.type}:${history.length}`);
+        trace.push(`hook:${event.type}`);
+        return { action: "continue" as const };
+      },
+      transformModelContext: (event, { history }) => {
+        hookCalls.push(
+          `model-context:${history.length}:${event.messages.length}`
+        );
+        trace.push("hook:model-context");
+        return { action: "continue" as const };
+      },
+      transformModelStep: (event, { history }) => {
+        hookCalls.push(`model-step:${history.length}:${event.output.length}`);
+        trace.push("hook:model-step");
+        return { action: "continue" as const };
+      },
+    };
     const agent = await createAgent({
-      plugins: [observerPlugin],
+      hooks,
       model: createCallbackModel(({ history }) => {
         trace.push(`llm:${calls}`);
         seenHistory.push([...history]);
@@ -63,11 +56,11 @@ describe("Agent thread runtime input windows", () => {
         ]);
       }),
     });
-    const thread = agent.thread("plugin-runtime-ordering");
+    const thread = agent.thread("hook-runtime-ordering");
 
     await collect(await thread.send("prior"));
 
-    pluginCalls.length = 0;
+    hookCalls.length = 0;
     trace.length = 0;
     seenHistory.length = 0;
 
@@ -114,21 +107,16 @@ describe("Agent thread runtime input windows", () => {
     ];
     const finalHistory = [...secondStepHistory, assistantMessage("DONE")];
 
-    expect(pluginCalls).toEqual([
+    expect(hookCalls).toEqual([
       "user-input:2",
       "turn-start:3",
       "runtime-input:3",
-      "step-start:4",
       "runtime-input:4",
-      "model-usage:5",
-      "assistant-output:6",
-      "step-end:6",
+      "model-context:5:5",
+      "model-step:5:1",
       "runtime-input:6",
-      "step-start:7",
-      "model-usage:7",
-      "assistant-output:8",
-      "step-end:8",
-      "turn-end:8",
+      "model-context:7:7",
+      "model-step:7:1",
     ]);
     expect(eventTypes(events)).toEqual([
       "user-input",
@@ -157,37 +145,32 @@ describe("Agent thread runtime input windows", () => {
     );
     expect(seenHistory).toEqual([firstStepHistory, secondStepHistory]);
     expect(trace).toEqual([
-      "plugin:user-input",
+      "hook:user-input",
       "event:user-input",
-      "plugin:turn-start",
+      "hook:turn-start",
       "event:turn-start",
-      "plugin:runtime-input",
+      "hook:runtime-input",
       "event:runtime-input",
-      "plugin:step-start",
       "event:step-start",
-      "plugin:runtime-input",
+      "hook:runtime-input",
       "event:runtime-input",
+      "hook:model-context",
       "llm:1",
       "event:assistant-output-delta",
-      "plugin:model-usage",
       "event:model-usage",
-      "plugin:assistant-output",
+      "hook:model-step",
       "event:assistant-output",
-      "plugin:step-end",
       "event:step-end",
-      "plugin:runtime-input",
+      "hook:runtime-input",
       "event:runtime-input",
-      "plugin:step-start",
       "event:step-start",
+      "hook:model-context",
       "llm:2",
       "event:assistant-output-delta",
-      "plugin:model-usage",
       "event:model-usage",
-      "plugin:assistant-output",
+      "hook:model-step",
       "event:assistant-output",
-      "plugin:step-end",
       "event:step-end",
-      "plugin:turn-end",
       "event:turn-end",
     ]);
     expect(finalHistory).toEqual([

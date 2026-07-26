@@ -8,6 +8,12 @@ import type {
 import type { ThreadContextMessage } from "./context";
 import { ModelMessageHistory } from "./history";
 import {
+  type AppliedThreadMigrations,
+  applyThreadStateMigrations,
+  normalizeThreadStateMigrations,
+  type ThreadStateMigration,
+} from "./migrations";
+import {
   decodeStoredThreadState,
   encodeThreadSnapshot,
   type ThreadCompactionRecord,
@@ -15,6 +21,7 @@ import {
 
 export interface ThreadPersistenceOptions {
   readonly key: string;
+  readonly migrations?: readonly ThreadStateMigration[];
   readonly store: ThreadStore;
 }
 
@@ -44,6 +51,8 @@ export class ThreadCommitConflictError extends Error {
 }
 
 export class ThreadState {
+  #appliedMigrations: AppliedThreadMigrations = {};
+  readonly #migrations: readonly ThreadStateMigration[];
   readonly #persistence: ThreadPersistenceOptions;
   #deleteRequested = false;
   #history = new ModelMessageHistory();
@@ -55,6 +64,7 @@ export class ThreadState {
 
   constructor(persistence: ThreadPersistenceOptions) {
     this.#persistence = persistence;
+    this.#migrations = normalizeThreadStateMigrations(persistence.migrations);
   }
 
   get history(): ModelMessageHistory {
@@ -178,7 +188,13 @@ export class ThreadState {
       const result = await commit({
         expectedVersion: this.#storeVersion ?? null,
         key: this.#persistence.key,
-        next: { state: encodeThreadSnapshot(snapshot, compactions) },
+        next: {
+          state: encodeThreadSnapshot(
+            snapshot,
+            compactions,
+            this.#appliedMigrations
+          ),
+        },
       });
 
       if (!result.ok) {
@@ -196,6 +212,7 @@ export class ThreadState {
     }
 
     const previous = {
+      appliedMigrations: this.#appliedMigrations,
       compactions: this.#history.compactionSnapshot(),
       history: this.#history.modelSnapshot(),
       loaded: this.#loaded,
@@ -209,6 +226,7 @@ export class ThreadState {
         await this.#persistence.store.delete(this.#persistence.key);
       } catch (error) {
         this.#deleteRequested = false;
+        this.#appliedMigrations = previous.appliedMigrations;
         this.#loaded = previous.loaded;
         this.#storeVersion = previous.storeVersion;
         this.#history = new ModelMessageHistory(
@@ -223,6 +241,7 @@ export class ThreadState {
       this.#loadPromise = undefined;
       this.#loaded = true;
       this.#storeVersion = undefined;
+      this.#appliedMigrations = {};
       this.#history = new ModelMessageHistory();
     });
   }
@@ -244,12 +263,95 @@ export class ThreadState {
 
   async #replaceWithStoredThread(): Promise<void> {
     const stored = await this.#persistence.store.load(this.#persistence.key);
-    this.#storeVersion = stored?.version;
-    const state = decodeStoredThreadState(stored);
+    let nextVersion = stored?.version;
+    let state = decodeStoredThreadState(stored);
+    if (stored) {
+      if (this.#migrations.length > 0) {
+        const migrated = await this.#migrateStoredThread(state, stored.version);
+        state = migrated.state;
+        nextVersion = migrated.version;
+      }
+    } else if (this.#migrations.length > 0) {
+      // New threads are post-migration state; mark every configured
+      // migration as already applied so they are not re-applied on restart.
+      state = {
+        ...state,
+        appliedMigrations: seedAppliedMigrations(this.#migrations),
+      };
+    }
+    this.#appliedMigrations = state.appliedMigrations;
+    this.#storeVersion = nextVersion;
     this.#history = new ModelMessageHistory(
       state.history,
       undefined,
       state.compactions
     );
   }
+
+  /**
+   * Apply configured migrations, retrying when a concurrent writer wins the
+   * optimistic commit. After each conflict the latest snapshot is reloaded;
+   * pending migrations are re-applied unless the winner already recorded them.
+   */
+  async #migrateStoredThread(
+    initialState: ReturnType<typeof decodeStoredThreadState>,
+    initialVersion: string
+  ): Promise<{
+    readonly state: ReturnType<typeof decodeStoredThreadState>;
+    readonly version: string;
+  }> {
+    let state = initialState;
+    let expectedVersion = initialVersion;
+    for (let attempt = 0; attempt < MAX_MIGRATION_COMMIT_ATTEMPTS; attempt++) {
+      const migrated = await applyThreadStateMigrations({
+        migrations: this.#migrations,
+        state,
+        threadKey: this.#persistence.key,
+      });
+      if (!migrated.changed) {
+        return { state: migrated, version: expectedVersion };
+      }
+      const result = await this.#persistence.store.commit(
+        this.#persistence.key,
+        {
+          state: encodeThreadSnapshot(
+            migrated.history,
+            migrated.compactions,
+            migrated.appliedMigrations
+          ),
+        },
+        { expectedVersion }
+      );
+      if (result.ok) {
+        return { state: migrated, version: result.version };
+      }
+      const reloaded = await this.#persistence.store.load(
+        this.#persistence.key
+      );
+      if (reloaded === null) {
+        throw new ThreadCommitConflictError(this.#persistence.key);
+      }
+      state = decodeStoredThreadState(reloaded);
+      expectedVersion = reloaded.version;
+    }
+    throw new ThreadCommitConflictError(this.#persistence.key);
+  }
+}
+
+const MAX_MIGRATION_COMMIT_ATTEMPTS = 8;
+
+/** @internal exported for unit tests of special-key seeding */
+export function seedAppliedMigrations(
+  migrations: readonly ThreadStateMigration[]
+): AppliedThreadMigrations {
+  const applied: Record<string, number> = Object.create(null);
+  for (const migration of migrations) {
+    Object.defineProperty(applied, migration.id, {
+      configurable: true,
+      enumerable: true,
+      value: migration.version,
+      writable: true,
+    });
+  }
+  return applied;
 }

@@ -2,9 +2,8 @@ import { jsonSchema, tool } from "ai";
 import { convertArrayToReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
+import { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import { createInMemoryHost } from "../../platform/memory";
-import { noopRuntimeDiagnostics } from "../../plugins/diagnostics";
-import { PluginRuntime } from "../../plugins/plugin-runtime";
 import {
   createMockLanguageModelV4,
   createStreamingMockLanguageModelV4,
@@ -166,16 +165,10 @@ describe("thread stream events", () => {
     ).toThrow(TypeError);
   });
 
-  it("bypasses observer capture and plugin observation for stream events", async () => {
-    const pluginRuntime = await PluginRuntime.create([], {
-      diagnostics: noopRuntimeDiagnostics,
-      factoryTimeoutMs: 10_000,
-      hookTimeoutMs: 10_000,
-    });
-    const observeAgentEvent = vi.spyOn(pluginRuntime, "observeAgentEvent");
+  it("bypasses observer capture for stream events", async () => {
     const dispatcher = new ThreadEventDispatcher({
       history: () => [],
-      pluginRuntime,
+      hookRuntime: new AgentHookRuntime(),
       signal: () => undefined,
       threadKey: "stream-observer-capture",
     });
@@ -207,23 +200,16 @@ describe("thread stream events", () => {
       ],
       value: "done",
     });
-    expect(observeAgentEvent).not.toHaveBeenCalled();
 
     captured.release();
     await iterator.return?.();
-    await pluginRuntime.dispose();
   });
 
   it("routes stream events through the emitTurnEvent ephemeral bypass", async () => {
     const host = createInMemoryHost();
-    const pluginRuntime = await PluginRuntime.create([], {
-      diagnostics: noopRuntimeDiagnostics,
-      factoryTimeoutMs: 10_000,
-      hookTimeoutMs: 10_000,
-    });
     const dispatcher = new ThreadEventDispatcher({
       history: () => [],
-      pluginRuntime,
+      hookRuntime: new AgentHookRuntime(),
       signal: () => undefined,
       threadKey: "stream-turn-event-bypass",
     });
@@ -260,7 +246,6 @@ describe("thread stream events", () => {
     expect(recorded).toEqual([]);
 
     await iterator.return?.();
-    await pluginRuntime.dispose();
   });
 });
 

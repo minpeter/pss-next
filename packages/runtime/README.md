@@ -76,9 +76,10 @@ exactly one event shape regardless of model capability.
 
 Deltas are ephemeral. A recording-boundary guard keeps them out of durable
 storage, so they never appear in `thread.events()` replay or in event logs,
-and they bypass plugins entirely (no interception, no observation). The
-committed `assistant-output`, `assistant-reasoning`, and `tool-call` events
-remain the durable per-step record.
+and they bypass `AgentHooks` interception. Live stream consumers and
+instrumentation can still observe them. The committed `assistant-output`,
+`assistant-reasoning`, and `tool-call` events remain the durable per-step
+record.
 
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text
@@ -146,7 +147,8 @@ exported from the package root. Categories are stable runtime classifications:
 and `unknown`.
 
 The metadata is additive and durable: it survives `thread.events()` replay and
-is visible to plugins. Older stored events without `error` remain valid.
+is visible to stream consumers and instrumentation. Older stored events
+without `error` remain valid.
 `message` is an application-owned safe summary for structured provider
 failures, not raw provider prose. The metadata whitelist can include status,
 bounded code/type values, retry-after, and labeled correlation IDs; it excludes
@@ -528,52 +530,44 @@ lifecycle, tool, telemetry, and control events remain available through
 provider adapters and never owns a channel loop; control flow remains
 `Agent -> Thread -> Turn -> events()`.
 
-## Plugins
+## Host hooks
 
-Plugins are async factories. The public plugin kernel stays fixed at `on()` for
-typed lifecycle handlers and `provide()` for capabilities:
-
-```ts
-import {
-  createAgent,
-  definePlugin,
-  threadScope,
-} from "@minpeter/pss-runtime";
-
-const protocolGuard = definePlugin(async (pss, { signal }) => {
-  const state = pss.provide(threadScope(() => ({ findings: 0 })));
-
-  pss.on("input.accept", (_event, context) => {
-    state.get(context.thread).findings += 1;
-    return { action: "continue" };
-  });
-
-  pss.on("model.context", () => ({ action: "continue" }));
-
-  signal.throwIfAborted();
-});
-
-const agent = await createAgent({ model, plugins: [protocolGuard] });
-```
-
-Factories initialize sequentially in registration order and all finish before
-`createAgent()` resolves. Factory and hook failures fail closed: they abort agent
-creation or the current operation. `pluginFactoryTimeoutMs` and
-`pluginHookTimeoutMs` configure the runtime-wide timeouts. `on()` and non-state
-`provide()` calls return an idempotent `Subscription`. Registration closes when
-the factory resolves; retaining `pss` and attempting a later `on()` or
-`provide()` throws `PluginRegistrationClosedError`. Subscriptions remain usable
-after initialization, including for tools and history policies already attached
-to active threads.
-
-Register an AI SDK tool from a plugin with the `registerTool()` capability
-helper:
+`@minpeter/pss-runtime` is a headless execution engine. A host can provide one
+`AgentHooks` object to intercept atomic runtime boundaries without installing a
+second extension system inside the core:
 
 ```ts
-import { registerTool } from "@minpeter/pss-runtime";
+import { type AgentHooks, createAgent } from "@minpeter/pss-runtime";
 
-pss.provide(registerTool({ name: "weather", tool: weatherTool }));
+const hooks: AgentHooks = {
+  acceptInput(event) {
+    if (event.type !== "user-input" || !("text" in event)) {
+      return;
+    }
+    return {
+      action: "transform",
+      value: { ...event, text: `[host] ${event.text}` },
+    };
+  },
+  beforeToolExecution(checkpoint) {
+    if (checkpoint.toolName === "delete_file") {
+      return {
+        output: "delete_file is disabled",
+        status: "blocked",
+      };
+    }
+  },
+};
+
+const agent = await createAgent({ hooks, model, tools });
 ```
+
+The runtime accepts exactly one hook object. Application extension hosts own
+extension identity, ordering, activation, cleanup, timeouts, tools, commands,
+and UI contributions, then compose their runtime policies into that object.
+Lifecycle observations remain available through `turn.events()` and
+`instrumentations`; provider request/response middleware belongs to the model
+provider layer.
 
 For model providers that support multimodal input, send JSON-serializable content
 parts through the same API. String input and `readonly string[]` remain supported
@@ -659,10 +653,10 @@ that attribute here.
 
 `attemptId` is generated once per PSS runtime model-step invocation. It
 correlates runtime telemetry and durable replay; it does not identify or count
-HTTP retries hidden inside an AI SDK or provider adapter. Plugins observe the
-same record through `model.usage` after the durable usage-flush boundary. A
-failing observer can fail the turn without erasing an already persisted usage
-record.
+HTTP retries hidden inside an AI SDK or provider adapter. Instrumentation and
+live consumers observe the same record through `model-usage` after the durable
+usage-flush boundary. A failing observer can fail the turn without erasing an
+already persisted usage record.
 
 When the host supports durable thread-event replay, the runtime first stages
 `model-usage` with pending lifecycle events and attempts the durable flush. It
@@ -796,74 +790,64 @@ delegation tools or own child-agent lifecycle semantics. See
 the sync and background example packages for app-owned blocking and background
 delegation patterns.
 
-## Plugin event semantics
+## Host hook semantics
 
-Use `pss.on(...)` inside a plugin factory to observe or intercept typed runtime
-events:
+Use `AgentHooks` for atomic request decisions and the public turn stream for
+observations:
 
 ```ts
-import { createAgent, definePlugin } from "@minpeter/pss-runtime";
-
-const tracePlugin = definePlugin((pss) => {
-  pss.on("turn.end", (event) => {
-    console.log(event.type); // "turn-end"
-  });
-});
-
-const agent = await createAgent({
-  model,
-  plugins: [tracePlugin],
-});
+const agent = await createAgent({ model });
+const turn = await agent.send("Hello");
+for await (const event of turn.events()) {
+  console.log(event.type);
+}
 ```
 
 ### Model context and step interception
 
-Use `model.context` as an ephemeral read guard immediately before each model
+Use `transformModelContext` as an ephemeral read guard immediately before each model
 call. Its result changes only the provider-visible messages; it does not rewrite
 stored thread history. The same hook runs for automatic-compaction model calls.
 
 Compacted ranges remain typed as `CompactionContextMessage` values with
 `role: "compaction"`, their summary, and source sequence range while
-`model.context` handlers run. This lets a guard remove a contaminated summary
+`transformModelContext` runs. This lets a guard remove a contaminated summary
 by provenance instead of matching arbitrary text. After the hook completes, the
 runtime lowers each retained compaction to a user-scoped `<summary>` message at
 the provider boundary; model-generated summaries are never promoted to system
 instructions. User-authored text that happens to contain protocol-like literals
 is not rewritten.
 
-Use `model.step.before` to validate or transform a complete model step after
+Use `transformModelStep` to validate or transform a complete model step after
 generation and before any message from that step is appended or any mapped
-output event is emitted. Multiple transforms chain in plugin registration
-order, and failures stop the turn without partially appending the step.
+output event is emitted. The host is responsible for composing multiple
+extensions before providing the single hook object.
 
 ```ts
-import { definePlugin } from "@minpeter/pss-runtime";
+import type { AgentHooks } from "@minpeter/pss-runtime";
 
-const protocolGuard = definePlugin((pss) => {
-  pss.on("model.context", ({ messages }) => ({
+const protocolGuard: AgentHooks = {
+  transformModelContext: ({ messages }) => ({
     action: "transform",
-    value: {
-      messages: messages.filter(
-        (message) =>
-          message.role !== "compaction" || isSafeSummary(message.summary)
-      ),
-    },
-  }));
+    value: messages.filter(
+      (message) =>
+        message.role !== "compaction" || isSafeSummary(message.summary)
+    ),
+  }),
 
-  pss.on("model.step.before", ({ messages }) => ({
+  transformModelStep: ({ output }) => ({
     action: "transform",
-    value: { messages: sanitizeModelStep(messages) },
-  }));
+    value: sanitizeModelStep(output),
+  }),
 
-  pss.on("thread.compaction.before", ({ input }) =>
+  beforeCompaction: ({ input }) =>
     isUnsafeCompaction(input) ? { action: "cancel" } : undefined
-  );
-});
+};
 ```
 
 Thread-state shape validation remains an internal runtime invariant at decode,
-in-memory append, and encode boundaries. Plugins do not receive a loaded-state
-or pre-commit mutation capability.
+in-memory append, and encode boundaries. `AgentHooks` do not receive a
+loaded-state or pre-commit mutation capability.
 
 Persisted-history repair belongs in a separate recovery job. The job should
 load a versioned snapshot, produce an auditable object diff before writing, and
@@ -893,103 +877,69 @@ must not overwrite a thread that changed after inspection.
 
 ### Observe vs intercept
 
-Notification events are observe-only. Request events such as `input.accept`,
-`model.context`, `model.step.before`, `provider.request.before`,
-`thread.compaction.before`, `tool.call.before`, `tool.result`, and
-`turn.start.before` may return a typed decision. Invalid runtime results fail
-closed with `PluginHookError`.
+`AgentHooks` covers these atomic boundaries:
 
-Request and telemetry hooks cover these boundaries:
+- `acceptInput` for `user-input` and `runtime-input`
+- `beforeTurnStart` before `turn-start`
+- `transformModelContext` before each model call
+- `transformModelStep` after generation and before atomic step append
+- `beforeCompaction` before manual, background, or overflow compaction
+- `beforeToolExecution` after the durable checkpoint and before tool `execute`
+- `transformToolResult` after tool execution and before the result returns to
+  the model
 
-- `input.accept` for `user-input` and `runtime-input`
-- `turn.start.before` before `turn.start`
-- `model.context` before each model call
-- `model.step.before` after generation and before atomic step append
-- `model.usage` after a successful agent-loop model attempt and before output
-- `provider.request.before` immediately before the provider request
-- `thread.compaction.before` before manual, background, or overflow compaction
-- `tool.call.before` is plugin-only; it is synthesized after the `before-tool`
-  checkpoint and before tool `execute`, and is not emitted on `turn.events()`
-- `tool.result` after tool execution and before its result returns to the model
-
-Return one of:
-
-- `{ action: "continue" }` — continue with the current value (default when omitted)
-- `{ action: "transform", value: event }` — replace the value for transformable
-  input, context, model-step, provider, compaction, tool-result, and turn-start
-  requests
-- `{ action: "transform", input }` — replace tool arguments for
-  `tool.call.before` only (not `value`; chained; drives tool `execute`)
-- `{ action: "handled" }` — skip emit; for `thread.send`, close the run without
-  starting a turn (`user-input` and `runtime-input` only)
-- `{ action: "cancel" }` — cancel compaction without changing thread state
-- `{ action: "block", reason? }` — skip tool execution and synthesize a blocked
-  tool result so the model loop can continue
-- `{ action: "needs-recovery" }` — stop before real tool execution and mark the
-  durable run for manual recovery (`tool.call.before` only)
-
-Plugins run in registration order. Each `transform` updates the event seen by
-later plugins, so transforms chain sequentially.
+Input and model transforms use explicit `{ action, value }` decisions.
+Compaction may return `{ action: "cancel" }` or a transformed `input`.
+Tool hooks use durable execution decisions with `status: "continue"`,
+`"blocked"`, or `"needs-recovery"`. Invalid callback results fail closed with
+`AgentHookError`.
 
 ### Tool-call interception
 
-Handle `tool.call.before` after the runtime writes the
+Use `beforeToolExecution` after the runtime writes the
 `before-tool` checkpoint and before the tool's `execute` function runs:
 
 ```ts
-import { definePlugin } from "@minpeter/pss-runtime";
+import type { AgentHooks } from "@minpeter/pss-runtime";
 
-const approvalPlugin = definePlugin((pss) =>
-  pss.on("tool.call.before", (event) => {
-    if (event.toolName === "write_file") {
-      return { action: "needs-recovery" };
+const hooks: AgentHooks = {
+  beforeToolExecution(checkpoint) {
+    if (checkpoint.toolName === "write_file" && needsApproval(checkpoint)) {
+      return { status: "needs-recovery" };
     }
-    return { action: "continue" };
-  })
-);
-
-const pathJailPlugin = definePlugin((pss) =>
-  pss.on("tool.call.before", (event) => {
-    if (event.toolName !== "write_file" || !isWriteInput(event.input)) {
-      return { action: "continue" };
+    if (
+      checkpoint.toolName === "write_file" &&
+      isWriteInput(checkpoint.input)
+    ) {
+      return {
+        input: {
+          ...checkpoint.input,
+          path: jailPath(checkpoint.input.path),
+        },
+        status: "continue",
+      };
     }
-    return {
-      action: "transform",
-      input: { ...event.input, path: jailPath(event.input.path) },
-    };
-  })
-);
+  },
+};
 ```
 
-`tool.call.before` events carry `toolName`, `toolCallId`, `input`, `policy`,
-`attempt`, and `idempotencyKey`. Plugin handlers also receive current
-model-message `history` and `signal` through `PluginEventContext`. The runtime
-snapshots `tool.call.before` payloads before each plugin runs, so **in-place
-mutations of the event object do not affect later plugins or tool execution**.
-To change the input that reaches `execute`, return an explicit decision:
-
-- `{ action: "transform", input }` — replace the tool input (chained in
-  registration order; the final value is what `execute` receives)
-- `{ action: "block", reason? }` — skip execution and synthesize a blocked result
-- `{ action: "needs-recovery" }` — stop before real execution for durable recovery
-- `{ action: "continue" }` — leave the current input unchanged (default when omitted)
-
-Keep tool inputs structured-cloneable and reasonably sized: the runtime clones
-the working input once per plugin, and transform inputs must also be
-structured-cloneable. `handled` is not valid for `tool.call.before`; invalid
-decisions fail closed with `PluginHookError`, including a transform missing
+The checkpoint carries `toolName`, `toolCallId`, `input`, `policy`, `attempt`,
+and `idempotencyKey`. Hook contexts carry `history`, `signal`, and `threadKey`.
+The runtime passes snapshots into host callbacks, so in-place mutations do not
+affect execution. Keep transformed inputs structured-cloneable. Invalid
+decisions fail closed with `AgentHookError`, including a transform missing
 `input`, `input: undefined`, or a non-cloneable `input` (for example a function).
-If an earlier plugin transforms and a later one returns `block` or
-`needs-recovery`, execution and `tool.execution.start` are skipped.
+If an earlier hook transforms and a later one returns
+`status: "blocked"` or `status: "needs-recovery"`, execution and
+`tool.execution.start` are skipped.
 
-`tool.execution.start` runs only after every `tool.call.before` handler continues
-(and carries the final transformed input when transforms were applied).
-`tool.result` transforms chain in registration order, followed by the
-observe-only `tool.execution.end` event carrying the final result.
+Tool execution starts only after every `beforeToolExecution` hook continues
+and uses the final transformed input. `transformToolResult` hooks chain in
+registration order and produce the final result exposed to live consumers.
 
 ### Input `meta.source`
 
-The runtime attaches `meta` on input events at API boundaries. Plugins can route
+The runtime attaches `meta` on input events at API boundaries. Hooks can route
 on `event.meta?.source`:
 
 | `source` | Boundary |
@@ -1005,13 +955,17 @@ history persistence and model mapping. It never reaches the LLM prompt.
 ### Delegate prompt wrapping
 
 Child agents receive delegated prompts with `meta.source === "delegate"`. Wrap or
-rewrite text input with a plugin instead of agent-level prompt shims:
+rewrite text input with a host hook instead of agent-level prompt shims:
 
 ```ts
-import { createAgent, definePlugin, type UserText } from "@minpeter/pss-runtime";
+import {
+  type AgentHooks,
+  createAgent,
+  type UserText,
+} from "@minpeter/pss-runtime";
 
-const pokeTagsPlugin = definePlugin((pss) => {
-  pss.on("input.accept", (event) => {
+const hooks: AgentHooks = {
+  acceptInput(event) {
     if (
       event.type !== "user-input" ||
       event.meta?.source !== "delegate" ||
@@ -1030,18 +984,18 @@ const pokeTagsPlugin = definePlugin((pss) => {
         text: `<poke>\n${text}\n</poke>`,
       } satisfies UserText,
     };
-  });
-});
+  },
+};
 
 const executionAgent = await createAgent({
-  namespace: "execution",
-  plugins: [pokeTagsPlugin],
+  hooks,
   model,
+  namespace: "execution",
 });
 ```
 
 The parent coordinator stays unchanged; only the nested child agent carries the
-plugin.
+hook.
 
 ## Send, Host Resume, and Steer
 
@@ -1061,7 +1015,7 @@ host. Check `supportsResume` first when you need to distinguish an unsupported
 host from a missing or already-claimed run.
 
 Runtime-originated input is delivered through the host notification inbox and
-internal plugin paths. App code should use `thread.send()`, `thread.steer()`,
+internal runtime paths. App code should use `thread.send()`, `thread.steer()`,
 or `agent.resume(runId)` for host-scheduled durable work.
 
 Each accepted call returns one `AgentTurn`. Drain that turn's `events()` stream to
