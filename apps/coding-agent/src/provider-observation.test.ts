@@ -152,6 +152,40 @@ describe("provider observation fetch", () => {
     expect(message.length).toBeLessThanOrEqual(256);
   });
 
+  it("keeps a request bound to the sink captured at its start", async () => {
+    // Given
+    const first: RecordedEvent[] = [];
+    const second: RecordedEvent[] = [];
+    const emitter: ProviderObservationEmitter = {
+      current: (type, payload) => {
+        first.push({ payload, type });
+      },
+    };
+    let releaseResponse: (() => void) | undefined;
+    const observed = createProviderObservationFetch(
+      emitter,
+      () =>
+        new Promise((resolveFetch) => {
+          releaseResponse = () => resolveFetch(new Response("ok"));
+        })
+    );
+
+    // When — a reload rebinds the emitter while the request is in flight.
+    const pending = observed("https://gateway.example/v1/chat");
+    emitter.current = (type, payload) => {
+      second.push({ payload, type });
+    };
+    releaseResponse?.();
+    await pending;
+
+    // Then — both events landed on the original sink.
+    expect(first.map((event) => event.type)).toEqual([
+      "provider:request",
+      "provider:response",
+    ]);
+    expect(second).toEqual([]);
+  });
+
   it("never breaks traffic when the emitter is unbound or throws", async () => {
     // Given
     const emitter: ProviderObservationEmitter = {};

@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { runExecCli } from "./exec-cli";
@@ -230,7 +231,12 @@ async function reloadCacheRoots({
   // The cwd covers loose `-e` extensions whose CommonJS helpers live
   // outside the entry directory (for example `plugins/review/index.mjs`
   // importing `../shared.cjs`); nested node_modules stay untouched.
-  const roots = [cwd, ...targets.map((target) => dirname(target.path))];
+  const roots = [
+    cwd,
+    ...(await Promise.all(
+      targets.map(async (target) => dirname(await canonicalPath(target.path)))
+    )),
+  ];
   const addScope = async (scope: "global" | "project"): Promise<void> => {
     const paths = await extensionScopePaths({ cwd, home, scope });
     roots.push(paths.installRoot);
@@ -256,7 +262,17 @@ async function reloadCacheRoots({
   } catch {
     // Untrusted or malformed project layouts simply contribute no root.
   }
-  return roots;
+  // Node keys require.cache by real resolved filenames, so symlinked roots
+  // must be canonicalized or their helpers would evade the transaction.
+  return await Promise.all(roots.map(canonicalPath));
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return path;
+  }
 }
 
 function errorMessage(error: unknown): string {

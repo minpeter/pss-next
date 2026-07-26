@@ -34,14 +34,18 @@ export function createProviderObservationFetch(
   emitter: ProviderObservationEmitter,
   baseFetch: typeof globalThis.fetch = globalThis.fetch
 ): typeof globalThis.fetch {
-  const emit = (type: string, payload: ExtensionJsonValue): void => {
-    try {
-      emitter.current?.(type, payload);
-    } catch {
-      // Observation must never break provider traffic.
-    }
-  };
   return async (input, init) => {
+    // Capture the sink once per request so a `/reload` rebinding mid-flight
+    // cannot split one request's events across different hosts or leak
+    // observations of traffic a runtime never initiated.
+    const sink = emitter.current;
+    const emit = (type: string, payload: ExtensionJsonValue): void => {
+      try {
+        sink?.(type, payload);
+      } catch {
+        // Observation must never break provider traffic.
+      }
+    };
     const url = redactedUrl(input);
     const method = requestMethod(input, init);
     emit("provider:request", { method, url });
