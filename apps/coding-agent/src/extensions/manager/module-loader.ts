@@ -7,6 +7,7 @@ import type {
   CodingAgentExtensionInput,
   ExtensionJsonValue,
 } from "../types";
+import { ensureReloadModuleGraphHooks } from "./reload-module-graph";
 import type { ExtensionTarget, ImportExtensionModule } from "./types";
 
 const defaultImportModule: ImportExtensionModule = async (specifier) =>
@@ -29,14 +30,14 @@ export async function loadExtensionTarget({
   readonly installRoot: string;
   readonly target: ExtensionTarget;
 }): Promise<CodingAgentExtensionInput> {
-  const url =
+  const entryPath =
     target.kind === "module"
-      ? pathToFileURL(target.path)
-      : pathToFileURL(
-          await resolvePackageImportEntry(installRoot, target.packageName)
-        );
+      ? target.path
+      : await resolvePackageImportEntry(installRoot, target.packageName);
+  const url = pathToFileURL(entryPath);
   if (cacheBust !== undefined) {
     url.searchParams.set("pss-extension-update", cacheBust);
+    ensureReloadModuleGraphHooks();
   }
   const specifier = url.href;
   const namespace = await importer(specifier);

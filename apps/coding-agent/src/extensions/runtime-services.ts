@@ -6,6 +6,7 @@ import { assertJsonValue, createExtensionJsonState } from "./json-state";
 import { createExtensionExec } from "./process-exec";
 import type {
   CodingAgentExtensionAgents,
+  CodingAgentExtensionEvents,
   CodingAgentExtensionLogger,
   CodingAgentExtensionMode,
   CodingAgentExtensionModelProvider,
@@ -14,14 +15,23 @@ import type {
   ExtensionJsonValue,
 } from "./types";
 
+const STATE_WRITE_FENCE_TIMEOUT_MS = 5000;
+
 export interface ExtensionServiceScope {
   readonly dispose: () => Promise<void>;
+  /**
+   * Reject further state writes and drain writes already admitted to the
+   * serial queue, so once this resolves no write from this scope can land
+   * behind a replacement runtime or a restored snapshot.
+   */
+  readonly revokeStateWrites: () => Promise<void>;
   readonly services: CodingAgentExtensionServices;
 }
 
 export function createExtensionServiceScope(options: {
   readonly config?: Readonly<Record<string, ExtensionJsonValue>>;
   readonly dataRoot?: string;
+  readonly events: CodingAgentExtensionEvents;
   readonly extensionId: string;
   readonly mode: CodingAgentExtensionMode;
   readonly model?: LanguageModel;
@@ -32,6 +42,7 @@ export function createExtensionServiceScope(options: {
 }): ExtensionServiceScope {
   const logger = createExtensionLogger(options.extensionId);
   const children: Agent[] = [];
+  let stateWritesRevoked = false;
   const agents: CodingAgentExtensionAgents = {
     create: async (
       input: Parameters<CodingAgentExtensionAgents["create"]>[0]
@@ -53,6 +64,7 @@ export function createExtensionServiceScope(options: {
   const services: CodingAgentExtensionServices = Object.freeze({
     agents,
     config: snapshotConfig(options.config),
+    events: options.events,
     exec: createExtensionExec({
       signal: options.signal,
       workspace: options.workspace ?? process.cwd(),
@@ -60,12 +72,28 @@ export function createExtensionServiceScope(options: {
     logger,
     state: createExtensionJsonState({
       extensionId: options.extensionId,
+      isRevoked: () => stateWritesRevoked,
       root: options.dataRoot ?? join(homedir(), ".pss", "extension-state"),
     }),
     ui: options.ui ?? createNoninteractiveExtensionUi(options.mode, logger),
   });
   return {
+    revokeStateWrites: async () => {
+      stateWritesRevoked = true;
+      // Reads queue behind admitted writes, so awaiting one fences every
+      // write that passed the revocation check before the flag was set.
+      // The fence is bounded: a never-settling queued updater must not be
+      // able to hang revocation (and with it the whole reload).
+      await Promise.race([
+        services.state.get().catch(() => undefined),
+        new Promise<void>((resolveFence) => {
+          const timer = setTimeout(resolveFence, STATE_WRITE_FENCE_TIMEOUT_MS);
+          timer.unref?.();
+        }),
+      ]);
+    },
     dispose: async () => {
+      stateWritesRevoked = true;
       const results = await Promise.allSettled(
         children.reverse().map(async (agent) => await agent.dispose())
       );

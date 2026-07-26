@@ -1,6 +1,7 @@
 import type { Agent } from "@minpeter/pss-runtime";
 import type { TuiCommandContext } from "../tui/command";
 import { CodingAgentExtensionError } from "./error";
+import type { ExtensionHostEventBus } from "./event-bus";
 import {
   createExtensionServiceScope,
   type ExtensionServiceScope,
@@ -27,15 +28,22 @@ interface ExtensionCommandContext {
 }
 
 export class ExtensionHostServices {
+  readonly #bus: ExtensionHostEventBus;
   readonly #config: CodingAgentExtensionHostOptions["config"];
   readonly #dataRoot: string | undefined;
   readonly #interactiveUiRequests = new Map<string, number>();
   #model: CodingAgentExtensionHostOptions["model"];
   readonly #scopes = new Map<string, ExtensionServiceScope>();
+  readonly #statusDisposers = new Set<() => void>();
   #ui: CodingAgentExtensionUi | undefined;
+  readonly #uiRevokedController = new AbortController();
   #workspace: string | undefined;
 
-  constructor(options: CodingAgentExtensionHostOptions) {
+  constructor(
+    options: CodingAgentExtensionHostOptions,
+    bus: ExtensionHostEventBus
+  ) {
+    this.#bus = bus;
     this.#config = options.config;
     this.#dataRoot = options.dataRoot;
     this.#model = options.model;
@@ -99,6 +107,33 @@ export class ExtensionHostServices {
     ).services;
   }
 
+  /**
+   * Reject further extension state writes across every service scope and
+   * drain writes already admitted, so none can land after this resolves.
+   */
+  async revokeStateWrites(): Promise<void> {
+    await Promise.allSettled(
+      [...this.#scopes.values()].map((scope) => scope.revokeStateWrites())
+    );
+  }
+
+  /**
+   * Release detached interactive UI work: pending prompts resolve to their
+   * cancelled value and new prompts are rejected, so cleanup that outlived
+   * its timeout cannot keep stealing focus from a replacement runtime.
+   */
+  revokeInteractiveUi(): void {
+    this.#uiRevokedController.abort();
+    for (const dispose of [...this.#statusDisposers]) {
+      try {
+        dispose();
+      } catch {
+        // Clearing a stale status must never fail revocation.
+      }
+    }
+    this.#statusDisposers.clear();
+  }
+
   async dispose(): Promise<readonly unknown[]> {
     const failures: unknown[] = [];
     const scopes = [...this.#scopes.entries()].reverse();
@@ -140,6 +175,16 @@ export class ExtensionHostServices {
     const scope = createExtensionServiceScope({
       config: this.#config?.[extensionId],
       ...(this.#dataRoot === undefined ? {} : { dataRoot: this.#dataRoot }),
+      events: Object.freeze({
+        emit: (
+          type: string,
+          payload?: Parameters<ExtensionHostEventBus["emitFromExtension"]>[2]
+        ) => this.#bus.emitFromExtension(extensionId, type, payload),
+        on: (
+          type: string,
+          handler: Parameters<ExtensionHostEventBus["subscribe"]>[2]
+        ) => this.#bus.subscribe(extensionId, type, handler),
+      }),
       extensionId,
       mode: options.mode,
       model: this.#model,
@@ -162,11 +207,67 @@ export class ExtensionHostServices {
       confirm: async (
         message: Parameters<CodingAgentExtensionUi["confirm"]>[0]
       ) =>
-        await this.#withInteractiveUi(extensionId, () => ui.confirm(message)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.confirm(message), false)
+        ),
       input: async (input: Parameters<CodingAgentExtensionUi["input"]>[0]) =>
-        await this.#withInteractiveUi(extensionId, () => ui.input(input)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.input(input), undefined)
+        ),
+      notify: (message: string) => {
+        if (!this.#uiRevokedController.signal.aborted) {
+          ui.notify(message);
+        }
+      },
       select: async (input: Parameters<CodingAgentExtensionUi["select"]>[0]) =>
-        await this.#withInteractiveUi(extensionId, () => ui.select(input)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.select(input), undefined)
+        ),
+      status: (message: string) => {
+        if (this.#uiRevokedController.signal.aborted) {
+          return () => undefined;
+        }
+        const dispose = ui.status(message);
+        // Idempotent so a disposer retained by detached cleanup cannot
+        // clear a status the replacement runtime published later.
+        let disposed = false;
+        const tracked = () => {
+          if (disposed) {
+            return;
+          }
+          disposed = true;
+          this.#statusDisposers.delete(tracked);
+          dispose();
+        };
+        this.#statusDisposers.add(tracked);
+        return tracked;
+      },
+    });
+  }
+
+  #raceUiRevocation<Value>(
+    operation: () => Promise<Value>,
+    revokedValue: Value
+  ): Promise<Value> {
+    const signal = this.#uiRevokedController.signal;
+    if (signal.aborted) {
+      return Promise.resolve(revokedValue);
+    }
+    return new Promise<Value>((resolvePromise, rejectPromise) => {
+      const onRevoke = () => resolvePromise(revokedValue);
+      signal.addEventListener("abort", onRevoke, { once: true });
+      operation().then(
+        (value) => {
+          signal.removeEventListener("abort", onRevoke);
+          resolvePromise(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onRevoke);
+          rejectPromise(
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      );
     });
   }
 }

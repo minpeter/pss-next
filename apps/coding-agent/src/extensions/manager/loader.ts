@@ -23,16 +23,22 @@ import type {
 } from "./types";
 
 export async function loadConfiguredCodingAgentExtensions({
+  cacheBust,
   cwd,
   excludeIds,
   home,
   importer,
+  signal,
 }: {
+  /** Import-cache buster used by `/reload` to re-import changed modules. */
+  readonly cacheBust?: string;
   readonly cwd: string;
   /** IDs supplied via `-e`; matching configured modules are never imported. */
   readonly excludeIds?: ReadonlySet<string>;
   readonly home: string;
   readonly importer?: ImportExtensionModule;
+  /** Aborting stops importing further modules, e.g. after a reload timeout. */
+  readonly signal?: AbortSignal;
 }): Promise<LoadedConfiguredExtensions> {
   const [globalPaths, trustedProjects, project] = await Promise.all([
     extensionScopePaths({ cwd, home, scope: "global" }),
@@ -82,27 +88,36 @@ export async function loadConfiguredCodingAgentExtensions({
       .map((entry) => entry.id) ?? []
   );
   const skippedIds = excludeIds ?? new Set<string>();
+  const shared: {
+    readonly cacheBust?: string;
+    readonly importer?: ImportExtensionModule;
+    readonly signal?: AbortSignal;
+  } = {
+    ...(cacheBust === undefined ? {} : { cacheBust }),
+    ...(importer === undefined ? {} : { importer }),
+    ...(signal === undefined ? {} : { signal }),
+  };
   const globalExtensions = await loadEnabledExtensions({
+    ...shared,
     entries: globalSettings.extensions.filter(
       (entry) => !(enabledProjectIds.has(entry.id) || skippedIds.has(entry.id))
     ),
-    ...(importer === undefined ? {} : { importer }),
     installRoot: globalPaths.installRoot,
   });
   const projectExtensions =
     projectConfiguration === undefined
       ? []
       : await loadEnabledExtensions({
+          ...shared,
           entries: projectConfiguration.settings.extensions.filter(
             (entry) => !skippedIds.has(entry.id)
           ),
-          ...(importer === undefined ? {} : { importer }),
           installRoot: projectConfiguration.paths.installRoot,
         });
   const local = await loadLocalExtensions({
+    ...shared,
     excludeIds: skippedIds,
     globalInstallRoot: globalPaths.installRoot,
-    ...(importer === undefined ? {} : { importer }),
     managedIds: new Set(
       [
         ...globalSettings.extensions,
@@ -130,11 +145,13 @@ export async function loadConfiguredCodingAgentExtensions({
 }
 
 async function loadLocalExtensions(options: {
+  readonly cacheBust?: string;
   readonly excludeIds: ReadonlySet<string>;
   readonly globalInstallRoot: string;
   readonly importer?: ImportExtensionModule;
   readonly managedIds: ReadonlySet<string>;
   readonly projectInstallRoot?: string | undefined;
+  readonly signal?: AbortSignal;
 }): Promise<{
   readonly globalExtensions: readonly CodingAgentExtensionInput[];
   readonly notices: readonly string[];
@@ -172,10 +189,21 @@ async function loadLocalExtensions(options: {
     options.managedIds,
     notices
   );
+  const shared: {
+    readonly cacheBust?: string;
+    readonly importer?: ImportExtensionModule;
+    readonly signal?: AbortSignal;
+  } = {
+    ...(options.cacheBust === undefined
+      ? {}
+      : { cacheBust: options.cacheBust }),
+    ...(options.importer === undefined ? {} : { importer: options.importer }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  };
   return {
     globalExtensions: await loadLocalCandidates({
+      ...shared,
       candidates: globalCandidates,
-      ...(options.importer === undefined ? {} : { importer: options.importer }),
       installRoot: options.globalInstallRoot,
     }),
     notices,
@@ -183,13 +211,19 @@ async function loadLocalExtensions(options: {
       options.projectInstallRoot === undefined
         ? []
         : await loadLocalCandidates({
+            ...shared,
             candidates: projectCandidates,
-            ...(options.importer === undefined
-              ? {}
-              : { importer: options.importer }),
             installRoot: options.projectInstallRoot,
           }),
   };
+}
+
+function assertLoadNotCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new Error(
+      "Extension loading was cancelled; no further modules were imported"
+    );
+  }
 }
 
 function selectLocalCandidates(
@@ -209,14 +243,20 @@ function selectLocalCandidates(
 }
 
 async function loadLocalCandidates(options: {
+  readonly cacheBust?: string;
   readonly candidates: readonly LocalExtensionCandidate[];
   readonly importer?: ImportExtensionModule;
   readonly installRoot: string;
+  readonly signal?: AbortSignal;
 }): Promise<readonly CodingAgentExtensionInput[]> {
   const extensions: CodingAgentExtensionInput[] = [];
   for (const candidate of options.candidates) {
+    assertLoadNotCancelled(options.signal);
     extensions.push(
       await loadExtensionTarget({
+        ...(options.cacheBust === undefined
+          ? {}
+          : { cacheBust: options.cacheBust }),
         id: candidate.id,
         ...(options.importer === undefined
           ? {}
@@ -230,17 +270,23 @@ async function loadLocalCandidates(options: {
 }
 
 async function loadEnabledExtensions(options: {
+  readonly cacheBust?: string;
   readonly entries: readonly ExtensionSettingsEntry[];
   readonly importer?: ImportExtensionModule;
   readonly installRoot: string;
+  readonly signal?: AbortSignal;
 }): Promise<readonly CodingAgentExtensionInput[]> {
   const extensions: CodingAgentExtensionInput[] = [];
   for (const entry of options.entries) {
+    assertLoadNotCancelled(options.signal);
     if (!entry.enabled) {
       continue;
     }
     extensions.push(
       await loadExtensionTarget({
+        ...(options.cacheBust === undefined
+          ? {}
+          : { cacheBust: options.cacheBust }),
         ...(entry.config === undefined ? {} : { config: entry.config }),
         id: entry.id,
         ...(options.importer === undefined

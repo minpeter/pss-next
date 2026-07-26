@@ -88,9 +88,24 @@ export interface CodingAgentExtensionState {
   ): Promise<ExtensionJsonValue>;
 }
 
+/**
+ * Inter-extension publish/subscribe events plus host observations.
+ *
+ * Host-originated events use reserved namespaces (`host:`, `provider:`)
+ * that extensions can subscribe to but never publish.
+ */
+export interface CodingAgentExtensionEvents {
+  emit(type: string, payload?: ExtensionJsonValue): void;
+  on(
+    type: string,
+    handler: (payload: ExtensionJsonValue | undefined) => Promise<void> | void
+  ): () => void;
+}
+
 export interface CodingAgentExtensionServices {
   readonly agents: CodingAgentExtensionAgents;
   readonly config: Readonly<Record<string, ExtensionJsonValue>>;
+  readonly events: CodingAgentExtensionEvents;
   readonly exec: CodingAgentExtensionExec;
   readonly logger: CodingAgentExtensionLogger;
   readonly state: CodingAgentExtensionState;

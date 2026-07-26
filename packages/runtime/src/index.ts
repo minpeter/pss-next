@@ -172,6 +172,10 @@ export type {
 export { compactionContextForModel } from "./thread/state/context";
 export { ModelMessageHistory } from "./thread/state/history";
 export {
+  type CommittedThreadMigrations,
+  commitThreadStateMigrations,
+} from "./thread/state/migration-validation";
+export {
   type ThreadMigrationContext,
   ThreadMigrationError,
   type ThreadMigrationSnapshot,

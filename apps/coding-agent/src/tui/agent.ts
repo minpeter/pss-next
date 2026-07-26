@@ -525,7 +525,9 @@ export interface AgentTUIConfig {
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
-  onExtensionUiReady?: (ui: CodingAgentExtensionUi) => void | Promise<void>;
+  onExtensionUiReady?: (
+    createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
+  ) => void | Promise<void>;
   onModelUsage?: (usage: ModelUsage) => void;
   onSetup?: () => void | Promise<void>;
   onStreamStart?: () => void | Promise<void>;
@@ -552,9 +554,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const markdownTheme =
     config.theme?.markdownTheme ?? createDefaultMarkdownTheme();
   const editorTheme = config.theme?.editorTheme ?? createDefaultEditorTheme();
-  const { commands, commandLookup, commandAliasLookup } = buildTuiCommandSet(
-    config.commands
-  );
+  let commandSet = buildTuiCommandSet(config.commands);
 
   const terminal = new ProcessTerminal();
   const tui = new TUI(terminal);
@@ -603,9 +603,18 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     paddingX: 1,
     autocompleteMaxVisible: 8,
   });
+  const refreshCommandSet = (): void => {
+    commandSet = buildTuiCommandSet(config.commands);
+    editor.setAutocompleteProvider(
+      createAliasAwareAutocompleteProvider({
+        commands: commandSet.commands,
+        basePath: process.cwd(),
+      })
+    );
+  };
   editor.setAutocompleteProvider(
     createAliasAwareAutocompleteProvider({
-      commands,
+      commands: commandSet.commands,
       basePath: process.cwd(),
     })
   );
@@ -943,8 +952,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     const normalizedName = parsed.name.toLowerCase();
     const resolvedName =
-      commandAliasLookup.get(normalizedName) ?? normalizedName;
-    const command = commandLookup.get(resolvedName);
+      commandSet.commandAliasLookup.get(normalizedName) ?? normalizedName;
+    const command = commandSet.commandLookup.get(resolvedName);
     if (!command) {
       return null;
     }
@@ -1017,6 +1026,36 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    if (commandResult.action.type === "reload") {
+      await handleReloadAction(commandResult);
+      return;
+    }
+
+    if (commandResult.message) {
+      addSystemMessage(chatContainer, commandResult.message);
+    }
+    tui.requestRender();
+  };
+
+  const handleReloadAction = async (
+    commandResult: TuiCommandResult
+  ): Promise<void> => {
+    if (!commandResult.action) {
+      return;
+    }
+    try {
+      await config.onCommandAction?.(commandResult.action);
+    } catch (error) {
+      refreshCommandSet();
+      addSystemMessage(
+        chatContainer,
+        `Reload failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      tui.requestRender();
+      return;
+    }
+    refreshCommandSet();
+    updateHeader();
     if (commandResult.message) {
       addSystemMessage(chatContainer, commandResult.message);
     }
@@ -1161,7 +1200,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.start();
 
   try {
-    await config.onExtensionUiReady?.(
+    await config.onExtensionUiReady?.((hostSignal) =>
       createExtensionUi({
         restoreFocus: clearPromptInput,
         showMessage: (message) => addSystemMessage(chatContainer, message),
@@ -1169,7 +1208,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           showLoader(message);
           return clearStatus;
         },
-        signal: extensionUiController.signal,
+        // Host-scoped signals let a runtime swap cancel prompts that a
+        // detached previous host still has on screen.
+        signal:
+          hostSignal === undefined
+            ? extensionUiController.signal
+            : AbortSignal.any([extensionUiController.signal, hostSignal]),
         tui,
       })
     );

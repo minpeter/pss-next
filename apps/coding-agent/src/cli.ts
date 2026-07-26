@@ -1,4 +1,6 @@
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { runExecCli } from "./exec-cli";
 import { runExtensionCli } from "./extension-cli";
 import type {
@@ -11,12 +13,16 @@ import {
   resolveCliExtensionTargets,
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
+import { extensionScopePaths } from "./extensions/manager/paths";
+import { beginCommonJsReloadTransaction } from "./extensions/manager/reload-module-graph";
+import { readExtensionSettings } from "./extensions/manager/settings";
 import { resolveCodingAgentThreadConfig } from "./thread-config";
 import {
   formatThreadInspectionReport,
   inspectCodingAgentThread,
 } from "./thread-inspect";
 import { startTui } from "./tui/app";
+import { boundedReloadOperation } from "./tui/reload";
 import { cliVersion } from "./update/cli-version";
 import { runUpdateCommand } from "./update/command";
 
@@ -163,11 +169,118 @@ async function runTuiCommand({
       return 1;
     }
   }
+  const reloadExtensions = async (): Promise<
+    LoadedConfiguredExtensions & { rollbackModuleCache(): void }
+  > => {
+    const cacheBust = Date.now().toString(36);
+    const targets = await resolveCliExtensionTargets({
+      cwd,
+      paths: extensionPaths,
+    });
+    const targetIds = new Set(targets.map((target) => target.id));
+    // Evict extension-owned CommonJS modules so cache-busted imports
+    // re-execute helpers; the snapshot restores them if the reload fails.
+    const transaction = beginCommonJsReloadTransaction(
+      await reloadCacheRoots({ cwd, home, targets })
+    );
+    // Bound imports so an edited extension with a never-settling top-level
+    // await fails the reload instead of freezing the session; the abort
+    // signal stops the detached task from importing further modules after
+    // the timeout so it cannot repopulate the rolled-back module cache.
+    const importAbort = new AbortController();
+    try {
+      const { cliExtensions, reloaded } = await boundedReloadOperation(
+        (async () => ({
+          cliExtensions: await importCliExtensions({
+            cacheBust,
+            signal: importAbort.signal,
+            targets,
+          }),
+          reloaded: await loadConfiguredCodingAgentExtensions({
+            cacheBust,
+            cwd,
+            ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
+            home,
+            signal: importAbort.signal,
+          }),
+        }))(),
+        RELOAD_IMPORT_TIMEOUT_MS,
+        "Extension reload import"
+      );
+      return {
+        extensions: mergeCliExtensions(reloaded.extensions, cliExtensions),
+        notices: reloaded.notices,
+        rollbackModuleCache: () => transaction.rollback(),
+      };
+    } catch (error) {
+      importAbort.abort();
+      transaction.rollback();
+      throw error;
+    }
+  };
   return await (
     start ??
     ((loaded: readonly CodingAgentExtensionInput[]) =>
-      startTui({ extensions: loaded }))
+      startTui({ extensions: loaded, reloadExtensions }))
   )(extensions);
+}
+
+const RELOAD_IMPORT_TIMEOUT_MS = 30_000;
+
+async function reloadCacheRoots({
+  cwd,
+  home,
+  targets,
+}: {
+  readonly cwd: string;
+  readonly home: string;
+  readonly targets: readonly { readonly path: string }[];
+}): Promise<readonly string[]> {
+  // The cwd covers loose `-e` extensions whose CommonJS helpers live
+  // outside the entry directory (for example `plugins/review/index.mjs`
+  // importing `../shared.cjs`); nested node_modules stay untouched.
+  const roots = [
+    cwd,
+    ...(await Promise.all(
+      targets.map(async (target) => dirname(await canonicalPath(target.path)))
+    )),
+  ];
+  const addScope = async (scope: "global" | "project"): Promise<void> => {
+    const paths = await extensionScopePaths({ cwd, home, scope });
+    roots.push(paths.installRoot);
+    // Managed extensions live at <installRoot>/node_modules/<package>; add
+    // each package root so its own CommonJS helpers reload while nested
+    // dependency trees stay cached.
+    const settings = await readExtensionSettings(paths.settingsPath);
+    for (const entry of settings.extensions) {
+      if (entry.target.kind === "package") {
+        roots.push(
+          join(
+            paths.installRoot,
+            "node_modules",
+            ...entry.target.packageName.split("/")
+          )
+        );
+      }
+    }
+  };
+  await addScope("global");
+  try {
+    await addScope("project");
+  } catch {
+    // Untrusted or malformed project layouts simply contribute no root.
+  }
+  // Node keys require.cache by real resolved filenames, so symlinked roots
+  // must be canonicalized or their helpers would evade the transaction.
+  return await Promise.all(roots.map(canonicalPath));
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return path;
+  }
 }
 
 function errorMessage(error: unknown): string {

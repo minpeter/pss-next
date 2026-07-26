@@ -11,6 +11,10 @@ import {
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { createOpenAICompatibleModelFromEnv } from "./model";
+import {
+  createProviderObservationFetch,
+  type ProviderObservationEmitter,
+} from "./provider-observation";
 import type { WebToolsAvailability } from "./tools";
 
 interface ExecArguments {
@@ -234,9 +238,16 @@ export async function runExecCli({
           configured.extensions,
           await importCliExtensions({ targets: cliTargets })
         );
+  const providerEmitter: ProviderObservationEmitter = {};
   const result = await runCodingAgentExec({
+    bindProviderObservation: (emit) => {
+      providerEmitter.current = emit;
+    },
     extensions,
-    model: createOpenAICompatibleModelFromEnv({ runtimeEnv }),
+    model: createOpenAICompatibleModelFromEnv({
+      fetch: createProviderObservationFetch(providerEmitter),
+      runtimeEnv,
+    }),
     prompt,
     ...(args.resultFile === undefined ? {} : { resultFile: args.resultFile }),
     stdout,

@@ -54,6 +54,7 @@ export {
   type CodingAgentExtensionCleanup,
   type CodingAgentExtensionEventContext,
   type CodingAgentExtensionEventHandler,
+  type CodingAgentExtensionEvents,
   type CodingAgentExtensionExec,
   type CodingAgentExtensionExecResult,
   type CodingAgentExtensionFactory,

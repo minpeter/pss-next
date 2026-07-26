@@ -22,6 +22,7 @@ import type {
   CodingAgentExtensionInput,
   CodingAgentExtensionMode,
   CodingAgentExtensionUi,
+  ExtensionJsonValue,
 } from "./types";
 
 export class CodingAgentExtensionHost {
@@ -149,6 +150,25 @@ export class CodingAgentExtensionHost {
 
   bindUi(ui: CodingAgentExtensionUi): void {
     this.#lifecycle.bindUi(ui);
+  }
+
+  /**
+   * Publish a host-originated bus event (for example `provider:response`).
+   * Extensions subscribe via `services.events.on(...)`; they cannot publish
+   * into host-reserved namespaces themselves.
+   */
+  emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
+    this.#lifecycle.emitHostEvent(type, payload);
+  }
+
+  /**
+   * Reject further extension state writes (draining already-admitted
+   * writes) and release detached interactive UI work, e.g. after this
+   * host's disposal was detached by a reload timeout and a replacement now
+   * owns the state and the terminal.
+   */
+  async revokeExtensionState(): Promise<void> {
+    await this.#lifecycle.revokeExtensionState();
   }
 
   getToolOwner(name: string): string | undefined {

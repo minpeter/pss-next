@@ -2,7 +2,7 @@ import { requiredString } from "./data-validation";
 
 const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
-const RESERVED_COMMAND_NAMES = new Set(["clear", "help", "new"]);
+const RESERVED_COMMAND_NAMES = new Set(["clear", "help", "new", "reload"]);
 const UNSAFE_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
 export function snapshotCommandName(value: unknown): string {
