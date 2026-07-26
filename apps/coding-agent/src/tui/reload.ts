@@ -58,14 +58,16 @@ export async function buildReloadedExtensionRuntime<
   /** Rebuild a runtime from the previous inputs after activation failure. */
   readonly recoverPrevious: () => Promise<void>;
   /**
-   * Snapshot shared extension state right before activation so a failed
-   * activation cannot leave partially upgraded state for the recovered
-   * runtime. Returns restore/discard handles.
+   * Snapshot the replacement extensions' state files right before
+   * activation so a failed activation cannot leave partially upgraded
+   * state for the recovered runtime. Returns restore/discard handles.
    */
-  readonly snapshotState?: () => Promise<{
+  readonly snapshotState?: (extensionIds: readonly string[]) => Promise<{
     discard(): Promise<void>;
     restore(): Promise<void>;
   }>;
+  /** Bounds replacement activation and failed-replacement disposal. */
+  readonly timeoutMs?: number;
   /**
    * Pre-swap validation, e.g. committing migrations for the stored thread.
    * May return a revert callback invoked when a later phase fails so
@@ -113,14 +115,29 @@ export async function buildReloadedExtensionRuntime<
     }
     throw error;
   }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RELOAD_PHASE_TIMEOUT_MS;
   const cleanupNotices = await options.disposePrevious();
-  // Snapshot after old cleanup finished writing and before the replacement
-  // can touch the shared per-extension state files.
-  const stateSnapshot = await options.snapshotState?.();
+  let stateSnapshot:
+    | Awaited<ReturnType<NonNullable<typeof options.snapshotState>>>
+    | undefined;
   try {
-    await options.activateHost(host, agent);
+    // Snapshot after old cleanup finished writing and before the
+    // replacement can touch the shared per-extension state files. Snapshot
+    // failures use the same recovery path as activation failures because
+    // the previous runtime is already gone.
+    stateSnapshot = await options.snapshotState?.(
+      loaded.extensions.map((extension) => extension.id)
+    );
+    // Per-extension activation is bounded by the host, but a replacement
+    // cleanup that never settles would otherwise hang the failure path
+    // inside the host's own dispose; bound the whole phase.
+    await boundedReloadOperation(
+      options.activateHost(host, agent),
+      timeoutMs,
+      "Replacement extension activation"
+    );
   } catch (activationError) {
-    await disposeSettled(agent, host);
+    await disposeSettled(agent, host, timeoutMs);
     // Recovery must run even when the reverts conflict (for example when
     // replacement activation already advanced the stored thread version);
     // the session otherwise stays backed by the disposed old runtime.
@@ -163,13 +180,19 @@ export async function buildReloadedExtensionRuntime<
   };
 }
 
+const DEFAULT_RELOAD_PHASE_TIMEOUT_MS = 60_000;
+
 async function disposeSettled(
   agent: ReloadableAgent | undefined,
-  host: ReloadableHost | undefined
+  host: ReloadableHost | undefined,
+  timeoutMs = DEFAULT_RELOAD_PHASE_TIMEOUT_MS
 ): Promise<void> {
   await Promise.allSettled([
-    agent === undefined ? Promise.resolve() : agent.dispose(),
-    host === undefined ? Promise.resolve() : host.dispose(),
+    bounded(
+      agent === undefined ? Promise.resolve() : agent.dispose(),
+      timeoutMs
+    ),
+    bounded(host === undefined ? Promise.resolve() : host.dispose(), timeoutMs),
   ]);
 }
 

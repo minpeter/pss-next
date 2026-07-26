@@ -12,66 +12,73 @@ afterEach(async () => {
   }
 });
 
-async function temporaryDirectory(): Promise<string> {
+async function temporaryStateRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "pss-state-snapshot-"));
   cleanupRoots.push(root);
-  return root;
+  const stateRoot = join(root, "extension-state");
+  await mkdir(stateRoot, { recursive: true });
+  return stateRoot;
 }
 
 describe("snapshotExtensionState", () => {
-  it("restores files changed after the snapshot", async () => {
+  it("restores only the listed extensions' files", async () => {
     // Given
-    const root = await temporaryDirectory();
-    const stateRoot = join(root, "extension-state");
-    await mkdir(stateRoot, { recursive: true });
-    await writeFile(join(stateRoot, "ext.json"), '{"revision":1}');
+    const stateRoot = await temporaryStateRoot();
+    await writeFile(join(stateRoot, "guard.json"), '{"revision":1}');
+    await writeFile(join(stateRoot, "other.json"), '{"foreign":1}');
 
-    // When — the replacement mutates and adds state, then fails.
-    const snapshot = await snapshotExtensionState(stateRoot);
-    await writeFile(join(stateRoot, "ext.json"), '{"revision":2}');
-    await writeFile(join(stateRoot, "new.json"), "{}");
+    // When — the replacement mutates listed and unrelated state, then fails.
+    const snapshot = await snapshotExtensionState(
+      ["guard", "fresh"],
+      stateRoot
+    );
+    await writeFile(join(stateRoot, "guard.json"), '{"revision":2}');
+    await writeFile(join(stateRoot, "fresh.json"), "{}");
+    await writeFile(join(stateRoot, "other.json"), '{"foreign":2}');
     await snapshot.restore();
 
-    // Then
-    await expect(readFile(join(stateRoot, "ext.json"), "utf8")).resolves.toBe(
+    // Then — listed files roll back, unrelated files keep their new value.
+    await expect(readFile(join(stateRoot, "guard.json"), "utf8")).resolves.toBe(
       '{"revision":1}'
     );
     await expect(
-      readFile(join(stateRoot, "new.json"), "utf8")
+      readFile(join(stateRoot, "fresh.json"), "utf8")
     ).rejects.toThrow();
+    await expect(readFile(join(stateRoot, "other.json"), "utf8")).resolves.toBe(
+      '{"foreign":2}'
+    );
   });
 
-  it("removes a state directory that did not exist before", async () => {
+  it("handles missing state files and directories", async () => {
     // Given
-    const root = await temporaryDirectory();
-    const stateRoot = join(root, "extension-state");
+    const root = await mkdtemp(join(tmpdir(), "pss-state-snapshot-"));
+    cleanupRoots.push(root);
+    const stateRoot = join(root, "missing-state");
 
-    // When
-    const snapshot = await snapshotExtensionState(stateRoot);
+    // When — the state root does not exist yet.
+    const snapshot = await snapshotExtensionState(["guard"], stateRoot);
     await mkdir(stateRoot, { recursive: true });
-    await writeFile(join(stateRoot, "ext.json"), "{}");
+    await writeFile(join(stateRoot, "guard.json"), "{}");
     await snapshot.restore();
 
     // Then
     await expect(
-      readFile(join(stateRoot, "ext.json"), "utf8")
+      readFile(join(stateRoot, "guard.json"), "utf8")
     ).rejects.toThrow();
   });
 
   it("discard keeps the current state untouched", async () => {
     // Given
-    const root = await temporaryDirectory();
-    const stateRoot = join(root, "extension-state");
-    await mkdir(stateRoot, { recursive: true });
-    await writeFile(join(stateRoot, "ext.json"), '{"revision":1}');
+    const stateRoot = await temporaryStateRoot();
+    await writeFile(join(stateRoot, "guard.json"), '{"revision":1}');
 
     // When
-    const snapshot = await snapshotExtensionState(stateRoot);
-    await writeFile(join(stateRoot, "ext.json"), '{"revision":2}');
+    const snapshot = await snapshotExtensionState(["guard"], stateRoot);
+    await writeFile(join(stateRoot, "guard.json"), '{"revision":2}');
     await snapshot.discard();
 
     // Then
-    await expect(readFile(join(stateRoot, "ext.json"), "utf8")).resolves.toBe(
+    await expect(readFile(join(stateRoot, "guard.json"), "utf8")).resolves.toBe(
       '{"revision":2}'
     );
   });

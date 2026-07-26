@@ -35,6 +35,7 @@ export class ExtensionHostServices {
   #model: CodingAgentExtensionHostOptions["model"];
   readonly #scopes = new Map<string, ExtensionServiceScope>();
   #ui: CodingAgentExtensionUi | undefined;
+  readonly #uiRevokedController = new AbortController();
   #workspace: string | undefined;
 
   constructor(
@@ -112,6 +113,15 @@ export class ExtensionHostServices {
     }
   }
 
+  /**
+   * Release detached interactive UI work: pending prompts resolve to their
+   * cancelled value and new prompts are rejected, so cleanup that outlived
+   * its timeout cannot keep stealing focus from a replacement runtime.
+   */
+  revokeInteractiveUi(): void {
+    this.#uiRevokedController.abort();
+  }
+
   async dispose(): Promise<readonly unknown[]> {
     const failures: unknown[] = [];
     const scopes = [...this.#scopes.entries()].reverse();
@@ -185,11 +195,43 @@ export class ExtensionHostServices {
       confirm: async (
         message: Parameters<CodingAgentExtensionUi["confirm"]>[0]
       ) =>
-        await this.#withInteractiveUi(extensionId, () => ui.confirm(message)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.confirm(message), false)
+        ),
       input: async (input: Parameters<CodingAgentExtensionUi["input"]>[0]) =>
-        await this.#withInteractiveUi(extensionId, () => ui.input(input)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.input(input), undefined)
+        ),
       select: async (input: Parameters<CodingAgentExtensionUi["select"]>[0]) =>
-        await this.#withInteractiveUi(extensionId, () => ui.select(input)),
+        await this.#withInteractiveUi(extensionId, () =>
+          this.#raceUiRevocation(() => ui.select(input), undefined)
+        ),
+    });
+  }
+
+  #raceUiRevocation<Value>(
+    operation: () => Promise<Value>,
+    revokedValue: Value
+  ): Promise<Value> {
+    const signal = this.#uiRevokedController.signal;
+    if (signal.aborted) {
+      return Promise.resolve(revokedValue);
+    }
+    return new Promise<Value>((resolvePromise, rejectPromise) => {
+      const onRevoke = () => resolvePromise(revokedValue);
+      signal.addEventListener("abort", onRevoke, { once: true });
+      operation().then(
+        (value) => {
+          signal.removeEventListener("abort", onRevoke);
+          resolvePromise(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onRevoke);
+          rejectPromise(
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      );
     });
   }
 }

@@ -162,8 +162,9 @@ export class CodingAgentExtensionHost {
   }
 
   /**
-   * Reject further extension state writes, e.g. after this host's disposal
-   * was detached by a reload timeout and a replacement now owns the state.
+   * Reject further extension state writes and release detached interactive
+   * UI work, e.g. after this host's disposal was detached by a reload
+   * timeout and a replacement now owns the state and the terminal.
    */
   revokeExtensionState(): void {
     this.#lifecycle.revokeExtensionState();

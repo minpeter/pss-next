@@ -51,12 +51,13 @@ export class ExtensionHostLifecycle {
   }
 
   /**
-   * Reject further extension state writes. Called when disposal was
-   * detached by a timeout so late cleanup cannot overwrite state that a
-   * replacement runtime now owns.
+   * Reject further extension state writes and release detached interactive
+   * UI work. Called when disposal was detached by a timeout so late cleanup
+   * cannot overwrite state or steal focus from a replacement runtime.
    */
   revokeExtensionState(): void {
     this.#services.revokeStateWrites();
+    this.#services.revokeInteractiveUi();
   }
 
   /** Publish a host-originated bus event such as a provider observation. */

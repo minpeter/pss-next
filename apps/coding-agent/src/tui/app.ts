@@ -309,9 +309,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             host.toolRenderers,
             (name) => host.getToolRendererOwner(name)
           ),
-        // Snapshot shared extension state so a failed activation cannot
-        // leave partially upgraded state for the recovered runtime.
-        snapshotState: () => snapshotExtensionState(),
+        // Snapshot the replacement extensions' state files so a failed
+        // activation cannot leave partially upgraded state for the
+        // recovered runtime.
+        snapshotState: (extensionIds) => snapshotExtensionState(extensionIds),
         // Rebuild a runtime from the previous inputs so the session stays
         // usable when replacement activation fails after old cleanup ran.
         recoverPrevious: async () => {

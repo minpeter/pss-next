@@ -21,6 +21,7 @@ import {
   inspectCodingAgentThread,
 } from "./thread-inspect";
 import { startTui } from "./tui/app";
+import { boundedReloadOperation } from "./tui/reload";
 import { cliVersion } from "./update/cli-version";
 import { runUpdateCommand } from "./update/command";
 
@@ -182,17 +183,24 @@ async function runTuiCommand({
       await reloadCacheRoots({ cwd, home, targets })
     );
     try {
-      const reloaded = await loadConfiguredCodingAgentExtensions({
-        cacheBust,
-        cwd,
-        ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
-        home,
-      });
+      // Bound imports so an edited extension with a never-settling
+      // top-level await fails the reload instead of freezing the session
+      // with the CommonJS cache already evicted.
+      const { cliExtensions, reloaded } = await boundedReloadOperation(
+        (async () => ({
+          cliExtensions: await importCliExtensions({ cacheBust, targets }),
+          reloaded: await loadConfiguredCodingAgentExtensions({
+            cacheBust,
+            cwd,
+            ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
+            home,
+          }),
+        }))(),
+        RELOAD_IMPORT_TIMEOUT_MS,
+        "Extension reload import"
+      );
       return {
-        extensions: mergeCliExtensions(
-          reloaded.extensions,
-          await importCliExtensions({ cacheBust, targets })
-        ),
+        extensions: mergeCliExtensions(reloaded.extensions, cliExtensions),
         notices: reloaded.notices,
         rollbackModuleCache: () => transaction.rollback(),
       };
@@ -207,6 +215,8 @@ async function runTuiCommand({
       startTui({ extensions: loaded, reloadExtensions }))
   )(extensions);
 }
+
+const RELOAD_IMPORT_TIMEOUT_MS = 30_000;
 
 async function reloadCacheRoots({
   cwd,
