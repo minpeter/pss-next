@@ -206,8 +206,11 @@ export class ExtensionHostLifecycle {
       return;
     }
     this.#disposed = true;
+    // Drain in-flight bus deliveries (bounded by the host timeout) before
+    // aborting and running cleanups so handlers finish against live
+    // services instead of resuming mid-teardown.
+    await this.#bus.dispose();
     this.#controller.abort();
-    this.#bus.dispose();
     const failures: unknown[] = [];
     for (const { cleanup, id } of this.#cleanups.reverse()) {
       try {

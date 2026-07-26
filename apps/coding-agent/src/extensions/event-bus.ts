@@ -28,6 +28,7 @@ interface BusSubscription {
  */
 export class ExtensionHostEventBus {
   #disposed = false;
+  readonly #inFlight = new Set<Promise<unknown>>();
   readonly #onHandlerError: (error: CodingAgentExtensionError) => void;
   readonly #signal: AbortSignal;
   readonly #subscriptions = new Set<BusSubscription>();
@@ -91,9 +92,16 @@ export class ExtensionHostEventBus {
     };
   }
 
-  dispose(): void {
+  /**
+   * Stop accepting publications and drain in-flight deliveries. Each
+   * delivery is bounded by the host timeout, so draining is bounded too;
+   * handlers that outlive their timeout are detached and their state
+   * writes are rejected by the post-disposal revocation.
+   */
+  async dispose(): Promise<void> {
     this.#disposed = true;
     this.#subscriptions.clear();
+    await Promise.allSettled([...this.#inFlight]);
   }
 
   #publish(
@@ -140,10 +148,15 @@ export class ExtensionHostEventBus {
         payload === undefined ? undefined : structuredClone(payload)
       );
     })();
-    raceWithExtensionTimeout(subscription.extensionId, "event", task, {
-      signal: this.#signal,
-      timeoutMs: this.#timeoutMs,
-    }).catch((error: unknown) => {
+    const delivery = raceWithExtensionTimeout(
+      subscription.extensionId,
+      "event",
+      task,
+      {
+        signal: this.#signal,
+        timeoutMs: this.#timeoutMs,
+      }
+    ).catch((error: unknown) => {
       this.#onHandlerError(
         error instanceof CodingAgentExtensionError
           ? error
@@ -153,6 +166,10 @@ export class ExtensionHostEventBus {
               error
             )
       );
+    });
+    this.#inFlight.add(delivery);
+    delivery.finally(() => {
+      this.#inFlight.delete(delivery);
     });
   }
 }

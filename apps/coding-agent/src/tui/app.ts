@@ -34,6 +34,7 @@ import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createClearCommand, createReloadCommand } from "./command-set";
 import {
+  boundedReloadOperation,
   buildReloadedExtensionRuntime,
   disposePreviousExtensionRuntime,
   type ReloadableExtensions,
@@ -341,12 +342,26 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         // migrations never re-run on the next load. The returned revert
         // restores the snapshot if a later reload phase fails.
         validateHost: async (host) => {
-          const committed = await commitThreadStateMigrations({
-            migrations: host.threadMigrations,
-            store: reloadFileHost.store.threads,
-            threadKey: threadStoreKey(threadConfig.key),
-          });
-          return committed === undefined ? undefined : () => committed.revert();
+          // Migration callbacks are extension-controlled; bound them like
+          // every other extension operation so a hanging migration fails
+          // the reload instead of freezing the session.
+          const committed = await boundedReloadOperation(
+            commitThreadStateMigrations({
+              migrations: host.threadMigrations,
+              store: reloadFileHost.store.threads,
+              threadKey: threadStoreKey(threadConfig.key),
+            }),
+            host.timeoutMs,
+            "Thread migration validation"
+          );
+          return committed === undefined
+            ? undefined
+            : () =>
+                boundedReloadOperation(
+                  committed.revert(),
+                  host.timeoutMs,
+                  "Thread migration revert"
+                );
         },
       });
       installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);

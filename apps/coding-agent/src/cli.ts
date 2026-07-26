@@ -217,7 +217,10 @@ async function reloadCacheRoots({
   readonly home: string;
   readonly targets: readonly { readonly path: string }[];
 }): Promise<readonly string[]> {
-  const roots = targets.map((target) => dirname(target.path));
+  // The cwd covers loose `-e` extensions whose CommonJS helpers live
+  // outside the entry directory (for example `plugins/review/index.mjs`
+  // importing `../shared.cjs`); nested node_modules stay untouched.
+  const roots = [cwd, ...targets.map((target) => dirname(target.path))];
   const addScope = async (scope: "global" | "project"): Promise<void> => {
     const paths = await extensionScopePaths({ cwd, home, scope });
     roots.push(paths.installRoot);

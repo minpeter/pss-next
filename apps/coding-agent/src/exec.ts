@@ -139,11 +139,11 @@ export async function runCodingAgentExec({
   };
   const absoluteWorkspace = resolve(workspace);
   const extensionHost = await createCodingAgentExtensionHost(extensions);
-  bindProviderObservation?.((type, payload) => {
-    extensionHost.emitHostEvent(type, payload);
-  });
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   try {
+    bindProviderObservation?.((type, payload) => {
+      extensionHost.emitHostEvent(type, payload);
+    });
     agent = await createCodingAgent({
       extensionHost,
       model,

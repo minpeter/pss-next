@@ -184,6 +184,36 @@ export async function disposePreviousExtensionRuntime(options: {
   return notices;
 }
 
+/**
+ * Bound an extension-controlled operation (for example a reloaded thread
+ * migration) so a never-settling callback fails the reload instead of
+ * hanging the session.
+ */
+export function boundedReloadOperation<Value>(
+  task: Promise<Value>,
+  timeoutMs: number,
+  label: string
+): Promise<Value> {
+  task.catch(() => undefined);
+  return new Promise<Value>((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      rejectPromise(new Error(`${label} did not settle within ${timeoutMs}ms`));
+    }, timeoutMs);
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolvePromise(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        rejectPromise(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+    );
+  });
+}
+
 function bounded(task: Promise<void>, timeoutMs: number): Promise<void> {
   // Late settlement is intentionally detached; the replacement runtime is
   // already live and must not wait on abandoned cleanup.
