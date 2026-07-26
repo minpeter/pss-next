@@ -143,6 +143,187 @@ describe("configured extension loading", () => {
       "Project extensions are blocked until explicitly enabled or installed for this project.",
     ]);
   });
+
+  it("loads loose local extensions from global and trusted project directories", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    await mkdir(join(cwd, ".pss", "extensions"), { recursive: true });
+    await writeFile(
+      join(home, ".pss", "extensions", "global-local.mjs"),
+      "export default function globalLocal() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(cwd, ".pss", "extensions", "project-local.ts"),
+      [
+        "interface Marker { readonly on: boolean }",
+        "const marker: Marker = { on: true };",
+        "export default function projectLocal(): void {",
+        "  void marker;",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    // When
+    const blocked = await loadConfiguredCodingAgentExtensions({ cwd, home });
+    await writeTrustedProjects(extensionTrustPath(home), [cwd]);
+    const trusted = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(blocked.extensions.map((extension) => extension.id)).toEqual([
+      "global-local",
+    ]);
+    expect(blocked.notices).toEqual([
+      "Project extensions are blocked until explicitly enabled or installed for this project.",
+    ]);
+    expect(trusted.extensions.map((extension) => extension.id)).toEqual([
+      "global-local",
+      "project-local",
+    ]);
+    expect(trusted.notices).toEqual([]);
+  });
+
+  it("prefers trusted project local extensions and skips managed id conflicts", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    await mkdir(join(cwd, ".pss", "extensions"), { recursive: true });
+    const managedModule = join(root, "managed.mjs");
+    await writeFile(
+      managedModule,
+      "export default function managedExtension() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(home, ".pss", "extensions", "shared.mjs"),
+      "export default function globalSharedLocal() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(cwd, ".pss", "extensions", "shared.mjs"),
+      "export default function projectSharedLocal() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(cwd, ".pss", "extensions", "managed.mjs"),
+      "export default function localManagedConflict() {}\n",
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("managed", managedModule, true)],
+      values: {},
+    });
+    await writeTrustedProjects(extensionTrustPath(home), [cwd]);
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(loaded.extensions.map((extension) => extension.id)).toEqual([
+      "managed",
+      "shared",
+    ]);
+    const shared = loaded.extensions[1];
+    if (shared === undefined || !("default" in shared)) {
+      throw new Error("Expected a loaded extension module");
+    }
+    expect(shared.default.name).toBe("projectSharedLocal");
+    expect(loaded.notices).toHaveLength(1);
+    expect(loaded.notices[0]).toContain(
+      "conflicts with an installed extension"
+    );
+  });
+
+  it("skips local extensions whose id matches a disabled install", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    const managedModule = join(root, "managed.mjs");
+    await writeFile(
+      managedModule,
+      "export default function managedExtension() {}\n",
+      "utf8"
+    );
+    await writeFile(
+      join(home, ".pss", "extensions", "managed.mjs"),
+      "export default function looseImpostor() {}\n",
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("managed", managedModule, false)],
+      values: {},
+    });
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({ cwd, home });
+
+    // Then
+    expect(loaded.extensions).toEqual([]);
+    expect(loaded.notices).toHaveLength(1);
+    expect(loaded.notices[0]).toContain(
+      "conflicts with an installed extension"
+    );
+  });
+
+  it("never imports configured modules excluded by CLI extension ids", async () => {
+    // Given
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-loader-"));
+    cleanupRoots.push(root);
+    const home = join(root, "home");
+    const cwd = join(root, "project");
+    await mkdir(cwd, { recursive: true });
+    await mkdir(join(home, ".pss", "extensions"), { recursive: true });
+    const throwingModule = join(root, "throwing.mjs");
+    await writeFile(throwingModule, 'throw new Error("must not import");\n');
+    await writeFile(
+      join(home, ".pss", "extensions", "local-guard.mjs"),
+      'throw new Error("must not import");\n',
+      "utf8"
+    );
+    const globalPaths = await extensionScopePaths({
+      cwd,
+      home,
+      scope: "global",
+    });
+    await writeExtensionSettings(globalPaths.settingsPath, {
+      extensions: [entry("managed-guard", throwingModule, true)],
+      values: {},
+    });
+
+    // When
+    const loaded = await loadConfiguredCodingAgentExtensions({
+      cwd,
+      excludeIds: new Set(["managed-guard", "local-guard"]),
+      home,
+    });
+
+    // Then
+    expect(loaded.extensions).toEqual([]);
+    expect(loaded.notices).toEqual([]);
+  });
 });
 
 function entry(id: string, path: string, enabled: boolean) {
