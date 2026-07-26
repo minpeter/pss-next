@@ -15,6 +15,8 @@ import type {
   ExtensionJsonValue,
 } from "./types";
 
+const STATE_WRITE_FENCE_TIMEOUT_MS = 5000;
+
 export interface ExtensionServiceScope {
   readonly dispose: () => Promise<void>;
   /**
@@ -80,7 +82,15 @@ export function createExtensionServiceScope(options: {
       stateWritesRevoked = true;
       // Reads queue behind admitted writes, so awaiting one fences every
       // write that passed the revocation check before the flag was set.
-      await services.state.get().catch(() => undefined);
+      // The fence is bounded: a never-settling queued updater must not be
+      // able to hang revocation (and with it the whole reload).
+      await Promise.race([
+        services.state.get().catch(() => undefined),
+        new Promise<void>((resolveFence) => {
+          const timer = setTimeout(resolveFence, STATE_WRITE_FENCE_TIMEOUT_MS);
+          timer.unref?.();
+        }),
+      ]);
     },
     dispose: async () => {
       stateWritesRevoked = true;

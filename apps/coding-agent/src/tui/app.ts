@@ -253,17 +253,21 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       };
       providerEmitter.current = installedEmit;
       let installedUi: CodingAgentExtensionUi | undefined;
+      let installedUiAbort: AbortController | undefined;
       try {
         if (createExtensionUiForHost !== undefined) {
-          extensionUiAbort = new AbortController();
-          installedUi = createExtensionUiForHost(extensionUiAbort.signal);
+          installedUiAbort = new AbortController();
+          extensionUiAbort = installedUiAbort;
+          installedUi = createExtensionUiForHost(installedUiAbort.signal);
           extensionUi = installedUi;
           host.bindUi(installedUi);
         }
         await host.activate(nextAgent, "tui");
       } catch (error) {
-        // A detached activation can reject long after recovery installed a
-        // new runtime; only roll back bindings this attempt still owns.
+        // Cancel any prompt the failed attempt left on screen, then only
+        // roll back bindings this attempt still owns (a detached activation
+        // can reject long after recovery installed a new runtime).
+        installedUiAbort?.abort();
         if (providerEmitter.current === installedEmit) {
           providerEmitter.current = previousEmit;
         }
