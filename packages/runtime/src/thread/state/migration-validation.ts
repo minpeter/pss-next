@@ -6,6 +6,16 @@ import {
 } from "./migrations";
 import { decodeStoredThreadState, encodeThreadSnapshot } from "./snapshot";
 
+export interface CommittedThreadMigrations {
+  /**
+   * Restore the pre-migration snapshot. Hosts call this when the runtime
+   * swap fails after the commit so the surviving runtime resumes against
+   * the history it was built for and a corrected retry re-runs the
+   * migration instead of skipping its applied-version marker.
+   */
+  revert(): Promise<void>;
+}
+
 /**
  * Run the configured migrations against a stored thread snapshot and commit
  * the migrated state, preserving exactly-once semantics.
@@ -17,9 +27,10 @@ import { decodeStoredThreadState, encodeThreadSnapshot } from "./snapshot";
  * markers, migration callbacks never re-run on the next thread load; a
  * dry-run would execute stateful migrations twice.
  *
- * Throws `ThreadMigrationError` when a migration rejects the snapshot and a
- * plain `Error` when a concurrent writer wins the commit; resolves without
- * writing when no migration changes the snapshot.
+ * Returns a revert handle when a migration changed the snapshot and
+ * `undefined` otherwise. Throws `ThreadMigrationError` when a migration
+ * rejects the snapshot and a plain `Error` when a concurrent writer wins
+ * the commit.
  */
 export async function commitThreadStateMigrations({
   migrations,
@@ -29,7 +40,7 @@ export async function commitThreadStateMigrations({
   readonly migrations: readonly ThreadStateMigration[];
   readonly store: Pick<ThreadStore, "commit" | "load">;
   readonly threadKey: string;
-}): Promise<void> {
+}): Promise<CommittedThreadMigrations | undefined> {
   const normalized = normalizeThreadStateMigrations(migrations);
   if (normalized.length === 0) {
     return;
@@ -62,4 +73,19 @@ export async function commitThreadStateMigrations({
       `Thread "${threadKey}" changed while committing migrations; retry the operation`
     );
   }
+  const committedVersion = result.version;
+  return {
+    revert: async () => {
+      const restored = await store.commit(
+        threadKey,
+        { state: stored.state },
+        { expectedVersion: committedVersion }
+      );
+      if (!restored.ok) {
+        throw new Error(
+          `Thread "${threadKey}" changed while reverting migrations; manual inspection required`
+        );
+      }
+    },
+  };
 }

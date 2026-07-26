@@ -191,13 +191,14 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           try {
             await reloadExtensionRuntime();
           } catch (error) {
-            // Replacement activation may have written to the durable thread
-            // before failing; refresh the handle so the surviving session
-            // re-reads the store instead of committing on a stale revision.
+            // A failed reload may have touched the durable thread; dispose
+            // the cached handle first (disposal evicts it from the agent),
+            // then request a fresh one that re-reads the store instead of
+            // committing on a stale revision.
             const stale = thread;
-            thread = agent.thread(threadConfig.key);
             stale.interrupt();
             await stale.dispose().catch(() => undefined);
+            thread = agent.thread(threadConfig.key);
             throw error;
           }
           return;
@@ -331,13 +332,16 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         },
         // Commit reloaded migrations for the stored thread before swapping so
         // a rejecting migration cannot strand the next prompt and stateful
-        // migrations never re-run on the next load.
-        validateHost: (host) =>
-          commitThreadStateMigrations({
+        // migrations never re-run on the next load. The returned revert
+        // restores the snapshot if a later reload phase fails.
+        validateHost: async (host) => {
+          const committed = await commitThreadStateMigrations({
             migrations: host.threadMigrations,
             store: reloadFileHost.store.threads,
             threadKey: threadStoreKey(threadConfig.key),
-          }),
+          });
+          return committed === undefined ? undefined : () => committed.revert();
+        },
       });
       installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);
       currentExtensionInputs = swap.loadedExtensions;

@@ -247,14 +247,17 @@ describe("extension runtime service contracts", () => {
           cwd: "..",
         })
       ).rejects.toThrow("Extension exec cwd must stay inside the workspace");
+      // The timeout must exceed child Node boot time on a loaded CI runner;
+      // otherwise SIGTERM lands before the handler is registered and the
+      // process exits on SIGTERM without exercising SIGKILL escalation.
       await expect(
         services?.exec.run({
           args: [
             "-e",
-            "process.on('SIGTERM', () => {}); setTimeout(() => process.exit(0), 500)",
+            "process.on('SIGTERM', () => {}); setTimeout(() => process.exit(0), 10000)",
           ],
           command: process.execPath,
-          timeoutMs: 100,
+          timeoutMs: 750,
         })
       ).resolves.toMatchObject({ signal: "SIGKILL", timedOut: true });
     } finally {

@@ -89,7 +89,7 @@ describe("commitThreadStateMigrations", () => {
     };
 
     // When
-    await commitThreadStateMigrations({
+    const committed = await commitThreadStateMigrations({
       migrations: [migration],
       store,
       threadKey: "thread-1",
@@ -103,6 +103,14 @@ describe("commitThreadStateMigrations", () => {
       appliedMigrations: { sanitize: 1 },
       history: [{ content: "sanitized", role: "user" }],
     });
+
+    // When — reverting restores the pre-migration snapshot.
+    await committed?.revert();
+
+    // Then
+    expect(store.commits).toHaveLength(2);
+    expect(store.commits[1]?.expectedVersion).toBe("v2");
+    expect(store.commits[1]?.state).toBe(storedThread.state);
   });
 
   it("does not commit when nothing changes or the thread is missing", async () => {
@@ -138,6 +146,27 @@ describe("commitThreadStateMigrations", () => {
     // Then
     expect(empty.commits).toEqual([]);
     expect(alreadyApplied.commits).toEqual([]);
+  });
+
+  it("returns no revert handle when nothing was committed", async () => {
+    // Given
+    const store = storeWith(null);
+
+    // When
+    const committed = await commitThreadStateMigrations({
+      migrations: [
+        {
+          id: "sanitize",
+          migrate: (snapshot: ThreadMigrationSnapshot) => snapshot,
+          version: 1,
+        },
+      ],
+      store,
+      threadKey: "thread-1",
+    });
+
+    // Then
+    expect(committed).toBeUndefined();
   });
 
   it("surfaces rejecting migrations and commit conflicts", async () => {

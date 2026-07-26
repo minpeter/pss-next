@@ -10,6 +10,8 @@ export interface ProviderObservationEmitter {
 }
 
 const URL_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s"')]+/gi;
+/** Scheme-less inputs still leak query secrets through error messages. */
+const QUERY_TOKEN_PATTERN = /[^\s"')?]*\?[^\s"')]*=[^\s"')]*/g;
 const MAX_ERROR_MESSAGE_LENGTH = 256;
 const SAFE_RESPONSE_HEADERS = new Set([
   "content-type",
@@ -100,6 +102,7 @@ function redactedErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(URL_LIKE_PATTERN, "<redacted-url>")
+    .replace(QUERY_TOKEN_PATTERN, "<redacted-url>")
     .slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 

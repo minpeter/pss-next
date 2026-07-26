@@ -64,6 +64,7 @@ export function createExtensionServiceScope(options: {
     state: createExtensionJsonState({
       extensionId: options.extensionId,
       root: options.dataRoot ?? join(homedir(), ".pss", "extension-state"),
+      signal: options.signal,
     }),
     ui: options.ui ?? createNoninteractiveExtensionUi(options.mode, logger),
   });

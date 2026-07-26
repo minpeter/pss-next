@@ -13,6 +13,12 @@ import type { CodingAgentExtensionState, ExtensionJsonValue } from "./types";
 export function createExtensionJsonState(options: {
   readonly extensionId: string;
   readonly root: string;
+  /**
+   * When aborted (host disposal or a runtime swap), writes are rejected so
+   * detached cleanup from a previous runtime cannot overwrite state that a
+   * replacement runtime now owns.
+   */
+  readonly signal?: AbortSignal;
 }): CodingAgentExtensionState {
   const path = join(
     options.root,
@@ -27,23 +33,34 @@ export function createExtensionJsonState(options: {
     );
     return result;
   };
+  const assertWritable = (): void => {
+    if (options.signal?.aborted) {
+      throw new Error(
+        `Extension "${options.extensionId}" state is read-only after its runtime was disposed`
+      );
+    }
+  };
 
   const state: CodingAgentExtensionState = {
     clear: () =>
       enqueue(async () => {
+        assertWritable();
         await assertNotSymbolicLink(path);
         await rm(path, { force: true });
       }),
     get: () => enqueue(() => readState(path)),
     set: (value: ExtensionJsonValue) =>
       enqueue(async () => {
+        assertWritable();
         assertJsonValue(value, "Extension state");
         await writeState(path, value);
       }),
     update: (updater: Parameters<CodingAgentExtensionState["update"]>[0]) =>
       enqueue(async () => {
+        assertWritable();
         const next = await updater(await readState(path));
         assertJsonValue(next, "Extension state");
+        assertWritable();
         await writeState(path, next);
         return next;
       }),

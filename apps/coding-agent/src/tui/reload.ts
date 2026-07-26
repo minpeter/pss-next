@@ -57,26 +57,47 @@ export async function buildReloadedExtensionRuntime<
   readonly mergeToolRenderers: (host: Host) => ToolRendererMap;
   /** Rebuild a runtime from the previous inputs after activation failure. */
   readonly recoverPrevious: () => Promise<void>;
-  /** Pre-swap validation, e.g. committing migrations for the stored thread. */
-  readonly validateHost?: (host: Host) => Promise<void>;
+  /**
+   * Pre-swap validation, e.g. committing migrations for the stored thread.
+   * May return a revert callback invoked when a later phase fails so
+   * durable side effects do not outlive a failed reload.
+   */
+  readonly validateHost?: (
+    host: Host
+  ) => Promise<(() => Promise<void>) | undefined>;
 }): Promise<ExtensionRuntimeSwap<Agent, Host>> {
   const loaded = await options.loadExtensions();
   let host: Host | undefined;
   let agent: Agent | undefined;
   let commands: readonly TuiCommand[];
   let toolRenderers: ToolRendererMap;
+  let revertValidation: (() => Promise<void>) | undefined;
+  const revertSideEffects = async (cause: unknown): Promise<void> => {
+    // The live runtime keeps running (or is being recovered), so hand back
+    // the CommonJS modules and durable state the failed reload changed.
+    loaded.rollbackModuleCache?.();
+    if (revertValidation === undefined) {
+      return;
+    }
+    try {
+      await revertValidation();
+    } catch (revertError) {
+      throw new AggregateError(
+        [cause, revertError],
+        "Extension reload failed and its committed migrations could not be reverted; manual inspection required"
+      );
+    }
+  };
   try {
     host = await options.createHost(loaded);
     // Validate TUI-facing merges before activation so conflicts abort early.
     commands = options.mergeCommands(host);
     toolRenderers = options.mergeToolRenderers(host);
-    await options.validateHost?.(host);
+    revertValidation = await options.validateHost?.(host);
     agent = await options.createAgent(host);
   } catch (error) {
     await disposeSettled(agent, host);
-    // The live runtime keeps running, so hand it back the CommonJS modules
-    // the failed reload evicted.
-    loaded.rollbackModuleCache?.();
+    await revertSideEffects(error);
     throw error;
   }
   const cleanupNotices = await options.disposePrevious();
@@ -84,7 +105,7 @@ export async function buildReloadedExtensionRuntime<
     await options.activateHost(host, agent);
   } catch (activationError) {
     await disposeSettled(agent, host);
-    loaded.rollbackModuleCache?.();
+    await revertSideEffects(activationError);
     try {
       await options.recoverPrevious();
     } catch (recoveryError) {

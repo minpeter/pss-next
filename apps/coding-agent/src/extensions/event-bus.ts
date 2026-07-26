@@ -123,6 +123,15 @@ export class ExtensionHostEventBus {
       // Defer past the publisher so synchronous handler work cannot block
       // emit(); the timeout timer below is installed before this runs.
       await Promise.resolve();
+      // The host may have been disposed between emit() and this microtask;
+      // never run handlers against torn-down resources.
+      if (
+        this.#disposed ||
+        this.#signal.aborted ||
+        !this.#subscriptions.has(subscription)
+      ) {
+        return;
+      }
       await subscription.handler(
         payload === undefined ? undefined : structuredClone(payload)
       );

@@ -61,7 +61,7 @@ function baseOptions(overrides: {
   >;
   readonly mergeCommands?: () => readonly TuiCommand[];
   readonly recoverPrevious?: () => Promise<void>;
-  readonly validateHost?: () => Promise<void>;
+  readonly validateHost?: () => Promise<(() => Promise<void>) | undefined>;
 }) {
   return {
     activateHost: overrides.activateHost ?? (() => Promise.resolve()),
@@ -116,7 +116,7 @@ describe("buildReloadedExtensionRuntime", () => {
         },
         validateHost: () => {
           order.push("validate");
-          return Promise.resolve();
+          return Promise.resolve(undefined);
         },
       })
     );
@@ -165,6 +165,7 @@ describe("buildReloadedExtensionRuntime", () => {
         })
       )
     ).rejects.toThrow("migration rejected history");
+    // Validation itself failed, so there is nothing to revert.
     expect(previousDisposed).toBe(false);
     expect(host.disposed).toEqual([true]);
     expect(rollbacks).toEqual([true]);
@@ -192,6 +193,46 @@ describe("buildReloadedExtensionRuntime", () => {
     ).rejects.toThrow("command conflict");
     expect(agentCreated).toBe(false);
     expect(host.disposed).toEqual([true]);
+  });
+
+  it("reverts committed validation side effects when activation fails", async () => {
+    // Given
+    const reverts: boolean[] = [];
+
+    // When / Then
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>(
+        baseOptions({
+          activateHost: () => Promise.reject(new Error("activation exploded")),
+          validateHost: () =>
+            Promise.resolve(() => {
+              reverts.push(true);
+              return Promise.resolve();
+            }),
+        })
+      )
+    ).rejects.toThrow("activation exploded");
+    expect(reverts).toEqual([true]);
+  });
+
+  it("reverts validation when agent creation fails after the commit", async () => {
+    // Given
+    const reverts: boolean[] = [];
+
+    // When / Then
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>(
+        baseOptions({
+          createAgent: () => Promise.reject(new Error("agent exploded")),
+          validateHost: () =>
+            Promise.resolve(() => {
+              reverts.push(true);
+              return Promise.resolve();
+            }),
+        })
+      )
+    ).rejects.toThrow("agent exploded");
+    expect(reverts).toEqual([true]);
   });
 
   it("recovers the previous runtime when activation fails", async () => {
