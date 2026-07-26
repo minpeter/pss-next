@@ -68,7 +68,7 @@ function parseSpec(spec: string): {
   }
   const scenario = spec.slice(0, separator);
   const seed = spec.slice(separator + 1);
-  if (!BENCHMARK_SCENARIOS.includes(scenario as BenchmarkScenario)) {
+  if (!(BENCHMARK_SCENARIOS as readonly string[]).includes(scenario)) {
     throw new TypeError(`Unknown benchmark scenario: ${scenario}`);
   }
   return { scenario: scenario as BenchmarkScenario, seed };

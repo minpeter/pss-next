@@ -6,14 +6,17 @@ import {
 const TOOL_EVIDENCE_LEDGER_HEADING = "## Deterministic Tool Evidence";
 
 /**
- * Lines that carry durable, exact evidence worth preserving verbatim even
- * when a tool output must be condensed: final state assignments, pass/fail
- * counts, errors, and rollback/exit facts.
+ * Language-agnostic salience: repetitive log output shares a line template
+ * with many sibling lines once identifiers and numbers are masked, while
+ * durable exact evidence (final state, unique results, error conclusions)
+ * appears as a rare template. Lines whose masked template occurs at most
+ * this many times in the same tool output are treated as salient.
  */
-const SALIENT_LINE_PATTERN =
-  /\b(?:error|fail(?:ed|ure)?|fatal|panic|exception|rollback|revert|root cause|exit code|complete(?:d)?|success(?:ful)?|passed|blocked)\b|^[A-Z][A-Z0-9_]{2,}=/im;
+const MAX_SALIENT_TEMPLATE_FREQUENCY = 2;
 
-const NOISE_LINE_PATTERN = /^\s*\[?(?:debug|trace|verbose)\b/i;
+const HEX_RUN_PATTERN = /[0-9a-f]{4,}/gi;
+const DIGIT_RUN_PATTERN = /\d+/g;
+const WHITESPACE_RUN_PATTERN = /\s+/g;
 
 const MAX_SALIENT_LINES_PER_ITEM = 60;
 
@@ -110,10 +113,26 @@ function condenseItem(item: string, plan: CondensePlan): string {
 }
 
 function salientLines(lines: readonly string[]): string[] {
+  const frequency = new Map<string, number>();
+  for (const line of lines) {
+    const template = lineTemplate(line);
+    frequency.set(template, (frequency.get(template) ?? 0) + 1);
+  }
   const matches = lines.filter(
-    (line) => SALIENT_LINE_PATTERN.test(line) && !NOISE_LINE_PATTERN.test(line)
+    (line) =>
+      (frequency.get(lineTemplate(line)) ?? 0) <= MAX_SALIENT_TEMPLATE_FREQUENCY
   );
   return matches.slice(-MAX_SALIENT_LINES_PER_ITEM);
+}
+
+/** Mask identifiers, hashes, and counters so repeated log lines cluster. */
+function lineTemplate(line: string): string {
+  return line
+    .trim()
+    .toLowerCase()
+    .replace(HEX_RUN_PATTERN, "#")
+    .replace(DIGIT_RUN_PATTERN, "#")
+    .replace(WHITESPACE_RUN_PATTERN, " ");
 }
 
 function ledgerText(evidence: readonly string[]): string {

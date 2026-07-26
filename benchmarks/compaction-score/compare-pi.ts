@@ -23,6 +23,7 @@ import {
 } from "@minpeter/pss-runtime";
 import { generateText, type LanguageModel, type ModelMessage } from "ai";
 import type { CompactionFixture, FixtureQuestion } from "./fixture";
+import { buildHoldoutFixture } from "./holdout-fixtures";
 import { parseBatchedAnswers } from "./protocol";
 import { buildScenarioFixture } from "./scenario-fixtures";
 import { type CompactionScore, scoreAnswers } from "./scorer";
@@ -33,7 +34,13 @@ const PI_TOOL_RESULT_MAX_CHARS = 2000;
 const PROVIDER_TIMEOUT_MS = 120_000;
 const MAX_ATTEMPTS = 3;
 const REPETITIONS = 2;
-const SCENARIOS = ["baseline", "lifecycle", "boundary-noise"] as const;
+const ORIGINAL_SCENARIOS = ["baseline", "lifecycle", "boundary-noise"] as const;
+const HOLDOUT_SCENARIOS = [
+  "holdout-json",
+  "holdout-cjk",
+  "holdout-log",
+] as const;
+const SCENARIOS = [...ORIGINAL_SCENARIOS, ...HOLDOUT_SCENARIOS];
 
 const PI_SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
 
@@ -115,6 +122,7 @@ interface ArmResult {
   readonly error?: string;
   readonly hops?: readonly { prefixTokens: number; summaryTokens: number }[];
   readonly score?: CompactionScore;
+  readonly semanticCorrect?: number;
   readonly status: string;
 }
 
@@ -136,27 +144,47 @@ async function main(): Promise<void> {
   const rows: ComparisonRow[] = [];
   for (const scenario of SCENARIOS) {
     const fixtureSeed = `compare-pi-${scenario}-1`;
-    const fixture = buildScenarioFixture(scenario, fixtureSeed);
+    const fixture = buildComparisonFixture(scenario, fixtureSeed);
     for (let repetition = 1; repetition <= REPETITIONS; repetition += 1) {
       console.log(
         `[${scenario} r${repetition}] hops=${fixture.compactionEnds.length} questions=${fixture.questions.length}`
       );
-      const pss = await runArmWithRetry(() =>
-        runPssArm(fixture, fixtureSeed, repetition, model)
+      const pss = await withSemanticScore(
+        model,
+        await runArmWithRetry(() =>
+          runPssArm(fixture, fixtureSeed, repetition, model)
+        )
       );
       console.log(`  pss: ${describeArm(pss)}`);
-      const pi = await runArmWithRetry(() =>
-        runPiArm(fixture, repetition, model)
+      const pi = await withSemanticScore(
+        model,
+        await runArmWithRetry(() => runPiArm(fixture, repetition, model))
       );
       console.log(`  pi : ${describeArm(pi)}`);
       rows.push({ pi, pss, repetition, scenario });
     }
   }
 
+  const originals = rows.filter((row) =>
+    (ORIGINAL_SCENARIOS as readonly string[]).includes(row.scenario)
+  );
+  const holdouts = rows.filter((row) =>
+    (HOLDOUT_SCENARIOS as readonly string[]).includes(row.scenario)
+  );
   const report = {
     aggregate: {
-      pi: aggregate(rows.map((row) => row.pi)),
-      pss: aggregate(rows.map((row) => row.pss)),
+      holdouts: {
+        pi: aggregate(holdouts.map((row) => row.pi)),
+        pss: aggregate(holdouts.map((row) => row.pss)),
+      },
+      originals: {
+        pi: aggregate(originals.map((row) => row.pi)),
+        pss: aggregate(originals.map((row) => row.pss)),
+      },
+      overall: {
+        pi: aggregate(rows.map((row) => row.pi)),
+        pss: aggregate(rows.map((row) => row.pss)),
+      },
     },
     model: env.AI_MODEL,
     rows,
@@ -167,6 +195,70 @@ async function main(): Promise<void> {
   );
   console.log(JSON.stringify(report.aggregate, null, 2));
   console.log(`report: ${join(outputDir, "comparison.json")}`);
+}
+
+function buildComparisonFixture(
+  scenario: (typeof SCENARIOS)[number],
+  fixtureSeed: string
+): CompactionFixture {
+  if (
+    scenario === "holdout-json" ||
+    scenario === "holdout-cjk" ||
+    scenario === "holdout-log"
+  ) {
+    return buildHoldoutFixture(scenario, fixtureSeed);
+  }
+  return buildScenarioFixture(scenario, fixtureSeed);
+}
+
+/**
+ * Secondary paraphrase-tolerant score: exact-match misses on the compacted
+ * arm are re-graded by an LLM judge, symmetrically for both arms. Answers
+ * like "completed" vs "done" recover; lost facts ("unknown") do not.
+ */
+async function withSemanticScore(
+  model: LanguageModel,
+  result: ArmResult
+): Promise<ArmResult> {
+  if (result.status !== "valid" || !result.score) {
+    return result;
+  }
+  const misses = result.score.disagreements.filter(
+    (item) => item.arm === "compacted"
+  );
+  let recovered = 0;
+  for (const miss of misses) {
+    try {
+      const { text } = await generateText({
+        abortSignal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+        maxOutputTokens: 8,
+        messages: [
+          {
+            content: [
+              "You are grading a short factual answer.",
+              `Question: ${miss.question}`,
+              `Reference answer: ${miss.expected}`,
+              `Candidate answer: ${miss.actual}`,
+              "Does the candidate answer convey the same specific fact as the reference answer? Ignore phrasing, casing, and grammatical differences, but require the same concrete values and identifiers.",
+              "Reply with exactly yes or no.",
+            ].join("\n"),
+            role: "user",
+          },
+        ],
+        model,
+        temperature: 0,
+      });
+      if (text.trim().toLowerCase().startsWith("yes")) {
+        recovered += 1;
+      }
+    } catch {
+      // An unavailable judge never inflates the semantic score.
+    }
+  }
+  return {
+    ...result,
+    semanticCorrect: result.score.headline.correct + recovered,
+  };
 }
 
 async function runArmWithRetry(
@@ -510,10 +602,12 @@ function aggregate(results: readonly ArmResult[]): {
   compressionMean: number | null;
   invalid: number;
   retained: number;
+  semanticRetained: number;
   total: number;
   valid: number;
 } {
   let retained = 0;
+  let semanticRetained = 0;
   let total = 0;
   const ratios: number[] = [];
   let valid = 0;
@@ -523,6 +617,7 @@ function aggregate(results: readonly ArmResult[]): {
     }
     valid += 1;
     retained += result.score.headline.correct;
+    semanticRetained += result.semanticCorrect ?? result.score.headline.correct;
     total += result.score.headline.total;
     for (const hop of result.hops ?? []) {
       ratios.push(hop.summaryTokens / hop.prefixTokens);
@@ -535,6 +630,7 @@ function aggregate(results: readonly ArmResult[]): {
         : ratios.reduce((sum, value) => sum + value, 0) / ratios.length,
     invalid: results.length - valid,
     retained,
+    semanticRetained,
     total,
     valid,
   };
@@ -547,7 +643,12 @@ function describeArm(result: ArmResult): string {
   const ratio = (result.hops ?? [])
     .map((hop) => (hop.summaryTokens / hop.prefixTokens).toFixed(3))
     .join(",");
-  return `valid ${result.score.headline.correct}/${result.score.headline.total} ratio=[${ratio}]`;
+  const semantic =
+    result.semanticCorrect === undefined ||
+    result.semanticCorrect === result.score.headline.correct
+      ? ""
+      : ` semantic=${result.semanticCorrect}/${result.score.headline.total}`;
+  return `valid ${result.score.headline.correct}/${result.score.headline.total}${semantic} ratio=[${ratio}]`;
 }
 
 await main();

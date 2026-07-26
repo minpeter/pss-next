@@ -33,7 +33,10 @@ export type BenchmarkScenario =
   | "sparse-fact"
   | "dense-small-range"
   | "evolving-tool-state"
-  | "tool-state-cjk";
+  | "tool-state-cjk"
+  | "holdout-json"
+  | "holdout-cjk"
+  | "holdout-log";
 
 export interface CompactionFixture {
   readonly compactionEnds: readonly number[];

@@ -65,6 +65,33 @@ describe("buildToolEvidenceLedger", () => {
     expect(ledger).not.toContain("[debug:5]");
   });
 
+  it("selects rare lines regardless of language or format", () => {
+    const source = [
+      ...Array.from(
+        { length: 150 },
+        (_, index) => `{"level":"info","event":"tick","seq":${index}}`
+      ),
+      '{"event":"finalized","checksum":"9f2e4c11ab30"}',
+      ...Array.from(
+        { length: 150 },
+        (_, index) => `알림: 캐시 항목 ${index} 갱신됨`
+      ),
+      "최종 스냅샷 태그는 v0.9.3-rc2 입니다",
+    ].join("\n");
+    const budgetTokens = Math.floor(measureTokens(source) / 4);
+
+    const ledger = buildToolEvidenceLedger([toolMessage(source)], {
+      budgetTokens,
+      measureTokens,
+    });
+
+    expect(measureTokens(ledger)).toBeLessThanOrEqual(budgetTokens);
+    expect(ledger).toContain("9f2e4c11ab30");
+    expect(ledger).toContain("v0.9.3-rc2");
+    expect(ledger).not.toContain('\\"seq\\":77');
+    expect(ledger).not.toContain("캐시 항목 77");
+  });
+
   it("returns an empty ledger when nothing fits the budget", () => {
     const ledger = buildToolEvidenceLedger([toolMessage(noisyLog())], {
       budgetTokens: 1,
