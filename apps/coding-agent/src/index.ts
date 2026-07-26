@@ -45,9 +45,7 @@ export type {
 export {
   CodingAgentToolAbortError,
   CodingAgentToolsConfigError,
-  CodingAgentWebToolsUnavailableError,
   createCodingAgentTools,
-  WEB_TOOLS_DISABLED_MESSAGE,
 } from "./tools";
 export { type StartTuiOptions, startTui } from "./tui/app";
 export {

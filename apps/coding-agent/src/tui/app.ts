@@ -70,7 +70,6 @@ const resolveModelSubtitle = (): string | undefined => {
 };
 
 export async function startTui(options: StartTuiOptions = {}): Promise<number> {
-  const startupNotices: string[] = [];
   const threadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
@@ -93,9 +92,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       host: createFileHost({ directory: threadConfig.directory }),
       model,
       tools: options.tools,
-      webTools: {
-        onWebToolsDisabled: (message) => startupNotices.push(message),
-      },
       workspace: process.cwd(),
     });
   } catch (error) {
@@ -222,7 +218,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         thread = agent.thread(threadConfig.key);
         resetUsageTotals();
       },
-      setupMessages: [...startupNotices, ...noticeLines],
+      setupMessages: noticeLines,
       toolRenderers: mergeToolRenderers(
         createToolRenderers(),
         extensionHost.toolRenderers,
@@ -284,7 +280,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         host: createFileHost({ directory: threadConfig.directory }),
         model,
         tools: options.tools,
-        webTools: { onWebToolsDisabled: () => undefined },
         workspace: process.cwd(),
       });
 
