@@ -19,7 +19,6 @@ import {
   type CodingAgentExtensionInput,
   type CodingAgentExtensionUi,
   createCodingAgentExtensionHost,
-  type LoadedConfiguredExtensions,
 } from "../extensions";
 import { createCodingLanguageModel } from "../model";
 import {
@@ -37,6 +36,7 @@ import { createClearCommand, createReloadCommand } from "./command-set";
 import {
   buildReloadedExtensionRuntime,
   disposePreviousExtensionRuntime,
+  type ReloadableExtensions,
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
 
@@ -45,7 +45,7 @@ export interface StartTuiOptions {
   /** Overrides the language model (tests and scripted QA). */
   readonly model?: AgentOptions["model"];
   /** Re-runs extension discovery for `/reload`; absent means unavailable. */
-  readonly reloadExtensions?: () => Promise<LoadedConfiguredExtensions>;
+  readonly reloadExtensions?: () => Promise<ReloadableExtensions>;
   /** Replaces the TUI's default optional OpenSearch tools. */
   readonly tools?: ToolSet;
 }

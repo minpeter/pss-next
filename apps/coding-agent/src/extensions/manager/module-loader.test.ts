@@ -139,7 +139,7 @@ describe("managed package module loading", () => {
       ].join("\n")
     );
     const script = [
-      `import { ensureReloadModuleGraphHooks, purgeCommonJsCacheUnder } from ${JSON.stringify(
+      `import { ensureReloadModuleGraphHooks, beginCommonJsReloadTransaction } from ${JSON.stringify(
         new URL("./reload-module-graph.ts", import.meta.url).href
       )};`,
       'import { writeFile } from "node:fs/promises";',
@@ -149,7 +149,7 @@ describe("managed package module loading", () => {
       `const entryPath = ${JSON.stringify(entryPath)};`,
       `const helperPath = ${JSON.stringify(helperPath)};`,
       "const importBusted = async (cacheBust) => {",
-      "  purgeCommonJsCacheUnder([root]);",
+      "  beginCommonJsReloadTransaction([root]);",
       "  const url = pathToFileURL(entryPath);",
       "  url.searchParams.set('pss-extension-update', cacheBust);",
       "  return await import(url.href);",

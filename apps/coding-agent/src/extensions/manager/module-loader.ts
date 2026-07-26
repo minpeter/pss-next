@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   CodingAgentExtension,
@@ -7,10 +7,7 @@ import type {
   CodingAgentExtensionInput,
   ExtensionJsonValue,
 } from "../types";
-import {
-  ensureReloadModuleGraphHooks,
-  purgeCommonJsCacheUnder,
-} from "./reload-module-graph";
+import { ensureReloadModuleGraphHooks } from "./reload-module-graph";
 import type { ExtensionTarget, ImportExtensionModule } from "./types";
 
 const defaultImportModule: ImportExtensionModule = async (specifier) =>
@@ -41,7 +38,6 @@ export async function loadExtensionTarget({
   if (cacheBust !== undefined) {
     url.searchParams.set("pss-extension-update", cacheBust);
     ensureReloadModuleGraphHooks();
-    purgeCommonJsCacheUnder([installRoot, dirname(entryPath)]);
   }
   const specifier = url.href;
   const namespace = await importer(specifier);

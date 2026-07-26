@@ -42,9 +42,11 @@ describe("extension host event bus", () => {
 
     // When
     bus.emitFromExtension("emitter", "metrics:sample", payload);
+    const receivedSynchronously = received.length;
     await settle();
 
-    // Then
+    // Then — delivery is deferred so handlers cannot block the publisher.
+    expect(receivedSynchronously).toBe(0);
     expect(received).toEqual([{ nested: { count: 1 } }]);
     expect(received[0]).not.toBe(payload);
     expect(other).toEqual([]);

@@ -120,6 +120,9 @@ export class ExtensionHostEventBus {
     payload: ExtensionJsonValue | undefined
   ): void {
     const task = (async () => {
+      // Defer past the publisher so synchronous handler work cannot block
+      // emit(); the timeout timer below is installed before this runs.
+      await Promise.resolve();
       await subscription.handler(
         payload === undefined ? undefined : structuredClone(payload)
       );

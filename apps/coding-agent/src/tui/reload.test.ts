@@ -171,6 +171,30 @@ describe("buildReloadedExtensionRuntime", () => {
     expect(host.disposed).toEqual([true]);
   });
 
+  it("rolls back the module cache when activation fails", async () => {
+    // Given
+    const rollbacks: boolean[] = [];
+
+    // When / Then
+    await expect(
+      buildReloadedExtensionRuntime<FakeAgent, FakeHost>({
+        activateHost: () => Promise.reject(new Error("activation exploded")),
+        createAgent: () => Promise.resolve(fakeAgent()),
+        createHost: () => Promise.resolve(fakeHost()),
+        loadExtensions: () =>
+          Promise.resolve({
+            ...loaded,
+            rollbackModuleCache: () => {
+              rollbacks.push(true);
+            },
+          }),
+        mergeCommands: () => [command],
+        mergeToolRenderers: () => ({}),
+      })
+    ).rejects.toThrow("activation exploded");
+    expect(rollbacks).toEqual([true]);
+  });
+
   it("keeps nothing when extension loading fails", async () => {
     // Given
     let hostCreated = false;
@@ -194,6 +218,23 @@ describe("buildReloadedExtensionRuntime", () => {
 });
 
 describe("disposePreviousExtensionRuntime", () => {
+  it("detaches never-settling cleanup after the timeout", async () => {
+    // Given
+    const hanging = new Promise<void>(() => undefined);
+
+    // When
+    const notices = await disposePreviousExtensionRuntime({
+      agent: { dispose: () => hanging },
+      disposeThread: () => Promise.resolve(),
+      host: fakeHost(),
+      timeoutMs: 20,
+    });
+
+    // Then
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("did not settle within 20ms");
+  });
+
   it("disposes everything and reports failures as notices", async () => {
     // Given
     const agent = fakeAgent();

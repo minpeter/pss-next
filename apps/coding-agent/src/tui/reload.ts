@@ -21,6 +21,11 @@ export interface ExtensionRuntimeSwap<
   readonly toolRenderers: ToolRendererMap;
 }
 
+/** Reload result plus an optional module-cache rollback for failures. */
+export type ReloadableExtensions = LoadedConfiguredExtensions & {
+  readonly rollbackModuleCache?: () => void;
+};
+
 /**
  * Build a full replacement extension runtime for `/reload`.
  *
@@ -37,7 +42,7 @@ export async function buildReloadedExtensionRuntime<
   readonly activateHost: (host: Host, agent: Agent) => Promise<void>;
   readonly createAgent: (host: Host) => Promise<Agent>;
   readonly createHost: (loaded: LoadedConfiguredExtensions) => Promise<Host>;
-  readonly loadExtensions: () => Promise<LoadedConfiguredExtensions>;
+  readonly loadExtensions: () => Promise<ReloadableExtensions>;
   readonly mergeCommands: (host: Host) => readonly TuiCommand[];
   readonly mergeToolRenderers: (host: Host) => ToolRendererMap;
   /** Pre-swap validation, e.g. proving migrations accept the stored thread. */
@@ -65,6 +70,9 @@ export async function buildReloadedExtensionRuntime<
       agent === undefined ? Promise.resolve() : agent.dispose(),
       host.dispose(),
     ]);
+    // The live runtime keeps running, so hand it back the CommonJS modules
+    // the failed reload evicted.
+    loaded.rollbackModuleCache?.();
     const cleanupFailures = cleanups.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : []
     );
@@ -83,16 +91,22 @@ export async function buildReloadedExtensionRuntime<
  * are reported as notices instead of failing the reload because the
  * replacement runtime is already live.
  */
+const DEFAULT_PREVIOUS_RUNTIME_CLEANUP_TIMEOUT_MS = 10_000;
+
 export async function disposePreviousExtensionRuntime(options: {
   readonly agent: ReloadableAgent;
   readonly disposeThread: () => Promise<void>;
   readonly host: { dispose(): Promise<void> };
+  /** Bounds extension-controlled cleanup so `/reload` cannot hang on it. */
+  readonly timeoutMs?: number;
 }): Promise<readonly string[]> {
+  const timeoutMs =
+    options.timeoutMs ?? DEFAULT_PREVIOUS_RUNTIME_CLEANUP_TIMEOUT_MS;
   const notices: string[] = [];
   const results = await Promise.allSettled([
-    options.disposeThread(),
-    options.agent.dispose(),
-    options.host.dispose(),
+    bounded(options.disposeThread(), timeoutMs),
+    bounded(options.agent.dispose(), timeoutMs),
+    bounded(options.host.dispose(), timeoutMs),
   ]);
   for (const result of results) {
     if (result.status === "rejected") {
@@ -106,4 +120,29 @@ export async function disposePreviousExtensionRuntime(options: {
     }
   }
   return notices;
+}
+
+function bounded(task: Promise<void>, timeoutMs: number): Promise<void> {
+  // Late settlement is intentionally detached; the replacement runtime is
+  // already live and must not wait on abandoned cleanup.
+  task.catch(() => undefined);
+  return new Promise<void>((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      rejectPromise(
+        new Error(`cleanup did not settle within ${timeoutMs}ms; detached`)
+      );
+    }, timeoutMs);
+    task.then(
+      () => {
+        clearTimeout(timer);
+        resolvePromise();
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        rejectPromise(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+    );
+  });
 }

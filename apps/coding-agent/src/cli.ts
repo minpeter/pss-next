@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { runExecCli } from "./exec-cli";
 import { runExtensionCli } from "./extension-cli";
 import type {
@@ -11,6 +12,8 @@ import {
   resolveCliExtensionTargets,
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
+import { extensionScopePaths } from "./extensions/manager/paths";
+import { beginCommonJsReloadTransaction } from "./extensions/manager/reload-module-graph";
 import { resolveCodingAgentThreadConfig } from "./thread-config";
 import {
   formatThreadInspectionReport,
@@ -163,32 +166,68 @@ async function runTuiCommand({
       return 1;
     }
   }
-  const reloadExtensions = async (): Promise<LoadedConfiguredExtensions> => {
+  const reloadExtensions = async (): Promise<
+    LoadedConfiguredExtensions & { rollbackModuleCache(): void }
+  > => {
     const cacheBust = Date.now().toString(36);
     const targets = await resolveCliExtensionTargets({
       cwd,
       paths: extensionPaths,
     });
     const targetIds = new Set(targets.map((target) => target.id));
-    const reloaded = await loadConfiguredCodingAgentExtensions({
-      cacheBust,
-      cwd,
-      ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
-      home,
-    });
-    return {
-      extensions: mergeCliExtensions(
-        reloaded.extensions,
-        await importCliExtensions({ cacheBust, targets })
-      ),
-      notices: reloaded.notices,
-    };
+    // Evict extension-owned CommonJS modules so cache-busted imports
+    // re-execute helpers; the snapshot restores them if the reload fails.
+    const transaction = beginCommonJsReloadTransaction(
+      await reloadCacheRoots({ cwd, home, targets })
+    );
+    try {
+      const reloaded = await loadConfiguredCodingAgentExtensions({
+        cacheBust,
+        cwd,
+        ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
+        home,
+      });
+      return {
+        extensions: mergeCliExtensions(
+          reloaded.extensions,
+          await importCliExtensions({ cacheBust, targets })
+        ),
+        notices: reloaded.notices,
+        rollbackModuleCache: () => transaction.rollback(),
+      };
+    } catch (error) {
+      transaction.rollback();
+      throw error;
+    }
   };
   return await (
     start ??
     ((loaded: readonly CodingAgentExtensionInput[]) =>
       startTui({ extensions: loaded, reloadExtensions }))
   )(extensions);
+}
+
+async function reloadCacheRoots({
+  cwd,
+  home,
+  targets,
+}: {
+  readonly cwd: string;
+  readonly home: string;
+  readonly targets: readonly { readonly path: string }[];
+}): Promise<readonly string[]> {
+  const roots = [
+    (await extensionScopePaths({ cwd, home, scope: "global" })).installRoot,
+    ...targets.map((target) => dirname(target.path)),
+  ];
+  try {
+    roots.push(
+      (await extensionScopePaths({ cwd, home, scope: "project" })).installRoot
+    );
+  } catch {
+    // Untrusted or malformed project layouts simply contribute no root.
+  }
+  return roots;
 }
 
 function errorMessage(error: unknown): string {

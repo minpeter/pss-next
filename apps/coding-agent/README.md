@@ -217,7 +217,10 @@ restarting the session: extensions are rediscovered (managed installs, local
 modules, and `-e` paths), re-imported past the module cache, and activated
 against a replacement agent while the durable thread keeps its history. The
 swap is fail-safe — if any extension fails to load, configure, or activate,
-the current session keeps running unchanged and the error is shown in chat.
+the current session keeps running unchanged (including its CommonJS module
+cache) and the error is shown in chat. Reload refreshes extension-owned
+files only; dependencies under `node_modules` keep their loaded versions, so
+updating a dependency still requires `pss extension update` or a restart.
 
 ### Inter-extension events
 
