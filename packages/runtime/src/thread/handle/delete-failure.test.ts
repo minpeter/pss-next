@@ -13,6 +13,18 @@ class RejectingDeleteStore extends SpyStore {
   }
 }
 
+class RecoveringDeleteStore extends SpyStore {
+  failDeletes = 1;
+
+  override delete(key: string): Promise<void> {
+    if (this.failDeletes > 0) {
+      this.failDeletes -= 1;
+      return Promise.reject(new Error("delete failed"));
+    }
+    return super.delete(key);
+  }
+}
+
 describe("Agent thread delete failure", () => {
   it("hard-stops the thread handle when persistence deletion fails", async () => {
     const store = new RejectingDeleteStore();
@@ -32,5 +44,26 @@ describe("Agent thread delete failure", () => {
     expect(JSON.stringify(store.threads.get("delete-failure"))).not.toContain(
       "after"
     );
+  });
+
+  it("retries a failed delete and completes once the store recovers", async () => {
+    const store = new RecoveringDeleteStore();
+    const agent = new Agent({
+      host: hostWithThreads(store),
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    });
+    const thread = agent.thread("delete-retry");
+
+    await collect(await thread.send("before"));
+    expect(store.threads.has("delete-retry")).toBe(true);
+
+    // First delete fails and rolls back to killed; the retry succeeds.
+    await expect(thread.delete()).rejects.toThrow("delete failed");
+    await expect(thread.delete()).resolves.toBeUndefined();
+
+    expect(store.threads.has("delete-retry")).toBe(false);
+    await expect(thread.send("after")).rejects.toThrow("Thread killed");
   });
 });
