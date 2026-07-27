@@ -1,3 +1,70 @@
+## @minpeter/pss-runtime@0.3.0-next.4 (next)
+
+### Add the core hooks runtime and installable coding-agent extensions
+
+Replace the legacy runtime plugin pipeline with one typed `AgentHooks`
+boundary for model transforms and tool interception. Stored thread snapshots
+can now run versioned, atomic migrations that persist exactly-once application
+metadata without exposing partial state after callback or commit failures.
+
+Coding-agent extensions can be authored as default-export factories receiving
+`ExtensionAPI`, while static programmatic extensions remain supported. The
+host composes instructions, tools, commands, UI contributions, lifecycle
+callbacks, runtime hooks, and durable thread migrations with source-attributed
+validation errors. Concise `pss.use()`, `pss.on()`, and `pss.provide()` methods
+register control hooks, named event observers, and branded capabilities for
+instructions, tools, commands, migrations, and renderers without restoring
+the legacy plugin runtime. Factory capabilities validate and publish
+atomically after configuration succeeds.
+
+Add `pss extension install`, `list`, `remove`, `update`, `enable`, and
+`disable` for npm, Git, local package, and loose ESM sources at global or
+project scope. Trusted project discovery loads extensions consistently in the
+TUI and headless exec runner. Managed installs validate package boundaries,
+reject symlink and export-path escapes, disable lifecycle scripts, and restore
+the prior package and settings state when installation, update, or trust
+recording fails.
+
+### Add /reload, an inter-extension event bus, and provider observations
+
+The TUI gains a `/reload` command that rebuilds the extension runtime from
+disk without restarting the session. Extensions are rediscovered across
+managed installs, local modules, and `-e` paths, re-imported past the module
+cache, and activated against a replacement agent while the durable thread
+keeps its history. Reload is staged for safety: discovery, configuration,
+validation, and agent construction happen while the previous runtime keeps
+running, the previous runtime is then disposed under a bounded timeout
+before the replacement activates (so old cleanup can never overwrite the
+replacement's extension state), and an activation failure rebuilds a
+runtime from the previous extensions so the session stays usable. Cache
+busting propagates through the extension-owned module graph via a module
+customization hook, including CommonJS helpers and a managed package's own
+modules; CommonJS eviction is transactional and restored when a reload
+fails, and dependency trees under `node_modules` keep their loaded versions
+so repeated reloads do not accumulate duplicate dependency graphs. The
+runtime exports `commitThreadStateMigrations`, which `/reload` uses to run
+and commit reloaded migrations for the stored thread before the swap,
+preserving exactly-once migration semantics; a failed reload also refreshes
+the surviving thread handle so it cannot commit on a stale revision. The
+command is offered only when the host can rediscover extensions, and
+`reload` joins the reserved command names extensions cannot register.
+
+Extension services gain `services.events`, a shared publish/subscribe bus
+for extension-to-extension communication. Payloads are JSON values cloned
+per delivery, delivery is deferred so synchronous handler work cannot block
+the publisher, handlers run under the host timeout/abort boundary, and
+failures are attributed to the subscribing extension without affecting the
+publisher or other subscribers. The `host:` and `provider:` namespaces are
+reserved for host-originated events.
+
+The host now publishes read-only provider HTTP observations on the bus:
+`provider:request`, `provider:response`, and `provider:error`. URLs are
+stripped of credentials, query strings, and fragments, request bodies and
+request headers are never exposed, response headers pass a safelist, and
+transport error messages are scrubbed of URL-like tokens. Observation
+failures never interrupt provider traffic, and both the TUI and headless
+exec wire the observation fetch automatically.
+
 ## @minpeter/pss-runtime@0.3.0-next.3 (next)
 
 ### Move extension composition out of the runtime core

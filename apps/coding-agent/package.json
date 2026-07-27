@@ -1,6 +1,6 @@
 {
   "name": "@minpeter/pss-coding-agent",
-  "version": "0.0.14-next.4",
+  "version": "0.0.14-next.5",
   "description": "Code at the speed of thought",
   "type": "module",
   "engines": {
@@ -79,7 +79,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.14",
     "@earendil-works/pi-tui": "^0.80.10",
-    "@minpeter/opensearch": "0.0.4",
+    "@minpeter/opensearch": "0.1.1",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",
     "ai": "7.0.37",
