@@ -76,6 +76,20 @@ describe("ModelSelectorComponent", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("places the cursor after an initial model query", () => {
+    const { plainLines, selector } = createSelector({
+      currentModelId: "mimo-v2.5-free",
+      initialQuery: "mi",
+      modelIds: ["mimo-v2.5-free", "moonshot-model"],
+    });
+
+    selector.handleInput("m");
+
+    expect(plainLines().find((line) => line.includes("→"))).toContain(
+      "mimo-v2.5-free"
+    );
+  });
+
   it("starts filtered from an initial model query", () => {
     const { onSelect, plainLines, selector } = createSelector({
       currentModelId: "gpt-5",

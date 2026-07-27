@@ -20,7 +20,9 @@ const CACHE_VERSION = 1;
 const CACHE_MAX_BYTES = 262_144;
 const TRAILING_SLASHES_PATTERN = /\/+$/;
 const CACHE_READ_FLAGS =
-  constants.O_RDONLY + constants.O_NONBLOCK + constants.O_NOFOLLOW;
+  constants.O_RDONLY +
+  constants.O_NONBLOCK +
+  (process.platform === "win32" ? 0 : constants.O_NOFOLLOW);
 
 export interface ModelCatalogCacheEntry {
   readonly fetchedAt: number;
@@ -126,8 +128,12 @@ export class ModelCatalogCache {
       modelIds: [...modelIds],
       version: CACHE_VERSION,
     };
+    const serializedPayload = `${JSON.stringify(payload)}\n`;
+    if (Buffer.byteLength(serializedPayload, "utf8") > CACHE_MAX_BYTES) {
+      throw new RangeError("Model catalog cache entry exceeds the size limit");
+    }
     try {
-      await writeFile(temporaryPath, `${JSON.stringify(payload)}\n`, {
+      await writeFile(temporaryPath, serializedPayload, {
         encoding: "utf8",
         flag: "wx",
         mode: 0o600,

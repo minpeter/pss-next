@@ -119,6 +119,23 @@ export function readOpenAICompatibleModelEnv({
         .default(DEFAULT_OPENAI_COMPATIBLE_MODEL_ID),
     },
   });
+  const isExplicitZenFreeTier =
+    env.AI_API_KEY === FREE_TIER_API_KEY &&
+    normalizeBaseURL(env.AI_BASE_URL) === normalizeBaseURL(FREE_TIER_BASE_URL);
+  if (isExplicitZenFreeTier) {
+    const model = runtimeEnv.AI_MODEL?.trim() || FREE_TIER_DEFAULT_MODEL_ID;
+    if (!isFreeTierModelId(model)) {
+      throw new Error(
+        `${MODEL_ENV_VALIDATION_ERROR_PREFIX} AI_MODEL: the OpenCode Zen free tier only supports model ids ending in -free.`
+      );
+    }
+    return {
+      AI_API_KEY: env.AI_API_KEY,
+      AI_BASE_URL: env.AI_BASE_URL,
+      AI_MODEL: model,
+      isFreeTier: true,
+    };
+  }
   return {
     AI_API_KEY: env.AI_API_KEY,
     AI_BASE_URL: env.AI_BASE_URL,
@@ -126,6 +143,11 @@ export function readOpenAICompatibleModelEnv({
     isFreeTier: false,
   };
 }
+
+const TRAILING_SLASHES_PATTERN = /\/+$/;
+
+const normalizeBaseURL = (value: string): string =>
+  value.replace(TRAILING_SLASHES_PATTERN, "");
 
 function isBlank(value: string | undefined): boolean {
   return value === undefined || value.trim().length === 0;

@@ -49,6 +49,17 @@ describe("ModelCatalogCache", () => {
     ).toBe("600");
   });
 
+  it("rejects an oversized catalog before creating a cache file", async () => {
+    const { cache, directory } = await createCache();
+
+    await expect(
+      cache.write("https://provider.example/v1", "secret", [
+        "x".repeat(300_000),
+      ])
+    ).rejects.toThrow("exceeds the size limit");
+    await expect(readdir(directory)).resolves.toEqual([]);
+  });
+
   it("ignores a corrupt cache entry", async () => {
     const { cache, directory } = await createCache();
     const baseURL = "https://provider.example/v1";

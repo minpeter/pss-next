@@ -62,6 +62,29 @@ describe("coding-agent env validation", () => {
     });
   });
 
+  it("recognizes explicit anonymous Zen credentials as the free tier", () => {
+    expect(
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: {
+          AI_API_KEY: FREE_TIER_API_KEY,
+          AI_BASE_URL: `${FREE_TIER_BASE_URL}/`,
+        },
+      })
+    ).toMatchObject({
+      AI_MODEL: FREE_TIER_DEFAULT_MODEL_ID,
+      isFreeTier: true,
+    });
+    expect(() =>
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: {
+          AI_API_KEY: FREE_TIER_API_KEY,
+          AI_BASE_URL: FREE_TIER_BASE_URL,
+          AI_MODEL: "paid-model",
+        },
+      })
+    ).toThrow("only supports model ids ending in -free");
+  });
+
   it("treats blank credentials as unset for the free-tier fallback", () => {
     expect(
       readOpenAICompatibleModelEnv({

@@ -107,7 +107,9 @@ export class ModelSelectorComponent extends Container {
       1,
       0
     );
-    this.#searchInput.setValue(options.initialQuery ?? "");
+    // Input#setValue preserves its old cursor (zero on a fresh Input), so
+    // replay the initial query through normal insertion to place it at end.
+    this.#searchInput.handleInput(options.initialQuery ?? "");
     this.#searchInput.onSubmit = () => this.#confirmSelection();
     this.#searchInput.onEscape = () => this.#cancel();
     this.#rebuildLayout();

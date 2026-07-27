@@ -56,17 +56,23 @@ export interface CodingModelSession {
 }
 
 export function createOpenAICompatibleModelFromEnv({
-  catalogCache,
   fetch,
   providerName,
   runtimeEnv = process.env,
 }: CreateOpenAICompatibleModelFromEnvOptions = {}): LanguageModel {
-  return createCodingModelSessionFromEnv({
-    ...(catalogCache === undefined ? {} : { catalogCache }),
+  // Keep this legacy factory returning the provider's native model instance.
+  // Workflows discover provider serialization hooks from its constructor;
+  // only the interactive session API needs the switchable wrapper.
+  const env = readOpenAICompatibleModelEnv({ runtimeEnv });
+  const provider = createOpenAICompatible({
+    name:
+      providerName ?? (env.isFreeTier ? FREE_TIER_PROVIDER_LABEL : "custom"),
+    apiKey: env.AI_API_KEY,
+    baseURL: env.AI_BASE_URL,
+    includeUsage: true,
     ...(fetch === undefined ? {} : { fetch }),
-    ...(providerName === undefined ? {} : { providerName }),
-    runtimeEnv,
-  }).model;
+  });
+  return provider(env.AI_MODEL);
 }
 
 export function createCodingLanguageModel({

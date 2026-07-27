@@ -1,4 +1,5 @@
 import type { TuiCommand, TuiCommandResult } from "./command";
+import { sanitizeTerminalText } from "./terminal-safety";
 
 export interface CreateModelCommandOptions {
   /** Current model id for markers and messages. */
@@ -53,7 +54,10 @@ async function completeModelArgument(
     return null;
   }
   return matches.map((value) => ({
-    label: value === current ? `${value} ✓` : value,
+    label:
+      value === current
+        ? `${sanitizeTerminalText(value)} ✓`
+        : sanitizeTerminalText(value),
     value,
   }));
 }
