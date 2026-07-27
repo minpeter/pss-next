@@ -159,7 +159,12 @@ export class FooterStatusBar extends Text {
       this.foregroundMessage === null &&
       !this.rightText
     ) {
-      return [];
+      // Keep a stable footer row even while there is no visible status.
+      // Otherwise the footer alternates between zero and one row as a
+      // spinner, tool status, or live token estimate appears/disappears;
+      // once chat fills the viewport that shifts the editor up and down.
+      // Pi's persistent footer has the same stabilising effect.
+      return [this.padLine("", width)];
     }
 
     const contentWidth = Math.max(0, width - 1);
