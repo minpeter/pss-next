@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -209,6 +212,7 @@ describe("createCodingModelSessionFromEnv", () => {
       doGenerate: vi.fn(),
       doStream: vi.fn(),
     });
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -219,7 +223,10 @@ describe("createCodingModelSessionFromEnv", () => {
       );
     try {
       const { createCodingModelSessionFromEnv } = await import("./model");
-      const session = createCodingModelSessionFromEnv({ runtimeEnv });
+      const session = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        runtimeEnv,
+      });
 
       await expect(session.listModelIds()).resolves.toEqual([
         "model-a",
@@ -234,6 +241,7 @@ describe("createCodingModelSessionFromEnv", () => {
       );
     } finally {
       fetchSpy.mockRestore();
+      await rm(directory, { force: true, recursive: true });
     }
   });
 
@@ -251,17 +259,129 @@ describe("createCodingModelSessionFromEnv", () => {
         status: 200,
       })
     );
-    const { createCodingModelSessionFromEnv } = await import("./model");
-    const session = createCodingModelSessionFromEnv({ runtimeEnv, fetch });
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
+    try {
+      const { createCodingModelSessionFromEnv } = await import("./model");
+      const session = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        fetch,
+        runtimeEnv,
+      });
 
-    await expect(session.listModelIds()).resolves.toEqual(["model-a"]);
-    expect(fetch).toHaveBeenCalledWith(
-      "https://llm.test/v1/models",
-      expect.objectContaining({
-        headers: { Authorization: "Bearer ai-token" },
-        signal: expect.any(AbortSignal),
+      await expect(session.listModelIds()).resolves.toEqual(["model-a"]);
+      expect(fetch).toHaveBeenCalledWith(
+        "https://llm.test/v1/models",
+        expect.objectContaining({
+          headers: { Authorization: "Bearer ai-token" },
+          signal: expect.any(AbortSignal),
+        })
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("uses a fresh persisted catalog without another provider request", async () => {
+    providerMock.mockReturnValue({
+      modelId: "model-a",
+      provider: "test",
+      specificationVersion: "v4",
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    });
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
+    const firstFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "model-a" }] }), {
+        status: 200,
       })
     );
+    const offlineFetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockRejectedValue(new Error("network should not be used"));
+    try {
+      const { createCodingModelSessionFromEnv } = await import("./model");
+      const firstSession = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        fetch: firstFetch,
+        runtimeEnv,
+      });
+      await expect(firstSession.listModelIds()).resolves.toEqual(["model-a"]);
+
+      const cachedSession = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        fetch: offlineFetch,
+        runtimeEnv,
+      });
+      await expect(cachedSession.listModelIds()).resolves.toEqual(["model-a"]);
+      expect(firstFetch).toHaveBeenCalledTimes(1);
+      expect(offlineFetch).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("returns a usable stale catalog while refreshing it in the background", async () => {
+    providerMock.mockReturnValue({
+      modelId: "model-a",
+      provider: "test",
+      specificationVersion: "v4",
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    });
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
+    let now = 0;
+    const firstFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "model-old" }] }), {
+        status: 200,
+      })
+    );
+    const refreshFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "model-new" }] }), {
+        status: 200,
+      })
+    );
+    try {
+      const { MODEL_CATALOG_CACHE_TTL_MS, ModelCatalogCache } = await import(
+        "./model-catalog-cache"
+      );
+      const { createCodingModelSessionFromEnv } = await import("./model");
+      const catalogCache = { directory, now: () => now };
+      const initial = createCodingModelSessionFromEnv({
+        catalogCache,
+        fetch: firstFetch,
+        runtimeEnv,
+      });
+      await expect(initial.listModelIds()).resolves.toEqual(["model-old"]);
+
+      now = MODEL_CATALOG_CACHE_TTL_MS;
+      const stale = createCodingModelSessionFromEnv({
+        catalogCache,
+        fetch: refreshFetch,
+        runtimeEnv,
+      });
+      // The stale result is returned without awaiting the refresh request.
+      await expect(stale.listModelIds()).resolves.toEqual(["model-old"]);
+      await vi.waitFor(() => expect(refreshFetch).toHaveBeenCalledTimes(1));
+
+      const cache = new ModelCatalogCache(catalogCache);
+      await vi.waitFor(async () => {
+        await expect(
+          cache.read(runtimeEnv.AI_BASE_URL, runtimeEnv.AI_API_KEY)
+        ).resolves.toMatchObject({
+          modelIds: ["model-new"],
+        });
+      });
+      const refreshed = createCodingModelSessionFromEnv({
+        catalogCache,
+        fetch: vi.fn<typeof globalThis.fetch>(),
+        runtimeEnv,
+      });
+      await expect(refreshed.listModelIds()).resolves.toEqual(["model-new"]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("times out a model catalog request instead of leaving the TUI stuck", async () => {
@@ -286,11 +406,19 @@ describe("createCodingModelSessionFromEnv", () => {
           );
         });
       });
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
     vi.useFakeTimers();
     try {
       const { createCodingModelSessionFromEnv } = await import("./model");
-      const session = createCodingModelSessionFromEnv({ runtimeEnv, fetch });
+      const session = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        fetch,
+        runtimeEnv,
+      });
       const listing = session.listModelIds();
+      // The persistent-cache read is async; wait until it misses and starts
+      // the injected fetch before advancing its timeout timer.
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
       // Register the rejection handler before advancing fake time, otherwise
       // Vitest observes the abort rejection as temporarily unhandled.
       const rejected = expect(listing).rejects.toThrow(
@@ -303,6 +431,7 @@ describe("createCodingModelSessionFromEnv", () => {
       expect(signal?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();
+      await rm(directory, { force: true, recursive: true });
     }
   });
 
@@ -315,6 +444,7 @@ describe("createCodingModelSessionFromEnv", () => {
       doGenerate: vi.fn(),
       doStream: vi.fn(),
     }));
+    const directory = await mkdtemp(join(tmpdir(), "pss-model-catalog-"));
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -329,7 +459,10 @@ describe("createCodingModelSessionFromEnv", () => {
     );
     try {
       const { createCodingModelSessionFromEnv } = await import("./model");
-      const session = createCodingModelSessionFromEnv({ runtimeEnv: {} });
+      const session = createCodingModelSessionFromEnv({
+        catalogCache: { directory },
+        runtimeEnv: {},
+      });
 
       await expect(session.listModelIds()).resolves.toEqual([
         "mimo-v2.5-free",
@@ -344,6 +477,7 @@ describe("createCodingModelSessionFromEnv", () => {
       expect(session.currentModelId()).toBe("deepseek-v4-flash-free");
     } finally {
       fetchSpy.mockRestore();
+      await rm(directory, { force: true, recursive: true });
     }
   });
 });

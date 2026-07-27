@@ -13,8 +13,14 @@ import {
   isFreeTierModelId,
   readOpenAICompatibleModelEnv,
 } from "./env";
+import {
+  ModelCatalogCache,
+  type ModelCatalogCacheOptions,
+} from "./model-catalog-cache";
 
 export interface CreateOpenAICompatibleModelFromEnvOptions {
+  /** Optional persistent catalog-cache root/clock for embedders and tests. */
+  catalogCache?: ModelCatalogCacheOptions;
   /** Custom fetch, e.g. for provider observation. */
   fetch?: typeof globalThis.fetch;
   providerName?: string;
@@ -22,6 +28,8 @@ export interface CreateOpenAICompatibleModelFromEnvOptions {
 }
 
 export interface CreateOpenAICompatibleModelFromDotenvOptions {
+  /** Optional persistent catalog-cache root/clock for embedders and tests. */
+  catalogCache?: ModelCatalogCacheOptions;
   /** Custom fetch, e.g. for provider observation. */
   fetch?: typeof globalThis.fetch;
   override?: boolean;
@@ -48,11 +56,13 @@ export interface CodingModelSession {
 }
 
 export function createOpenAICompatibleModelFromEnv({
+  catalogCache,
   fetch,
   providerName,
   runtimeEnv = process.env,
 }: CreateOpenAICompatibleModelFromEnvOptions = {}): LanguageModel {
   return createCodingModelSessionFromEnv({
+    ...(catalogCache === undefined ? {} : { catalogCache }),
     ...(fetch === undefined ? {} : { fetch }),
     ...(providerName === undefined ? {} : { providerName }),
     runtimeEnv,
@@ -60,6 +70,7 @@ export function createOpenAICompatibleModelFromEnv({
 }
 
 export function createCodingLanguageModel({
+  catalogCache,
   fetch,
   override = true,
   providerName,
@@ -68,6 +79,7 @@ export function createCodingLanguageModel({
   config({ override, quiet });
 
   return createOpenAICompatibleModelFromEnv({
+    ...(catalogCache === undefined ? {} : { catalogCache }),
     ...(fetch === undefined ? {} : { fetch }),
     ...(providerName === undefined ? {} : { providerName }),
   });
@@ -75,6 +87,7 @@ export function createCodingLanguageModel({
 
 /** Like {@link createCodingModelSessionFromEnv}, loading `.env` first. */
 export function createCodingModelSession({
+  catalogCache,
   fetch,
   override = true,
   providerName,
@@ -83,12 +96,14 @@ export function createCodingModelSession({
   config({ override, quiet });
 
   return createCodingModelSessionFromEnv({
+    ...(catalogCache === undefined ? {} : { catalogCache }),
     ...(fetch === undefined ? {} : { fetch }),
     ...(providerName === undefined ? {} : { providerName }),
   });
 }
 
 export function createCodingModelSessionFromEnv({
+  catalogCache,
   fetch,
   providerName,
   runtimeEnv = process.env,
@@ -106,6 +121,36 @@ export function createCodingModelSessionFromEnv({
     ...(fetch === undefined ? {} : { fetch }),
   });
   const switchable = createSwitchableModel(provider(env.AI_MODEL));
+  const persistentCatalogCache = new ModelCatalogCache(catalogCache);
+  const filterAvailableModelIds = (ids: readonly string[]): string[] =>
+    env.isFreeTier ? ids.filter(isFreeTierModelId) : [...ids];
+  let catalogRefresh: Promise<string[]> | undefined;
+  const refreshCatalog = (): Promise<string[]> => {
+    if (catalogRefresh !== undefined) {
+      return catalogRefresh;
+    }
+    catalogRefresh = fetchProviderModelIds(
+      env.AI_BASE_URL,
+      env.AI_API_KEY,
+      fetch ?? globalThis.fetch
+    )
+      .then(async (ids) => {
+        const normalized = uniqueModelIds(ids);
+        // Cache persistence is an availability optimization, never a reason
+        // for an otherwise valid provider catalog request to fail. Do not
+        // retain an empty response: it is often a transient provider outage.
+        if (normalized.length > 0) {
+          await persistentCatalogCache
+            .write(env.AI_BASE_URL, env.AI_API_KEY, normalized)
+            .catch(() => undefined);
+        }
+        return normalized;
+      })
+      .finally(() => {
+        catalogRefresh = undefined;
+      });
+    return catalogRefresh;
+  };
 
   return {
     baseURL: env.AI_BASE_URL,
@@ -113,15 +158,24 @@ export function createCodingModelSessionFromEnv({
     model: switchable.model,
     currentModelId: () => switchable.current().modelId,
     listModelIds: async () => {
-      const ids = await fetchProviderModelIds(
+      const cached = await persistentCatalogCache.read(
         env.AI_BASE_URL,
-        env.AI_API_KEY,
-        fetch ?? globalThis.fetch
+        env.AI_API_KEY
       );
-      // Zen's `/models` includes paid models too, but its anonymous `public`
-      // credential can only use ids ending in `-free`. Keep unavailable
-      // entries out of both `/model` and `/model list`.
-      return env.isFreeTier ? ids.filter(isFreeTierModelId) : ids;
+      if (cached !== undefined && persistentCatalogCache.isFresh(cached)) {
+        return filterAvailableModelIds(cached.modelIds);
+      }
+      if (
+        cached !== undefined &&
+        persistentCatalogCache.isUsableStale(cached)
+      ) {
+        // Keep `/model` responsive while revalidating. A future invocation
+        // sees the refreshed data; a failed background refresh preserves the
+        // last known-good catalog until it reaches its stale limit.
+        refreshCatalog().catch(() => undefined);
+        return filterAvailableModelIds(cached.modelIds);
+      }
+      return filterAvailableModelIds(await refreshCatalog());
     },
     switchModel: (modelId: string) => {
       const trimmed = modelId.trim();
@@ -173,6 +227,10 @@ function createSwitchableModel(initial: ProviderLanguageModel): {
 
 const TRAILING_SLASHES_PATTERN = /\/+$/;
 const MODEL_CATALOG_TIMEOUT_MS = 15_000;
+
+const uniqueModelIds = (modelIds: readonly string[]): string[] => [
+  ...new Set(modelIds),
+];
 
 async function fetchProviderModelIds(
   baseURL: string,
