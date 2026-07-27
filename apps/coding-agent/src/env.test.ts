@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+  FREE_TIER_API_KEY,
+  FREE_TIER_BASE_URL,
+  FREE_TIER_DEFAULT_MODEL_ID,
   formatModelEnvSetupHelp,
   isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
@@ -24,13 +27,42 @@ describe("coding-agent env validation", () => {
       AI_API_KEY: "ai-token",
       AI_BASE_URL: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
       AI_MODEL: DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+      isFreeTier: false,
     });
   });
 
-  it("fails model env validation when the API key is missing", () => {
+  it("falls back to the keyless free tier when nothing is configured", () => {
+    expect(readOpenAICompatibleModelEnv({ runtimeEnv: {} })).toEqual({
+      AI_API_KEY: FREE_TIER_API_KEY,
+      AI_BASE_URL: FREE_TIER_BASE_URL,
+      AI_MODEL: FREE_TIER_DEFAULT_MODEL_ID,
+      isFreeTier: true,
+    });
+  });
+
+  it("keeps an explicit AI_MODEL on the free tier", () => {
+    expect(
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: { AI_MODEL: " deepseek-v4-flash-free " },
+      })
+    ).toMatchObject({
+      AI_MODEL: "deepseek-v4-flash-free",
+      isFreeTier: true,
+    });
+  });
+
+  it("treats blank credentials as unset for the free-tier fallback", () => {
+    expect(
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: { AI_API_KEY: "  ", AI_BASE_URL: "" },
+      })
+    ).toMatchObject({ isFreeTier: true });
+  });
+
+  it("fails model env validation when a base URL is set without an API key", () => {
     expect(() =>
       readOpenAICompatibleModelEnv({
-        runtimeEnv: {},
+        runtimeEnv: { AI_BASE_URL: "https://llm.test/v1" },
       })
     ).toThrow(aiApiKeyPattern);
   });
@@ -65,7 +97,9 @@ describe("coding-agent env validation", () => {
   it("flags model env validation errors for friendly reporting", () => {
     let thrown: unknown;
     try {
-      readOpenAICompatibleModelEnv({ runtimeEnv: {} });
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: { AI_BASE_URL: "https://llm.test/v1" },
+      });
     } catch (error) {
       thrown = error;
     }
@@ -78,7 +112,9 @@ describe("coding-agent env validation", () => {
   it("formats actionable setup help for missing credentials", () => {
     let thrown: unknown;
     try {
-      readOpenAICompatibleModelEnv({ runtimeEnv: {} });
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: { AI_BASE_URL: "https://llm.test/v1" },
+      });
     } catch (error) {
       thrown = error;
     }
@@ -95,6 +131,7 @@ describe("coding-agent env validation", () => {
     expect(help).toContain(
       `AI_MODEL    (default: ${DEFAULT_OPENAI_COMPATIBLE_MODEL_ID})`
     );
+    expect(help).toContain(FREE_TIER_BASE_URL);
     expect(help).toContain("Details: OpenAI-compatible model environment");
     expect(help).toContain("\x1b[1m\x1b[31m");
     expect(help).toContain("\x1b[36m");

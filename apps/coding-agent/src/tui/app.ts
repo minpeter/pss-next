@@ -21,7 +21,7 @@ import {
   createCodingAgentExtensionHost,
 } from "../extensions";
 import { snapshotExtensionState } from "../extensions/state-snapshot";
-import { createCodingLanguageModel } from "../model";
+import { type CodingModelSession, createCodingModelSession } from "../model";
 import {
   createProviderObservationFetch,
   type ProviderObservationEmitter,
@@ -34,6 +34,7 @@ import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createClearCommand, createReloadCommand } from "./command-set";
+import { createModelCommand } from "./model-command";
 import {
   boundedReloadOperation,
   buildReloadedExtensionRuntime,
@@ -63,10 +64,33 @@ const resolveModelSubtitle = (): string | undefined => {
   }
 };
 
+const resolveTuiModel = (
+  override: AgentOptions["model"] | undefined,
+  providerEmitter: ProviderObservationEmitter
+): { model: AgentOptions["model"]; modelSession?: CodingModelSession } => {
+  if (override !== undefined) {
+    return { model: override };
+  }
+  const modelSession = createCodingModelSession({
+    fetch: createProviderObservationFetch(providerEmitter),
+  });
+  return { model: modelSession.model, modelSession };
+};
+
+const modelSubtitleLabel = (
+  modelSession: CodingModelSession | undefined
+): string => {
+  if (modelSession === undefined) {
+    return resolveModelSubtitle() ?? "unknown model";
+  }
+  return `${modelSession.currentModelId()}${modelSession.isFreeTier ? " (free tier)" : ""}`;
+};
+
 export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   const threadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
+  let modelSession: CodingModelSession | undefined;
   let extensionHost = await createCodingAgentExtensionHost(
     options.extensions ?? []
   );
@@ -75,11 +99,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   };
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   try {
-    model =
-      options.model ??
-      createCodingLanguageModel({
-        fetch: createProviderObservationFetch(providerEmitter),
-      });
+    ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
       autoCompaction: threadConfig.autoCompaction,
       extensionHost,
@@ -106,10 +126,31 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     let extensionUiAbort: AbortController | undefined;
 
     const noticeLines: string[] = [];
+    if (modelSession?.isFreeTier) {
+      noticeLines.push(
+        `No AI_API_KEY configured — using the OpenCode Zen free tier (model ${modelSession.currentModelId()}). Free models are rate-limited and may change; set AI_API_KEY to use your own provider.`
+      );
+    }
     // `/reload` is only offered when the entrypoint provided a rediscovery
     // loader; embedded starts without one would advertise a dead command.
+    // `/model` needs the switchable session; a caller-provided model is
+    // opaque, so the selector is not offered then.
+    const activeModelSession = modelSession;
     const builtInCommands = [
       createClearCommand(),
+      ...(activeModelSession === undefined
+        ? []
+        : [
+            createModelCommand({
+              currentModelId: () => activeModelSession.currentModelId(),
+              getSelect: () => extensionUi?.select,
+              listModelIds: () => activeModelSession.listModelIds(),
+              switchModel: (modelId) => {
+                activeModelSession.switchModel(modelId);
+                header.subtitle = buildSubtitle();
+              },
+            }),
+          ]),
       ...(options.reloadExtensions === undefined
         ? []
         : [createReloadCommand()]),
@@ -151,8 +192,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       renderUsageFooter();
     };
 
-    const modelId = resolveModelSubtitle();
     const compactionText = `compaction auto max=${threadConfig.autoCompaction?.maxInputTokens ?? "default"}`;
+    const buildSubtitle = (): string =>
+      `${modelSubtitleLabel(modelSession)}\n${process.cwd()} · thread ${threadConfig.key} · ${compactionText}`;
+    const header = { title: "pss", subtitle: buildSubtitle() };
 
     const tuiConfig: AgentTUIConfig = {
       thread: {
@@ -161,10 +204,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         steer: (input) => thread.steer(input),
       },
       commands: guardExtensionCommands(builtInCommands, extensionHost.commands),
-      header: {
-        title: "pss",
-        subtitle: `${modelId ?? "unknown model"}\n${process.cwd()} · thread ${threadConfig.key} · ${compactionText}`,
-      },
+      header,
       footer,
       onModelUsage: (usage) => {
         usageTracker.addUsage(usage);

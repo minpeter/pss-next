@@ -1045,6 +1045,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    if (commandResult.action.type === "refresh-header") {
+      await config.onCommandAction?.(commandResult.action);
+      updateHeader();
+    }
+
     if (commandResult.message) {
       addSystemMessage(chatContainer, commandResult.message);
     }

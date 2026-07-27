@@ -8,7 +8,10 @@ import type {
  * Local slash-command model for the pss TUI. Mirrors the harness `Command`
  * contract plugsuits used, scoped down to what the interactive session needs.
  */
-export type TuiCommandAction = { type: "new-session" } | { type: "reload" };
+export type TuiCommandAction =
+  | { type: "new-session" }
+  | { type: "refresh-header" }
+  | { type: "reload" };
 
 export interface TuiCommandResult {
   action?: TuiCommandAction;
