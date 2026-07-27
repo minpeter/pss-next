@@ -3,6 +3,7 @@ import {
   Container,
   Editor,
   type EditorTheme,
+  getKeybindings,
   isFocusable,
   isKeyRelease,
   isKeyRepeat,
@@ -304,12 +305,18 @@ export class FooterStatusBar extends Text {
 class ComposerLayer extends Container {
   #content: Component;
   readonly #footer: Component;
+  readonly #afterInput: ((data: string) => void) | undefined;
   #focused = false;
 
-  constructor(content: Component, footer: Component) {
+  constructor(
+    content: Component,
+    footer: Component,
+    afterInput?: (data: string) => void
+  ) {
     super();
     this.#content = content;
     this.#footer = footer;
+    this.#afterInput = afterInput;
     this.#rebuild();
   }
 
@@ -326,6 +333,7 @@ class ComposerLayer extends Container {
 
   handleInput(data: string): void {
     this.#content.handleInput?.(data);
+    this.#afterInput?.(data);
   }
 
   setContent(content: Component): void {
@@ -698,22 +706,30 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     paddingX: 1,
     autocompleteMaxVisible: 8,
   });
+  let autocompleteProvider = createAliasAwareAutocompleteProvider({
+    commands: commandSet.commands,
+    basePath: process.cwd(),
+  });
   const refreshCommandSet = (): void => {
     commandSet = buildTuiCommandSet(config.commands);
-    editor.setAutocompleteProvider(
-      createAliasAwareAutocompleteProvider({
-        commands: commandSet.commands,
-        basePath: process.cwd(),
-      })
-    );
-  };
-  editor.setAutocompleteProvider(
-    createAliasAwareAutocompleteProvider({
+    autocompleteProvider = createAliasAwareAutocompleteProvider({
       commands: commandSet.commands,
       basePath: process.cwd(),
-    })
-  );
-  const composerLayer = new ComposerLayer(editor, footerStatusBar);
+    });
+    editor.setAutocompleteProvider(autocompleteProvider);
+  };
+  editor.setAutocompleteProvider(autocompleteProvider);
+  const composerLayer = new ComposerLayer(editor, footerStatusBar, (data) => {
+    // pi-tui's delete-to-line-start path does not refresh autocomplete. When
+    // it clears the composer, explicitly reset its provider to discard any
+    // highlighted stale completion before Enter can apply it.
+    if (
+      getKeybindings().matches(data, "tui.editor.deleteToLineStart") &&
+      editor.getText().length === 0
+    ) {
+      editor.setAutocompleteProvider(autocompleteProvider);
+    }
+  });
   const composerReservation = new ComposerReservation(composerLayer);
 
   tui.addChild(headerContainer);
