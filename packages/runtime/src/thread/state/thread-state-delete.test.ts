@@ -32,6 +32,17 @@ class DelayedCommitStore extends BaseSpyStore {
   }
 }
 
+class CountingDeleteStore extends BaseSpyStore {
+  deleteCalls = 0;
+  deleteGate?: Promise<void>;
+
+  override async delete(key: string): Promise<void> {
+    this.deleteCalls += 1;
+    await this.deleteGate;
+    await super.delete(key);
+  }
+}
+
 describe("ThreadState deletion", () => {
   it("keeps in-memory state usable when persistence deletion fails", async () => {
     const store = new RejectingDeleteStore();
@@ -46,6 +57,49 @@ describe("ThreadState deletion", () => {
     await state.commit();
 
     expect(store.commits).toHaveLength(2);
+  });
+
+  it("shares one in-flight store delete across concurrent delete calls", async () => {
+    const store = new CountingDeleteStore();
+    const state = new ThreadState({ key: "dedupe-delete", store });
+    state.appendUserInput(userText("before"));
+    await state.commit();
+
+    const gate = createDeferred<void>();
+    store.deleteGate = gate.promise;
+    const first = state.delete();
+    const second = state.delete();
+    gate.resolve();
+    await Promise.all([first, second]);
+
+    expect(store.deleteCalls).toBe(1);
+    expect(loadStored(store, "dedupe-delete")).toBeNull();
+  });
+
+  it("does not let a slow load resurrect deleted state in memory", async () => {
+    const store = new BaseSpyStore();
+    const seed = new ThreadState({ key: "race-load", store });
+    seed.appendUserInput(userText("persisted"));
+    await seed.commit();
+
+    const loadGate = createDeferred<void>();
+    store.loadGate = loadGate.promise;
+    const state = new ThreadState({ key: "race-load", store });
+    const load = state.ensureLoaded();
+    const deletion = state.delete();
+    loadGate.resolve();
+    await deletion;
+    await load;
+
+    // The late-arriving snapshot is discarded, not applied.
+    expect(state.modelSnapshot()).toEqual([]);
+    expect(loadStored(store, "race-load")).toBeNull();
+
+    // The state stays terminal: commits are no-ops.
+    const commitsBefore = store.commits.length;
+    state.appendUserInput(userText("late"));
+    await state.commit();
+    expect(store.commits).toHaveLength(commitsBefore);
   });
 
   it("does not resurrect a thread when delete wins a commit race", async () => {

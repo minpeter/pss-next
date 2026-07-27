@@ -9,11 +9,3 @@ export function errorMessage(error: unknown): string {
 export function threadKilledError(): Error {
   return new Error("Thread killed");
 }
-
-export function threadDeleteInProgressError(): Error {
-  return new Error("Thread delete in progress");
-}
-
-export function threadTerminalError(killed: boolean): Error {
-  return killed ? threadKilledError() : threadDeleteInProgressError();
-}

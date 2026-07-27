@@ -1,43 +1,46 @@
 import { AgentHookRuntime } from "../../agent/core/hook-runtime";
+import type { Fsm } from "../../fsm";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
-import type {
-  QueuedInput,
-  QueuedRuntimeInput,
-  RuntimeInputState,
-} from "../input/runtime-input";
-import type { BufferedAgentTurn } from "../protocol/turn";
+import type { QueuedInput, QueuedRuntimeInput } from "../input/runtime-input";
 import type { ThreadExecutionOptions } from "../runtime/execution";
 import { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
 import {
   type ThreadPersistenceOptions,
   ThreadState,
 } from "../state/thread-state";
+import {
+  createThreadDrainMachine,
+  createThreadLifecycleMachine,
+  createThreadTerminalMachine,
+  createThreadTurnMachine,
+  type ThreadDrainState,
+  type ThreadLifecycleState,
+  type ThreadTerminalState,
+  type ThreadTurnState,
+  turnAbort,
+} from "./agent-thread-machines";
 import { DurableInputRecoveryState } from "./durable-queue-claims";
 
 export interface AgentThreadContext {
-  activeAbort: AbortController | undefined;
-  activeRun: BufferedAgentTurn | undefined;
-  activeRuntimeInput: RuntimeInputState | undefined;
-  deletePromise: Promise<void> | undefined;
-  drainPromise: Promise<void> | undefined;
-  drainRequested: boolean;
+  /** Input-queue drain loop state machine. */
+  readonly drain: Fsm<ThreadDrainState>;
   readonly durableInputRecovery: DurableInputRecoveryState;
   readonly events: ThreadEventDispatcher;
   readonly execution: ThreadExecutionOptions;
+  /** Serializes input admission; concurrency control, not a state. */
   inputAdmissionQueue: Promise<void>;
   readonly inputQueue: QueuedInput[];
-  killed: boolean;
-  killPromise: Promise<void> | undefined;
+  /** Persisted-state load/shutdown state machine. */
+  readonly lifecycle: Fsm<ThreadLifecycleState>;
   readonly model: ModelGenerationOptions;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
-  running: boolean;
-  runToCloseOnKill: BufferedAgentTurn | undefined;
-  shutdownPromise: Promise<void> | undefined;
-  started: boolean;
-  startPromise: Promise<void> | undefined;
   readonly state: ThreadState;
+  /** Kill/delete state machine; anything but `open` is terminal for new work. */
+  readonly terminal: Fsm<ThreadTerminalState>;
   readonly threadKey: string;
+  /** Active-turn state machine. */
+  readonly turn: Fsm<ThreadTurnState>;
 }
 
 export function createAgentThreadContext(
@@ -47,40 +50,29 @@ export function createAgentThreadContext(
 ): AgentThreadContext {
   const hookRuntime = execution.hookRuntime ?? new AgentHookRuntime();
   const resolvedExecution = { ...execution, hookRuntime };
-  const threadModel = model;
   const state = new ThreadState(persistence);
-  let context: AgentThreadContext;
+  const turn = createThreadTurnMachine();
 
-  context = {
-    activeAbort: undefined,
-    activeRun: undefined,
-    activeRuntimeInput: undefined,
-    deletePromise: undefined,
-    drainPromise: undefined,
-    drainRequested: false,
+  return {
+    drain: createThreadDrainMachine(),
     durableInputRecovery: new DurableInputRecoveryState(),
     events: new ThreadEventDispatcher({
       attachmentStore: model.attachmentStore,
       history: () => state.modelSnapshot(),
       hookRuntime,
-      signal: () => context.activeAbort?.signal,
+      signal: () => turnAbort(turn)?.signal,
       threadKey: persistence.key,
     }),
     execution: resolvedExecution,
     inputAdmissionQueue: Promise.resolve(),
     inputQueue: [],
-    killed: false,
-    killPromise: undefined,
-    model: threadModel,
+    lifecycle: createThreadLifecycleMachine(),
+    model,
     pendingOverlays: [],
     pendingRuntimeInputs: [],
-    running: false,
-    runToCloseOnKill: undefined,
-    shutdownPromise: undefined,
-    started: false,
-    startPromise: undefined,
     state,
+    terminal: createThreadTerminalMachine(),
     threadKey: persistence.key,
+    turn,
   };
-  return context;
 }

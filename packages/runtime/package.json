@@ -54,6 +54,11 @@
       "types": "./dist/evals/index.d.ts",
       "import": "./dist/evals/index.js"
     },
+    "./fsm": {
+      "@minpeter/pss-source": "./src/fsm/index.ts",
+      "types": "./dist/fsm/index.d.ts",
+      "import": "./dist/fsm/index.js"
+    },
     "./channel": {
       "@minpeter/pss-source": "./src/channel/index.ts",
       "types": "./dist/channel/index.d.ts",

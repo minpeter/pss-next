@@ -1,23 +1,37 @@
+import { deferred } from "../../internal/deferred";
 import { closeKilledRuntimeInputs } from "../runtime/kill";
 import { threadKilledError } from "../state/thread-errors";
 import type { AgentThreadContext } from "./agent-thread-context";
+import {
+  activeTurnRuntimeInput,
+  turnAbort,
+  turnRunToClose,
+} from "./agent-thread-machines";
 
 export function killAgentThread(context: AgentThreadContext): Promise<void> {
-  if (context.killed) {
-    return context.killPromise ?? Promise.resolve();
+  const current = context.terminal.state;
+  if (current.tag !== "open") {
+    return current.killPromise;
   }
 
-  context.killed = true;
+  const settled = deferred();
+  const killPromise = settled.promise;
+  killPromise.catch(() => undefined);
+  // Transition before any teardown work: aborting the active turn runs
+  // synchronous abort listeners, and re-entrant kill()/#assertOpen() calls
+  // from those listeners must already observe the thread as killed.
+  context.terminal.to({ tag: "killed", killPromise });
+
   const killedError = threadKilledError();
   context.pendingOverlays.length = 0;
   context.pendingRuntimeInputs.length = 0;
-  context.activeAbort?.abort();
+  turnAbort(context.turn)?.abort();
   const immediateClose = closeKilledRuntimeInputs({
-    activeRuntimeInput: context.activeRuntimeInput,
+    activeRuntimeInput: activeTurnRuntimeInput(context.turn),
     executionHost: context.execution.executionHost,
     inputQueue: context.inputQueue,
     message: killedError.message,
-    runToClose: context.runToCloseOnKill ?? context.activeRun,
+    runToClose: turnRunToClose(context.turn),
     threadKey: context.threadKey,
   });
   const admissionClose = context.inputAdmissionQueue.then(() =>
@@ -30,9 +44,9 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
       threadKey: context.threadKey,
     })
   );
-  context.killPromise = Promise.all([immediateClose, admissionClose]).then(
-    () => undefined
+  Promise.all([immediateClose, admissionClose]).then(
+    () => settled.resolve(),
+    settled.reject
   );
-  context.killPromise.catch(() => undefined);
-  return context.killPromise;
+  return killPromise;
 }

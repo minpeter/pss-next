@@ -1,6 +1,7 @@
 import { APICallError, type ModelMessage, RetryError } from "ai";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../../agent/core/agent";
+import { hostWithThreads } from "../../testing/host-with-threads";
 import {
   assistantMessage,
   createCallbackModel,
@@ -10,7 +11,20 @@ import {
   userText,
 } from "../../testing/test-fixtures";
 import { userTextToModelMessage } from "../protocol/mapping";
-import { collect } from "./test-support";
+import type { StoredThread } from "../store/types";
+import { collect, SpyStore } from "./test-support";
+
+class FailingLoadStore extends SpyStore {
+  failLoads = 0;
+
+  override load(key: string): Promise<StoredThread | null> {
+    if (this.failLoads > 0) {
+      this.failLoads -= 1;
+      return Promise.reject(new Error("store offline"));
+    }
+    return super.load(key);
+  }
+}
 
 describe("Agent thread lifecycle", () => {
   it("idle thread.steer starts a new turn after turn-end", async () => {
@@ -172,6 +186,40 @@ describe("Agent thread lifecycle", () => {
     for (const secret of ["request-secret", "response-secret", "url-secret"]) {
       expect(serialized).not.toContain(secret);
     }
+  });
+
+  it("retries the initial load after a failed start", async () => {
+    const store = new FailingLoadStore();
+    store.failLoads = 1;
+    const thread = new Agent({
+      host: hostWithThreads(store),
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    }).thread("retry-load");
+
+    await expect(thread.send("first")).rejects.toThrow("store offline");
+
+    // The load failure is not sticky: the next send reloads and succeeds.
+    const events = await collect(await thread.send("second"));
+    expect(eventTypes(events)).toContain("turn-end");
+  });
+
+  it("deletes a thread whose load keeps failing", async () => {
+    const store = new FailingLoadStore();
+    store.failLoads = Number.POSITIVE_INFINITY;
+    const thread = new Agent({
+      host: hostWithThreads(store),
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    }).thread("delete-after-failed-load");
+
+    await expect(thread.send("first")).rejects.toThrow("store offline");
+
+    // Shutdown must not replay the load failure; delete completes.
+    await expect(thread.delete()).resolves.toBeUndefined();
+    await expect(thread.send("after")).rejects.toThrow("Thread killed");
   });
 
   it("interrupts the active run without aborting queued input", async () => {

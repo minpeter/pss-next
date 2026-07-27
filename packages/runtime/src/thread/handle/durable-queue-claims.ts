@@ -1,5 +1,6 @@
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
 import type { AgentHost } from "../../execution/host/types";
+import { Fsm } from "../../fsm";
 import {
   createRuntimeInputState,
   type QueuedInput,
@@ -14,8 +15,26 @@ import {
   precreateThreadExecutionRun,
 } from "../runtime/execution";
 
+/**
+ * One-shot recovery of orphaned durable input claims:
+ * `pending -> recovering -> recovered`, rolling back to `pending` when the
+ * recovery fails so the next admission retries it.
+ */
+type DurableInputRecoveryPhase =
+  | { readonly tag: "pending" }
+  | { readonly tag: "recovering" }
+  | { readonly tag: "recovered" };
+
 export class DurableInputRecoveryState {
-  recoveredInputClaims = false;
+  readonly machine = new Fsm<DurableInputRecoveryPhase>({
+    initial: { tag: "pending" },
+    name: "durable-input-recovery",
+    transitions: {
+      pending: ["recovering"],
+      recovering: ["recovered", "pending"],
+      recovered: [],
+    },
+  });
 }
 
 export async function recoverThreadDurableInputClaims({
@@ -27,18 +46,19 @@ export async function recoverThreadDurableInputClaims({
   readonly state: DurableInputRecoveryState;
   readonly threadKey: string;
 }): Promise<void> {
-  if (state.recoveredInputClaims) {
+  if (state.machine.state.tag !== "pending") {
     return;
   }
 
-  state.recoveredInputClaims = true;
+  state.machine.to({ tag: "recovering" });
   try {
     await recoverDurableThreadInputs({
       executionHost,
       threadKey,
     });
+    state.machine.to({ tag: "recovered" });
   } catch (error) {
-    state.recoveredInputClaims = false;
+    state.machine.to({ tag: "pending" });
     throw error;
   }
 }

@@ -2,6 +2,7 @@ import type {
   StoredThreadEvent,
   ThreadEventReadOptions,
 } from "../../execution/host/types";
+import { deferred } from "../../internal/deferred";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { AgentInput, UserInput } from "../input/input";
 import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
@@ -9,7 +10,7 @@ import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
 import { readThreadEvents } from "../runtime/thread-event-replay";
-import { threadTerminalError } from "../state/thread-errors";
+import { threadKilledError } from "../state/thread-errors";
 import type {
   ThreadCompactionInput,
   ThreadPersistenceOptions,
@@ -20,6 +21,12 @@ import {
 } from "./agent-thread-context";
 import { drainAgentThreadInputQueue } from "./agent-thread-drain";
 import { killAgentThread } from "./agent-thread-kill";
+import {
+  activeTurnRun,
+  activeTurnRuntimeInput,
+  assertThreadMachineInvariants,
+  turnAbort,
+} from "./agent-thread-machines";
 import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
 import { admitThreadSendInput } from "./durable-queue-send";
 import { addDurableSteeringInput } from "./durable-steering";
@@ -67,8 +74,8 @@ export class AgentThread {
     this.#assertOpen();
 
     return queueThreadNotification(input, options, {
-      activeRun: this.#context.activeRun,
-      activeRuntimeInput: this.#context.activeRuntimeInput,
+      activeRun: activeTurnRun(this.#context.turn),
+      activeRuntimeInput: activeTurnRuntimeInput(this.#context.turn),
       attachmentStore: this.#context.model.attachmentStore,
       drain: () => this.#drainInputQueue(),
       emitObserverEvent: (run, event) =>
@@ -84,8 +91,8 @@ export class AgentThread {
   async steer(input: AgentInput): Promise<AgentTurn> {
     this.#assertOpen();
 
-    const runtimeInput = this.#context.activeRuntimeInput;
-    const run = this.#context.activeRun;
+    const runtimeInput = activeTurnRuntimeInput(this.#context.turn);
+    const run = activeTurnRun(this.#context.turn);
     if (!(runtimeInput && run)) {
       return this.send(input);
     }
@@ -120,25 +127,49 @@ export class AgentThread {
   }
 
   interrupt(): void {
-    this.#context.activeAbort?.abort();
+    turnAbort(this.#context.turn)?.abort();
   }
 
   delete(): Promise<void> {
-    if (!this.#context.deletePromise) {
-      this.#context.deletePromise = this.kill()
-        .then(() => this.#deleteThread())
-        .catch((error: unknown) => {
-          this.#context.deletePromise = undefined;
-          throw error;
-        });
+    const terminal = this.#context.terminal;
+    const current = terminal.state;
+    if (current.tag === "deleting" || current.tag === "deleted") {
+      return current.deletePromise;
     }
-    return this.#context.deletePromise;
+
+    const killPromise = this.kill();
+    const settled = deferred();
+    const deletePromise = settled.promise;
+    // Transition before wiring the continuation so the machine state never
+    // depends on microtask scheduling.
+    terminal.to({ tag: "deleting", deletePromise, killPromise });
+    killPromise
+      .then(() => this.#deleteThread())
+      .then(
+        () => {
+          terminal.toIf("deleting", {
+            tag: "deleted",
+            deletePromise,
+            killPromise,
+          });
+          settled.resolve();
+        },
+        (error: unknown) => {
+          // Roll back to `killed` so the delete can be retried.
+          terminal.toIf("deleting", { tag: "killed", killPromise });
+          settled.reject(error);
+        }
+      );
+    return deletePromise;
   }
 
   async dispose(): Promise<void> {
     const kill = this.kill();
     try {
-      await this.#context.drainPromise;
+      const drainState = this.#context.drain.state;
+      if (drainState.tag === "draining") {
+        await drainState.promise;
+      }
     } finally {
       await kill;
       await this.#shutdown();
@@ -156,8 +187,13 @@ export class AgentThread {
 
     this.#assertOpen();
 
+    // Skip awaiting turn boundaries when the drain loop is running without an
+    // active turn: the boundary events would never be acknowledged.
+    const idleDrainLoop =
+      this.#context.drain.state.tag === "draining" &&
+      this.#context.turn.state.tag !== "active";
     await admitThreadSendInput({
-      awaitBoundaries: !(this.#context.running && !this.#context.activeRun),
+      awaitBoundaries: !idleDrainLoop,
       drain: () => this.#drainInputQueue(),
       events: this.#context.events,
       executionHost: this.#context.execution.executionHost,
@@ -194,18 +230,36 @@ export class AgentThread {
   }
 
   #assertOpen(): void {
-    if (this.#context.killed || this.#context.deletePromise) {
-      throw threadTerminalError(this.#context.killed);
+    if (this.#context.terminal.state.tag !== "open") {
+      throw threadKilledError();
     }
   }
 
   #ensureStarted(): Promise<void> {
-    this.#context.startPromise ??= this.#context.state
-      .ensureLoaded()
-      .then(() => {
-        this.#context.started = true;
-      });
-    return this.#context.startPromise;
+    const lifecycle = this.#context.lifecycle;
+    const current = lifecycle.state;
+    if (current.tag === "starting" || current.tag === "stopping") {
+      return current.promise;
+    }
+    if (current.tag !== "created") {
+      return Promise.resolve();
+    }
+
+    const start = deferred();
+    lifecycle.to({ tag: "starting", promise: start.promise });
+    this.#context.state.ensureLoaded().then(
+      () => {
+        lifecycle.toIf("starting", { tag: "started" });
+        start.resolve();
+      },
+      (error: unknown) => {
+        // A failed load is retryable: return to `created` so the next call
+        // reloads instead of replaying the first failure forever.
+        lifecycle.toIf("starting", { tag: "created" });
+        start.reject(error);
+      }
+    );
+    return start.promise;
   }
 
   async #deleteThread(): Promise<void> {
@@ -214,18 +268,30 @@ export class AgentThread {
   }
 
   async #shutdown(): Promise<void> {
-    if (this.#context.shutdownPromise) {
-      return await this.#context.shutdownPromise;
+    const lifecycle = this.#context.lifecycle;
+    const current = lifecycle.state;
+    if (current.tag === "stopping") {
+      return await current.promise;
     }
-    if (!this.#context.startPromise) {
+    if (current.tag === "created" || current.tag === "stopped") {
       return;
     }
-    this.#context.shutdownPromise = this.#context.startPromise.then(() => {
-      if (!this.#context.started) {
-        return;
-      }
-      this.#context.started = false;
+
+    // A failed start means there is nothing to stop; shutdown (and thus
+    // delete/dispose) must still complete instead of replaying the load
+    // failure.
+    const startSettled =
+      current.tag === "starting"
+        ? current.promise.catch(() => undefined)
+        : Promise.resolve();
+    const stop = deferred();
+    lifecycle.to({ tag: "stopping", promise: stop.promise });
+    // Shutdown is only reachable through kill/delete/dispose.
+    assertThreadMachineInvariants(this.#context);
+    startSettled.then(() => {
+      lifecycle.toIf("stopping", { tag: "stopped" });
+      stop.resolve();
     });
-    return await this.#context.shutdownPromise;
+    return await stop.promise;
   }
 }
