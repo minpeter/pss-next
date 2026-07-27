@@ -1,7 +1,10 @@
 import {
+  type Component,
   Container,
   Editor,
   type EditorTheme,
+  getKeybindings,
+  isFocusable,
   isKeyRelease,
   isKeyRepeat,
   Key,
@@ -34,6 +37,7 @@ import {
   type InputPreprocessResult,
   type InputThread,
 } from "./input-routing";
+import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
@@ -64,6 +68,9 @@ const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
 const CTRL_C_ETX = "\u0003";
 const CTRL_C_EXIT_WINDOW_MS = 500;
+const MODEL_SELECTOR_COMPACT_ROWS = 16;
+const MODEL_SELECTOR_COMPACT_CHROME_ROWS = 4;
+const MODEL_SELECTOR_STANDARD_CHROME_ROWS = 10;
 
 const style = (prefix: string, text: string): string =>
   `${prefix}${text}${ANSI_RESET}`;
@@ -145,7 +152,18 @@ export class FooterStatusBar extends Text {
     if (this.foregroundMessage !== null) {
       return { message: this.foregroundMessage, state: "running" };
     }
-    return this.entries[0];
+    if (this.entries.length === 0) {
+      return;
+    }
+    // The footer has a deliberately fixed one-row height so streaming status
+    // changes cannot move the composer. Retain every status in that one row.
+    return {
+      level: this.entries[0]?.level,
+      message: this.entries.map((entry) => entry.message).join(" · "),
+      state: this.entries.some((entry) => entry.state === "running")
+        ? "running"
+        : "ready",
+    };
   }
 
   render(width: number): string[] {
@@ -158,7 +176,12 @@ export class FooterStatusBar extends Text {
       this.foregroundMessage === null &&
       !this.rightText
     ) {
-      return [];
+      // Keep a stable footer row even while there is no visible status.
+      // Otherwise the footer alternates between zero and one row as a
+      // spinner, tool status, or live token estimate appears/disappears;
+      // once chat fills the viewport that shifts the editor up and down.
+      // Pi's persistent footer has the same stabilising effect.
+      return [this.padLine("", width)];
     }
 
     const contentWidth = Math.max(0, width - 1);
@@ -171,13 +194,6 @@ export class FooterStatusBar extends Text {
     );
     if (leadingLine !== null) {
       lines.push(leadingLine);
-    }
-
-    const remainingEntries =
-      this.foregroundMessage === null ? this.entries.slice(1) : this.entries;
-    for (const entry of remainingEntries) {
-      const left = this.renderLeftEntry(entry, contentWidth);
-      lines.push(this.padLine(` ${left.styled}`, width));
     }
 
     return lines;
@@ -277,6 +293,80 @@ export class FooterStatusBar extends Text {
       return ANSI_YELLOW;
     }
     return ANSI_DIM;
+  }
+}
+
+/**
+ * Bottom-pinned, focus-owning composer. The chat is normal-flow content but
+ * this component is rendered as an overlay, so a streaming Markdown reflow
+ * can never alter the editor's screen row. It forwards focus and input to
+ * whichever component currently occupies the editor slot.
+ */
+class ComposerLayer extends Container {
+  #content: Component;
+  readonly #footer: Component;
+  readonly #afterInput: ((data: string) => void) | undefined;
+  #focused = false;
+
+  constructor(
+    content: Component,
+    footer: Component,
+    afterInput?: (data: string) => void
+  ) {
+    super();
+    this.#content = content;
+    this.#footer = footer;
+    this.#afterInput = afterInput;
+    this.#rebuild();
+  }
+
+  get focused(): boolean {
+    return this.#focused;
+  }
+
+  set focused(value: boolean) {
+    this.#focused = value;
+    if (isFocusable(this.#content)) {
+      this.#content.focused = value;
+    }
+  }
+
+  handleInput(data: string): void {
+    this.#content.handleInput?.(data);
+    this.#afterInput?.(data);
+  }
+
+  setContent(content: Component): void {
+    this.#content = content;
+    if (isFocusable(content)) {
+      content.focused = this.#focused;
+    }
+    this.#rebuild();
+  }
+
+  #rebuild(): void {
+    this.clear();
+    this.addChild(this.#content);
+    this.addChild(this.#footer);
+  }
+}
+
+/** Reserves the overlay's footprint in chat flow so output is never hidden. */
+class ComposerReservation implements Component {
+  readonly #composer: Component;
+
+  constructor(composer: Component) {
+    this.#composer = composer;
+  }
+
+  invalidate(): void {
+    // The composer owns render caches; this reservation is computed fresh.
+  }
+
+  render(width: number): string[] {
+    return Array.from({ length: this.#composer.render(width).length }, () =>
+      " ".repeat(Math.max(0, width))
+    );
   }
 }
 
@@ -524,6 +614,15 @@ export interface AgentTUIConfig {
   commands?: TuiCommand[];
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
+  /**
+   * Data source for the interactive `/model` selector. The picker itself is
+   * rendered by the TUI (pi-style, swapped into the editor slot).
+   */
+  modelSelector?: {
+    currentModelId(): string;
+    listModelIds(): Promise<string[]>;
+    switchModel(modelId: string): void | Promise<void>;
+  };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
   onExtensionUiReady?: (
     createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
@@ -569,15 +668,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const headerContainer = new Container();
   const chatContainer = new Container();
   const overlayContainer = new Container();
-  const editorContainer = new Container();
-  const footerContainer = new Container();
   const footerStatusBar = new FooterStatusBar(tui);
 
   const title = new Text("", 1, 0);
   const help = new Text(
     style(
       ANSI_DIM,
-      "Enter to submit, Shift+Enter for newline, /help for commands, Esc to interrupt, Ctrl+C to clear, Ctrl+C twice to exit"
+      "Enter to submit, Shift+Enter for newline, Esc to interrupt, Ctrl+C to clear, Ctrl+C twice to exit"
     ),
     1,
     0
@@ -609,30 +706,41 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     paddingX: 1,
     autocompleteMaxVisible: 8,
   });
+  let autocompleteProvider = createAliasAwareAutocompleteProvider({
+    commands: commandSet.commands,
+    basePath: process.cwd(),
+  });
   const refreshCommandSet = (): void => {
     commandSet = buildTuiCommandSet(config.commands);
-    editor.setAutocompleteProvider(
-      createAliasAwareAutocompleteProvider({
-        commands: commandSet.commands,
-        basePath: process.cwd(),
-      })
-    );
-  };
-  editor.setAutocompleteProvider(
-    createAliasAwareAutocompleteProvider({
+    autocompleteProvider = createAliasAwareAutocompleteProvider({
       commands: commandSet.commands,
       basePath: process.cwd(),
-    })
-  );
-  editorContainer.addChild(editor);
-  footerContainer.addChild(footerStatusBar);
+    });
+    editor.setAutocompleteProvider(autocompleteProvider);
+  };
+  editor.setAutocompleteProvider(autocompleteProvider);
+  const composerLayer = new ComposerLayer(editor, footerStatusBar, (data) => {
+    // pi-tui's delete-to-line-start path does not refresh autocomplete. When
+    // it clears the composer, explicitly reset its provider to discard any
+    // highlighted stale completion before Enter can apply it.
+    if (
+      getKeybindings().matches(data, "tui.editor.deleteToLineStart") &&
+      editor.getText().length === 0
+    ) {
+      editor.setAutocompleteProvider(autocompleteProvider);
+    }
+  });
+  const composerReservation = new ComposerReservation(composerLayer);
 
   tui.addChild(headerContainer);
   tui.addChild(chatContainer);
   tui.addChild(overlayContainer);
-  tui.addChild(editorContainer);
-  tui.addChild(footerContainer);
-  tui.setFocus(editor);
+  tui.addChild(composerReservation);
+  tui.showOverlay(composerLayer, {
+    anchor: "bottom-left",
+    width: "100%",
+  });
+  tui.setFocus(composerLayer);
 
   let shouldExit = false;
   let activeTurnInterrupted = false;
@@ -640,6 +748,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let inputResolver: null | ((value: string | null) => void) = null;
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
+  let activeModelSelector: ModelSelectorComponent | undefined;
   let commandInputListenerActive = false;
   const extensionUiController = new AbortController();
 
@@ -656,7 +765,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const clearPromptInput = (): void => {
     editor.setText("");
-    tui.setFocus(editor);
+    tui.setFocus(composerLayer);
     tui.requestRender();
   };
 
@@ -709,7 +818,26 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     lastCtrlCPressAt = now;
   };
 
+  const getModelSelectorLayout = (): {
+    compact: boolean;
+    maxVisibleModels: number;
+  } => {
+    const compact = tui.terminal.rows < MODEL_SELECTOR_COMPACT_ROWS;
+    const chromeRows = compact
+      ? MODEL_SELECTOR_COMPACT_CHROME_ROWS
+      : MODEL_SELECTOR_STANDARD_CHROME_ROWS;
+    return {
+      compact,
+      maxVisibleModels: Math.max(1, tui.terminal.rows - chromeRows),
+    };
+  };
+
   const onTerminalResize = (): void => {
+    const selector = activeModelSelector;
+    if (selector !== undefined) {
+      const layout = getModelSelectorLayout();
+      selector.setLayout(layout.maxVisibleModels, layout.compact);
+    }
     tui.requestRender(true);
   };
 
@@ -739,7 +867,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const waitForInput = (): Promise<string | null> =>
     new Promise<string | null>((resolve) => {
       inputResolver = (value: string | null) => resolve(value);
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     });
 
@@ -879,7 +1007,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     activeRun = run;
     activeTurnInterrupted = false;
     editor.disableSubmit = false;
-    tui.setFocus(editor);
+    tui.setFocus(composerLayer);
 
     const turnUsage = {
       inputTokens: 0,
@@ -1022,6 +1150,92 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
+  /**
+   * pi-style model picker: swap the editor out of its slot for the selector
+   * and focus it, so input flows through the TUI's focused-component path
+   * (which filters Kitty key releases and re-renders after every key).
+   * Resolves when the picker settles and the editor is restored.
+   */
+  const showModelSelector = async (initialQuery?: string): Promise<void> => {
+    const selectorConfig = config.modelSelector;
+    if (selectorConfig === undefined) {
+      addSystemMessage(chatContainer, "Model selection is not available.");
+      tui.requestRender();
+      return;
+    }
+
+    showLoader("Loading model catalog...");
+    let modelIds: string[];
+    try {
+      modelIds = await selectorConfig.listModelIds();
+    } catch (error) {
+      clearStatus();
+      addSystemMessage(
+        chatContainer,
+        `Could not list models: ${error instanceof Error ? error.message : String(error)}. Switch directly with /model <model-id>.`
+      );
+      tui.requestRender();
+      return;
+    }
+    clearStatus();
+    if (modelIds.length === 0) {
+      addSystemMessage(
+        chatContainer,
+        "The provider returned an empty model catalog. Switch directly with /model <model-id>."
+      );
+      tui.requestRender();
+      return;
+    }
+
+    const selection = await new Promise<string | undefined>((resolve) => {
+      // Let the selector own ctrl+c/escape while it is mounted.
+      commandInputListenerActive = true;
+      let selector: ModelSelectorComponent | undefined;
+      const settle = (modelId: string | undefined): void => {
+        commandInputListenerActive = false;
+        if (activeModelSelector === selector) {
+          activeModelSelector = undefined;
+        }
+        composerLayer.setContent(editor);
+        tui.setFocus(composerLayer);
+        tui.requestRender();
+        resolve(modelId);
+      };
+      const layout = getModelSelectorLayout();
+      selector = new ModelSelectorComponent({
+        compact: layout.compact,
+        currentModelId: selectorConfig.currentModelId(),
+        ...(initialQuery === undefined ? {} : { initialQuery }),
+        maxVisibleModels: layout.maxVisibleModels,
+        modelIds,
+        onCancel: () => settle(undefined),
+        onSelect: (modelId) => settle(modelId),
+      });
+      activeModelSelector = selector;
+      composerLayer.setContent(selector);
+      tui.setFocus(composerLayer);
+      tui.requestRender();
+    });
+
+    if (selection === undefined) {
+      return;
+    }
+    try {
+      await selectorConfig.switchModel(selection);
+      updateHeader();
+      addSystemMessage(
+        chatContainer,
+        `Model switched to ${selection}. New steps use it immediately.`
+      );
+    } catch (error) {
+      addSystemMessage(
+        chatContainer,
+        `Model switch failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    tui.requestRender();
+  };
+
   const handleCommandResult = async (
     commandResult: TuiCommandResult | null
   ): Promise<void> => {
@@ -1029,7 +1243,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       if (commandResult?.message) {
         addSystemMessage(chatContainer, commandResult.message);
       } else if (commandResult === null) {
-        addSystemMessage(chatContainer, "Unknown command. Try /help");
+        addSystemMessage(chatContainer, "Unknown command.");
       }
       tui.requestRender();
       return;
@@ -1043,6 +1257,16 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (commandResult.action.type === "reload") {
       await handleReloadAction(commandResult);
       return;
+    }
+
+    if (commandResult.action.type === "select-model") {
+      await showModelSelector(commandResult.action.query);
+      return;
+    }
+
+    if (commandResult.action.type === "refresh-header") {
+      await config.onCommandAction?.(commandResult.action);
+      updateHeader();
     }
 
     if (commandResult.message) {
@@ -1143,7 +1367,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       await processUserInputMessage(trimmed, steeringRun);
     } finally {
       editor.disableSubmit = false;
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     }
   };
@@ -1176,7 +1400,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return true;
     } finally {
       editor.disableSubmit = false;
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     }
   };

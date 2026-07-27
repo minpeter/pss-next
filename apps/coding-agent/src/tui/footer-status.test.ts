@@ -5,6 +5,16 @@ import { FooterStatusBar } from "./agent";
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 
 describe("FooterStatusBar", () => {
+  it("reserves one blank row while idle so the editor cannot jump", () => {
+    const footer = new FooterStatusBar({ requestRender: vi.fn() });
+
+    const lines = footer.render(12);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.replace(ANSI_PATTERN, "")).toBe(" ".repeat(12));
+    footer.stop();
+  });
+
   it("does not tick while idle and stops after running entries clear", () => {
     vi.useFakeTimers();
     const requestRender = vi.fn();
