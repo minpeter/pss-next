@@ -4,7 +4,7 @@ import {
   type RuntimeInputState,
   withRuntimeInputWindow,
 } from "../input/runtime-input";
-import type { AgentEvent } from "../protocol/events";
+import { type AgentEvent, isStreamAgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import type { ThreadState } from "../state/thread-state";
 import { drainRuntimeInput } from "./drain";
@@ -48,6 +48,11 @@ export async function emitTurnEvent({
         threadKey,
       });
     });
+    return;
+  }
+
+  if (isStreamAgentEvent(event)) {
+    events.emitStreamEvent(run, event);
     return;
   }
 

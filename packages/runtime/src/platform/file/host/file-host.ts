@@ -1,5 +1,5 @@
+import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { AgentHost, HostScheduler } from "../../../execution";
-import { noopRuntimeDiagnostics } from "../../../plugins/diagnostics";
 import { FileAttachmentStore } from "../storage/file-attachment-store";
 import { FileExecutionStore } from "../storage/file-execution-store";
 import {

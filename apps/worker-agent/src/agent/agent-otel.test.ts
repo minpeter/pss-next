@@ -134,21 +134,56 @@ function testEnv(): WorkerAgentModelEnv {
 }
 
 function chatCompletionResponse(): Response {
-  return new Response(
-    JSON.stringify({
+  const chunks = [
+    {
       choices: [
         {
-          finish_reason: "stop",
-          message: { content: ASSISTANT_REPLY, role: "assistant" },
+          delta: { role: "assistant" },
+          finish_reason: null,
+          index: 0,
         },
       ],
       created: 0,
       id: "chatcmpl-test",
       model: "test-model",
+      object: "chat.completion.chunk",
+    },
+    {
+      choices: [
+        {
+          delta: { content: ASSISTANT_REPLY },
+          finish_reason: null,
+          index: 0,
+        },
+      ],
+      created: 0,
+      id: "chatcmpl-test",
+      model: "test-model",
+      object: "chat.completion.chunk",
+    },
+    {
+      choices: [
+        {
+          delta: {},
+          finish_reason: "stop",
+          index: 0,
+        },
+      ],
+      created: 0,
+      id: "chatcmpl-test",
+      model: "test-model",
+      object: "chat.completion.chunk",
       usage: { completion_tokens: 2, prompt_tokens: 3, total_tokens: 5 },
-    }),
-    { headers: { "content-type": "application/json" }, status: 200 }
-  );
+    },
+  ];
+  const body = `${chunks
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("")}data: [DONE]\n\n`;
+
+  return new Response(body, {
+    headers: { "content-type": "text/event-stream" },
+    status: 200,
+  });
 }
 
 async function drainTurn(

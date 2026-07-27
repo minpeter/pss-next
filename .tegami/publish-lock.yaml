@@ -1,38 +1,52 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Remove legacy negative assertions and orphan probe script\n\nDrop test-only assertions that verify already-removed legacy APIs\n(`createCloudflareAgentsHost`, `PSS_SESSION_*` env aliases, object-style\nplugin pipeline, legacy `llm`/`description`/`sessions` option fields) do not\nexist. The APIs themselves were removed in prior releases; these negative\nchecks no longer guard a live migration boundary.\n\nAlso delete `scripts/probe-cache-stable-response-shape.mts`, a one-off\ninvestigation script not referenced by any npm script or test.\n\nNo API or behavior change.\n"
-    filename: 2026-07-19-remove-legacy-test-assertions.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add hashline edit diffs to the coding-agent TUI\n\nThe coding agent now renders anchored `edit_file` results as sorted,\nsenpi-style word diffs with faint changed regions, stronger intra-token\nhighlights, and dim context rows for unchanged lines.\n\nThe TUI modules are organized by code flow under `src/tui/`, and read/diff\nrendering now displays terminal control characters as safe visible\nplaceholders instead of forwarding them to the terminal.\n"
+    filename: 2026-07-23-coding-agent-tui-hashline-diff.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: minor\n---\n\n## Add the app-owned channel adapter contract\n\nExpose `@minpeter/pss-runtime/channel` with typed inbound channel messages and\nassistant text deliveries. Apps retain ownership of provider mapping, the\n`Agent -> Thread -> Turn -> events()` control flow, and outbound delivery.\n\n`projectChannelAssistantDelivery(event)` projects only non-empty\n`assistant-output` events. The runtime does not add provider adapters or own a\nchannel loop.\n"
-    filename: 2026-07-19-channel-adapter-contract.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add the core hooks runtime and installable coding-agent extensions\n\nReplace the legacy runtime plugin pipeline with one typed `AgentHooks`\nboundary for model transforms and tool interception. Stored thread snapshots\ncan now run versioned, atomic migrations that persist exactly-once application\nmetadata without exposing partial state after callback or commit failures.\n\nCoding-agent extensions can be authored as default-export factories receiving\n`ExtensionAPI`, while static programmatic extensions remain supported. The\nhost composes instructions, tools, commands, UI contributions, lifecycle\ncallbacks, runtime hooks, and durable thread migrations with source-attributed\nvalidation errors. Concise `pss.use()`, `pss.on()`, and `pss.provide()` methods\nregister control hooks, named event observers, and branded capabilities for\ninstructions, tools, commands, migrations, and renderers without restoring\nthe legacy plugin runtime. Factory capabilities validate and publish\natomically after configuration succeeds.\n\nAdd `pss extension install`, `list`, `remove`, `update`, `enable`, and\n`disable` for npm, Git, local package, and loose ESM sources at global or\nproject scope. Trusted project discovery loads extensions consistently in the\nTUI and headless exec runner. Managed installs validate package boundaries,\nreject symlink and export-path escapes, disable lifecycle scripts, and restore\nthe prior package and settings state when installation, update, or trust\nrecording fails.\n"
+    filename: 2026-07-24-core-hooks-extension-host.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: minor\n---\n\n## Inspect durable turn lifecycle by run ID\n\nExpose a stable optional `AgentTurn.runId` for durable work accepted by an\nexecution host. Precreate queued user-turn runs after durable input admission,\ncarry the same run through execution and checkpoints, and bind resumed\nnotifications to the run ID returned by `dispatchAgentNotification`.\n\nAdd read-only `inspectDurableTurn(source, runId)` to the existing `./execution`\nsubpath. Recorded runs report status, thread key, checkpoint version, and the\nlatest checkpoint, with explicit unsupported, unknown-run, and no-checkpoint\nstates.\n\nMake thread shutdown await durable cancellation of queued, active, and\nadmission-racing runs while preserving completed, failed, recovery, and already\ncancelled terminal statuses.\n"
-    filename: 2026-07-19-durable-execution-inspection.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add /reload, an inter-extension event bus, and provider observations\n\nThe TUI gains a `/reload` command that rebuilds the extension runtime from\ndisk without restarting the session. Extensions are rediscovered across\nmanaged installs, local modules, and `-e` paths, re-imported past the module\ncache, and activated against a replacement agent while the durable thread\nkeeps its history. Reload is staged for safety: discovery, configuration,\nvalidation, and agent construction happen while the previous runtime keeps\nrunning, the previous runtime is then disposed under a bounded timeout\nbefore the replacement activates (so old cleanup can never overwrite the\nreplacement's extension state), and an activation failure rebuilds a\nruntime from the previous extensions so the session stays usable. Cache\nbusting propagates through the extension-owned module graph via a module\ncustomization hook, including CommonJS helpers and a managed package's own\nmodules; CommonJS eviction is transactional and restored when a reload\nfails, and dependency trees under `node_modules` keep their loaded versions\nso repeated reloads do not accumulate duplicate dependency graphs. The\nruntime exports `commitThreadStateMigrations`, which `/reload` uses to run\nand commit reloaded migrations for the stored thread before the swap,\npreserving exactly-once migration semantics; a failed reload also refreshes\nthe surviving thread handle so it cannot commit on a stale revision. The\ncommand is offered only when the host can rediscover extensions, and\n`reload` joins the reserved command names extensions cannot register.\n\nExtension services gain `services.events`, a shared publish/subscribe bus\nfor extension-to-extension communication. Payloads are JSON values cloned\nper delivery, delivery is deferred so synchronous handler work cannot block\nthe publisher, handlers run under the host timeout/abort boundary, and\nfailures are attributed to the subscribing extension without affecting the\npublisher or other subscribers. The `host:` and `provider:` namespaces are\nreserved for host-originated events.\n\nThe host now publishes read-only provider HTTP observations on the bus:\n`provider:request`, `provider:response`, and `provider:error`. URLs are\nstripped of credentials, query strings, and fragments, request bodies and\nrequest headers are never exposed, response headers pass a safelist, and\ntransport error messages are scrubbed of URL-like tokens. Observation\nfailures never interrupt provider traffic, and both the TUI and headless\nexec wire the observation fetch automatically.\n"
+    filename: 2026-07-26-extension-runtime-surface.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: minor\n---\n\n## Add OpenTelemetry turn tracing\n\nAdd the `@minpeter/pss-runtime/otel` subpath with `traceAgentTurn()` for one\nturn and `openTelemetry()` for agent-wide instrumentation. Record turn, step,\nand tool spans plus metadata-only runtime events through\n`@opentelemetry/api`, leaving SDK and exporter configuration to applications.\n\nExpose general `AgentOptions.instrumentations` hooks for send, steer, and\nresume operations. Wrapped turns preserve single-consumption and pass through\nevery original event, including model-usage telemetry, while payload summaries\navoid raw content and do not invoke `toJSON()`.\n"
-    filename: 2026-07-19-otel-trace-adapter.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Load local extensions without installing\n\nLoose extension modules now load automatically from\n`~/.pss/extensions/<name>.<ts|mts|js|mjs>` and\n`~/.pss/extensions/<name>/index.*`, plus the project-scoped\n`<project>/.pss/extensions/` once the project is trusted. TypeScript modules\nrun directly through Node's native type stripping, so authoring an extension\nneeds no packaging or build step. File and directory names become the stable\nextension id and must match `[a-z0-9][a-z0-9._-]*`; symbolic links and invalid\nnames are skipped with startup notices instead of failing startup.\n\nManaged installs keep precedence: a local module whose id collides with an\ninstalled extension is skipped with a notice, and project-local modules\noverride global-local modules with the same id. Untrusted projects that\ncontain loose extension modules surface the existing blocked-extensions\nnotice.\n\nAdd a repeatable `-e`/`--extension <path>` flag to the TUI and `pss exec` that\nloads a module file or index directory for the current run only, without\ntouching settings. CLI extensions are an explicit user action, so they load\nwithout trust gating and take precedence over configured extensions with the\nsame id. Invalid paths, non-module files, duplicate ids, and missing index\nmodules fail fast with actionable errors before the session starts.\n"
+    filename: 2026-07-26-local-cli-extensions.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Delegate web tool providers to OpenSearch instead of gating on TinyFish\n\n`createCodingAgentTools()` no longer gates `web_search`/`web_fetch` behind\n`TINYFISH_API_KEY`. Provider selection is delegated to\n`@minpeter/opensearch`, which resolves keyed engines (TinyFish, Exa, Brave,\nTavily, ...) from the environment and always has keyless fallbacks such as\nDuckDuckGo search and local fetch, so the tools register whenever\n`webToolsAvailability` is not `disabled`.\n\nThe now-dead missing-key surface is removed: `WEB_TOOLS_DISABLED_MESSAGE`,\n`CodingAgentWebToolsUnavailableError`, and the `onWebToolsDisabled` option are\ngone, and the TUI no longer emits a startup notice for a missing key. The\n`webToolsAvailability` type and the `pss exec --web-tools` flag keep accepting\n`disabled|optional|required` (`optional` and `required` now behave the same),\nand `pss exec` still defaults to `disabled`.\n"
+    filename: 2026-07-27-opensearch-keyless-web-tools.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-07-19-remove-legacy-test-assertions.md
+      - 2026-07-23-coding-agent-tui-hashline-diff.md
+      - 2026-07-24-core-hooks-extension-host.md
+      - 2026-07-26-extension-runtime-surface.md
+      - 2026-07-26-local-cli-extensions.md
+      - 2026-07-27-opensearch-keyless-web-tools.md
     id: npm:@minpeter/pss-coding-agent
     updated: true
+  - id: npm:@minpeter/pss-benchmark-compaction-score
+    updated: false
+  - id: npm:@minpeter/pss-benchmark-nextjs
+    updated: false
+  - id: npm:@minpeter/pss-bench-shared
+    updated: false
   - changelogIds:
-      - 2026-07-19-channel-adapter-contract.md
-      - 2026-07-19-durable-execution-inspection.md
-      - 2026-07-19-otel-trace-adapter.md
-      - 2026-07-19-remove-legacy-test-assertions.md
+      - 2026-07-24-core-hooks-extension-host.md
+      - 2026-07-26-extension-runtime-surface.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
+  - id: npm:@minpeter/pss-benchmark-compaction-score
+  - id: npm:@minpeter/pss-benchmark-nextjs
+  - id: npm:@minpeter/pss-bench-shared
   - distTag: next
     id: npm:@minpeter/pss-runtime
   - id: npm:@minpeter/pss-worker-agent
   - id: npm:@minpeter/pss-example-background-subagent
   - id: npm:@minpeter/pss-example-basic
   - id: npm:@minpeter/pss-example-evals
+  - id: npm:@minpeter/pss-example-hooks
   - id: npm:@minpeter/pss-example-local-file-agent
-  - id: npm:@minpeter/pss-example-plugin
   - id: npm:@minpeter/pss-example-sync-subagent
   - id: npm:@minpeter/pss-runtime-edge-image-qa

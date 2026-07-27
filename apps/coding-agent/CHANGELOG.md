@@ -1,3 +1,175 @@
+## @minpeter/pss-coding-agent@0.0.14-next.5 (next)
+
+### Add hashline edit diffs to the coding-agent TUI
+
+The coding agent now renders anchored `edit_file` results as sorted,
+senpi-style word diffs with faint changed regions, stronger intra-token
+highlights, and dim context rows for unchanged lines.
+
+The TUI modules are organized by code flow under `src/tui/`, and read/diff
+rendering now displays terminal control characters as safe visible
+placeholders instead of forwarding them to the terminal.
+
+### Add the core hooks runtime and installable coding-agent extensions
+
+Replace the legacy runtime plugin pipeline with one typed `AgentHooks`
+boundary for model transforms and tool interception. Stored thread snapshots
+can now run versioned, atomic migrations that persist exactly-once application
+metadata without exposing partial state after callback or commit failures.
+
+Coding-agent extensions can be authored as default-export factories receiving
+`ExtensionAPI`, while static programmatic extensions remain supported. The
+host composes instructions, tools, commands, UI contributions, lifecycle
+callbacks, runtime hooks, and durable thread migrations with source-attributed
+validation errors. Concise `pss.use()`, `pss.on()`, and `pss.provide()` methods
+register control hooks, named event observers, and branded capabilities for
+instructions, tools, commands, migrations, and renderers without restoring
+the legacy plugin runtime. Factory capabilities validate and publish
+atomically after configuration succeeds.
+
+Add `pss extension install`, `list`, `remove`, `update`, `enable`, and
+`disable` for npm, Git, local package, and loose ESM sources at global or
+project scope. Trusted project discovery loads extensions consistently in the
+TUI and headless exec runner. Managed installs validate package boundaries,
+reject symlink and export-path escapes, disable lifecycle scripts, and restore
+the prior package and settings state when installation, update, or trust
+recording fails.
+
+### Add /reload, an inter-extension event bus, and provider observations
+
+The TUI gains a `/reload` command that rebuilds the extension runtime from
+disk without restarting the session. Extensions are rediscovered across
+managed installs, local modules, and `-e` paths, re-imported past the module
+cache, and activated against a replacement agent while the durable thread
+keeps its history. Reload is staged for safety: discovery, configuration,
+validation, and agent construction happen while the previous runtime keeps
+running, the previous runtime is then disposed under a bounded timeout
+before the replacement activates (so old cleanup can never overwrite the
+replacement's extension state), and an activation failure rebuilds a
+runtime from the previous extensions so the session stays usable. Cache
+busting propagates through the extension-owned module graph via a module
+customization hook, including CommonJS helpers and a managed package's own
+modules; CommonJS eviction is transactional and restored when a reload
+fails, and dependency trees under `node_modules` keep their loaded versions
+so repeated reloads do not accumulate duplicate dependency graphs. The
+runtime exports `commitThreadStateMigrations`, which `/reload` uses to run
+and commit reloaded migrations for the stored thread before the swap,
+preserving exactly-once migration semantics; a failed reload also refreshes
+the surviving thread handle so it cannot commit on a stale revision. The
+command is offered only when the host can rediscover extensions, and
+`reload` joins the reserved command names extensions cannot register.
+
+Extension services gain `services.events`, a shared publish/subscribe bus
+for extension-to-extension communication. Payloads are JSON values cloned
+per delivery, delivery is deferred so synchronous handler work cannot block
+the publisher, handlers run under the host timeout/abort boundary, and
+failures are attributed to the subscribing extension without affecting the
+publisher or other subscribers. The `host:` and `provider:` namespaces are
+reserved for host-originated events.
+
+The host now publishes read-only provider HTTP observations on the bus:
+`provider:request`, `provider:response`, and `provider:error`. URLs are
+stripped of credentials, query strings, and fragments, request bodies and
+request headers are never exposed, response headers pass a safelist, and
+transport error messages are scrubbed of URL-like tokens. Observation
+failures never interrupt provider traffic, and both the TUI and headless
+exec wire the observation fetch automatically.
+
+### Load local extensions without installing
+
+Loose extension modules now load automatically from
+`~/.pss/extensions/<name>.<ts|mts|js|mjs>` and
+`~/.pss/extensions/<name>/index.*`, plus the project-scoped
+`<project>/.pss/extensions/` once the project is trusted. TypeScript modules
+run directly through Node's native type stripping, so authoring an extension
+needs no packaging or build step. File and directory names become the stable
+extension id and must match `[a-z0-9][a-z0-9._-]*`; symbolic links and invalid
+names are skipped with startup notices instead of failing startup.
+
+Managed installs keep precedence: a local module whose id collides with an
+installed extension is skipped with a notice, and project-local modules
+override global-local modules with the same id. Untrusted projects that
+contain loose extension modules surface the existing blocked-extensions
+notice.
+
+Add a repeatable `-e`/`--extension <path>` flag to the TUI and `pss exec` that
+loads a module file or index directory for the current run only, without
+touching settings. CLI extensions are an explicit user action, so they load
+without trust gating and take precedence over configured extensions with the
+same id. Invalid paths, non-module files, duplicate ids, and missing index
+modules fail fast with actionable errors before the session starts.
+
+### Delegate web tool providers to OpenSearch instead of gating on TinyFish
+
+`createCodingAgentTools()` no longer gates `web_search`/`web_fetch` behind
+`TINYFISH_API_KEY`. Provider selection is delegated to
+`@minpeter/opensearch`, which resolves keyed engines (TinyFish, Exa, Brave,
+Tavily, ...) from the environment and always has keyless fallbacks such as
+DuckDuckGo search and local fetch, so the tools register whenever
+`webToolsAvailability` is not `disabled`.
+
+The now-dead missing-key surface is removed: `WEB_TOOLS_DISABLED_MESSAGE`,
+`CodingAgentWebToolsUnavailableError`, and the `onWebToolsDisabled` option are
+gone, and the TUI no longer emits a startup notice for a missing key. The
+`webToolsAvailability` type and the `pss exec --web-tools` flag keep accepting
+`disabled|optional|required` (`optional` and `required` now behave the same),
+and `pss exec` still defaults to `disabled`.
+
+## @minpeter/pss-coding-agent@0.0.14-next.4 (next)
+
+### Add workspace coding tools and the headless `pss exec` runner
+
+The coding agent now ships a workspace tool set shared by the TUI and a new
+headless runner: `read_file`, `glob_files`, `grep_files`, `edit_file`
+(hashline-anchored with stale-hash guards), `write_file`, `delete_file`, and
+`shell_execute`. The file tools are confined to the workspace — path and
+symlink escapes are rejected — and writes are atomic with the target
+permissions applied from the outset. `shell_execute` is not a sandbox:
+commands run with the user's permissions, but AI provider API keys are
+withheld from the child environment.
+
+`pss exec` runs one headless coding task for CI, benchmarks, and scripts. It
+streams JSONL events (`metadata`, `agent_event`, `result`) to stdout and
+exits 0 only when the task completes, with `--workspace`, exactly one of
+`--prompt`/`--prompt-file`/`--stdin`, plus `--model`, `--base-url`,
+`--timeout-seconds`, `--web-tools`, and `--result-file`. A `.env` next to the
+working directory is loaded automatically.
+
+Both surfaces share one production agent factory, `createCodingAgent`: the
+workspace tools are always included and win name collisions, while a custom
+`tools` option replaces only the optional web tools.
+
+## @minpeter/pss-coding-agent@0.0.14-next.3 (next)
+
+### Add update notices and the `pss update` command
+
+The TUI now checks for updates without blocking startup: a cached registry
+result in `~/.pss/update-check.json` (24h TTL, written atomically) is read
+before the first render, one dim scrollback line announces a newer version
+when present, and a stale cache refreshes in the background after the first
+render so the startup path performs no network I/O. The version and channel
+(`latest` or `next`) are baked at build time, checks skip dev/source runs,
+and `PSS_DISABLE_UPDATE_CHECK=1` opts out.
+
+`pss update` re-checks the npm registry's dist-tags and installs the
+exact pinned version through the detected package manager. Channels follow
+the installed version: stable installs track `latest`, and any prerelease
+tracks its own dist-tag (`next`, `beta`, `canary`, or any published tag),
+with explicit `--channel <tag>` moves allowed toward stable or across
+prerelease channels and refused from stable to prerelease. Package managers
+(pnpm/npm/bun/yarn today) are described in a single descriptor registry —
+detection patterns, probes, and install arguments — so new managers are one
+data entry. dlx/npx/bunx one-off runs and unknown layouts are refused with
+manual instructions. `pss update --check` prints the current version,
+channel, install method, and the exact command without changing anything.
+
+With `PSS_AUTO_UPDATE=1`, an in-channel, same-major update on a
+confidently detected global install is installed automatically after the TUI
+exits — never during a session and never as a channel switch.
+
+The TUI web-tools availability warning now renders through the same dim
+scrollback seam instead of a pre-start `console.warn`.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.2 (next)
 
 ### Remove legacy negative assertions and orphan probe script

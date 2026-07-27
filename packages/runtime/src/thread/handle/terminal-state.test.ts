@@ -1,7 +1,6 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "../../agent/core/agent";
-import { definePlugin } from "../../plugins/api";
 import { hostWithThreads } from "../../testing/host-with-threads";
 import {
   assistantMessage,
@@ -70,38 +69,34 @@ describe("Agent thread terminal state", () => {
     ]);
   });
 
-  it("closes the active run when a disposed thread has a pending terminal event plugin", async () => {
-    const terminalPluginStarted = createDeferred();
+  it("closes the active run when a disposed thread has a pending model-step hook", async () => {
+    const modelStepHookStarted = createDeferred();
     const agent = await createAgent({
-      plugins: [
-        definePlugin((pss) => {
-          pss.on("turn.end", () => {
-            terminalPluginStarted.resolve();
-            return new Promise<never>(() => undefined);
-          });
-        }),
-      ],
+      hooks: {
+        transformModelStep: () => {
+          modelStepHookStarted.resolve();
+          return new Promise<never>(() => undefined);
+        },
+      },
       model: createCallbackModel(() =>
         Promise.resolve([assistantMessage("DONE")])
       ),
     });
-    const thread = agent.thread("kill-pending-terminal-event");
+    const thread = agent.thread("kill-pending-model-step-hook");
     const collecting = collect(await thread.send("hello"));
-    await terminalPluginStarted.promise;
+    await modelStepHookStarted.promise;
 
     thread.dispose();
 
     const events = await withShortTimeout(collecting);
     if (events === timeoutMarker) {
-      throw new Error("thread.dispose() did not close the terminal event run");
+      throw new Error("thread.dispose() did not close the model-step hook run");
     }
     expect(eventTypes(events)).toEqual([
       "user-input",
       "turn-start",
       "step-start",
       "model-usage",
-      "assistant-output",
-      "step-end",
       "turn-error",
     ]);
   });

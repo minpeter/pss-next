@@ -58,6 +58,19 @@ function agentEventVariants(): readonly AgentEvent[] {
     { type: "turn-start" },
     { type: "turn-abort" },
     { message: "model unavailable", type: "turn-error" },
+    {
+      error: {
+        category: "permission",
+        correlationIds: [
+          { source: "x-request-id", value: "request-roundtrip" },
+        ],
+        observedRetryable: false,
+        status: 403,
+        version: 1,
+      },
+      message: "access denied",
+      type: "turn-error",
+    },
     { type: "turn-end" },
     { type: "step-start" },
     {

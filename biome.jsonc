@@ -1,9 +1,9 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "root": true,
   "extends": ["ultracite/biome/core"],
   "files": {
-    "includes": ["**/*", "!!**/.omo", "!!**/.omx"]
+    "includes": ["**/*", "!!**/.omo", "!!**/.senpi"]
   },
   "assist": {
     "actions": {

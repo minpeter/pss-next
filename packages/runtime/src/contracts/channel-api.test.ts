@@ -41,6 +41,29 @@ describe("runtime channel subpath", () => {
     ).toEqual({ text: " visible reply ", type: "assistant-text" });
   });
 
+  it("never projects ephemeral stream deltas to channel delivery", () => {
+    const streamEvents = [
+      { text: "hel", type: "assistant-output-delta" },
+      { text: "lo world", type: "assistant-output-delta" },
+      { text: "thinking", type: "assistant-reasoning-delta" },
+      {
+        toolCallId: "call-1",
+        toolName: "weather",
+        type: "tool-call-input-start",
+      },
+      {
+        inputTextDelta: '{"city":"Seoul"}',
+        toolCallId: "call-1",
+        type: "tool-call-input-delta",
+      },
+      { toolCallId: "call-1", type: "tool-call-input-end" },
+    ] satisfies readonly AgentEvent[];
+
+    expect(streamEvents.map(projectChannelAssistantDelivery)).toEqual(
+      streamEvents.map(() => undefined)
+    );
+  });
+
   it("ignores empty assistant output and every non-output event", () => {
     const ignoredEvents = [
       { type: "turn-start" },

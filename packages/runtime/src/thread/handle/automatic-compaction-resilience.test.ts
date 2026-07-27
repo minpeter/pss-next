@@ -15,6 +15,7 @@ import { userTextToModelMessage } from "../protocol/mapping";
 import {
   agentWithAutoCompaction,
   storedAssistantOutput,
+  tokenCompactionPolicy,
   waitForModelCalls,
 } from "./automatic-compaction.test-support";
 import {
@@ -37,7 +38,7 @@ describe("Agent thread automatic compaction resilience", () => {
     ]);
     const agent = agentWithAutoCompaction({
       ...model,
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
     });
     const thread = agent.thread("tool-tail");
@@ -75,7 +76,7 @@ describe("Agent thread automatic compaction resilience", () => {
     const store = new SpyStore();
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;
@@ -112,7 +113,7 @@ describe("Agent thread automatic compaction resilience", () => {
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -162,7 +163,7 @@ describe("Agent thread automatic compaction resilience", () => {
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -209,7 +210,7 @@ describe("Agent thread automatic compaction resilience", () => {
     const staleSummaryRelease = createDeferred();
     let calls = 0;
     const agent = agentWithAutoCompaction({
-      autoCompaction: { minMessages: 4, retainMessages: 2 },
+      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(async () => {
         calls += 1;

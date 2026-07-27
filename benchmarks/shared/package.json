@@ -1,0 +1,19 @@
+{
+  "name": "@minpeter/pss-bench-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./check-scripts": "./src/check-scripts.mjs",
+    "./config": "./src/config.mjs",
+    "./lock": "./src/lock.mjs",
+    "./pack-agent": "./src/pack-agent.mjs",
+    "./score-cli": "./src/score-cli.mjs",
+    "./scoring": "./src/scoring.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "pnpm build"
+  }
+}

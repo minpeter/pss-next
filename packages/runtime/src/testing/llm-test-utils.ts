@@ -17,10 +17,30 @@ const { generateTextMock } = vi.hoisted(() => ({
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
+  const generateText = (...args: unknown[]) =>
+    Promise.resolve(generateTextMock(...args)).then((result) => ({
+      content: [],
+      ...result,
+    }));
 
   return {
     ...actual,
-    generateText: generateTextMock,
+    generateText,
+    streamText: (...args: unknown[]) => {
+      const result = generateText(...args);
+      return {
+        finalStep: result.then((value) => value.finalStep),
+        finishReason: result.then((value) => value.finishReason),
+        response: result.then((value) => value.response),
+        responseMessages: result.then((value) => value.responseMessages),
+        stream: {
+          async *[Symbol.asyncIterator]() {
+            // Legacy tests assert final generateText behavior, not stream parts.
+          },
+        },
+        usage: result.then((value) => value.usage),
+      };
+    },
   };
 });
 

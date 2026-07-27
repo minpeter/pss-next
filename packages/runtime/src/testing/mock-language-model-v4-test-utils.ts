@@ -20,6 +20,21 @@ export type MockLanguageModelV4GenerateFunction = Extract<
   MockLanguageModelV4Generate,
   (...args: never[]) => unknown
 >;
+export type MockLanguageModelV4Stream = NonNullable<
+  MockLanguageModelV4Options["doStream"]
+>;
+export type MockLanguageModelV4StreamFunction = Extract<
+  MockLanguageModelV4Stream,
+  (...args: never[]) => unknown
+>;
+type MockLanguageModelV4StreamValue = Exclude<
+  MockLanguageModelV4Stream,
+  (...args: never[]) => unknown
+>;
+export type MockLanguageModelV4StreamResult = Extract<
+  MockLanguageModelV4StreamValue,
+  { readonly stream: unknown }
+>;
 export type MockLanguageModelV4CallOptions =
   Parameters<MockLanguageModelV4GenerateFunction>[0];
 
@@ -42,8 +57,24 @@ export function createMockLanguageModelV4(
     | readonly MockLanguageModelV4GenerateResult[]
     | MockLanguageModelV4GenerateFunction
 ): MockLanguageModelV4 {
-  return new MockLanguageModelV4({
+  const model = new MockLanguageModelV4({
     doGenerate: typeof results === "function" ? results : [...results],
+  });
+  Object.defineProperty(model, "doStream", {
+    configurable: true,
+    value: undefined,
+    writable: true,
+  });
+  return model;
+}
+
+export function createStreamingMockLanguageModelV4(
+  results:
+    | readonly MockLanguageModelV4StreamResult[]
+    | MockLanguageModelV4StreamFunction
+): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
+    doStream: typeof results === "function" ? results : [...results],
   });
 }
 

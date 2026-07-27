@@ -29,25 +29,25 @@
     "lint": "ultracite check ."
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.11",
-    "@chat-adapter/state-memory": "4.34.0",
-    "@chat-adapter/telegram": "4.34.0",
+    "@ai-sdk/openai-compatible": "3.0.14",
+    "@chat-adapter/state-memory": "4.35.0",
+    "@chat-adapter/telegram": "4.35.0",
     "@minpeter/pss-runtime": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "@trpc/client": "11.18.0",
     "@trpc/server": "11.18.0",
     "agents": "0.17.4",
-    "chat": "4.34.0",
-    "evlog": "^2.20.0",
+    "chat": "4.35.0",
+    "evlog": "^2.22.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260716.1",
+    "@cloudflare/workers-types": "^5.20260724.1",
     "@types/node": "^26.1.1",
     "npm-run-all": "^4.1.5",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9",
-    "wrangler": "^4.107.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.114.0"
   }
 }

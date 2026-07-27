@@ -1,7 +1,7 @@
 import { type Agent, createAgent } from "@minpeter/pss-runtime";
 import { parentThreadNamespace } from "@minpeter/pss-runtime/namespace";
 import type { LanguageModel } from "ai";
-import { createConversationTagPlugin } from "./conversation-plugin";
+import { createConversationHooks } from "./conversation-hooks";
 import { createDelegateToReaderTool } from "./delegate-tool";
 import { createReadFileTool } from "./read-file-tool";
 
@@ -31,7 +31,7 @@ export async function createCoordinatorAgent(
       "대화를 조율한다. 지식베이스 조회는 reader에게 delegate_to_reader로 위임하고, reader가 인용한 파일 경로를 사용자에게 전달해.",
     model,
     namespace: coordinatorNamespace,
-    plugins: [createConversationTagPlugin()],
+    hooks: createConversationHooks(),
     tools: {
       delegate_to_reader: createDelegateToReaderTool({
         description: "지식베이스 문서 읽기를 reader 에이전트에게 위임한다.",

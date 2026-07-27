@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type {
   AgentEvent,
+  AgentHooks,
+  AgentInputDecision,
+  AgentInputEvent,
+  AgentTransformDecision,
   ControlAgentEvent,
   LifecycleAgentEvent,
-  PluginRequestResultMap,
-  PluginToolCallBeforeEvent,
+  StreamAgentEvent,
   TelemetryAgentEvent,
+  TurnErrorMetadataV1,
   VisibleAgentEvent,
 } from "../index";
 import {
   isControlAgentEvent,
   isLifecycleAgentEvent,
+  isStreamAgentEvent,
   isTelemetryAgentEvent,
   isVisibleAgentEvent,
+  streamAgentEventTypes,
 } from "../index";
 
 describe("runtime root event API exports", () => {
@@ -29,6 +35,11 @@ describe("runtime root event API exports", () => {
       isTelemetryAgentEvent
     );
     expect(runtime).toHaveProperty("isControlAgentEvent", isControlAgentEvent);
+    expect(runtime).toHaveProperty("isStreamAgentEvent", isStreamAgentEvent);
+    expect(runtime).toHaveProperty(
+      "streamAgentEventTypes",
+      streamAgentEventTypes
+    );
     expect(runtime).not.toHaveProperty("isBeforeToolCallEvent");
   });
 
@@ -43,6 +54,17 @@ describe("runtime root event API exports", () => {
       type: "assistant-reasoning",
     } satisfies TelemetryAgentEvent;
     const control = lifecycle satisfies ControlAgentEvent;
+    const turnErrorMetadata = {
+      category: "permission",
+      observedRetryable: false,
+      status: 403,
+      version: 1,
+    } satisfies TurnErrorMetadataV1;
+    const turnError = {
+      error: turnErrorMetadata,
+      message: "Access denied",
+      type: "turn-error",
+    } satisfies AgentEvent;
     const events = [visible, lifecycle, telemetry, control] satisfies readonly [
       VisibleAgentEvent,
       LifecycleAgentEvent,
@@ -56,9 +78,32 @@ describe("runtime root event API exports", () => {
       "assistant-reasoning",
       "turn-start",
     ]);
+    expect(turnError.error).toEqual(turnErrorMetadata);
   });
 
-  it("types plugin-only tool.call.before interception results", () => {
+  it("types ephemeral stream event exports from the package root", () => {
+    const outputDelta = {
+      text: "partial",
+      type: "assistant-output-delta",
+    } satisfies StreamAgentEvent;
+    const inputDelta = {
+      inputTextDelta: "{",
+      toolCallId: "tool-1",
+      type: "tool-call-input-delta",
+    } satisfies StreamAgentEvent;
+    const events = [outputDelta, inputDelta] satisfies readonly [
+      StreamAgentEvent,
+      StreamAgentEvent,
+    ];
+
+    expect(events.filter(isStreamAgentEvent)).toEqual(events);
+    expect(events.map((event) => event.type)).toEqual([
+      "assistant-output-delta",
+      "tool-call-input-delta",
+    ]);
+  });
+
+  it("types host tool interception decisions", () => {
     const event = {
       attempt: 1,
       idempotencyKey: "run-1:call_tool-1",
@@ -66,40 +111,52 @@ describe("runtime root event API exports", () => {
       policy: "manual-recovery",
       toolCallId: "call_tool-1",
       toolName: "write_file",
-      type: "tool.call.before",
-    } satisfies PluginToolCallBeforeEvent;
+    } satisfies Parameters<NonNullable<AgentHooks["beforeToolExecution"]>>[0];
     const continueResult = {
-      action: "continue",
-    } satisfies PluginRequestResultMap["tool.call.before"];
+      input: event.input,
+      status: "continue",
+    } satisfies Awaited<
+      ReturnType<NonNullable<AgentHooks["beforeToolExecution"]>>
+    >;
     const recoveryResult = {
-      action: "needs-recovery",
-    } satisfies PluginRequestResultMap["tool.call.before"];
-    const transformResult = {
-      action: "transform",
-      input: { path: "docs/README.md" },
-    } satisfies PluginRequestResultMap["tool.call.before"];
+      status: "needs-recovery",
+    } satisfies Awaited<
+      ReturnType<NonNullable<AgentHooks["beforeToolExecution"]>>
+    >;
     const blockResult = {
-      action: "block",
-      reason: "path not allowed",
-    } satisfies PluginRequestResultMap["tool.call.before"];
+      output: "path not allowed",
+      status: "blocked",
+    } satisfies Awaited<
+      ReturnType<NonNullable<AgentHooks["beforeToolExecution"]>>
+    >;
 
     expect(event.toolName).toBe("write_file");
-    expect(event.type).toBe("tool.call.before");
-    expect(continueResult.action).toBe("continue");
-    expect(recoveryResult.action).toBe("needs-recovery");
-    expect(transformResult.action).toBe("transform");
-    expect(transformResult.input).toEqual({ path: "docs/README.md" });
-    expect(blockResult.action).toBe("block");
+    expect(continueResult.status).toBe("continue");
+    expect(recoveryResult.status).toBe("needs-recovery");
+    expect(blockResult.status).toBe("blocked");
   });
 
-  it("types atomic model step transforms from the package root", () => {
+  it("types atomic input and model transforms from the package root", () => {
+    const input = {
+      value: {
+        text: "rewritten",
+        type: "user-input",
+      },
+      action: "transform",
+    } satisfies AgentInputDecision<AgentInputEvent>;
     const result = {
       action: "transform",
       value: {
         messages: [{ content: "sanitized", role: "assistant" }],
       },
-    } satisfies PluginRequestResultMap["model.step.before"];
+    } satisfies AgentTransformDecision<{
+      readonly messages: readonly {
+        readonly content: string;
+        readonly role: "assistant";
+      }[];
+    }>;
 
+    expect(input.value.text).toBe("rewritten");
     expect(result.value.messages).toHaveLength(1);
   });
 });

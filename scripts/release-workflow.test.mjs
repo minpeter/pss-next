@@ -21,7 +21,10 @@ describe("release workflow", () => {
     expect(workflow).toContain("fetch-depth: 0");
     expect(ciWorkflow).toContain("fetch-depth: 0");
     expect(workflow).toContain("node-version-file: .node-version");
-    expect(ciWorkflow).toContain("node-version-file: .node-version");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: pins the literal GitHub Actions matrix expression in ci.yml
+    expect(ciWorkflow).toContain("node-version: ${{ matrix.node }}");
+    expect(ciWorkflow).toContain('node: ["24", "26"]');
+    expect(ciWorkflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("pnpm tegami ci");
     expect(workflow).not.toContain(
       "Verify npm trusted publishing prerequisites"

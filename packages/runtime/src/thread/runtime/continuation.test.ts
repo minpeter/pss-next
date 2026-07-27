@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import {
   assistantMessage,
+  committedEvents,
   createCallbackModel,
   sentUserText,
   steerRuntimeInput,
@@ -50,7 +51,7 @@ describe("Agent thread runtime input continuation", () => {
         userTextToModelMessage(userText("extra")),
       ],
     ]);
-    expect(events).toEqual([
+    expect(committedEvents(events)).toEqual([
       sentUserText("initial user"),
       { type: "turn-start" },
       { type: "step-start" },

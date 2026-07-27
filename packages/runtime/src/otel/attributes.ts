@@ -34,6 +34,12 @@ export function defaultAgentEventAttributes(event: AgentEvent): Attributes {
     case "turn-end":
     case "turn-start":
       return base;
+    case "assistant-output-delta":
+    case "assistant-reasoning-delta":
+    case "tool-call-input-delta":
+    case "tool-call-input-end":
+    case "tool-call-input-start":
+      return base;
     case "tool-call":
       return {
         ...base,

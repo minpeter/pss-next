@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+  formatModelEnvSetupHelp,
+  isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
 } from "./env";
 
@@ -58,5 +60,44 @@ describe("coding-agent env validation", () => {
       AI_BASE_URL: "",
       AI_MODEL: "",
     });
+  });
+
+  it("flags model env validation errors for friendly reporting", () => {
+    let thrown: unknown;
+    try {
+      readOpenAICompatibleModelEnv({ runtimeEnv: {} });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isModelEnvValidationError(thrown)).toBe(true);
+    expect(isModelEnvValidationError(new Error("other"))).toBe(false);
+    expect(isModelEnvValidationError("nope")).toBe(false);
+  });
+
+  it("formats actionable setup help for missing credentials", () => {
+    let thrown: unknown;
+    try {
+      readOpenAICompatibleModelEnv({ runtimeEnv: {} });
+    } catch (error) {
+      thrown = error;
+    }
+
+    if (!isModelEnvValidationError(thrown)) {
+      throw new Error("expected a model env validation error");
+    }
+
+    const help = formatModelEnvSetupHelp(thrown);
+    expect(help).toContain("export AI_API_KEY=<your-api-key>");
+    expect(help).toContain(
+      `AI_BASE_URL (default: ${DEFAULT_OPENAI_COMPATIBLE_BASE_URL})`
+    );
+    expect(help).toContain(
+      `AI_MODEL    (default: ${DEFAULT_OPENAI_COMPATIBLE_MODEL_ID})`
+    );
+    expect(help).toContain("Details: OpenAI-compatible model environment");
+    expect(help).toContain("\x1b[1m\x1b[31m");
+    expect(help).toContain("\x1b[36m");
+    expect(help).toContain("\x1b[2m");
   });
 });

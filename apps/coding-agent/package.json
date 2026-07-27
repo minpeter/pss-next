@@ -1,8 +1,11 @@
 {
   "name": "@minpeter/pss-coding-agent",
-  "version": "0.0.14-next.2",
-  "description": "Coding-agent model and TUI wiring for pss-next.",
+  "version": "0.0.14-next.5",
+  "description": "Code at the speed of thought",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -37,9 +40,14 @@
       "import": "./dist/tools.js"
     },
     "./tui": {
-      "@minpeter/pss-source": "./src/tui.ts",
-      "types": "./dist/tui.d.ts",
-      "import": "./dist/tui.js"
+      "@minpeter/pss-source": "./src/tui/app.ts",
+      "types": "./dist/tui/app.d.ts",
+      "import": "./dist/tui/app.js"
+    },
+    "./extension": {
+      "@minpeter/pss-source": "./src/extensions/index.ts",
+      "types": "./dist/extensions/index.d.ts",
+      "import": "./dist/extensions/index.js"
     }
   },
   "bin": {
@@ -61,25 +69,26 @@
     "provenance": true
   },
   "scripts": {
-    "start": "tsx --conditions=@minpeter/pss-source src/tui.ts",
+    "start": "tsx --conditions=@minpeter/pss-source src/tui/app.ts",
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "ultracite check ."
+    "lint": "ultracite check .",
+    "preview:edit": "tsx --conditions=@minpeter/pss-source scripts/preview-edit-render.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.11",
+    "@ai-sdk/openai-compatible": "3.0.14",
     "@earendil-works/pi-tui": "^0.80.10",
-    "@minpeter/opensearch": "0.0.4",
+    "@minpeter/opensearch": "0.1.1",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",
-    "ai": "7.0.30",
+    "ai": "7.0.37",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "tsdown": "^0.22.4",
+    "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

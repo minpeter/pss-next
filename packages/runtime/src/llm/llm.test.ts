@@ -139,27 +139,30 @@ describe("generateModelStep", () => {
       })(),
       "getter",
     ],
-  ])("rejects %s history before selection or generation", async (_label, history, getterMarker) => {
-    const runModelStep = await loadModelStepRunner();
-    const prepareModelStep = vi.fn();
+  ])(
+    "rejects %s history before selection or generation",
+    async (_label, history, getterMarker) => {
+      const runModelStep = await loadModelStepRunner();
+      const prepareModelStep = vi.fn();
 
-    await expect(
-      runModelStep(
-        { model: fakeModel, prepareModelStep },
-        {
-          history: history as never,
-          signal: new AbortController().signal,
-          threadKey: "thread",
-        }
-      )
-    ).rejects.toThrow("dense array of data-property model messages");
-    if (getterMarker) {
-      const descriptor = Object.getOwnPropertyDescriptor(history, "0");
-      expect(descriptor?.get).not.toHaveBeenCalled();
+      await expect(
+        runModelStep(
+          { model: fakeModel, prepareModelStep },
+          {
+            history: history as never,
+            signal: new AbortController().signal,
+            threadKey: "thread",
+          }
+        )
+      ).rejects.toThrow("dense array of data-property model messages");
+      if (getterMarker) {
+        const descriptor = Object.getOwnPropertyDescriptor(history, "0");
+        expect(descriptor?.get).not.toHaveBeenCalled();
+      }
+      expect(prepareModelStep).not.toHaveBeenCalled();
+      expect(generateTextMock).not.toHaveBeenCalled();
     }
-    expect(prepareModelStep).not.toHaveBeenCalled();
-    expect(generateTextMock).not.toHaveBeenCalled();
-  });
+  );
 
   it("lowers typed compaction context to a user-scoped summary", async () => {
     const runModelStep = await loadModelStepRunner();
@@ -866,21 +869,24 @@ describe("generateModelStep", () => {
   it.each([
     ["duplicate", ["dynamic", "dynamic"]],
     ["unknown", ["missing"]],
-  ] as const)("fails closed for %s configured tool order", async (_label, toolOrder) => {
-    const runModelStep = await loadModelStepRunner();
+  ] as const)(
+    "fails closed for %s configured tool order",
+    async (_label, toolOrder) => {
+      const runModelStep = await loadModelStepRunner();
 
-    await expect(
-      runModelStep(
-        {
-          model: fakeModel,
-          toolOrder,
-          tools: { dynamic: createNoopTool() },
-        },
-        { history: [], signal: new AbortController().signal }
-      )
-    ).rejects.toMatchObject({ name: ModelToolSelectionError.name });
-    expect(generateTextMock).not.toHaveBeenCalled();
-  });
+      await expect(
+        runModelStep(
+          {
+            model: fakeModel,
+            toolOrder,
+            tools: { dynamic: createNoopTool() },
+          },
+          { history: [], signal: new AbortController().signal }
+        )
+      ).rejects.toMatchObject({ name: ModelToolSelectionError.name });
+      expect(generateTextMock).not.toHaveBeenCalled();
+    }
+  );
 
   it("snapshots configured tool-name arrays without invoking custom iterators", async () => {
     const runModelStep = await loadModelStepRunner();
@@ -922,50 +928,50 @@ describe("generateModelStep", () => {
     );
   });
 
-  it.each([
-    "alwaysActiveTools",
-    "toolOrder",
-  ] as const)("rejects accessor-backed %s indices without invoking them", async (field) => {
-    const runModelStep = await loadModelStepRunner();
-    const indexGetter = vi.fn(() => "dynamic");
-    const names: string[] = [];
-    Object.defineProperty(names, "0", {
-      enumerable: true,
-      get: indexGetter,
-    });
+  it.each(["alwaysActiveTools", "toolOrder"] as const)(
+    "rejects accessor-backed %s indices without invoking them",
+    async (field) => {
+      const runModelStep = await loadModelStepRunner();
+      const indexGetter = vi.fn(() => "dynamic");
+      const names: string[] = [];
+      Object.defineProperty(names, "0", {
+        enumerable: true,
+        get: indexGetter,
+      });
 
-    await expect(
-      runModelStep(
-        {
-          [field]: names,
-          model: fakeModel,
-          tools: { dynamic: createNoopTool() },
-        },
-        { history: [], signal: new AbortController().signal }
-      )
-    ).rejects.toThrow("dense array of data-property tool names");
-    expect(indexGetter).not.toHaveBeenCalled();
-    expect(generateTextMock).not.toHaveBeenCalled();
-  });
+      await expect(
+        runModelStep(
+          {
+            [field]: names,
+            model: fakeModel,
+            tools: { dynamic: createNoopTool() },
+          },
+          { history: [], signal: new AbortController().signal }
+        )
+      ).rejects.toThrow("dense array of data-property tool names");
+      expect(indexGetter).not.toHaveBeenCalled();
+      expect(generateTextMock).not.toHaveBeenCalled();
+    }
+  );
 
-  it.each([
-    "alwaysActiveTools",
-    "toolOrder",
-  ] as const)("rejects sparse configured %s arrays", async (field) => {
-    const runModelStep = await loadModelStepRunner();
+  it.each(["alwaysActiveTools", "toolOrder"] as const)(
+    "rejects sparse configured %s arrays",
+    async (field) => {
+      const runModelStep = await loadModelStepRunner();
 
-    await expect(
-      runModelStep(
-        {
-          [field]: new Array<string>(1),
-          model: fakeModel,
-          tools: { dynamic: createNoopTool() },
-        },
-        { history: [], signal: new AbortController().signal }
-      )
-    ).rejects.toThrow("dense array of data-property tool names");
-    expect(generateTextMock).not.toHaveBeenCalled();
-  });
+      await expect(
+        runModelStep(
+          {
+            [field]: new Array<string>(1),
+            model: fakeModel,
+            tools: { dynamic: createNoopTool() },
+          },
+          { history: [], signal: new AbortController().signal }
+        )
+      ).rejects.toThrow("dense array of data-property tool names");
+      expect(generateTextMock).not.toHaveBeenCalled();
+    }
+  );
 
   it("reports only bounded counts, timings, ids, and fingerprints", async () => {
     const runModelStep = await loadModelStepRunner();

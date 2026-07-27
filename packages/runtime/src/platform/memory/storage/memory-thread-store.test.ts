@@ -107,7 +107,8 @@ describe("MemoryThreadStore", () => {
     const loaded = await store.load("key");
     expect(loaded).toEqual({ state: { nested: { value: 1 } }, version: "1" });
 
-    (loaded?.state as { nested: { value: number } }).nested.value = 3;
+    const loadedState = loaded?.state as { nested: { value: number } };
+    loadedState.nested.value = 3;
     await expect(store.load("key")).resolves.toEqual({
       state: { nested: { value: 1 } },
       version: "1",

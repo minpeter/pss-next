@@ -1,21 +1,39 @@
 import type { ModelMessage } from "ai";
 import { expect, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
-
-export interface AutoCompactionConfig {
-  readonly minMessages: number;
-  readonly retainMessages: number;
-}
+import type { AgentOptions } from "../../agent/core/options";
 
 export type AutoCompactionAgentOptions = ConstructorParameters<
   typeof Agent
 >[0] & {
-  readonly autoCompaction?: AutoCompactionConfig;
+  readonly autoCompaction?: AgentOptions["autoCompaction"];
 };
 
 export const agentWithAutoCompaction = (
   options: AutoCompactionAgentOptions
 ): Agent => new Agent(options);
+
+export const tenTokensPerMessage = (
+  messages: readonly ModelMessage[]
+): number => messages.length * 10;
+
+export const tokenCompactionPolicy = ({
+  retain,
+  trigger,
+}: {
+  readonly retain: number;
+  readonly trigger: number;
+}): {
+  readonly estimateTokens: typeof tenTokensPerMessage;
+  readonly maxInputTokens: number;
+  readonly retainTokens: number;
+  readonly triggerTokens: number;
+} => ({
+  estimateTokens: tenTokensPerMessage,
+  maxInputTokens: 10_000,
+  retainTokens: retain,
+  triggerTokens: trigger,
+});
 
 export const storedAssistantOutput = (text: string): ModelMessage => ({
   content: [{ providerOptions: undefined, text, type: "text" }],

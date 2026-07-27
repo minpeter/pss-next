@@ -1,7 +1,7 @@
 import type { generateText, LanguageModel, ModelMessage, ToolSet } from "ai";
-import type { RuntimeDiagnosticsSink } from "../plugins/diagnostics";
+import type { RuntimeDiagnosticsSink } from "../diagnostics";
 import type { HostAttachmentStore } from "../thread/input/attachments";
-import type { ModelUsage } from "../thread/protocol/events";
+import type { ModelUsage, StreamAgentEvent } from "../thread/protocol/events";
 import type { ThreadContextMessage } from "../thread/state/context";
 import type { ModelContextGateOptions } from "./context-gate";
 import type {
@@ -27,8 +27,11 @@ export interface ModelGenerationOptions {
   contextGate?: false | ModelContextGateOptions;
   diagnostics?: RuntimeDiagnosticsSink;
   instructions?: string;
+  maxOutputTokens?: number;
   model: LanguageModel;
   prepareModelStep?: PrepareModelStep;
+  seed?: number;
+  temperature?: number;
   toolChoice?: AgentToolChoice;
   toolOrder?: readonly string[];
   tools?: ToolSet;
@@ -36,6 +39,7 @@ export interface ModelGenerationOptions {
 
 export interface ModelStepOptions extends ModelGenerationOptions {
   history: readonly ThreadContextMessage[];
+  onStreamEvent?: (event: StreamAgentEvent) => void;
   runtimeStepIndex?: number;
   signal: AbortSignal;
   threadKey?: string;

@@ -18,6 +18,7 @@ import type {
   Agent,
   AgentAutoCompactionOptions,
   AgentEvent,
+  AgentHooks,
   AgentInput,
   AgentInstrumentation,
   AgentInstrumentationContext,
@@ -26,19 +27,19 @@ import type {
   CompactionContextMessage,
   HostAttachmentStore,
   ModelToolCacheFingerprintMetadata,
-  ModelUsage,
-  PluginEventMap,
   PrepareModelStep,
   PrepareModelStepInput,
   PrepareModelStepResult,
+  StreamAgentEvent,
   ThreadCompactionInput,
   ThreadContextMessage,
   ThreadHandle,
 } from "../index";
 import {
+  AgentHookError,
   createAgent,
+  isStreamAgentEvent,
   ModelToolSelectionError,
-  registerTool,
   threadStoreKey as runtimeThreadStoreKey,
   ThreadEventReplayUnsupportedError,
 } from "../index";
@@ -81,13 +82,21 @@ describe("runtime public exports", () => {
     const runStreamExport = ["Agent", "Run", "Stream"].join("");
 
     expect(runtime).toHaveProperty("createAgent", createAgent);
-    expect(runtime).toHaveProperty("registerTool", registerTool);
-    expect(runtime).not.toHaveProperty("pluginTool");
+    expect(runtime).toHaveProperty("AgentHookError", AgentHookError);
+    expect(runtime).not.toHaveProperty("definePlugin");
     expect(runtime).not.toHaveProperty("Agent");
     expect(runtime).not.toHaveProperty("tool");
     expect(runtime).not.toHaveProperty("runPluginsForEvent");
     expect(runtime).not.toHaveProperty("runPluginsForToolCall");
     expect(runtime).toHaveProperty("threadStoreKey", runtimeThreadStoreKey);
+    expect(runtime).toHaveProperty("isStreamAgentEvent", isStreamAgentEvent);
+    expectTypeOf<StreamAgentEvent["type"]>().toEqualTypeOf<
+      | "assistant-output-delta"
+      | "assistant-reasoning-delta"
+      | "tool-call-input-delta"
+      | "tool-call-input-end"
+      | "tool-call-input-start"
+    >();
     expect(runtime).not.toHaveProperty("createInMemoryHost");
     expect(runtime).not.toHaveProperty("createCloudflareHost");
     expect(runtime).not.toHaveProperty("createCloudflareStorageHost");
@@ -104,20 +113,20 @@ describe("runtime public exports", () => {
     expect(emptyHostIsRejected).toBe(false);
   });
 
-  it("types flattened plugin event payloads by event name", () => {
-    expectTypeOf<PluginEventMap["turn.end"]>().toEqualTypeOf<{
-      type: "turn-end";
-    }>();
-    expectTypeOf<PluginEventMap["input.accept"]["type"]>().toEqualTypeOf<
-      "runtime-input" | "user-input"
+  it("types the single host hook contract", () => {
+    expectTypeOf<NonNullable<AgentHooks["acceptInput"]>>().toBeFunction();
+    expectTypeOf<
+      NonNullable<AgentHooks["beforeToolExecution"]>
+    >().toBeFunction();
+    expectTypeOf<keyof AgentHooks>().toEqualTypeOf<
+      | "acceptInput"
+      | "beforeCompaction"
+      | "beforeToolExecution"
+      | "beforeTurnStart"
+      | "transformModelContext"
+      | "transformModelStep"
+      | "transformToolResult"
     >();
-    expectTypeOf<
-      PluginEventMap["tool.call.before"]["type"]
-    >().toEqualTypeOf<"tool.call.before">();
-    expectTypeOf<PluginEventMap["model.usage"]>().toEqualTypeOf<ModelUsage>();
-    expectTypeOf<
-      Extract<AgentEvent, { type: "tool.call.before" }>
-    >().toEqualTypeOf<never>();
   });
 
   it("does not expose runtime-owned subagent helpers from the package root", async () => {
@@ -150,8 +159,9 @@ describe("runtime public exports", () => {
         maxInputTokens: 120_000,
         onOverflow: "compact",
       },
-      minMessages: 12,
-      retainMessages: 4,
+      maxInputTokens: 128_000,
+      retainTokens: 40_000,
+      triggerTokens: 100_000,
     } satisfies AgentAutoCompactionOptions;
     const model = {} as AgentOptions["model"];
     const attachmentStore = {} as HostAttachmentStore;
@@ -171,10 +181,6 @@ describe("runtime public exports", () => {
       model,
       notificationOverlays: ["runtime context"],
     } satisfies AgentOptions;
-    const disabledOptions = {
-      autoCompaction: false,
-      model,
-    } satisfies AgentOptions;
     const compaction = {
       endSeqExclusive: 8,
       startSeq: 0,
@@ -190,9 +196,11 @@ describe("runtime public exports", () => {
     expectTypeOf<
       Parameters<ThreadHandle["compact"]>[0]
     >().toEqualTypeOf<ThreadCompactionInput>();
-    expectTypeOf<PluginEventMap["model.context"]["messages"]>().toEqualTypeOf<
-      readonly ThreadContextMessage[]
-    >();
+    expectTypeOf<
+      Parameters<
+        NonNullable<AgentHooks["transformModelContext"]>
+      >[0]["messages"]
+    >().toEqualTypeOf<readonly ThreadContextMessage[]>();
     expectTypeOf<
       Parameters<ThreadHandle["overlay"]>[0]
     >().toEqualTypeOf<AgentInput>();
@@ -216,7 +224,6 @@ describe("runtime public exports", () => {
     expect(enabledOptions.attachmentStore).toBe(attachmentStore);
     expect(enabledOptions.instrumentations).toEqual([instrumentation]);
     expect(enabledOptions.notificationOverlays).toEqual(["runtime context"]);
-    expect(disabledOptions.autoCompaction).toBe(false);
     expect(compaction.startSeq).toBe(0);
     expect(contextCompaction.role).toBe("compaction");
   });

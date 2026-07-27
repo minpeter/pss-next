@@ -3,7 +3,7 @@ import {
   type ModelToolCacheFingerprintMetadata,
   noopRuntimeDiagnostics,
   type RuntimeDiagnosticsSink,
-} from "../plugins/diagnostics";
+} from "../diagnostics";
 import { diagnosticToolRegistry } from "./diagnostic-tool-registry";
 import {
   compareToolNames,

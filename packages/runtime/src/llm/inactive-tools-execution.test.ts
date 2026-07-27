@@ -95,100 +95,98 @@ describe("inactive model-step tools", () => {
     expect(JSON.stringify(response)).toContain("unavailable tool 'toString'");
   });
 
-  it.each([
-    "constructor",
-    "toString",
-    "__proto__",
-  ])("keeps registered but inactive special-name tool %s unavailable", async (toolName) => {
-    let activeExecutions = 0;
-    let inactiveExecutions = 0;
-    const model = createMockLanguageModelV4([
-      mockLanguageModelV4ToolCall({
-        input: {},
-        toolCallId: `call-${toolName}`,
-        toolName,
-      }),
-    ]);
-    const tools = Object.fromEntries([
-      [
+  it.each(["constructor", "toString", "__proto__"])(
+    "keeps registered but inactive special-name tool %s unavailable",
+    async (toolName) => {
+      let activeExecutions = 0;
+      let inactiveExecutions = 0;
+      const model = createMockLanguageModelV4([
+        mockLanguageModelV4ToolCall({
+          input: {},
+          toolCallId: `call-${toolName}`,
+          toolName,
+        }),
+      ]);
+      const tools = Object.fromEntries([
+        [
+          "active",
+          tool({
+            execute: () => {
+              activeExecutions += 1;
+              return { ok: true };
+            },
+            inputSchema: jsonSchema({ type: "object" }),
+          }),
+        ],
+        [
+          toolName,
+          tool({
+            execute: () => {
+              inactiveExecutions += 1;
+              return { ok: true };
+            },
+            inputSchema: jsonSchema({ type: "object" }),
+          }),
+        ],
+      ]) as ToolSet;
+
+      const response = await generateModelStep({
+        history: [{ content: "Do not call inactive tools.", role: "user" }],
+        model,
+        prepareModelStep: () => ({ activeTools: ["active"] }),
+        signal: new AbortController().signal,
+        threadKey: `thread-inactive-${toolName}`,
+        tools,
+      });
+
+      expect(activeExecutions).toBe(0);
+      expect(inactiveExecutions).toBe(0);
+      expect(model.doGenerateCalls[0]?.tools?.map(({ name }) => name)).toEqual([
         "active",
-        tool({
-          execute: () => {
-            activeExecutions += 1;
-            return { ok: true };
-          },
-          inputSchema: jsonSchema({ type: "object" }),
+      ]);
+      expect(JSON.stringify(response)).toContain(
+        `unavailable tool '${toolName}'`
+      );
+    }
+  );
+
+  it.each(["constructor", "toString", "__proto__"])(
+    "executes active special-name tool %s only through an own registry entry",
+    async (toolName) => {
+      let executions = 0;
+      const model = createMockLanguageModelV4([
+        mockLanguageModelV4ToolCall({
+          input: {},
+          toolCallId: `call-${toolName}`,
+          toolName,
         }),
-      ],
-      [
+      ]);
+      const tools = Object.fromEntries([
+        [
+          toolName,
+          tool({
+            execute: () => {
+              executions += 1;
+              return { ok: true };
+            },
+            inputSchema: jsonSchema({ type: "object" }),
+          }),
+        ],
+      ]) as ToolSet;
+
+      await generateModelStep({
+        history: [{ content: "Call the selected tool.", role: "user" }],
+        model,
+        prepareModelStep: () => ({ activeTools: [toolName] }),
+        signal: new AbortController().signal,
+        threadKey: `thread-active-${toolName}`,
+        tools,
+      });
+
+      expect(executions).toBe(1);
+      expect(model.doGenerateCalls[0]?.tools?.map(({ name }) => name)).toEqual([
         toolName,
-        tool({
-          execute: () => {
-            inactiveExecutions += 1;
-            return { ok: true };
-          },
-          inputSchema: jsonSchema({ type: "object" }),
-        }),
-      ],
-    ]) as ToolSet;
-
-    const response = await generateModelStep({
-      history: [{ content: "Do not call inactive tools.", role: "user" }],
-      model,
-      prepareModelStep: () => ({ activeTools: ["active"] }),
-      signal: new AbortController().signal,
-      threadKey: `thread-inactive-${toolName}`,
-      tools,
-    });
-
-    expect(activeExecutions).toBe(0);
-    expect(inactiveExecutions).toBe(0);
-    expect(model.doGenerateCalls[0]?.tools?.map(({ name }) => name)).toEqual([
-      "active",
-    ]);
-    expect(JSON.stringify(response)).toContain(
-      `unavailable tool '${toolName}'`
-    );
-  });
-
-  it.each([
-    "constructor",
-    "toString",
-    "__proto__",
-  ])("executes active special-name tool %s only through an own registry entry", async (toolName) => {
-    let executions = 0;
-    const model = createMockLanguageModelV4([
-      mockLanguageModelV4ToolCall({
-        input: {},
-        toolCallId: `call-${toolName}`,
-        toolName,
-      }),
-    ]);
-    const tools = Object.fromEntries([
-      [
-        toolName,
-        tool({
-          execute: () => {
-            executions += 1;
-            return { ok: true };
-          },
-          inputSchema: jsonSchema({ type: "object" }),
-        }),
-      ],
-    ]) as ToolSet;
-
-    await generateModelStep({
-      history: [{ content: "Call the selected tool.", role: "user" }],
-      model,
-      prepareModelStep: () => ({ activeTools: [toolName] }),
-      signal: new AbortController().signal,
-      threadKey: `thread-active-${toolName}`,
-      tools,
-    });
-
-    expect(executions).toBe(1);
-    expect(model.doGenerateCalls[0]?.tools?.map(({ name }) => name)).toEqual([
-      toolName,
-    ]);
-  });
+      ]);
+    }
+  );
 });

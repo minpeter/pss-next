@@ -4,7 +4,10 @@ import type {
   ModelStepResult,
 } from "../../llm/model-step-types";
 import type { RuntimeToolExecutionContext } from "../../llm/tool-execution-types";
-import type { AgentEvent } from "../../thread/protocol/events";
+import type {
+  AgentEvent,
+  StreamAgentEvent,
+} from "../../thread/protocol/events";
 import { modelMessageToAgentEvents } from "../../thread/protocol/mapping";
 import type {
   CapturedModelStepOutput,
@@ -16,6 +19,7 @@ import type {
 export async function readModelOutput({
   history,
   model,
+  onStreamEvent,
   runtimeStepIndex,
   signal,
   threadKey,
@@ -25,6 +29,7 @@ export async function readModelOutput({
   RunAgentLoopOptions,
   "history" | "model" | "threadKey" | "transformModelContext"
 > & {
+  onStreamEvent?: (event: StreamAgentEvent) => void;
   runtimeStepIndex: number;
   signal: AbortSignal;
   toolExecution?: RuntimeToolExecutionContext;
@@ -36,6 +41,7 @@ export async function readModelOutput({
         ? await transformModelContext(snapshot, signal)
         : snapshot,
       ...model,
+      onStreamEvent,
       runtimeStepIndex,
       signal,
       threadKey,

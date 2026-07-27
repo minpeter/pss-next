@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 const sourceFilesWithCurrentEdits = [
   "scripts/cloudflare-example.test.mjs",
+  "scripts/examples.fixture.mjs",
   "scripts/examples.test.mjs",
   "scripts/file-size.test.mjs",
+  "scripts/release-workflow.test.mjs",
   "scripts/verify-release-artifacts.mjs",
   "scripts/verify-release-artifacts.fixture.mjs",
   "scripts/verify-release-artifacts/core.mjs",

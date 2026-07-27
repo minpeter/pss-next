@@ -43,6 +43,9 @@ export async function runAgentLoop({
       readModelOutput({
         history,
         model,
+        onStreamEvent: (event) => {
+          Promise.resolve(emit(event)).catch(() => undefined);
+        },
         runtimeStepIndex: runtimeState.runtimeStepIndex,
         signal,
         threadKey,

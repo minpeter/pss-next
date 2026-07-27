@@ -1,3 +1,4 @@
+import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
 import type {
   AgentHost,
@@ -7,7 +8,6 @@ import type {
   TurnStore,
 } from "../../execution/host/types";
 import type { RuntimeToolExecutionContext } from "../../llm/tool-execution-types";
-import type { PluginRuntime } from "../../plugins/plugin-runtime";
 import type { ThreadState } from "../state/thread-state";
 import type { ThreadAutoCompactionOptions } from "./auto-compaction-types";
 import {
@@ -19,7 +19,7 @@ import {
 export interface ThreadExecutionOptions {
   readonly autoCompaction?: ThreadAutoCompactionOptions;
   readonly executionHost?: AgentHost;
-  readonly pluginRuntime?: PluginRuntime;
+  readonly hookRuntime?: AgentHookRuntime;
 }
 
 export interface QueuedThreadExecutionRun {

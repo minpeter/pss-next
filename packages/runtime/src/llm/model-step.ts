@@ -1,4 +1,4 @@
-import { generateText, type ModelMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { hydrateRuntimeAttachments } from "../thread/input/attachments";
 import {
   compactionContextForModel,
@@ -7,6 +7,10 @@ import {
 import { enforceContextGate } from "./context-gate";
 import { ModelToolSelectionError } from "./model-step-error";
 import { resolveModelStepOptions } from "./model-step-preparation";
+import {
+  createModelStepStream,
+  type ModelStepStreamPart,
+} from "./model-step-stream";
 import type {
   ModelPrompt,
   ModelStepOptions,
@@ -37,9 +41,13 @@ export async function generateModelStepResult({
   history,
   model,
   instructions,
+  maxOutputTokens,
+  onStreamEvent,
   prepareModelStep,
   runtimeStepIndex = 0,
+  seed,
   signal,
+  temperature,
   threadKey,
   toolChoice,
   toolOrder,
@@ -79,42 +87,95 @@ export async function generateModelStepResult({
     messages,
   });
   assertNoUnsupportedToolApproval(prepared.tools);
-  const modelRequest = generateText({
+  const handle = createModelStepStream({
     activeTools: prepared.activeTools,
     abortSignal: signal,
     instructions: prompt.instructions,
+    maxOutputTokens,
     messages,
     model: prepared.model,
+    seed,
+    temperature,
     toolChoice: prepared.toolChoice,
     toolOrder: prepared.toolOrder,
     tools: normalizeToolCallIds(prepared.tools, toolCallIds, toolExecution),
   });
   prepared.startToolCacheFingerprintReport?.();
-  const { finalStep, finishReason, response, responseMessages, usage } =
-    await modelRequest;
+  let aborted = false;
+  try {
+    for await (const part of handle.parts) {
+      if (part.type === "abort") {
+        aborted = true;
+        continue;
+      }
+      const event = mapStreamPartToAgentEvent(part);
+      if (event) {
+        onStreamEvent?.(event);
+      }
+    }
+    if (aborted || signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+    const { finalStep, finishReason, response, responseMessages, usage } =
+      await handle.finalize();
 
-  return {
-    messages: responseMessages.map((message) =>
-      rewriteMessageToolCallIds(message, toolCallIds)
-    ),
-    usage: modelUsageEvent({
-      attemptId,
-      durationMs: finalStep?.performance.responseTimeMs,
-      finishReason,
-      modelId: firstSafeTelemetryIdentifier(
-        response?.modelId ??
-          finalStep?.model.modelId ??
-          configuredModelId(prepared.model),
-        finalStep?.model.modelId,
-        configuredModelId(prepared.model)
+    return {
+      messages: responseMessages.map((message) =>
+        rewriteMessageToolCallIds(message, toolCallIds)
       ),
-      provider: firstSafeTelemetryIdentifier(
-        finalStep?.model.provider,
-        configuredProvider(prepared.model)
-      ),
-      usage,
-    }),
-  };
+      usage: modelUsageEvent({
+        attemptId,
+        durationMs: finalStep?.performance.responseTimeMs,
+        finishReason,
+        modelId: firstSafeTelemetryIdentifier(
+          response?.modelId ??
+            finalStep?.model.modelId ??
+            configuredModelId(prepared.model),
+          finalStep?.model.modelId,
+          configuredModelId(prepared.model)
+        ),
+        provider: firstSafeTelemetryIdentifier(
+          finalStep?.model.provider,
+          configuredProvider(prepared.model)
+        ),
+        usage,
+      }),
+    };
+  } catch (error) {
+    await handle.finalize().then(
+      () => undefined,
+      () => undefined
+    );
+    throw error;
+  }
+}
+
+function mapStreamPartToAgentEvent(part: ModelStepStreamPart) {
+  switch (part.type) {
+    case "text-delta":
+      return { text: part.text, type: "assistant-output-delta" } as const;
+    case "reasoning-delta":
+      return { text: part.text, type: "assistant-reasoning-delta" } as const;
+    case "tool-input-start":
+      return {
+        toolCallId: part.id,
+        toolName: part.toolName,
+        type: "tool-call-input-start",
+      } as const;
+    case "tool-input-delta":
+      return {
+        inputTextDelta: part.delta,
+        toolCallId: part.id,
+        type: "tool-call-input-delta",
+      } as const;
+    case "tool-input-end":
+      return {
+        toolCallId: part.id,
+        type: "tool-call-input-end",
+      } as const;
+    default:
+      return;
+  }
 }
 
 export function snapshotModelHistory(

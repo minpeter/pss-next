@@ -88,6 +88,14 @@ function estimatePromptTokens(
   return Math.ceil(serialized.length / 4);
 }
 
+export function estimateModelMessagesTokens(
+  messages: readonly ModelMessage[]
+): number {
+  return Math.ceil(
+    JSON.stringify(messages, promptTokenEstimateReplacer).length / 4
+  );
+}
+
 function promptTokenEstimateReplacer(_key: string, value: unknown): unknown {
   if (ArrayBuffer.isView(value)) {
     return binaryPromptTokenEstimate(value.byteLength);

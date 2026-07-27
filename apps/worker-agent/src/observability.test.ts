@@ -1,9 +1,10 @@
-import type { PluginAPI, PluginEventContext } from "@minpeter/pss-runtime";
+import type { AgentEvent } from "@minpeter/pss-runtime";
 import { describe, expect, it } from "vitest";
 
 import {
   createTurnEventCollector,
-  createTurnObservabilityPlugin,
+  createTurnObservabilityHooks,
+  createTurnObservabilityInstrumentation,
   describeEvent,
   type TurnObservabilityEntry,
 } from "./observability";
@@ -15,7 +16,12 @@ describe("describeEvent", () => {
         { type: "tool-call", input: {}, toolCallId: "1", toolName: "search" },
         "production"
       )
-    ).toEqual({ event: "tool-call", label: "production", toolName: "search" });
+    ).toEqual({
+      event: "tool-call",
+      label: "production",
+      toolCallId: "1",
+      toolName: "search",
+    });
   });
 
   it("captures turn-error with its message", () => {
@@ -59,56 +65,112 @@ describe("createTurnEventCollector", () => {
   });
 });
 
-describe("createTurnObservabilityPlugin", () => {
-  it("logs described events through the provided sink and never intercepts", async () => {
+describe("createTurnObservabilityInstrumentation", () => {
+  it("logs described events without changing the stream", async () => {
     const entries: TurnObservabilityEntry[] = [];
-    const plugin = createTurnObservabilityPlugin({
+    const instrumentation = createTurnObservabilityInstrumentation({
       label: "dev",
       log: (entry) => entries.push(entry),
     });
-    const handlers = new Map<
-      string,
-      (event: unknown, context: PluginEventContext) => unknown
-    >();
-    await plugin(
-      {
-        on: (event, handler) => {
-          handlers.set(
-            event,
-            handler as (event: unknown, context: PluginEventContext) => unknown
-          );
-          return { unsubscribe: () => undefined };
-        },
-        provide: () => {
-          throw new Error("not used");
-        },
-      } as PluginAPI,
-      { signal: new AbortController().signal }
-    );
-    const context: PluginEventContext = {
-      history: [],
-      signal: new AbortController().signal,
-      thread: { key: "test" },
-    };
-
-    const toolResult = await handlers.get("tool.execution.end")?.(
+    const sourceEvents: AgentEvent[] = [
       {
         type: "tool-result",
         output: {},
         toolCallId: "1",
         toolName: "x",
       },
-      context
-    );
-    const userInput = await handlers.get("message.update")?.(
       { type: "assistant-output", text: "hi" },
-      context
+    ];
+    const wrapped = instrumentation.wrapTurn(
+      {
+        async *events() {
+          yield* sourceEvents;
+        },
+        runId: "run-1",
+      },
+      {
+        operation: "send",
+        runId: "run-1",
+        threadKey: "test",
+      }
+    );
+    const observed: AgentEvent[] = [];
+    for await (const event of wrapped.events()) {
+      observed.push(event);
+    }
+
+    expect(observed).toEqual(sourceEvents);
+    expect(wrapped.runId).toBe("run-1");
+    expect(entries).toEqual([
+      {
+        event: "tool-result",
+        label: "dev",
+        toolCallId: "1",
+        toolName: "x",
+      },
+    ]);
+  });
+
+  it("preserves durable runId from the underlying turn", () => {
+    const instrumentation = createTurnObservabilityInstrumentation();
+    const wrapped = instrumentation.wrapTurn(
+      {
+        events() {
+          return {
+            async *[Symbol.asyncIterator]() {
+              await Promise.resolve();
+              yield { type: "turn-end" } satisfies AgentEvent;
+            },
+          };
+        },
+        runId: "durable-42",
+      },
+      { operation: "send", threadKey: "t", runId: "durable-42" }
+    );
+    expect(wrapped.runId).toBe("durable-42");
+  });
+});
+
+describe("createTurnObservabilityHooks", () => {
+  it("records tool attempts before execution for failed tools", async () => {
+    const collector = createTurnEventCollector();
+    const hooks = createTurnObservabilityHooks({
+      label: "prod",
+      log: collector.record,
+    });
+
+    await hooks.beforeToolExecution?.(
+      {
+        attempt: 1,
+        idempotencyKey: "run:call-1",
+        input: {},
+        policy: "manual-recovery",
+        toolCallId: "call-1",
+        toolName: "send_message",
+      },
+      {
+        history: [],
+        signal: new AbortController().signal,
+        threadKey: "thread",
+      }
     );
 
-    expect(toolResult).toBeUndefined();
-    expect(userInput).toBeUndefined();
-    expect(entries).toEqual([
-      { event: "tool-result", label: "dev", toolName: "x" },
-    ]);
+    // No public tool-call event emitted (tool failed / needs recovery).
+    expect(collector.summary().toolCalls).toEqual(["send_message"]);
+  });
+
+  it("dedupes attempt and completed public tool-call for the same id", () => {
+    const collector = createTurnEventCollector();
+    collector.record({
+      event: "tool-call",
+      toolCallId: "call-1",
+      toolName: "search",
+    });
+    collector.record({
+      event: "tool-call",
+      toolCallId: "call-1",
+      toolName: "search",
+    });
+    expect(collector.summary().toolCalls).toEqual(["search"]);
   });
 });

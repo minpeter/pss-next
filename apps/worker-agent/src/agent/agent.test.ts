@@ -8,13 +8,14 @@ import {
 } from "./agent";
 
 describe("worker-agent auto compaction", () => {
-  it("retains fewer messages than the compaction trigger", () => {
-    expect(WORKER_AGENT_AUTO_COMPACTION.minMessages).toBeGreaterThan(
-      WORKER_AGENT_AUTO_COMPACTION.retainMessages
+  it("retains fewer tokens than the compaction trigger", () => {
+    expect(WORKER_AGENT_AUTO_COMPACTION.triggerTokens).toBeGreaterThan(
+      WORKER_AGENT_AUTO_COMPACTION.retainTokens ?? 0
     );
     expect(WORKER_AGENT_AUTO_COMPACTION).toEqual({
-      minMessages: 48,
-      retainMessages: 16,
+      maxInputTokens: 128_000,
+      retainTokens: 32_000,
+      triggerTokens: 96_000,
     });
   });
 });

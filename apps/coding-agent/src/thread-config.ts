@@ -23,44 +23,17 @@ export function resolveCodingAgentThreadConfig(
 function resolveAutoCompaction(
   env: NodeJS.ProcessEnv
 ): AgentOptions["autoCompaction"] {
-  const minMessagesValue = nonEmpty(env.PSS_AUTO_COMPACTION_MIN_MESSAGES);
-  const retainMessagesValue = nonEmpty(env.PSS_AUTO_COMPACTION_RETAIN_MESSAGES);
-
-  if (minMessagesValue === undefined && retainMessagesValue === undefined) {
-    return false;
+  const contextWindow = nonEmpty(env.PSS_MODEL_CONTEXT_WINDOW);
+  if (contextWindow === undefined) {
+    return;
   }
 
-  if (minMessagesValue === undefined || retainMessagesValue === undefined) {
-    throw new Error(
-      "PSS_AUTO_COMPACTION_MIN_MESSAGES and PSS_AUTO_COMPACTION_RETAIN_MESSAGES must be set together."
-    );
+  const maxInputTokens = Number(contextWindow);
+  if (!(Number.isInteger(maxInputTokens) && maxInputTokens > 0)) {
+    throw new Error("PSS_MODEL_CONTEXT_WINDOW must be a positive integer.");
   }
 
-  const minMessages = parsePositiveIntegerEnv(
-    "PSS_AUTO_COMPACTION_MIN_MESSAGES",
-    minMessagesValue
-  );
-  const retainMessages = parsePositiveIntegerEnv(
-    "PSS_AUTO_COMPACTION_RETAIN_MESSAGES",
-    retainMessagesValue
-  );
-
-  if (retainMessages >= minMessages) {
-    throw new Error(
-      "PSS_AUTO_COMPACTION_RETAIN_MESSAGES must be smaller than PSS_AUTO_COMPACTION_MIN_MESSAGES."
-    );
-  }
-
-  return { minMessages, retainMessages };
-}
-
-function parsePositiveIntegerEnv(name: string, value: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer.`);
-  }
-
-  return parsed;
+  return { maxInputTokens };
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

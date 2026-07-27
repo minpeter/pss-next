@@ -75,9 +75,14 @@ export function recordRuntimeTraceEvent(
       });
       return;
     case "assistant-output":
+    case "assistant-output-delta":
     case "assistant-reasoning":
+    case "assistant-reasoning-delta":
     case "model-usage":
     case "runtime-input":
+    case "tool-call-input-delta":
+    case "tool-call-input-end":
+    case "tool-call-input-start":
     case "turn-start":
     case "user-input":
       return;

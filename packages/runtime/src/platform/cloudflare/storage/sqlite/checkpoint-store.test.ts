@@ -219,9 +219,8 @@ describe("DurableObjectSqliteCheckpointStore", () => {
 
     const latest = await store.latest("run-1");
     expect(latest).toMatchObject({ version: 20 });
-    expect(
-      (latest?.threadSnapshot as { history: string[] }).history[0]
-    ).toHaveLength(120_000);
+    const snapshot = latest?.threadSnapshot as { history: string[] };
+    expect(snapshot.history[0]).toHaveLength(120_000);
   });
 
   it("preserves full checkpoint fidelity (runtime state, phase, id)", async () => {

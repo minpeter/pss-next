@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai";
+import { APICallError, type ModelMessage, RetryError } from "ai";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import {
@@ -108,8 +108,70 @@ describe("Agent thread lifecycle", () => {
       sentUserText("fail"),
       { type: "turn-start" },
       { type: "step-start" },
-      { type: "turn-error", message: "model unavailable" },
+      {
+        error: { category: "unknown", version: 1 },
+        message: "model unavailable",
+        type: "turn-error",
+      },
     ]);
+  });
+
+  it("emits whitelisted structured metadata for API call failures", async () => {
+    const providerError = new APICallError({
+      data: {
+        error: {
+          code: "account_suspended",
+          message: "Account access denied",
+          type: "provider_account_error",
+        },
+      },
+      isRetryable: false,
+      message:
+        "Account access denied request-secret response-secret url-secret",
+      requestBodyValues: { apiKey: "request-secret" },
+      responseBody: '{"secret":"response-secret"}',
+      responseHeaders: {
+        authorization: "Bearer response-secret",
+        "cf-ray": "ray-456",
+        "retry-after": "3",
+        "x-infron-request-id": "request-123",
+      },
+      statusCode: 403,
+      url: "https://provider.example/v1/chat/completions?token=url-secret",
+    });
+    const retryError = new RetryError({
+      errors: [new Error("first attempt failed"), providerError],
+      message: "Failed after 2 attempts",
+      reason: "maxRetriesExceeded",
+    });
+    const agent = new Agent({
+      model: createCallbackModel(() => Promise.reject(retryError)),
+    });
+
+    const events = await collect(await agent.send("fail safely"));
+    const turnError = events.at(-1);
+
+    expect(turnError).toEqual({
+      error: {
+        category: "permission",
+        code: "account_suspended",
+        correlationIds: [
+          { source: "cf-ray", value: "ray-456" },
+          { source: "x-infron-request-id", value: "request-123" },
+        ],
+        observedRetryable: false,
+        providerType: "provider_account_error",
+        retryAfterMs: 3000,
+        status: 403,
+        version: 1,
+      },
+      message: "The provider refused this request.",
+      type: "turn-error",
+    });
+    const serialized = JSON.stringify(turnError);
+    for (const secret of ["request-secret", "response-secret", "url-secret"]) {
+      expect(serialized).not.toContain(secret);
+    }
   });
 
   it("interrupts the active run without aborting queued input", async () => {

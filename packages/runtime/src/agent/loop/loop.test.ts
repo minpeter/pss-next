@@ -5,6 +5,7 @@ import {
 } from "../../testing/mock-language-model-v4-test-utils";
 import {
   assistantMessage,
+  committedEvents,
   createScriptedModelOptions,
   eventTypes,
   toolCallPart,
@@ -49,7 +50,7 @@ describe("runAgentLoop", () => {
       })
     ).resolves.toBe("completed");
 
-    expect(events).toEqual([
+    expect(committedEvents(events)).toEqual([
       { type: "step-start" },
       expect.objectContaining({ type: "model-usage" }),
       { type: "assistant-output", text: "I should keep going." },
@@ -168,7 +169,8 @@ describe("runAgentLoop", () => {
       })
     ).resolves.toBe("aborted");
 
-    expect(eventTypes(events)).toEqual(["step-start", "model-usage"]);
+    // abort wins over a resolve that races it: no usage or committed output is emitted once signal.aborted (unified streaming path, plan streaming-support criterion 3).
+    expect(eventTypes(events)).toEqual(["step-start"]);
     expect(history.modelSnapshot()).toEqual([userMessage]);
   });
 });

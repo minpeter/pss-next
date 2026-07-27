@@ -13,13 +13,52 @@ export {
   type ThreadKey,
   type ThreadMetadata,
 } from "./agent/core/agent";
+export { AgentHookError } from "./agent/core/hook-error";
+export {
+  assertCompactionDecision,
+  assertInputDecision,
+  assertInputEvent,
+  assertModelStep,
+  assertToolDecision,
+  assertToolResult,
+  assertTransformDecision,
+} from "./agent/core/hook-validation";
+export type {
+  AgentCompactionDecision,
+  AgentCompactionEvent,
+  AgentHook,
+  AgentHookContext,
+  AgentHooks,
+  AgentInputDecision,
+  AgentInputEvent,
+  AgentModelContextEvent,
+  AgentModelStepEvent,
+  AgentTransformDecision,
+  AgentTurnStartEvent,
+} from "./agent/core/hooks";
+export {
+  DEFAULT_AGENT_MAX_INPUT_TOKENS,
+  type NormalizedAgentAutoCompactionOptions,
+  normalizeAgentAutoCompactionOptions,
+} from "./agent/core/options";
 export { threadStoreKey } from "./agent/core/thread-entry";
+export {
+  type ModelToolCacheFingerprintMetadata,
+  noopRuntimeDiagnostics,
+  type RuntimeDiagnostic,
+  type RuntimeDiagnosticLevel,
+  type RuntimeDiagnosticsSink,
+} from "./diagnostics";
 export type {
   AgentHost,
   StoredThreadEvent,
   ThreadEventCursor,
   ThreadEventReadOptions,
 } from "./execution/host/types";
+export {
+  ContextBudgetExceededError,
+  estimateModelMessagesTokens,
+} from "./llm/context-gate";
 export { ModelToolSelectionError } from "./llm/model-step-error";
 export type {
   PrepareModelStep,
@@ -27,37 +66,6 @@ export type {
   PrepareModelStepResult,
 } from "./llm/model-step-preparation";
 export type { AgentToolChoice } from "./llm/model-step-types";
-export {
-  definePlugin,
-  type PluginAPI,
-  type PluginDefinition,
-  type PluginEventContext,
-  type PluginEventMap,
-  type PluginFactory,
-  type PluginFactoryContext,
-  type PluginHandler,
-  type PluginRequestResultMap,
-  type PluginToolCallBeforeEvent,
-  type PluginToolCallRetryPolicy,
-  registerTool,
-  type Subscription,
-  type ThreadScopeCapability,
-  type ThreadStateHandle,
-  type ToolCapability,
-  threadScope,
-} from "./plugins/api";
-export {
-  type ModelToolCacheFingerprintMetadata,
-  noopRuntimeDiagnostics,
-  type RuntimeDiagnostic,
-  type RuntimeDiagnosticLevel,
-  type RuntimeDiagnosticsSink,
-} from "./plugins/diagnostics";
-export {
-  PluginHookError,
-  PluginInitializationError,
-  PluginRegistrationClosedError,
-} from "./plugins/plugin-errors";
 export type {
   ImagePrepareDiagnostics,
   ImagePreparePath,
@@ -107,17 +115,26 @@ export type {
   AgentEvent,
   AgentEventListener,
   AssistantOutput,
+  AssistantOutputDelta,
   AssistantReasoning,
+  AssistantReasoningDelta,
   ControlAgentEvent,
   InputEventMeta,
   InputSource,
   LifecycleAgentEvent,
   ModelUsage,
   RuntimeInput,
+  StreamAgentEvent,
   TelemetryAgentEvent,
   ToolAgentEvent,
   ToolCall,
+  ToolCallInputDelta,
+  ToolCallInputEnd,
+  ToolCallInputStart,
   ToolResult,
+  TurnErrorCategory,
+  TurnErrorCorrelationId,
+  TurnErrorMetadataV1,
   UserInput,
   UserMessage,
   UserMessageContent,
@@ -132,16 +149,38 @@ export type {
 export {
   isControlAgentEvent,
   isLifecycleAgentEvent,
+  isStreamAgentEvent,
   isTelemetryAgentEvent,
   isToolAgentEvent,
   isVisibleAgentEvent,
+  streamAgentEventTypes,
 } from "./thread/protocol/events";
 export type { AgentTurn } from "./thread/protocol/turn";
+export { selectSummaryOutputTokenLimit } from "./thread/runtime/auto-compaction-runner";
+export {
+  buildCompactionSummaryInstructions,
+  COMPACTION_SUMMARY_CONTRACT,
+  CompactionSummaryNotSmallerError,
+  summarizeCompactionRange,
+  summaryHistoryForRange,
+} from "./thread/runtime/auto-compaction-summary";
 export { ThreadEventReplayUnsupportedError } from "./thread/runtime/thread-event-replay";
 export type {
   CompactionContextMessage,
   ThreadContextMessage,
 } from "./thread/state/context";
+export { compactionContextForModel } from "./thread/state/context";
+export { ModelMessageHistory } from "./thread/state/history";
+export {
+  type CommittedThreadMigrations,
+  commitThreadStateMigrations,
+} from "./thread/state/migration-validation";
+export {
+  type ThreadMigrationContext,
+  ThreadMigrationError,
+  type ThreadMigrationSnapshot,
+  type ThreadStateMigration,
+} from "./thread/state/migrations";
 export type {
   CommitResult,
   ExpectedThreadVersion,

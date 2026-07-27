@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import {
   assistantMessage,
+  committedEvents,
   createCallbackModel,
   eventTypes,
   overlayRuntimeInput,
@@ -33,7 +34,7 @@ describe("Agent thread API", () => {
     const events = await collect(await agent.send("hello"));
 
     expect(seenHistory).toEqual([[userTextToModelMessage(userText("hello"))]]);
-    expect(events).toEqual([
+    expect(committedEvents(events)).toEqual([
       sentUserText("hello"),
       { type: "turn-start" },
       { type: "step-start" },

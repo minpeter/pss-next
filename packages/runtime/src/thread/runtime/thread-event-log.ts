@@ -3,7 +3,7 @@ import type {
   HostStoreTransaction,
   ThreadEventLog,
 } from "../../execution/host/types";
-import type { AgentEvent } from "../protocol/events";
+import { type AgentEvent, isStreamAgentEvent } from "../protocol/events";
 import type { ThreadState } from "../state/thread-state";
 
 export type DurableThreadEventBuffer = AgentEvent[];
@@ -12,6 +12,9 @@ export function recordDurableThreadEvent(
   buffer: DurableThreadEventBuffer,
   event: AgentEvent
 ): void {
+  if (isStreamAgentEvent(event)) {
+    throw new TypeError("Stream agent events cannot be recorded durably.");
+  }
   buffer.push(structuredClone(event));
 }
 

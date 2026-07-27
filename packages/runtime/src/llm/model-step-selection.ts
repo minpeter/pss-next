@@ -9,6 +9,7 @@ import type {
 import {
   dataPropertyInPrototypeChain,
   isPlainRecord,
+  MISSING_DATA_PROPERTY,
   ownDataProperty,
   ownProperty,
   propertyCanProvideValue,
@@ -134,7 +135,9 @@ function isLanguageModelObject(
     typeof modelId === "string" &&
     propertyCanProvideValue(supportedUrls) &&
     typeof doGenerate === "function" &&
-    typeof doStream === "function"
+    (doStream === MISSING_DATA_PROPERTY ||
+      doStream === undefined ||
+      typeof doStream === "function")
   );
 }
 

@@ -32,23 +32,23 @@ describe("inspectDurableTurn", () => {
     ["completed", "completed"],
     ["failed", "error"],
     ["cancelled", "cancelled"],
-  ] satisfies readonly (readonly [
-    string,
-    TurnStatus,
-  ])[])("reports the %s lifecycle boundary without a checkpoint", async (_boundary, status) => {
-    const host = createInMemoryHost();
-    const turn = turnRecord(status);
-    await host.store.turns.create(turn);
+  ] satisfies readonly (readonly [string, TurnStatus])[])(
+    "reports the %s lifecycle boundary without a checkpoint",
+    async (_boundary, status) => {
+      const host = createInMemoryHost();
+      const turn = turnRecord(status);
+      await host.store.turns.create(turn);
 
-    await expect(inspectDurableTurn(host.store, runId)).resolves.toEqual({
-      checkpointVersion: 0,
-      latestCheckpoint: null,
-      runId,
-      state: "no-checkpoint",
-      status,
-      threadKey: "inspect-thread",
-    });
-  });
+      await expect(inspectDurableTurn(host.store, runId)).resolves.toEqual({
+        checkpointVersion: 0,
+        latestCheckpoint: null,
+        runId,
+        state: "no-checkpoint",
+        status,
+        threadKey: "inspect-thread",
+      });
+    }
+  );
 
   it("returns the latest checkpoint and matching version atomically", async () => {
     const host = createInMemoryHost();

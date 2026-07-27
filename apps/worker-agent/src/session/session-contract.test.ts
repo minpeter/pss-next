@@ -17,16 +17,12 @@ describe("session event cursor contract", () => {
     expectTypeOf(serialized).toEqualTypeOf<SerializedThreadEventCursor>();
   });
 
-  it.each([
-    "",
-    "-1",
-    "1.5",
-    "01",
-    "offset:1",
-    "not-a-cursor",
-  ])("rejects malformed serialized cursor %j", (serialized) => {
-    expect(() => parseThreadEventCursor(serialized)).toThrow(
-      "invalid thread event cursor"
-    );
-  });
+  it.each(["", "-1", "1.5", "01", "offset:1", "not-a-cursor"])(
+    "rejects malformed serialized cursor %j",
+    (serialized) => {
+      expect(() => parseThreadEventCursor(serialized)).toThrow(
+        "invalid thread event cursor"
+      );
+    }
+  );
 });
