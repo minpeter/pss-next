@@ -2,17 +2,12 @@ import {
   createOpenSearch,
   type FetchOptions,
   type FetchResult,
-  type OpenSearchEnvironment,
   type OpenSearchOptions,
   type SearchResult,
 } from "@minpeter/opensearch/node";
 import type { ToolSet } from "ai";
 
-import {
-  CodingAgentToolsConfigError,
-  CodingAgentWebToolsUnavailableError,
-  TINYFISH_API_KEY_ENV,
-} from "./tools-errors";
+import { CodingAgentToolsConfigError } from "./tools-errors";
 import { createWebFetchTool, type WebFetchTool } from "./tools-web-fetch";
 import { createWebSearchTool, type WebSearchTool } from "./tools-web-search";
 
@@ -20,21 +15,17 @@ import { createWebSearchTool, type WebSearchTool } from "./tools-web-search";
 export {
   CodingAgentToolAbortError,
   CodingAgentToolsConfigError,
-  CodingAgentWebToolsUnavailableError,
 } from "./tools-errors";
 export type { WebFetchInput } from "./tools-web-fetch";
 export type { WebSearchInput } from "./tools-web-search";
 
-export const WEB_TOOLS_DISABLED_MESSAGE = `web tools disabled: missing ${TINYFISH_API_KEY_ENV}`;
-
 /**
- * Availability mode for the provider-backed web tools:
+ * Availability mode for the OpenSearch-backed web tools:
  *
- * - `required`: fail fast during tool/agent initialization when the provider
- *   configuration (TINYFISH_API_KEY) is missing.
- * - `optional` (default): omit the web tools when the provider configuration
- *   is missing and report the omission through `onWebToolsDisabled`
- *   (default: `console.warn`).
+ * - `optional`/`required` (default: `optional`): register the web tools.
+ *   `@minpeter/opensearch` resolves its own providers from the environment
+ *   (keyed engines such as TinyFish, Exa, Brave, ... plus keyless fallbacks
+ *   like DuckDuckGo), so no provider API key is required up front.
  * - `disabled`: never register the web tools.
  */
 export type WebToolsAvailability = "disabled" | "optional" | "required";
@@ -49,7 +40,6 @@ export interface CodingAgentOpenSearchClient {
 
 export interface CreateCodingAgentToolsOptions {
   readonly client?: CodingAgentOpenSearchClient;
-  readonly onWebToolsDisabled?: (message: string) => void;
   readonly openSearchOptions?: OpenSearchOptions;
   readonly webToolsAvailability?: WebToolsAvailability;
 }
@@ -60,16 +50,13 @@ export interface CodingAgentToolSet extends ToolSet {
 }
 
 /**
- * Create the provider-backed web tools, gated on TINYFISH_API_KEY before the
- * OpenSearch client is wired. An injected `client` counts as provider
- * configuration in `optional` and `required` modes; `disabled` always returns
- * an empty tool set. Defaults to `optional`, so startup succeeds without a
- * key and the omission is reported instead of advertising tools that can only
- * fail at execution time.
+ * Create the OpenSearch-backed web tools. Provider selection is delegated to
+ * `@minpeter/opensearch`, which picks search/fetch engines from the
+ * environment and always has keyless fallbacks, so the tools are registered
+ * whenever the availability mode is not `disabled`.
  */
 export function createCodingAgentTools(
   options: CreateCodingAgentToolsOptions & {
-    readonly client: CodingAgentOpenSearchClient;
     readonly webToolsAvailability?: "optional" | "required";
   }
 ): CodingAgentToolSet;
@@ -81,18 +68,6 @@ export function createCodingAgentTools(
 ): ToolSet {
   const availability = options.webToolsAvailability ?? "optional";
   if (availability === "disabled") {
-    return {};
-  }
-
-  if (
-    options.client === undefined &&
-    !hasTinyFishApiKey(options.openSearchOptions?.env ?? process.env)
-  ) {
-    if (availability === "required") {
-      throw new CodingAgentWebToolsUnavailableError();
-    }
-
-    (options.onWebToolsDisabled ?? console.warn)(WEB_TOOLS_DISABLED_MESSAGE);
     return {};
   }
 
@@ -108,12 +83,6 @@ export function resolveStartTuiTools(
   options?: CreateCodingAgentToolsOptions
 ): ToolSet {
   return tools ?? createCodingAgentTools(options);
-}
-
-function hasTinyFishApiKey(env: OpenSearchEnvironment): boolean {
-  return (env[TINYFISH_API_KEY_ENV] ?? "")
-    .split(";")
-    .some((apiKey) => apiKey.trim().length > 0);
 }
 
 function resolveOpenSearchClient({
