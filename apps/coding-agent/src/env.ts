@@ -91,15 +91,16 @@ export function readOpenAICompatibleModelEnv({
   // still fails validation so a custom endpoint is never silently ignored.
   if (isBlank(runtimeEnv.AI_API_KEY) && isBlank(runtimeEnv.AI_BASE_URL)) {
     const model = runtimeEnv.AI_MODEL?.trim();
-    if (model !== undefined && model.length > 0 && !isFreeTierModelId(model)) {
-      throw new Error(
-        `${MODEL_ENV_VALIDATION_ERROR_PREFIX} AI_MODEL: the OpenCode Zen free tier only supports model ids ending in ${FREE_TIER_MODEL_ID_SUFFIX}.`
-      );
-    }
+    // A bare AI_MODEL is commonly left over from another provider. With no
+    // key or endpoint it must not prevent zero-config startup: retain an
+    // explicit free-model override, otherwise safely use Zen's free default.
     return {
       AI_API_KEY: FREE_TIER_API_KEY,
       AI_BASE_URL: FREE_TIER_BASE_URL,
-      AI_MODEL: model ? model : FREE_TIER_DEFAULT_MODEL_ID,
+      AI_MODEL:
+        model !== undefined && isFreeTierModelId(model)
+          ? model
+          : FREE_TIER_DEFAULT_MODEL_ID,
       isFreeTier: true,
     };
   }
