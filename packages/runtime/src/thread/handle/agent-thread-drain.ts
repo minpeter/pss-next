@@ -4,47 +4,68 @@ import { runThreadInputDrainLoop } from "./thread-drain";
 export async function drainAgentThreadInputQueue(
   context: AgentThreadContext
 ): Promise<void> {
-  if (context.running) {
-    context.drainRequested = true;
-    return await (context.drainPromise ?? Promise.resolve());
+  const { drain, terminal, turn } = context;
+  const current = drain.state;
+  if (current.tag === "draining") {
+    // A loop is already running; ask it to restart once it finishes so it
+    // observes inputs admitted after its current pass.
+    drain.to({ ...current, restartRequested: true });
+    return await current.promise;
   }
 
-  context.running = true;
-  context.drainRequested = false;
-  const drain = runThreadInputDrainLoop({
-    activate: ({ abort, run, runtimeInput }) => {
-      context.activeAbort = abort;
-      context.activeRun = run;
-      context.activeRuntimeInput = runtimeInput;
-      context.runToCloseOnKill = run;
+  let finishLoop!: () => void;
+  let failLoop!: (error: unknown) => void;
+  const loopSettled = new Promise<void>((resolve, reject) => {
+    finishLoop = resolve;
+    failLoop = reject;
+  });
+  loopSettled.catch(() => undefined);
+  drain.to({ tag: "draining", promise: loopSettled, restartRequested: false });
+
+  const loop = runThreadInputDrainLoop({
+    activate: ({ abort, run, runtimeInput, turnId }) => {
+      turn.to({ tag: "active", abort, run, runtimeInput, turnId });
     },
-    continueDraining: () => !(context.killed || context.drainRequested),
+    continueDraining: () => {
+      if (terminal.state.tag !== "open") {
+        return false;
+      }
+      const state = drain.state;
+      return !(state.tag === "draining" && state.restartRequested);
+    },
     deactivateRun: () => {
-      context.activeRun = undefined;
-      context.activeRuntimeInput = undefined;
+      const state = turn.state;
+      if (state.tag === "active") {
+        turn.to({
+          tag: "finishing",
+          abort: state.abort,
+          run: state.run,
+          turnId: state.turnId,
+        });
+      }
     },
     events: context.events,
     execution: context.execution,
     inputQueue: context.inputQueue,
     model: context.model,
     release: () => {
-      context.activeAbort = undefined;
-      context.activeRun = undefined;
-      context.activeRuntimeInput = undefined;
-      context.runToCloseOnKill = undefined;
+      turn.to({ tag: "none" });
     },
     state: context.state,
     threadKey: context.threadKey,
   });
-  context.drainPromise = drain;
+  loop.then(finishLoop, failLoop);
+
   try {
-    await drain;
+    await loop;
   } finally {
-    const shouldRestart = context.drainRequested && !context.killed;
-    context.running = false;
-    context.drainPromise = undefined;
+    const state = drain.state;
+    const shouldRestart =
+      state.tag === "draining" &&
+      state.restartRequested &&
+      terminal.state.tag === "open";
+    drain.to({ tag: "idle" });
     if (shouldRestart) {
-      context.drainRequested = false;
       await drainAgentThreadInputQueue(context);
     }
   }

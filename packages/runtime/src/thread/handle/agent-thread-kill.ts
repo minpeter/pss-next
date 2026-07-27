@@ -1,23 +1,28 @@
 import { closeKilledRuntimeInputs } from "../runtime/kill";
 import { threadKilledError } from "../state/thread-errors";
 import type { AgentThreadContext } from "./agent-thread-context";
+import {
+  activeTurnRuntimeInput,
+  turnAbort,
+  turnRunToClose,
+} from "./agent-thread-machines";
 
 export function killAgentThread(context: AgentThreadContext): Promise<void> {
-  if (context.killed) {
-    return context.killPromise ?? Promise.resolve();
+  const current = context.terminal.state;
+  if (current.tag !== "open") {
+    return current.killPromise;
   }
 
-  context.killed = true;
   const killedError = threadKilledError();
   context.pendingOverlays.length = 0;
   context.pendingRuntimeInputs.length = 0;
-  context.activeAbort?.abort();
+  turnAbort(context.turn)?.abort();
   const immediateClose = closeKilledRuntimeInputs({
-    activeRuntimeInput: context.activeRuntimeInput,
+    activeRuntimeInput: activeTurnRuntimeInput(context.turn),
     executionHost: context.execution.executionHost,
     inputQueue: context.inputQueue,
     message: killedError.message,
-    runToClose: context.runToCloseOnKill ?? context.activeRun,
+    runToClose: turnRunToClose(context.turn),
     threadKey: context.threadKey,
   });
   const admissionClose = context.inputAdmissionQueue.then(() =>
@@ -30,9 +35,10 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
       threadKey: context.threadKey,
     })
   );
-  context.killPromise = Promise.all([immediateClose, admissionClose]).then(
+  const killPromise = Promise.all([immediateClose, admissionClose]).then(
     () => undefined
   );
-  context.killPromise.catch(() => undefined);
-  return context.killPromise;
+  killPromise.catch(() => undefined);
+  context.terminal.to({ tag: "killed", killPromise });
+  return killPromise;
 }

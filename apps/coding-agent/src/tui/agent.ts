@@ -35,6 +35,7 @@ import {
   type InputThread,
 } from "./input-routing";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import { TuiSessionMachine } from "./session-state";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
   addChatComponent,
@@ -628,10 +629,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.addChild(footerContainer);
   tui.setFocus(editor);
 
-  let shouldExit = false;
-  let activeTurnInterrupted = false;
-  let activeRun: AgentTurn | undefined;
-  let inputResolver: null | ((value: string | null) => void) = null;
+  const session = new TuiSessionMachine();
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
   let commandInputListenerActive = false;
@@ -655,25 +653,19 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const cancelActiveTurn = (): boolean => {
-    if (activeRun === undefined) {
+    if (session.markInterrupted() === undefined) {
       return false;
     }
 
-    activeTurnInterrupted = true;
     config.thread.interrupt();
     return true;
   };
 
   const requestExit = (): void => {
-    shouldExit = true;
     extensionUiController.abort();
     cancelActiveTurn();
     clearStatus();
-    if (inputResolver) {
-      const resolve = inputResolver;
-      inputResolver = null;
-      resolve(null);
-    }
+    session.close();
   };
 
   const isCtrlCInput = (data: string): boolean => {
@@ -715,7 +707,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (
       isEscapeInput(data) &&
       !commandInputListenerActive &&
-      activeRun !== undefined
+      session.activeTurn !== undefined
     ) {
       cancelActiveTurn();
       return { consume: true };
@@ -732,7 +724,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const waitForInput = (): Promise<string | null> =>
     new Promise<string | null>((resolve) => {
-      inputResolver = (value: string | null) => resolve(value);
+      session.awaitInput(resolve);
       tui.setFocus(editor);
       tui.requestRender();
     });
@@ -870,8 +862,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const runSingleTurn = async (run: AgentTurn): Promise<void> => {
-    activeRun = run;
-    activeTurnInterrupted = false;
+    session.beginTurn(run);
     editor.disableSubmit = false;
     tui.setFocus(editor);
 
@@ -916,7 +907,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
       clearStreamingLoader();
 
-      if (activeTurnInterrupted) {
+      if (session.wasInterrupted(run)) {
         addInterruptedMessage();
         return;
       }
@@ -934,10 +925,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         addAbnormalFinishReasonMessage(finishReason);
       }
     } finally {
-      if (activeRun === run) {
-        activeRun = undefined;
-      }
-      activeTurnInterrupted = false;
+      session.endTurn(run);
       clearStatus();
     }
   };
@@ -1173,27 +1161,23 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       editor.addToHistory(trimmed);
     }
 
-    const steeringRun = activeRun;
-    if (steeringRun !== undefined) {
+    const steeringTurn = session.activeTurn;
+    if (steeringTurn !== undefined) {
       if (trimmed.length > 0) {
-        processSteeringInput(trimmed, steeringRun).catch((error: unknown) => {
-          clearStatus();
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          addSystemMessage(chatContainer, `Error: ${errorMessage}`);
-          tui.requestRender();
-        });
+        processSteeringInput(trimmed, steeringTurn.run).catch(
+          (error: unknown) => {
+            clearStatus();
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+            tui.requestRender();
+          }
+        );
       }
       return;
     }
 
-    if (!inputResolver) {
-      return;
-    }
-
-    const resolve = inputResolver;
-    inputResolver = null;
-    resolve(text);
+    session.submitInput(text);
   };
 
   updateHeader();
@@ -1223,7 +1207,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     await config.onSetup?.();
     updateHeader();
 
-    while (!shouldExit) {
+    while (!session.closed) {
       const input = await waitForInput();
       if (input === null) {
         break;
@@ -1238,11 +1222,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     extensionUiController.abort();
     clearStatus();
     footerStatusBar.stop();
-    const pendingResolver: unknown = inputResolver;
-    inputResolver = null;
-    if (typeof pendingResolver === "function") {
-      pendingResolver(null);
-    }
+    session.close();
 
     removeInputListener();
     process.stdout.off("resize", onTerminalResize);

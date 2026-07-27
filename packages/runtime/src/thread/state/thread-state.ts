@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import { Fsm } from "../../internal/fsm";
 import type {
   CommitResult,
   ExpectedThreadVersion,
@@ -50,15 +51,50 @@ export class ThreadCommitConflictError extends Error {
   }
 }
 
+/**
+ * Persistence lifecycle of a thread's stored state.
+ *
+ * ```
+ * unloaded -> loading -> ready
+ *     ^          |         |
+ *     |     (load fails)   |
+ *     +----------+         |
+ *     |                    v
+ *     +------------- deleting -> deleted
+ *          (delete fails: roll back to the pre-delete tag)
+ * ```
+ */
+type ThreadPersistenceState =
+  | { readonly tag: "unloaded" }
+  | { readonly tag: "loading"; readonly promise: Promise<void> }
+  | { readonly tag: "ready" }
+  | {
+      readonly tag: "deleting";
+      /** State to roll back to when the store delete fails. */
+      readonly rollbackTag: "ready" | "unloaded";
+    }
+  | { readonly tag: "deleted" };
+
+function createThreadPersistenceMachine(): Fsm<ThreadPersistenceState> {
+  return new Fsm<ThreadPersistenceState>({
+    initial: { tag: "unloaded" },
+    name: "thread-persistence",
+    transitions: {
+      unloaded: ["loading", "deleting"],
+      loading: ["ready", "unloaded", "deleting"],
+      ready: ["deleting"],
+      deleting: ["deleting", "deleted", "ready", "unloaded"],
+      deleted: [],
+    },
+  });
+}
+
 export class ThreadState {
   #appliedMigrations: AppliedThreadMigrations = {};
+  readonly #machine = createThreadPersistenceMachine();
   readonly #migrations: readonly ThreadStateMigration[];
   readonly #persistence: ThreadPersistenceOptions;
-  #deleteRequested = false;
   #history = new ModelMessageHistory();
-  #deleted = false;
-  #loadPromise?: Promise<void>;
-  #loaded = false;
   #storeVersion: string | undefined;
   #writeQueue: Promise<void> = Promise.resolve();
 
@@ -72,21 +108,31 @@ export class ThreadState {
   }
 
   async ensureLoaded(): Promise<void> {
-    if (this.#deleteRequested || this.#deleted) {
+    const current = this.#machine.state;
+    if (
+      current.tag === "ready" ||
+      current.tag === "deleting" ||
+      current.tag === "deleted"
+    ) {
       return;
     }
 
-    if (this.#loaded) {
-      return;
+    if (current.tag === "loading") {
+      return await current.promise;
     }
 
-    this.#loadPromise ??= this.#loadThreadState();
-    try {
-      await this.#loadPromise;
-    } catch (error) {
-      this.#loadPromise = undefined;
-      throw error;
-    }
+    const promise = this.#replaceWithStoredThread().then(
+      () => {
+        // A delete may have raced the load; keep the terminal state then.
+        this.#machine.toIf("loading", { tag: "ready" });
+      },
+      (error: unknown) => {
+        this.#machine.toIf("loading", { tag: "unloaded" });
+        throw error;
+      }
+    );
+    this.#machine.to({ tag: "loading", promise });
+    return await promise;
   }
 
   modelSnapshot(): ModelMessage[] {
@@ -131,7 +177,7 @@ export class ThreadState {
   }
 
   async compact(input: ThreadCompactionInput): Promise<void> {
-    if (this.#deleteRequested || this.#deleted) {
+    if (this.#machine.in("deleting", "deleted")) {
       return;
     }
 
@@ -174,14 +220,14 @@ export class ThreadState {
   async commitWith(
     commit: (input: PreparedThreadCommit) => Promise<CommitResult>
   ): Promise<void> {
-    if (this.#deleteRequested || this.#deleted) {
+    if (this.#machine.in("deleting", "deleted")) {
       return;
     }
 
     const snapshot = this.#history.modelSnapshot();
     const compactions = this.#history.compactionSnapshot();
     await this.#enqueueWrite(async () => {
-      if (this.#deleteRequested || this.#deleted) {
+      if (this.#machine.in("deleting", "deleted")) {
         return;
       }
 
@@ -207,39 +253,37 @@ export class ThreadState {
   }
 
   async delete(): Promise<void> {
-    if (this.#deleted) {
+    const current = this.#machine.state;
+    if (current.tag === "deleted") {
       return;
     }
 
+    const rollbackTag = deleteRollbackTag(current);
     const previous = {
       appliedMigrations: this.#appliedMigrations,
       compactions: this.#history.compactionSnapshot(),
       history: this.#history.modelSnapshot(),
-      loaded: this.#loaded,
       storeVersion: this.#storeVersion,
     };
-    this.#deleteRequested = true;
-    this.#loadPromise = undefined;
+    this.#machine.to({ tag: "deleting", rollbackTag });
 
     await this.#enqueueWrite(async () => {
       try {
         await this.#persistence.store.delete(this.#persistence.key);
       } catch (error) {
-        this.#deleteRequested = false;
-        this.#appliedMigrations = previous.appliedMigrations;
-        this.#loaded = previous.loaded;
-        this.#storeVersion = previous.storeVersion;
-        this.#history = new ModelMessageHistory(
-          previous.history,
-          undefined,
-          previous.compactions
-        );
+        if (this.#machine.toIf("deleting", { tag: rollbackTag })) {
+          this.#appliedMigrations = previous.appliedMigrations;
+          this.#storeVersion = previous.storeVersion;
+          this.#history = new ModelMessageHistory(
+            previous.history,
+            undefined,
+            previous.compactions
+          );
+        }
         throw error;
       }
 
-      this.#deleted = true;
-      this.#loadPromise = undefined;
-      this.#loaded = true;
+      this.#machine.toIf("deleting", { tag: "deleted" });
       this.#storeVersion = undefined;
       this.#appliedMigrations = {};
       this.#history = new ModelMessageHistory();
@@ -250,15 +294,6 @@ export class ThreadState {
     const next = this.#writeQueue.then(operation, operation);
     this.#writeQueue = next.catch(() => undefined);
     return next;
-  }
-
-  async #loadThreadState(): Promise<void> {
-    if (this.#loaded) {
-      return;
-    }
-
-    await this.#replaceWithStoredThread();
-    this.#loaded = true;
   }
 
   async #replaceWithStoredThread(): Promise<void> {
@@ -339,6 +374,16 @@ export class ThreadState {
 }
 
 const MAX_MIGRATION_COMMIT_ATTEMPTS = 8;
+
+/** State to restore when a delete fails, preserving the pre-delete tag. */
+function deleteRollbackTag(
+  current: Exclude<ThreadPersistenceState, { tag: "deleted" }>
+): "ready" | "unloaded" {
+  if (current.tag === "deleting") {
+    return current.rollbackTag;
+  }
+  return current.tag === "ready" ? "ready" : "unloaded";
+}
 
 /** @internal exported for unit tests of special-key seeding */
 export function seedAppliedMigrations(
