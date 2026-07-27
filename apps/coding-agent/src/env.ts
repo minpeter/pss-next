@@ -5,6 +5,22 @@ export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL =
   "https://apis.opengateway.ai/v1";
 export const DEFAULT_OPENAI_COMPATIBLE_MODEL_ID = "minimax/MiniMax-M2.7";
 
+/**
+ * Keyless fallback provider: OpenCode Zen's free tier. `public` is Zen's
+ * reserved marker for anonymous requests, not a secret. Free models are
+ * rate-limited per IP and the catalog can change at any time, so this is a
+ * zero-setup on-ramp, not a production default.
+ */
+export const FREE_TIER_BASE_URL = "https://opencode.ai/zen/v1";
+export const FREE_TIER_API_KEY = "public";
+export const FREE_TIER_DEFAULT_MODEL_ID = "mimo-v2.5-free";
+export const FREE_TIER_MODEL_ID_SUFFIX = "-free";
+export const FREE_TIER_PROVIDER_LABEL = "opencode-zen";
+
+/** Zen's anonymous `public` credential is restricted to its `-free` models. */
+export const isFreeTierModelId = (modelId: string): boolean =>
+  modelId.endsWith(FREE_TIER_MODEL_ID_SUFFIX);
+
 export type CodingAgentRuntimeEnv = Record<string, string | undefined>;
 
 interface ReadCodingAgentEnvOptions {
@@ -39,6 +55,12 @@ export const formatModelEnvSetupHelp = (error: Error): string =>
     "or via a .env file in the current directory:",
     paint(ANSI_CYAN, "  AI_API_KEY=<your-api-key>"),
     "",
+    paint(ANSI_DIM, "Or unset AI_BASE_URL as well to fall back to the keyless"),
+    paint(
+      ANSI_DIM,
+      `free tier (${FREE_TIER_BASE_URL}, model ${FREE_TIER_DEFAULT_MODEL_ID}).`
+    ),
+    "",
     paint(ANSI_DIM, "Optional overrides:"),
     paint(
       ANSI_DIM,
@@ -53,10 +75,37 @@ export const formatModelEnvSetupHelp = (error: Error): string =>
     "",
   ].join("\n");
 
+export interface ResolvedOpenAICompatibleModelEnv {
+  readonly AI_API_KEY: string;
+  readonly AI_BASE_URL: string;
+  readonly AI_MODEL: string;
+  /** True when the keyless OpenCode Zen free tier is in use. */
+  readonly isFreeTier: boolean;
+}
+
 export function readOpenAICompatibleModelEnv({
   runtimeEnv = process.env,
-}: ReadCodingAgentEnvOptions = {}) {
-  return createEnv({
+}: ReadCodingAgentEnvOptions = {}): ResolvedOpenAICompatibleModelEnv {
+  // No key and no endpoint configured: fall back to the keyless free tier
+  // instead of refusing to start. An explicit AI_BASE_URL without a key
+  // still fails validation so a custom endpoint is never silently ignored.
+  if (isBlank(runtimeEnv.AI_API_KEY) && isBlank(runtimeEnv.AI_BASE_URL)) {
+    const model = runtimeEnv.AI_MODEL?.trim();
+    // A bare AI_MODEL is commonly left over from another provider. With no
+    // key or endpoint it must not prevent zero-config startup: retain an
+    // explicit free-model override, otherwise safely use Zen's free default.
+    return {
+      AI_API_KEY: FREE_TIER_API_KEY,
+      AI_BASE_URL: FREE_TIER_BASE_URL,
+      AI_MODEL:
+        model !== undefined && isFreeTierModelId(model)
+          ? model
+          : FREE_TIER_DEFAULT_MODEL_ID,
+      isFreeTier: true,
+    };
+  }
+
+  const env = createEnv({
     emptyStringAsUndefined: true,
     onValidationError: failEnvValidation(MODEL_ENV_VALIDATION_ERROR_PREFIX),
     runtimeEnv: { ...runtimeEnv },
@@ -70,6 +119,38 @@ export function readOpenAICompatibleModelEnv({
         .default(DEFAULT_OPENAI_COMPATIBLE_MODEL_ID),
     },
   });
+  const isExplicitZenFreeTier =
+    env.AI_API_KEY === FREE_TIER_API_KEY &&
+    normalizeBaseURL(env.AI_BASE_URL) === normalizeBaseURL(FREE_TIER_BASE_URL);
+  if (isExplicitZenFreeTier) {
+    const model = runtimeEnv.AI_MODEL?.trim() || FREE_TIER_DEFAULT_MODEL_ID;
+    if (!isFreeTierModelId(model)) {
+      throw new Error(
+        `${MODEL_ENV_VALIDATION_ERROR_PREFIX} AI_MODEL: the OpenCode Zen free tier only supports model ids ending in -free.`
+      );
+    }
+    return {
+      AI_API_KEY: env.AI_API_KEY,
+      AI_BASE_URL: env.AI_BASE_URL,
+      AI_MODEL: model,
+      isFreeTier: true,
+    };
+  }
+  return {
+    AI_API_KEY: env.AI_API_KEY,
+    AI_BASE_URL: env.AI_BASE_URL,
+    AI_MODEL: env.AI_MODEL,
+    isFreeTier: false,
+  };
+}
+
+const TRAILING_SLASHES_PATTERN = /\/+$/;
+
+const normalizeBaseURL = (value: string): string =>
+  value.replace(TRAILING_SLASHES_PATTERN, "");
+
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim().length === 0;
 }
 
 function failEnvValidation(prefix: string) {

@@ -26,6 +26,32 @@ describe("createAliasAwareAutocompleteProvider", () => {
     });
   });
 
+  it("clears an argument completion after its query is erased", async () => {
+    const provider = createAliasAwareAutocompleteProvider({
+      commands: [
+        {
+          description: "Pick a model",
+          execute: () => ({ success: true }),
+          getArgumentCompletions: async () => [
+            { label: "mimo-v2.5-free", value: "mimo-v2.5-free" },
+          ],
+          name: "model",
+        },
+      ],
+    });
+    const options = { force: false, signal: new AbortController().signal };
+
+    await expect(
+      provider.getSuggestions(["/model mi"], 0, 9, options)
+    ).resolves.toMatchObject({
+      items: [{ value: "mimo-v2.5-free" }],
+      prefix: "mi",
+    });
+    await expect(
+      provider.getSuggestions(["/model "], 0, 7, options)
+    ).resolves.toBeNull();
+  });
+
   it("does not treat canonical command names as aliases", () => {
     const aliases = buildAliasToCanonicalNameMap([
       {

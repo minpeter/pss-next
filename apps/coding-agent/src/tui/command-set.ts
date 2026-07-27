@@ -6,28 +6,6 @@ export interface TuiCommandSet {
   commands: TuiCommand[];
 }
 
-const formatHelpLine = (command: TuiCommand): string => {
-  const aliases = command.aliases ?? [];
-  const aliasSuffix = aliases.length > 0 ? ` (${aliases.join(", ")})` : "";
-  return `/${command.name}${aliasSuffix} - ${command.description}`;
-};
-
-const createHelpCommand = (
-  getCommands: () => Iterable<TuiCommand>
-): TuiCommand => ({
-  name: "help",
-  description: "Show available commands",
-  execute: (): TuiCommandResult => {
-    const lines = [...getCommands()]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(formatHelpLine);
-    return {
-      success: true,
-      message: ["Available commands:", ...lines].join("\n"),
-    };
-  },
-});
-
 export function buildTuiCommandSet(
   localCommands?: Iterable<TuiCommand>
 ): TuiCommandSet {
@@ -36,16 +14,6 @@ export function buildTuiCommandSet(
 
   for (const command of providedCommands) {
     mergedCommands.set(command.name.toLowerCase(), command);
-  }
-
-  const hasCustomHelp = providedCommands.some(
-    (command) => command.name.toLowerCase() === "help"
-  );
-  if (!hasCustomHelp) {
-    mergedCommands.set(
-      "help",
-      createHelpCommand(() => mergedCommands.values())
-    );
   }
 
   const commandAliasLookup = new Map<string, string>();

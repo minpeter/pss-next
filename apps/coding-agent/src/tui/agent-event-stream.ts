@@ -8,6 +8,12 @@ import type { TuiStreamPart } from "./stream-handlers";
 export interface AgentEventStreamOptions {
   /** Receives every normalized model-usage event for footer/telemetry. */
   onModelUsage?: (usage: ModelUsage) => void;
+  /**
+   * Receives every streamed output text fragment (assistant text,
+   * reasoning, and tool-call input deltas) so callers can estimate live
+   * token usage between authoritative `model-usage` events.
+   */
+  onOutputDelta?: (text: string) => void;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -95,6 +101,7 @@ export async function* agentEventStreamParts(
         yield { type: "start-step" };
         break;
       case "assistant-reasoning-delta":
+        options.onOutputDelta?.(event.text);
         yield* assistantDeltaParts("reasoning", event.text, sawReasoningDelta);
         sawReasoningDelta = true;
         break;
@@ -106,6 +113,7 @@ export async function* agentEventStreamParts(
         );
         break;
       case "assistant-output-delta":
+        options.onOutputDelta?.(event.text);
         yield* assistantDeltaParts("text", event.text, sawTextDelta);
         sawTextDelta = true;
         break;
@@ -120,6 +128,7 @@ export async function* agentEventStreamParts(
         };
         break;
       case "tool-call-input-delta":
+        options.onOutputDelta?.(event.inputTextDelta);
         yield {
           type: "tool-input-delta",
           inputTextDelta: event.inputTextDelta,
