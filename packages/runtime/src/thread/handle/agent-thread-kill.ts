@@ -1,3 +1,4 @@
+import { deferred } from "../../internal/deferred";
 import { closeKilledRuntimeInputs } from "../runtime/kill";
 import { threadKilledError } from "../state/thread-errors";
 import type { AgentThreadContext } from "./agent-thread-context";
@@ -12,6 +13,14 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
   if (current.tag !== "open") {
     return current.killPromise;
   }
+
+  const settled = deferred();
+  const killPromise = settled.promise;
+  killPromise.catch(() => undefined);
+  // Transition before any teardown work: aborting the active turn runs
+  // synchronous abort listeners, and re-entrant kill()/#assertOpen() calls
+  // from those listeners must already observe the thread as killed.
+  context.terminal.to({ tag: "killed", killPromise });
 
   const killedError = threadKilledError();
   context.pendingOverlays.length = 0;
@@ -35,10 +44,9 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
       threadKey: context.threadKey,
     })
   );
-  const killPromise = Promise.all([immediateClose, admissionClose]).then(
-    () => undefined
+  Promise.all([immediateClose, admissionClose]).then(
+    () => settled.resolve(),
+    settled.reject
   );
-  killPromise.catch(() => undefined);
-  context.terminal.to({ tag: "killed", killPromise });
   return killPromise;
 }

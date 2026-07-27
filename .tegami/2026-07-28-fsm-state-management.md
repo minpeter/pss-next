@@ -14,12 +14,20 @@ Replace scattered boolean/promise flag combinations with small typed finite
 state machines so every lifecycle state is explicit and illegal transitions
 fail fast instead of silently corrupting state.
 
-The runtime gains an internal `Fsm` helper (discriminated-union states plus a
-validated transition table). `AgentThread` now tracks four orthogonal
-machines — lifecycle (`created/starting/started/stopping/stopped`), terminal
+The runtime gains an `Fsm` helper (discriminated-union states plus a
+validated transition table), exported as `@minpeter/pss-runtime/fsm` so the
+coding agent reuses the same implementation instead of hand-rolling its own.
+`AgentThread` now tracks four orthogonal machines — lifecycle (`created/starting/started/stopping/stopped`), terminal
 (`open/killed/deleting/deleted`), drain (`idle/draining`), and turn
 (`none/active/finishing`) — replacing the previous `started`, `killed`,
-`running`, `drainRequested` flags and their companion promises.
+`running`, `drainRequested` flags and their companion promises. The
+relationships between the orthogonal machines that transition tables cannot
+express (a turn only exists inside a running drain loop; shutdown requires a
+killed thread) are enforced by `assertThreadMachineInvariants` at machine
+synchronization points. Machines transition before their async continuations
+are wired (via a small `deferred` helper), so state never depends on
+microtask scheduling order, and a kill is observable by synchronous
+re-entrant callers (e.g. abort listeners) before teardown starts.
 `ThreadState` persistence follows a
 `unloaded/loading/ready/deleting/deleted` machine with an explicit rollback
 target when a store delete fails. `BufferedAgentTurn` models its producer

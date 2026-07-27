@@ -57,10 +57,12 @@ const createConsumerMachine = () =>
       unconsumed: ["idle"],
       idle: ["waiting", "delivering"],
       waiting: ["delivering", "idle"],
-      // `delivering -> delivering` and `delivered -> delivered` drop the ack
-      // when close() settles it early.
+      // `delivering -> delivering` drops the ack when close() settles it
+      // early while the same-tick prefetch guard is still armed.
       delivering: ["delivering", "delivered"],
-      delivered: ["delivered", "delivering", "waiting", "idle"],
+      // A delivered result only leaves through `#settlePendingAck` (the
+      // consumer asking for the next event, or close), which parks at idle.
+      delivered: ["idle"],
     },
   });
 
