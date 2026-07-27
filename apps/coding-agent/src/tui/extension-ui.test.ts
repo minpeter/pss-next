@@ -75,6 +75,34 @@ describe("extension TUI service", () => {
     expect(fixture.restored()).toBe(1);
   });
 
+  it("ignores key releases so the Enter that opened the picker cannot confirm", async () => {
+    const fixture = createFakeTui();
+    const result = fixture.ui.select({
+      label: "Model",
+      options: [
+        { label: "Fast", value: "fast" },
+        { label: "Slow", value: "slow" },
+      ],
+    });
+    const listener = fixture.listeners[0];
+
+    // Kitty keyboard protocol delivers the *release* of the Enter keypress
+    // that submitted the command right after the overlay opens. It must be
+    // swallowed instead of confirming the first item.
+    expect(listener?.("\x1b[13;1:3u")).toEqual({ consume: true });
+    const pending = await Promise.race([
+      result,
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve("pending"), 0);
+      }),
+    ]);
+    expect(pending).toBe("pending");
+
+    // A real Enter press still confirms the selection.
+    listener?.("\r");
+    await expect(result).resolves.toBe("fast");
+  });
+
   it("settles select cancellation on lifecycle abort and removes input routing", async () => {
     const fixture = createFakeTui();
     const result = fixture.ui.select({
