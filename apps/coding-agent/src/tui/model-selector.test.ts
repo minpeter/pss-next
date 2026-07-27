@@ -115,6 +115,18 @@ describe("ModelSelectorComponent", () => {
     expect(rendered).not.toContain("model-29");
   });
 
+  it("renders untrusted model ids as terminal-safe text", () => {
+    const maliciousId = "model\x1b]52;c;not-a-clipboard\x07";
+    const { plainLines } = createSelector({
+      currentModelId: maliciousId,
+      modelIds: [maliciousId],
+    });
+
+    const rendered = plainLines().join("\n");
+    expect(rendered).not.toContain("\x1b]52");
+    expect(rendered).toContain("model^[]52;c;not-a-clipboard^G");
+  });
+
   it("settles only once", () => {
     const { onCancel, onSelect, selector } = createSelector();
 

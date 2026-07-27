@@ -7,6 +7,7 @@ import {
   Spacer,
   Text,
 } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "./terminal-safety";
 
 const ANSI_RESET = "\x1b[0m";
 const ANSI_BOLD = "\x1b[1m";
@@ -86,7 +87,7 @@ export class ModelSelectorComponent extends Container {
     this.addChild(new Spacer(1));
     this.addChild(
       new Text(
-        `${style(ANSI_BOLD, "Select a model")} ${style(ANSI_DIM, `— current: ${options.currentModelId} · type to search · enter to select · esc to cancel`)}`,
+        `${style(ANSI_BOLD, "Select a model")} ${style(ANSI_DIM, `— current: ${sanitizeTerminalText(options.currentModelId)} · type to search · enter to select · esc to cancel`)}`,
         1,
         0
       )
@@ -193,9 +194,10 @@ export class ModelSelectorComponent extends Container {
       const isSelected = index === this.#selectedIndex;
       const checkmark =
         id === this.#currentModelId ? style(ANSI_GREEN, " ✓") : "";
+      const label = sanitizeTerminalText(id);
       const line = isSelected
-        ? `${style(ANSI_CYAN, "→ ")}${style(ANSI_CYAN, id)}${checkmark}`
-        : `  ${id}${checkmark}`;
+        ? `${style(ANSI_CYAN, "→ ")}${style(ANSI_CYAN, label)}${checkmark}`
+        : `  ${label}${checkmark}`;
       this.#listContainer.addChild(new Text(line, 1, 0));
     }
 

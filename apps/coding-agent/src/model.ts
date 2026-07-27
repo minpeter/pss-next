@@ -113,7 +113,11 @@ export function createCodingModelSessionFromEnv({
     model: switchable.model,
     currentModelId: () => switchable.current().modelId,
     listModelIds: async () => {
-      const ids = await fetchProviderModelIds(env.AI_BASE_URL, env.AI_API_KEY);
+      const ids = await fetchProviderModelIds(
+        env.AI_BASE_URL,
+        env.AI_API_KEY,
+        fetch ?? globalThis.fetch
+      );
       // Zen's `/models` includes paid models too, but its anonymous `public`
       // credential can only use ids ending in `-free`. Keep unavailable
       // entries out of both `/model` and `/model list`.
@@ -171,10 +175,11 @@ const TRAILING_SLASHES_PATTERN = /\/+$/;
 
 async function fetchProviderModelIds(
   baseURL: string,
-  apiKey: string
+  apiKey: string,
+  fetch: typeof globalThis.fetch
 ): Promise<string[]> {
   const endpoint = `${baseURL.replace(TRAILING_SLASHES_PATTERN, "")}/models`;
-  const response = await globalThis.fetch(endpoint, {
+  const response = await fetch(endpoint, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (!response.ok) {

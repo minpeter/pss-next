@@ -233,6 +233,29 @@ describe("createCodingModelSessionFromEnv", () => {
     }
   });
 
+  it("uses the caller-supplied fetch to list provider models", async () => {
+    providerMock.mockReturnValue({
+      modelId: "model-a",
+      provider: "test",
+      specificationVersion: "v4",
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "model-a" }] }), {
+        status: 200,
+      })
+    );
+    const { createCodingModelSessionFromEnv } = await import("./model");
+    const session = createCodingModelSessionFromEnv({ runtimeEnv, fetch });
+
+    await expect(session.listModelIds()).resolves.toEqual(["model-a"]);
+    expect(fetch).toHaveBeenCalledWith("https://llm.test/v1/models", {
+      headers: { Authorization: "Bearer ai-token" },
+    });
+  });
+
   it("only exposes and switches to -free models on the keyless Zen tier", async () => {
     providerMock.mockImplementation((modelId: string) => ({
       modelId,
