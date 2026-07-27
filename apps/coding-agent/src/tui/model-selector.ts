@@ -6,6 +6,8 @@ import {
   Input,
   Spacer,
   Text,
+  truncateToWidth,
+  visibleWidth,
 } from "@earendil-works/pi-tui";
 import { sanitizeTerminalText } from "./terminal-safety";
 
@@ -29,6 +31,38 @@ const clampVisibleModels = (maxVisibleModels: number | undefined): number =>
       Math.floor(maxVisibleModels ?? MAX_VISIBLE_MODELS)
     )
   );
+
+class ModelRow implements Component {
+  readonly #current: boolean;
+  readonly #id: string;
+  readonly #selected: boolean;
+
+  constructor(id: string, current: boolean, selected: boolean) {
+    this.#id = sanitizeTerminalText(id);
+    this.#current = current;
+    this.#selected = selected;
+  }
+
+  invalidate(): void {
+    // Stateless; nothing to invalidate.
+  }
+
+  render(width: number): string[] {
+    const prefix = this.#selected ? "→ " : "  ";
+    const suffix = this.#current ? " ✓" : "";
+    // Account for Text's former left padding and truncate the provider label
+    // before styling so each catalog id always consumes one visual row.
+    const labelWidth = Math.max(
+      0,
+      width - 1 - visibleWidth(prefix) - visibleWidth(suffix)
+    );
+    const label = truncateToWidth(this.#id, labelWidth);
+    const line = this.#selected
+      ? `${style(ANSI_CYAN, prefix)}${style(ANSI_CYAN, label)}${this.#current ? style(ANSI_GREEN, suffix) : ""}`
+      : `${prefix}${label}${this.#current ? style(ANSI_GREEN, suffix) : ""}`;
+    return [truncateToWidth(` ${line}`, width)];
+  }
+}
 
 /** Full-width dim horizontal rule, like pi's selector borders. */
 class HorizontalRule implements Component {
@@ -240,14 +274,13 @@ export class ModelSelectorComponent extends Container {
       if (id === undefined) {
         continue;
       }
-      const isSelected = index === this.#selectedIndex;
-      const checkmark =
-        id === this.#currentModelId ? style(ANSI_GREEN, " ✓") : "";
-      const label = sanitizeTerminalText(id);
-      const line = isSelected
-        ? `${style(ANSI_CYAN, "→ ")}${style(ANSI_CYAN, label)}${checkmark}`
-        : `  ${label}${checkmark}`;
-      this.#listContainer.addChild(new Text(line, 1, 0));
+      this.#listContainer.addChild(
+        new ModelRow(
+          id,
+          id === this.#currentModelId,
+          index === this.#selectedIndex
+        )
+      );
     }
 
     if (start > 0 || end < this.#filtered.length) {
