@@ -20,9 +20,9 @@ import type { BufferedAgentTurn } from "../protocol/turn";
 export type ThreadLifecycleState =
   | { readonly tag: "created" }
   /**
-   * `promise` settles when the initial load finishes. A failed load keeps the
-   * machine in `starting` with a rejected promise so later callers observe
-   * the same failure (matches the previous sticky `startPromise` behavior).
+   * `promise` settles when the initial load finishes. A failed load
+   * transitions back to `created` so the next call retries the load instead
+   * of replaying the first failure forever.
    */
   | { readonly tag: "starting"; readonly promise: Promise<void> }
   | { readonly tag: "started" }
@@ -35,7 +35,7 @@ export function createThreadLifecycleMachine(): Fsm<ThreadLifecycleState> {
     name: "thread-lifecycle",
     transitions: {
       created: ["starting"],
-      starting: ["started", "stopping"],
+      starting: ["started", "created", "stopping"],
       started: ["stopping"],
       stopping: ["stopped"],
       stopped: [],

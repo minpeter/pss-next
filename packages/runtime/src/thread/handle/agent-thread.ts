@@ -238,9 +238,17 @@ export class AgentThread {
       return Promise.resolve();
     }
 
-    const promise = this.#context.state.ensureLoaded().then(() => {
-      lifecycle.toIf("starting", { tag: "started" });
-    });
+    const promise = this.#context.state.ensureLoaded().then(
+      () => {
+        lifecycle.toIf("starting", { tag: "started" });
+      },
+      (error: unknown) => {
+        // A failed load is retryable: return to `created` so the next call
+        // reloads instead of replaying the first failure forever.
+        lifecycle.toIf("starting", { tag: "created" });
+        throw error;
+      }
+    );
     lifecycle.to({ tag: "starting", promise });
     return promise;
   }
@@ -260,8 +268,13 @@ export class AgentThread {
       return;
     }
 
+    // A failed start means there is nothing to stop; shutdown (and thus
+    // delete/dispose) must still complete instead of replaying the load
+    // failure.
     const settled =
-      current.tag === "starting" ? current.promise : Promise.resolve();
+      current.tag === "starting"
+        ? current.promise.catch(() => undefined)
+        : Promise.resolve();
     const promise = settled.then(() => {
       lifecycle.toIf("stopping", { tag: "stopped" });
     });

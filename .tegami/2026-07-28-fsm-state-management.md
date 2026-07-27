@@ -34,4 +34,21 @@ The coding-agent TUI replaces its `shouldExit`, `inputResolver`,
 separately, keeping steering submits routed to the active run while the
 prompt keeps waiting. `ExtensionHostLifecycle` tracks
 `idle/activating/active/disposed` so agent/mode references cannot exist
-outside an activation. Public APIs and observable behavior are unchanged.
+outside an activation.
+
+The explicit machines also fix latent lifecycle bugs the old flags hid:
+
+- A failed initial thread-state load is no longer sticky; the next
+  `thread.send()` retries the load instead of replaying the first failure
+  forever.
+- `thread.delete()`/`dispose()` now complete for a thread whose load
+  failed; shutdown previously chained onto the rejected start promise and
+  wedged the delete permanently.
+- Concurrent `ThreadState.delete()` calls share one in-flight store delete
+  instead of issuing duplicates.
+- A slow store load that loses a race against delete discards its snapshot
+  instead of resurrecting deleted history in memory.
+- A TUI turn interrupt can no longer be swallowed by a steering replacement
+  run resetting the shared interrupted flag.
+
+Public API shapes are unchanged.
