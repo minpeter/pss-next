@@ -1,7 +1,9 @@
 import {
+  type Component,
   Container,
   Editor,
   type EditorTheme,
+  isFocusable,
   isKeyRelease,
   isKeyRepeat,
   Key,
@@ -146,7 +148,18 @@ export class FooterStatusBar extends Text {
     if (this.foregroundMessage !== null) {
       return { message: this.foregroundMessage, state: "running" };
     }
-    return this.entries[0];
+    if (this.entries.length === 0) {
+      return;
+    }
+    // The footer has a deliberately fixed one-row height so streaming status
+    // changes cannot move the composer. Retain every status in that one row.
+    return {
+      level: this.entries[0]?.level,
+      message: this.entries.map((entry) => entry.message).join(" · "),
+      state: this.entries.some((entry) => entry.state === "running")
+        ? "running"
+        : "ready",
+    };
   }
 
   render(width: number): string[] {
@@ -177,13 +190,6 @@ export class FooterStatusBar extends Text {
     );
     if (leadingLine !== null) {
       lines.push(leadingLine);
-    }
-
-    const remainingEntries =
-      this.foregroundMessage === null ? this.entries.slice(1) : this.entries;
-    for (const entry of remainingEntries) {
-      const left = this.renderLeftEntry(entry, contentWidth);
-      lines.push(this.padLine(` ${left.styled}`, width));
     }
 
     return lines;
@@ -283,6 +289,73 @@ export class FooterStatusBar extends Text {
       return ANSI_YELLOW;
     }
     return ANSI_DIM;
+  }
+}
+
+/**
+ * Bottom-pinned, focus-owning composer. The chat is normal-flow content but
+ * this component is rendered as an overlay, so a streaming Markdown reflow
+ * can never alter the editor's screen row. It forwards focus and input to
+ * whichever component currently occupies the editor slot.
+ */
+class ComposerLayer extends Container {
+  #content: Component;
+  readonly #footer: Component;
+  #focused = false;
+
+  constructor(content: Component, footer: Component) {
+    super();
+    this.#content = content;
+    this.#footer = footer;
+    this.#rebuild();
+  }
+
+  get focused(): boolean {
+    return this.#focused;
+  }
+
+  set focused(value: boolean) {
+    this.#focused = value;
+    if (isFocusable(this.#content)) {
+      this.#content.focused = value;
+    }
+  }
+
+  handleInput(data: string): void {
+    this.#content.handleInput?.(data);
+  }
+
+  setContent(content: Component): void {
+    this.#content = content;
+    if (isFocusable(content)) {
+      content.focused = this.#focused;
+    }
+    this.#rebuild();
+  }
+
+  #rebuild(): void {
+    this.clear();
+    this.addChild(this.#content);
+    this.addChild(this.#footer);
+  }
+}
+
+/** Reserves the overlay's footprint in chat flow so output is never hidden. */
+class ComposerReservation implements Component {
+  readonly #composer: Component;
+
+  constructor(composer: Component) {
+    this.#composer = composer;
+  }
+
+  invalidate(): void {
+    // The composer owns render caches; this reservation is computed fresh.
+  }
+
+  render(width: number): string[] {
+    return Array.from({ length: this.#composer.render(width).length }, () =>
+      " ".repeat(Math.max(0, width))
+    );
   }
 }
 
@@ -584,8 +657,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const headerContainer = new Container();
   const chatContainer = new Container();
   const overlayContainer = new Container();
-  const editorContainer = new Container();
-  const footerContainer = new Container();
   const footerStatusBar = new FooterStatusBar(tui);
 
   const title = new Text("", 1, 0);
@@ -639,15 +710,18 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       basePath: process.cwd(),
     })
   );
-  editorContainer.addChild(editor);
-  footerContainer.addChild(footerStatusBar);
+  const composerLayer = new ComposerLayer(editor, footerStatusBar);
+  const composerReservation = new ComposerReservation(composerLayer);
 
   tui.addChild(headerContainer);
   tui.addChild(chatContainer);
   tui.addChild(overlayContainer);
-  tui.addChild(editorContainer);
-  tui.addChild(footerContainer);
-  tui.setFocus(editor);
+  tui.addChild(composerReservation);
+  tui.showOverlay(composerLayer, {
+    anchor: "bottom-left",
+    width: "100%",
+  });
+  tui.setFocus(composerLayer);
 
   let shouldExit = false;
   let activeTurnInterrupted = false;
@@ -671,7 +745,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const clearPromptInput = (): void => {
     editor.setText("");
-    tui.setFocus(editor);
+    tui.setFocus(composerLayer);
     tui.requestRender();
   };
 
@@ -754,7 +828,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const waitForInput = (): Promise<string | null> =>
     new Promise<string | null>((resolve) => {
       inputResolver = (value: string | null) => resolve(value);
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     });
 
@@ -894,7 +968,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     activeRun = run;
     activeTurnInterrupted = false;
     editor.disableSubmit = false;
-    tui.setFocus(editor);
+    tui.setFocus(composerLayer);
 
     const turnUsage = {
       inputTokens: 0,
@@ -1079,9 +1153,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       commandInputListenerActive = true;
       const settle = (modelId: string | undefined): void => {
         commandInputListenerActive = false;
-        editorContainer.clear();
-        editorContainer.addChild(editor);
-        tui.setFocus(editor);
+        composerLayer.setContent(editor);
+        tui.setFocus(composerLayer);
         tui.requestRender();
         resolve(modelId);
       };
@@ -1091,9 +1164,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         onCancel: () => settle(undefined),
         onSelect: (modelId) => settle(modelId),
       });
-      editorContainer.clear();
-      editorContainer.addChild(selector);
-      tui.setFocus(selector);
+      composerLayer.setContent(selector);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     });
 
@@ -1247,7 +1319,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       await processUserInputMessage(trimmed, steeringRun);
     } finally {
       editor.disableSubmit = false;
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     }
   };
@@ -1280,7 +1352,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return true;
     } finally {
       editor.disableSubmit = false;
-      tui.setFocus(editor);
+      tui.setFocus(composerLayer);
       tui.requestRender();
     }
   };
