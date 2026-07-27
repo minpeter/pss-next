@@ -103,6 +103,26 @@ describe("ModelSelectorComponent", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("uses a compact scrollable layout on short terminals", () => {
+    const { plainLines, selector } = createSelector({
+      currentModelId: "model-a",
+      modelIds: ["model-a", "model-b", "model-c", "model-d"],
+    });
+    selector.setLayout(2, true);
+
+    let rendered = plainLines().join("\n");
+    expect(rendered).toContain("→ model-a ✓");
+    expect(rendered).toContain("model-b");
+    expect(rendered).toContain("(1/4)");
+    expect(rendered).not.toContain("─");
+
+    selector.handleInput(DOWN_ARROW);
+    selector.handleInput(DOWN_ARROW);
+    rendered = plainLines().join("\n");
+    expect(rendered).toContain("→ model-c");
+    expect(rendered).toContain("(3/4)");
+  });
+
   it("windows long catalogs and shows a scroll indicator", () => {
     const modelIds = Array.from({ length: 30 }, (_, i) => `model-${i}`);
     const { plainLines } = createSelector({

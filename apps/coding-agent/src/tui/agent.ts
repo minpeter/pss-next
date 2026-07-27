@@ -67,6 +67,9 @@ const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
 const CTRL_C_ETX = "\u0003";
 const CTRL_C_EXIT_WINDOW_MS = 500;
+const MODEL_SELECTOR_COMPACT_ROWS = 16;
+const MODEL_SELECTOR_COMPACT_CHROME_ROWS = 4;
+const MODEL_SELECTOR_STANDARD_CHROME_ROWS = 10;
 
 const style = (prefix: string, text: string): string =>
   `${prefix}${text}${ANSI_RESET}`;
@@ -729,6 +732,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let inputResolver: null | ((value: string | null) => void) = null;
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
+  let activeModelSelector: ModelSelectorComponent | undefined;
   let commandInputListenerActive = false;
   const extensionUiController = new AbortController();
 
@@ -798,7 +802,26 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     lastCtrlCPressAt = now;
   };
 
+  const getModelSelectorLayout = (): {
+    compact: boolean;
+    maxVisibleModels: number;
+  } => {
+    const compact = tui.terminal.rows < MODEL_SELECTOR_COMPACT_ROWS;
+    const chromeRows = compact
+      ? MODEL_SELECTOR_COMPACT_CHROME_ROWS
+      : MODEL_SELECTOR_STANDARD_CHROME_ROWS;
+    return {
+      compact,
+      maxVisibleModels: Math.max(1, tui.terminal.rows - chromeRows),
+    };
+  };
+
   const onTerminalResize = (): void => {
+    const selector = activeModelSelector;
+    if (selector !== undefined) {
+      const layout = getModelSelectorLayout();
+      selector.setLayout(layout.maxVisibleModels, layout.compact);
+    }
     tui.requestRender(true);
   };
 
@@ -1151,19 +1174,27 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const selection = await new Promise<string | undefined>((resolve) => {
       // Let the selector own ctrl+c/escape while it is mounted.
       commandInputListenerActive = true;
+      let selector: ModelSelectorComponent | undefined;
       const settle = (modelId: string | undefined): void => {
         commandInputListenerActive = false;
+        if (activeModelSelector === selector) {
+          activeModelSelector = undefined;
+        }
         composerLayer.setContent(editor);
         tui.setFocus(composerLayer);
         tui.requestRender();
         resolve(modelId);
       };
-      const selector = new ModelSelectorComponent({
+      const layout = getModelSelectorLayout();
+      selector = new ModelSelectorComponent({
+        compact: layout.compact,
         currentModelId: selectorConfig.currentModelId(),
+        maxVisibleModels: layout.maxVisibleModels,
         modelIds,
         onCancel: () => settle(undefined),
         onSelect: (modelId) => settle(modelId),
       });
+      activeModelSelector = selector;
       composerLayer.setContent(selector);
       tui.setFocus(composerLayer);
       tui.requestRender();

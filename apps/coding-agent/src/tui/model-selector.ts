@@ -21,6 +21,15 @@ const style = (prefix: string, text: string): string =>
 
 const MAX_VISIBLE_MODELS = 10;
 
+const clampVisibleModels = (maxVisibleModels: number | undefined): number =>
+  Math.max(
+    1,
+    Math.min(
+      MAX_VISIBLE_MODELS,
+      Math.floor(maxVisibleModels ?? MAX_VISIBLE_MODELS)
+    )
+  );
+
 /** Full-width dim horizontal rule, like pi's selector borders. */
 class HorizontalRule implements Component {
   invalidate(): void {
@@ -33,7 +42,11 @@ class HorizontalRule implements Component {
 }
 
 export interface ModelSelectorOptions {
+  /** Removes decorative spacing on a very short terminal. */
+  readonly compact?: boolean;
   readonly currentModelId: string;
+  /** Maximum number of model rows visible at once. */
+  readonly maxVisibleModels?: number;
   readonly modelIds: readonly string[];
   readonly onCancel: () => void;
   readonly onSelect: (modelId: string) => void;
@@ -56,6 +69,9 @@ export class ModelSelectorComponent extends Container {
   readonly #onCancel: () => void;
   readonly #onSelect: (modelId: string) => void;
   readonly #searchInput = new Input();
+  readonly #title: Text;
+  #compact: boolean;
+  #maxVisibleModels: number;
   #selectedIndex = 0;
   #settled = false;
 
@@ -76,32 +92,39 @@ export class ModelSelectorComponent extends Container {
     this.#currentModelId = options.currentModelId;
     this.#onCancel = options.onCancel;
     this.#onSelect = options.onSelect;
+    this.#compact = options.compact ?? false;
+    this.#maxVisibleModels = clampVisibleModels(options.maxVisibleModels);
     // Current model first, then the provider's catalog order.
     this.#models = [
       ...options.modelIds.filter((id) => id === options.currentModelId),
       ...options.modelIds.filter((id) => id !== options.currentModelId),
     ];
     this.#filtered = this.#models;
-
-    this.addChild(new HorizontalRule());
-    this.addChild(new Spacer(1));
-    this.addChild(
-      new Text(
-        `${style(ANSI_BOLD, "Select a model")} ${style(ANSI_DIM, `— current: ${sanitizeTerminalText(options.currentModelId)} · type to search · enter to select · esc to cancel`)}`,
-        1,
-        0
-      )
+    this.#title = new Text(
+      `${style(ANSI_BOLD, "Select a model")} ${style(ANSI_DIM, `— current: ${sanitizeTerminalText(options.currentModelId)} · type to search · enter to select · esc to cancel`)}`,
+      1,
+      0
     );
-    this.addChild(new Spacer(1));
     this.#searchInput.onSubmit = () => this.#confirmSelection();
     this.#searchInput.onEscape = () => this.#cancel();
-    this.addChild(this.#searchInput);
-    this.addChild(new Spacer(1));
-    this.addChild(this.#listContainer);
-    this.addChild(new Spacer(1));
-    this.addChild(new HorizontalRule());
-
+    this.#rebuildLayout();
     this.#updateList();
+  }
+
+  /** Recalculate the selector layout after a terminal-height change. */
+  setLayout(maxVisibleModels: number, compact: boolean): void {
+    const next = clampVisibleModels(maxVisibleModels);
+    if (next === this.#maxVisibleModels && compact === this.#compact) {
+      return;
+    }
+    this.#maxVisibleModels = next;
+    this.#compact = compact;
+    this.#rebuildLayout();
+    this.#updateList();
+  }
+
+  setMaxVisibleModels(maxVisibleModels: number): void {
+    this.setLayout(maxVisibleModels, this.#compact);
   }
 
   handleInput(data: string): void {
@@ -125,6 +148,27 @@ export class ModelSelectorComponent extends Container {
     // Everything else edits the fuzzy search query.
     this.#searchInput.handleInput(data);
     this.#applyFilter(this.#searchInput.getValue());
+  }
+
+  #rebuildLayout(): void {
+    this.clear();
+    if (!this.#compact) {
+      this.addChild(new HorizontalRule());
+      this.addChild(new Spacer(1));
+    }
+    this.addChild(this.#title);
+    if (!this.#compact) {
+      this.addChild(new Spacer(1));
+    }
+    this.addChild(this.#searchInput);
+    if (!this.#compact) {
+      this.addChild(new Spacer(1));
+    }
+    this.addChild(this.#listContainer);
+    if (!this.#compact) {
+      this.addChild(new Spacer(1));
+      this.addChild(new HorizontalRule());
+    }
   }
 
   #moveSelection(delta: number): void {
@@ -180,11 +224,11 @@ export class ModelSelectorComponent extends Container {
     const start = Math.max(
       0,
       Math.min(
-        this.#selectedIndex - Math.floor(MAX_VISIBLE_MODELS / 2),
-        this.#filtered.length - MAX_VISIBLE_MODELS
+        this.#selectedIndex - Math.floor(this.#maxVisibleModels / 2),
+        this.#filtered.length - this.#maxVisibleModels
       )
     );
-    const end = Math.min(start + MAX_VISIBLE_MODELS, this.#filtered.length);
+    const end = Math.min(start + this.#maxVisibleModels, this.#filtered.length);
 
     for (let index = start; index < end; index++) {
       const id = this.#filtered[index];
