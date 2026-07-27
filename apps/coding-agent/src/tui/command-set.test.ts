@@ -3,7 +3,7 @@ import type { TuiCommand } from "./command";
 import { buildTuiCommandSet } from "./command-set";
 
 describe("buildTuiCommandSet", () => {
-  it("merges local commands with global help for autocomplete and execution", async () => {
+  it("keeps only the provided commands without injecting /help", () => {
     const localCommands: TuiCommand[] = [
       {
         name: "new",
@@ -18,38 +18,8 @@ describe("buildTuiCommandSet", () => {
 
     const commandSet = buildTuiCommandSet(localCommands);
 
-    expect(commandSet.commands.some((command) => command.name === "help")).toBe(
-      true
-    );
-    expect(commandSet.commands.some((command) => command.name === "new")).toBe(
-      true
-    );
-
-    const helpCommand = commandSet.commandLookup.get("help");
-    const result = await helpCommand?.execute({ args: [] });
-
-    expect(result?.success).toBe(true);
-    expect(result?.message).toContain("/help - Show available commands");
-    expect(result?.message).toContain(
-      "/new (clear, reset) - Start a new session"
-    );
-  });
-
-  it("preserves a custom local help command instead of overwriting it", async () => {
-    const localHelp: TuiCommand = {
-      name: "help",
-      description: "Custom help",
-      execute: () => ({
-        success: true,
-        message: "custom help",
-      }),
-    };
-
-    const commandSet = buildTuiCommandSet([localHelp]);
-    const helpCommand = commandSet.commandLookup.get("help");
-    const result = await helpCommand?.execute({ args: [] });
-
-    expect(result?.message).toBe("custom help");
+    expect(commandSet.commands.map((command) => command.name)).toEqual(["new"]);
+    expect(commandSet.commandLookup.has("help")).toBe(false);
   });
 
   it("resolves aliases to the canonical command name", () => {
@@ -71,16 +41,21 @@ describe("buildTuiCommandSet", () => {
   it("does not let an alias shadow a canonical command", () => {
     const commandSet = buildTuiCommandSet([
       {
-        aliases: ["help"],
+        aliases: ["clear"],
+        description: "Reload extensions",
+        execute: () => ({ success: true }),
+        name: "reload",
+      },
+      {
         description: "Start a new session",
         execute: () => ({ success: true }),
-        name: "new",
+        name: "clear",
       },
     ]);
 
-    expect(commandSet.commandAliasLookup.has("help")).toBe(false);
-    expect(commandSet.commandLookup.get("help")?.description).toBe(
-      "Show available commands"
+    expect(commandSet.commandAliasLookup.has("clear")).toBe(false);
+    expect(commandSet.commandLookup.get("clear")?.description).toBe(
+      "Start a new session"
     );
   });
 });

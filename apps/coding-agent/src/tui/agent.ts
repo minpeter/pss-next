@@ -674,7 +674,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const help = new Text(
     style(
       ANSI_DIM,
-      "Enter to submit, Shift+Enter for newline, /help for commands, Esc to interrupt, Ctrl+C to clear, Ctrl+C twice to exit"
+      "Enter to submit, Shift+Enter for newline, Esc to interrupt, Ctrl+C to clear, Ctrl+C twice to exit"
     ),
     1,
     0
@@ -1243,7 +1243,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       if (commandResult?.message) {
         addSystemMessage(chatContainer, commandResult.message);
       } else if (commandResult === null) {
-        addSystemMessage(chatContainer, "Unknown command. Try /help");
+        addSystemMessage(chatContainer, "Unknown command.");
       }
       tui.requestRender();
       return;
