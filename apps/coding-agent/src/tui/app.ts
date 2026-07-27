@@ -34,7 +34,6 @@ import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createClearCommand, createReloadCommand } from "./command-set";
-import { formatTuiHeaderSubtitle } from "./header-subtitle";
 import { createModelCommand } from "./model-command";
 import {
   boundedReloadOperation,
@@ -193,12 +192,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     const buildSubtitle = (): string =>
-      formatTuiHeaderSubtitle({
-        cwd: process.cwd(),
-        maxInputTokens: threadConfig.autoCompaction?.maxInputTokens,
-        modelLabel: modelSubtitleLabel(modelSession),
-        threadKey: threadConfig.key,
-      });
+      `${modelSubtitleLabel(modelSession)}\n${process.cwd()}`;
     const header = { title: "pss", subtitle: buildSubtitle() };
 
     const tuiConfig: AgentTUIConfig = {
