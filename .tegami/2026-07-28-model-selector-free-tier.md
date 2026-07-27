@@ -17,12 +17,12 @@ shows a startup notice plus a `(free tier)` header tag so the fallback is
 never mistaken for a configured provider.
 
 The TUI gains a `/model` command backed by the provider's OpenAI-compatible
-`/models` catalog: `/model` opens a focused inline picker, `/model <id>`
-switches directly with catalog validation, and `/model list` prints the
-catalog. Switches apply to the live session immediately — the agent keeps
-one stable model identity whose underlying provider model is swapped, so the
-next step uses the new model without rebuilding the agent or losing the
-thread.
+`/models` catalog: `/model` opens a focused inline picker, while
+`/model <id>` switches directly for an exact catalog id or opens the picker
+prefiltered for a partial id. Switches apply to the live session immediately
+— the agent keeps one stable model identity whose underlying provider model
+is swapped, so the next step uses the new model without rebuilding the agent
+or losing the thread.
 
 Catalogs are cached persistently under `~/.pss/model-catalogs`. Cache files
 contain only a timestamp and model ids; their opaque filename hashes the

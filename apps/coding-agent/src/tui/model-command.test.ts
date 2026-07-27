@@ -53,6 +53,18 @@ describe("/model command", () => {
     });
   });
 
+  it("treats list as an ordinary picker search instead of a special command", async () => {
+    const { command, switchModel } = createHarness();
+
+    const result = await command.execute({ args: ["list"] });
+
+    expect(switchModel).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      action: { query: "list", type: "select-model" },
+      success: true,
+    });
+  });
+
   it("uses the picker query when the catalog is unavailable", async () => {
     const { command, switchModel } = createHarness({
       catalog: new Error("catalog down"),
@@ -88,16 +100,6 @@ describe("/model command", () => {
       success: true,
       action: { type: "select-model" },
     });
-  });
-
-  it("prints the catalog for /model list", async () => {
-    const { command } = createHarness();
-
-    const result = await command.execute({ args: ["list"] });
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("* model-a");
-    expect(result.message).toContain("  model-b");
   });
 
   it("surfaces switch failures", async () => {

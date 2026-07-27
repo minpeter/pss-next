@@ -16,7 +16,6 @@ export interface CreateModelCommandOptions {
  *   (`select-model` action).
  * - `/model <id>` switches directly when it exactly matches a catalog id;
  *   otherwise it opens the picker with `<id>` as its fuzzy-search query.
- * - `/model list` prints the catalog.
  */
 export const createModelCommand = (
   options: CreateModelCommandOptions
@@ -31,9 +30,6 @@ export const createModelCommand = (
 
     if (requested === undefined || requested === "") {
       return { success: true, action: { type: "select-model" } };
-    }
-    if (requested === "list" && args.length === 1) {
-      return await printModelList(options);
     }
     return await selectOrSwitchModel(options, args.join(" "));
   },
@@ -52,8 +48,7 @@ async function completeModelArgument(
   const query = argumentPrefix.trim().toLowerCase();
   const current = options.currentModelId();
   const catalog = await loadCatalog(options);
-  const values = ["list", ...catalog.ids];
-  const matches = values.filter((value) => fuzzyIncludes(value, query));
+  const matches = catalog.ids.filter((value) => fuzzyIncludes(value, query));
   if (matches.length === 0) {
     return null;
   }
@@ -72,27 +67,6 @@ const fuzzyIncludes = (value: string, query: string): boolean => {
   }
   return queryIndex === query.length;
 };
-
-async function printModelList(
-  options: CreateModelCommandOptions
-): Promise<TuiCommandResult> {
-  const current = options.currentModelId();
-  const catalog = await loadCatalog(options);
-  if (catalog.error !== undefined || catalog.ids.length === 0) {
-    return {
-      success: false,
-      message: catalogUnavailableMessage(current, catalog.error),
-    };
-  }
-  const lines = catalog.ids.map((id) => `${id === current ? "* " : "  "}${id}`);
-  return {
-    success: true,
-    message: [
-      "Available models (* = current). Switch with /model <id>:",
-      ...lines,
-    ].join("\n"),
-  };
-}
 
 async function selectOrSwitchModel(
   options: CreateModelCommandOptions,
@@ -148,17 +122,4 @@ async function loadCatalog(options: CreateModelCommandOptions): Promise<{
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-function catalogUnavailableMessage(
-  current: string,
-  error: string | undefined
-): string {
-  return [
-    `Current model: ${current}.`,
-    error === undefined
-      ? "The provider returned an empty model catalog."
-      : `Could not list models: ${error}`,
-    "Switch directly with /model <model-id>.",
-  ].join(" ");
 }
