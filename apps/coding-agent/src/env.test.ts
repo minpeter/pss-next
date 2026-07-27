@@ -5,6 +5,7 @@ import {
   FREE_TIER_API_KEY,
   FREE_TIER_BASE_URL,
   FREE_TIER_DEFAULT_MODEL_ID,
+  FREE_TIER_MODEL_ID_SUFFIX,
   formatModelEnvSetupHelp,
   isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
@@ -49,6 +50,14 @@ describe("coding-agent env validation", () => {
       AI_MODEL: "deepseek-v4-flash-free",
       isFreeTier: true,
     });
+  });
+
+  it("rejects non-free AI_MODEL overrides on the keyless Zen tier", () => {
+    expect(() =>
+      readOpenAICompatibleModelEnv({
+        runtimeEnv: { AI_MODEL: "mimo-v2.5" },
+      })
+    ).toThrow(`only supports model ids ending in ${FREE_TIER_MODEL_ID_SUFFIX}`);
   });
 
   it("treats blank credentials as unset for the free-tier fallback", () => {

@@ -10,6 +10,7 @@ import { config } from "dotenv";
 import {
   type CodingAgentRuntimeEnv,
   FREE_TIER_PROVIDER_LABEL,
+  isFreeTierModelId,
   readOpenAICompatibleModelEnv,
 } from "./env";
 
@@ -39,7 +40,7 @@ export interface CodingModelSession {
   currentModelId(): string;
   /** True when the keyless OpenCode Zen free tier is in use. */
   readonly isFreeTier: boolean;
-  /** Model ids advertised by the provider's OpenAI-compatible `/models`. */
+  /** Model ids available to this session from the provider's `/models`. */
   listModelIds(): Promise<string[]>;
   /** Stable model identity; hand this to `createCodingAgent` once. */
   readonly model: LanguageModel;
@@ -111,11 +112,22 @@ export function createCodingModelSessionFromEnv({
     isFreeTier: env.isFreeTier,
     model: switchable.model,
     currentModelId: () => switchable.current().modelId,
-    listModelIds: () => fetchProviderModelIds(env.AI_BASE_URL, env.AI_API_KEY),
+    listModelIds: async () => {
+      const ids = await fetchProviderModelIds(env.AI_BASE_URL, env.AI_API_KEY);
+      // Zen's `/models` includes paid models too, but its anonymous `public`
+      // credential can only use ids ending in `-free`. Keep unavailable
+      // entries out of both `/model` and `/model list`.
+      return env.isFreeTier ? ids.filter(isFreeTierModelId) : ids;
+    },
     switchModel: (modelId: string) => {
       const trimmed = modelId.trim();
       if (trimmed.length === 0) {
         throw new Error("Model id must not be empty");
+      }
+      if (env.isFreeTier && !isFreeTierModelId(trimmed)) {
+        throw new Error(
+          "The OpenCode Zen free tier only supports model ids ending in -free"
+        );
       }
       switchable.switchTo(provider(trimmed));
     },

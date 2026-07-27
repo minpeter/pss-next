@@ -14,7 +14,12 @@ export const DEFAULT_OPENAI_COMPATIBLE_MODEL_ID = "minimax/MiniMax-M2.7";
 export const FREE_TIER_BASE_URL = "https://opencode.ai/zen/v1";
 export const FREE_TIER_API_KEY = "public";
 export const FREE_TIER_DEFAULT_MODEL_ID = "mimo-v2.5-free";
+export const FREE_TIER_MODEL_ID_SUFFIX = "-free";
 export const FREE_TIER_PROVIDER_LABEL = "opencode-zen";
+
+/** Zen's anonymous `public` credential is restricted to its `-free` models. */
+export const isFreeTierModelId = (modelId: string): boolean =>
+  modelId.endsWith(FREE_TIER_MODEL_ID_SUFFIX);
 
 export type CodingAgentRuntimeEnv = Record<string, string | undefined>;
 
@@ -86,6 +91,11 @@ export function readOpenAICompatibleModelEnv({
   // still fails validation so a custom endpoint is never silently ignored.
   if (isBlank(runtimeEnv.AI_API_KEY) && isBlank(runtimeEnv.AI_BASE_URL)) {
     const model = runtimeEnv.AI_MODEL?.trim();
+    if (model !== undefined && model.length > 0 && !isFreeTierModelId(model)) {
+      throw new Error(
+        `${MODEL_ENV_VALIDATION_ERROR_PREFIX} AI_MODEL: the OpenCode Zen free tier only supports model ids ending in ${FREE_TIER_MODEL_ID_SUFFIX}.`
+      );
+    }
     return {
       AI_API_KEY: FREE_TIER_API_KEY,
       AI_BASE_URL: FREE_TIER_BASE_URL,

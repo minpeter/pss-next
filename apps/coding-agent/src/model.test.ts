@@ -232,4 +232,45 @@ describe("createCodingModelSessionFromEnv", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("only exposes and switches to -free models on the keyless Zen tier", async () => {
+    providerMock.mockImplementation((modelId: string) => ({
+      modelId,
+      provider: "test",
+      specificationVersion: "v4",
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            { id: "mimo-v2.5-free" },
+            { id: "mimo-v2.5" },
+            { id: "deepseek-v4-flash-free" },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+    try {
+      const { createCodingModelSessionFromEnv } = await import("./model");
+      const session = createCodingModelSessionFromEnv({ runtimeEnv: {} });
+
+      await expect(session.listModelIds()).resolves.toEqual([
+        "mimo-v2.5-free",
+        "deepseek-v4-flash-free",
+      ]);
+      expect(() => session.switchModel("mimo-v2.5")).toThrow(
+        "only supports model ids ending in -free"
+      );
+      expect(session.currentModelId()).toBe("mimo-v2.5-free");
+
+      session.switchModel("deepseek-v4-flash-free");
+      expect(session.currentModelId()).toBe("deepseek-v4-flash-free");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
