@@ -175,6 +175,10 @@ async function selectValue(
       } else {
         list.handleInput(data);
       }
+      // Listener-consumed input bypasses the TUI's focused-component path,
+      // which is what normally schedules a render; request one explicitly so
+      // arrow-key selection is actually visible.
+      options.tui.requestRender();
       return { consume: true };
     });
     options.signal.addEventListener("abort", abort, { once: true });

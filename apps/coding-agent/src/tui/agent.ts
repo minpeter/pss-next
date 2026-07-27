@@ -34,6 +34,7 @@ import {
   type InputPreprocessResult,
   type InputThread,
 } from "./input-routing";
+import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
@@ -524,6 +525,15 @@ export interface AgentTUIConfig {
   commands?: TuiCommand[];
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
+  /**
+   * Data source for the interactive `/model` selector. The picker itself is
+   * rendered by the TUI (pi-style, swapped into the editor slot).
+   */
+  modelSelector?: {
+    currentModelId(): string;
+    listModelIds(): Promise<string[]>;
+    switchModel(modelId: string): void | Promise<void>;
+  };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
   onExtensionUiReady?: (
     createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
@@ -1022,6 +1032,85 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
+  /**
+   * pi-style model picker: swap the editor out of its slot for the selector
+   * and focus it, so input flows through the TUI's focused-component path
+   * (which filters Kitty key releases and re-renders after every key).
+   * Resolves when the picker settles and the editor is restored.
+   */
+  const showModelSelector = async (): Promise<void> => {
+    const selectorConfig = config.modelSelector;
+    if (selectorConfig === undefined) {
+      addSystemMessage(chatContainer, "Model selection is not available.");
+      tui.requestRender();
+      return;
+    }
+
+    showLoader("Loading model catalog...");
+    let modelIds: string[];
+    try {
+      modelIds = await selectorConfig.listModelIds();
+    } catch (error) {
+      clearStatus();
+      addSystemMessage(
+        chatContainer,
+        `Could not list models: ${error instanceof Error ? error.message : String(error)}. Switch directly with /model <model-id>.`
+      );
+      tui.requestRender();
+      return;
+    }
+    clearStatus();
+    if (modelIds.length === 0) {
+      addSystemMessage(
+        chatContainer,
+        "The provider returned an empty model catalog. Switch directly with /model <model-id>."
+      );
+      tui.requestRender();
+      return;
+    }
+
+    const selection = await new Promise<string | undefined>((resolve) => {
+      // Let the selector own ctrl+c/escape while it is mounted.
+      commandInputListenerActive = true;
+      const settle = (modelId: string | undefined): void => {
+        commandInputListenerActive = false;
+        editorContainer.clear();
+        editorContainer.addChild(editor);
+        tui.setFocus(editor);
+        tui.requestRender();
+        resolve(modelId);
+      };
+      const selector = new ModelSelectorComponent({
+        currentModelId: selectorConfig.currentModelId(),
+        modelIds,
+        onCancel: () => settle(undefined),
+        onSelect: (modelId) => settle(modelId),
+      });
+      editorContainer.clear();
+      editorContainer.addChild(selector);
+      tui.setFocus(selector);
+      tui.requestRender();
+    });
+
+    if (selection === undefined) {
+      return;
+    }
+    try {
+      await selectorConfig.switchModel(selection);
+      updateHeader();
+      addSystemMessage(
+        chatContainer,
+        `Model switched to ${selection}. New steps use it immediately.`
+      );
+    } catch (error) {
+      addSystemMessage(
+        chatContainer,
+        `Model switch failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    tui.requestRender();
+  };
+
   const handleCommandResult = async (
     commandResult: TuiCommandResult | null
   ): Promise<void> => {
@@ -1042,6 +1131,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     if (commandResult.action.type === "reload") {
       await handleReloadAction(commandResult);
+      return;
+    }
+
+    if (commandResult.action.type === "select-model") {
+      await showModelSelector();
       return;
     }
 

@@ -11,7 +11,8 @@ import type {
 export type TuiCommandAction =
   | { type: "new-session" }
   | { type: "refresh-header" }
-  | { type: "reload" };
+  | { type: "reload" }
+  | { type: "select-model" };
 
 export interface TuiCommandResult {
   action?: TuiCommandAction;

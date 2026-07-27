@@ -1,33 +1,19 @@
 import type { TuiCommand, TuiCommandResult } from "./command";
 
-/** Extension-UI style picker, resolved lazily because the TUI builds it late. */
-export type ModelSelectPrompt = (input: {
-  readonly label: string;
-  readonly options: readonly {
-    readonly description?: string;
-    readonly label: string;
-    readonly value: string;
-  }[];
-}) => Promise<string | undefined>;
-
 export interface CreateModelCommandOptions {
   /** Current model id for markers and messages. */
   readonly currentModelId: () => string;
-  /** Interactive picker when the TUI overlay is available. */
-  readonly getSelect: () => ModelSelectPrompt | undefined;
   /** Provider model catalog (OpenAI-compatible `/models`). */
   readonly listModelIds: () => Promise<string[]>;
   /** Applies the switch and refreshes any session labels. */
   readonly switchModel: (modelId: string) => void;
 }
 
-const SELECT_OPTION_LIMIT = 100;
-
 /**
  * `/model` — interactive model selector.
  *
- * - `/model` opens a picker over the provider's model catalog (falls back
- *   to a printed list when no overlay UI is available).
+ * - `/model` asks the TUI to open its pi-style inline picker
+ *   (`select-model` action).
  * - `/model <id>` switches directly; the id is validated against the
  *   catalog when the provider exposes one.
  * - `/model list` prints the catalog.
@@ -43,7 +29,7 @@ export const createModelCommand = (
     const requested = args[0]?.trim();
 
     if (requested === undefined || requested === "") {
-      return await pickModel(options);
+      return { success: true, action: { type: "select-model" } };
     }
     if (requested === "list") {
       return await printModelList(options);
@@ -51,37 +37,6 @@ export const createModelCommand = (
     return await switchToModel(options, requested);
   },
 });
-
-async function pickModel(
-  options: CreateModelCommandOptions
-): Promise<TuiCommandResult> {
-  const current = options.currentModelId();
-  const catalog = await loadCatalog(options);
-  if (catalog.error !== undefined || catalog.ids.length === 0) {
-    return {
-      success: false,
-      message: catalogUnavailableMessage(current, catalog.error),
-    };
-  }
-
-  const select = options.getSelect();
-  if (select === undefined) {
-    return await printModelList(options);
-  }
-
-  const chosen = await select({
-    label: `Select a model (current: ${current})`,
-    options: catalog.ids.slice(0, SELECT_OPTION_LIMIT).map((id) => ({
-      label: id,
-      value: id,
-      ...(id === current ? { description: "current" } : {}),
-    })),
-  });
-  if (chosen === undefined || chosen === current) {
-    return { success: true, message: `Model unchanged (${current}).` };
-  }
-  return applySwitch(options, chosen);
-}
 
 async function printModelList(
   options: CreateModelCommandOptions

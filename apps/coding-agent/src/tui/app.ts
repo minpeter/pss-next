@@ -143,7 +143,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         : [
             createModelCommand({
               currentModelId: () => activeModelSession.currentModelId(),
-              getSelect: () => extensionUi?.select,
               listModelIds: () => activeModelSession.listModelIds(),
               switchModel: (modelId) => {
                 activeModelSession.switchModel(modelId);
@@ -206,6 +205,18 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       commands: guardExtensionCommands(builtInCommands, extensionHost.commands),
       header,
       footer,
+      ...(activeModelSession === undefined
+        ? {}
+        : {
+            modelSelector: {
+              currentModelId: () => activeModelSession.currentModelId(),
+              listModelIds: () => activeModelSession.listModelIds(),
+              switchModel: (modelId: string) => {
+                activeModelSession.switchModel(modelId);
+                header.subtitle = buildSubtitle();
+              },
+            },
+          }),
       onModelUsage: (usage) => {
         usageTracker.addUsage(usage);
         renderUsageFooter();
