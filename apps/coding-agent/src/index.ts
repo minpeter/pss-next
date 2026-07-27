@@ -8,6 +8,10 @@ export {
   type CodingAgentRuntimeEnv,
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+  FREE_TIER_API_KEY,
+  FREE_TIER_BASE_URL,
+  FREE_TIER_DEFAULT_MODEL_ID,
+  type ResolvedOpenAICompatibleModelEnv,
   readOpenAICompatibleModelEnv,
 } from "./env";
 export {
@@ -19,10 +23,15 @@ export { formatExecUsage, parseExecArguments, runExecCli } from "./exec-cli";
 export * from "./extensions";
 export { CODING_AGENT_INSTRUCTIONS } from "./instructions";
 export type {
+  CodingModelSession,
   CreateOpenAICompatibleModelFromDotenvOptions,
   CreateOpenAICompatibleModelFromEnvOptions,
 } from "./model";
-export { createCodingLanguageModel } from "./model";
+export {
+  createCodingLanguageModel,
+  createCodingModelSession,
+  createCodingModelSessionFromEnv,
+} from "./model";
 export type { CodingAgentThreadConfig } from "./thread-config";
 export { resolveCodingAgentThreadConfig } from "./thread-config";
 export type {

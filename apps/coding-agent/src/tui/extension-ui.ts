@@ -1,6 +1,7 @@
 import {
   Container,
   Input,
+  isKeyRelease,
   Key,
   matchesKey,
   SelectList,
@@ -162,11 +163,22 @@ async function selectValue(
     list.onSelect = (selected) => settle(selected.value);
     handle = options.tui.showOverlay(container, { minWidth: 32, width: "60%" });
     removeInput = options.tui.addInputListener((data) => {
+      // Drop Kitty-protocol key *release* events (the TUI's focused-component
+      // path filters them too). Without this, the release of the Enter that
+      // submitted the command opening this picker arrives a moment later and
+      // instantly confirms the first item.
+      if (isKeyRelease(data)) {
+        return { consume: true };
+      }
       if (matchesKey(data, Key.escape)) {
         settle(undefined);
       } else {
         list.handleInput(data);
       }
+      // Listener-consumed input bypasses the TUI's focused-component path,
+      // which is what normally schedules a render; request one explicitly so
+      // arrow-key selection is actually visible.
+      options.tui.requestRender();
       return { consume: true };
     });
     options.signal.addEventListener("abort", abort, { once: true });
