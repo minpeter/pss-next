@@ -1,3 +1,4 @@
+import { Fsm } from "../../internal/fsm";
 import type { AgentEvent } from "./events";
 
 export interface AgentTurn {
@@ -15,15 +16,59 @@ interface NextWaiter {
   readonly resolve: (value: IteratorResult<AgentEvent>) => void;
 }
 
+/** Producer side: whether the turn still accepts events. */
+type TurnChannelState =
+  | { readonly tag: "open" }
+  | { readonly tag: "closed"; readonly error: unknown };
+
+/**
+ * Consumer side of the event iterator.
+ *
+ * - `unconsumed`: `events()` has not been called yet.
+ * - `idle`: consumer exists but has no outstanding request.
+ * - `waiting`: a `next()` call is parked until an event arrives.
+ * - `delivering`: a result resolved this tick; same-tick `next()` prefetch is
+ *   rejected until the guard microtask expires.
+ * - `delivered`: the result is with the consumer; a boundary `ack` (if any)
+ *   settles when the consumer asks for the next event.
+ */
+type TurnConsumerState =
+  | { readonly tag: "unconsumed" }
+  | { readonly tag: "idle" }
+  | { readonly tag: "waiting"; readonly waiter: NextWaiter }
+  | { readonly tag: "delivering"; readonly ack?: () => void }
+  | { readonly tag: "delivered"; readonly ack?: () => void };
+
+const createChannelMachine = () =>
+  new Fsm<TurnChannelState>({
+    initial: { tag: "open" },
+    name: "agent-turn-channel",
+    transitions: {
+      open: ["closed"],
+      closed: [],
+    },
+  });
+
+const createConsumerMachine = () =>
+  new Fsm<TurnConsumerState>({
+    initial: { tag: "unconsumed" },
+    name: "agent-turn-consumer",
+    transitions: {
+      unconsumed: ["idle"],
+      idle: ["waiting", "delivering"],
+      waiting: ["delivering", "idle"],
+      // `delivering -> delivering` and `delivered -> delivered` drop the ack
+      // when close() settles it early.
+      delivering: ["delivering", "delivered"],
+      delivered: ["delivered", "delivering", "waiting", "idle"],
+    },
+  });
+
 export class BufferedAgentTurn implements AgentTurn {
+  readonly #channel = createChannelMachine();
+  readonly #consumer = createConsumerMachine();
   readonly #events: QueuedEvent[] = [];
-  #closed = false;
-  #error: unknown;
-  #pendingAck: (() => void) | undefined;
-  #resultPending = false;
   #runId: string | undefined;
-  #eventsStarted = false;
-  #waiter: NextWaiter | undefined;
 
   constructor(runId?: string) {
     this.#runId = runId;
@@ -44,7 +89,7 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   emit(event: AgentEvent): void {
-    if (this.#closed) {
+    if (this.#channel.state.tag === "closed") {
       return;
     }
 
@@ -52,7 +97,7 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   emitBoundary(event: AgentEvent): Promise<void> {
-    if (this.#closed) {
+    if (this.#channel.state.tag === "closed") {
       return Promise.resolve();
     }
 
@@ -62,33 +107,32 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   close(error?: unknown): void {
-    if (this.#closed) {
+    if (this.#channel.state.tag === "closed") {
       return;
     }
 
-    this.#closed = true;
-    this.#error = error;
+    this.#channel.to({ tag: "closed", error });
     this.#settlePendingAck();
     this.#settleQueuedAcks();
 
-    if (!this.#waiter) {
+    const consumer = this.#consumer.state;
+    if (consumer.tag !== "waiting") {
       return;
     }
 
-    const waiter = this.#waiter;
-    this.#waiter = undefined;
+    this.#consumer.to({ tag: "idle" });
     if (error) {
-      waiter.reject(error);
+      consumer.waiter.reject(error);
       return;
     }
-    waiter.resolve({ done: true, value: undefined });
+    consumer.waiter.resolve({ done: true, value: undefined });
   }
 
   events(): AsyncIterable<AgentEvent> {
-    if (this.#eventsStarted) {
+    if (this.#consumer.state.tag !== "unconsumed") {
       throw new Error("AgentTurn.events() can only be consumed once");
     }
-    this.#eventsStarted = true;
+    this.#consumer.to({ tag: "idle" });
 
     const iterator: AsyncIterableIterator<AgentEvent> = {
       next: () => this.#next(),
@@ -108,10 +152,9 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   #enqueue(event: QueuedEvent): void {
-    const waiter = this.#waiter;
-    if (waiter) {
-      this.#waiter = undefined;
-      this.#deliver(waiter.resolve, event);
+    const consumer = this.#consumer.state;
+    if (consumer.tag === "waiting") {
+      this.#deliver(consumer.waiter.resolve, event);
       return;
     }
 
@@ -119,7 +162,8 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   #next(): Promise<IteratorResult<AgentEvent>> {
-    if (this.#resultPending || this.#waiter) {
+    const consumer = this.#consumer.state;
+    if (consumer.tag === "delivering" || consumer.tag === "waiting") {
       return Promise.reject(
         new Error("AgentTurn.events() does not allow concurrent next() calls")
       );
@@ -132,15 +176,16 @@ export class BufferedAgentTurn implements AgentTurn {
       return new Promise((resolve) => this.#deliver(resolve, event));
     }
 
-    if (this.#closed) {
-      if (this.#error) {
-        return Promise.reject(this.#error);
+    const channel = this.#channel.state;
+    if (channel.tag === "closed") {
+      if (channel.error) {
+        return Promise.reject(channel.error);
       }
       return Promise.resolve({ done: true, value: undefined });
     }
 
     return new Promise((resolve, reject) => {
-      this.#waiter = { reject, resolve };
+      this.#consumer.to({ tag: "waiting", waiter: { reject, resolve } });
     });
   }
 
@@ -148,18 +193,28 @@ export class BufferedAgentTurn implements AgentTurn {
     resolve: (value: IteratorResult<AgentEvent>) => void,
     { ack, event }: QueuedEvent
   ): void {
-    this.#resultPending = true;
+    this.#consumer.to({ tag: "delivering", ack });
     queueMicrotask(() => {
-      this.#resultPending = false;
+      const current = this.#consumer.state;
+      if (current.tag === "delivering") {
+        this.#consumer.to({ tag: "delivered", ack: current.ack });
+      }
     });
-    this.#pendingAck = ack;
     resolve({ done: false, value: event });
   }
 
   #settlePendingAck(): void {
-    const ack = this.#pendingAck;
-    this.#pendingAck = undefined;
-    ack?.();
+    const consumer = this.#consumer.state;
+    if (consumer.tag === "delivered") {
+      this.#consumer.to({ tag: "idle" });
+      consumer.ack?.();
+      return;
+    }
+    if (consumer.tag === "delivering" && consumer.ack !== undefined) {
+      // Keep the same-tick prefetch guard, but the ack settles now.
+      this.#consumer.to({ tag: "delivering" });
+      consumer.ack();
+    }
   }
 
   #settleQueuedAcks(): void {

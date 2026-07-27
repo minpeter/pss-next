@@ -22,11 +22,16 @@ machines — lifecycle (`created/starting/started/stopping/stopped`), terminal
 `running`, `drainRequested` flags and their companion promises.
 `ThreadState` persistence follows a
 `unloaded/loading/ready/deleting/deleted` machine with an explicit rollback
-target when a store delete fails.
+target when a store delete fails. `BufferedAgentTurn` models its producer
+channel (`open/closed`) and consumer delivery
+(`unconsumed/idle/waiting/delivering/delivered`) explicitly, and durable
+input-claim recovery follows `pending/recovering/recovered`.
 
 The coding-agent TUI replaces its `shouldExit`, `inputResolver`,
 `activeRun`, and `activeTurnInterrupted` closure variables with a
 `TuiSessionMachine` that models the prompt
 (`idle/awaiting/processing/closed`) and the streaming turn (`none/active`)
 separately, keeping steering submits routed to the active run while the
-prompt keeps waiting. Public APIs and observable behavior are unchanged.
+prompt keeps waiting. `ExtensionHostLifecycle` tracks
+`idle/activating/active/disposed` so agent/mode references cannot exist
+outside an activation. Public APIs and observable behavior are unchanged.

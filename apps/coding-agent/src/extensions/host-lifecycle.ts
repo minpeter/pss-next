@@ -22,16 +22,45 @@ import type {
   ExtensionJsonValue,
 } from "./types";
 
+/**
+ * Host lifecycle: `idle -> activating -> active -> disposed`.
+ *
+ * `agent`/`mode` only exist while an activation is in progress or complete,
+ * so "activated without an agent" is unrepresentable. `dispose()` may fire
+ * from any state (including mid-activation); `disposed` keeps the last mode
+ * so late service lookups keep resolving the way they used to.
+ */
+type HostLifecycleState =
+  | { readonly tag: "idle" }
+  | {
+      readonly tag: "activating";
+      readonly agent: Agent;
+      readonly mode: CodingAgentExtensionMode;
+    }
+  | {
+      readonly tag: "active";
+      readonly agent: Agent;
+      readonly mode: CodingAgentExtensionMode;
+    }
+  | { readonly tag: "disposed"; readonly mode?: CodingAgentExtensionMode };
+
+const HOST_LIFECYCLE_TRANSITIONS: Record<
+  HostLifecycleState["tag"],
+  HostLifecycleState["tag"][]
+> = {
+  idle: ["activating", "disposed"],
+  activating: ["active", "disposed"],
+  active: ["disposed"],
+  disposed: [],
+};
+
 export class ExtensionHostLifecycle {
-  #activated = false;
-  #agent: Agent | undefined;
   readonly #bus: ExtensionHostEventBus;
   #cleanups: { cleanup: CodingAgentExtensionCleanup; id: string }[] = [];
   readonly #collections: ExtensionRegistryCollections;
   readonly #controller = new AbortController();
-  #disposed = false;
   readonly #extensions: readonly CodingAgentExtension[];
-  #mode: CodingAgentExtensionMode | undefined;
+  #lifecycle: HostLifecycleState = { tag: "idle" };
   readonly #services: ExtensionHostServices;
   readonly #timeoutMs: number;
 
@@ -63,7 +92,7 @@ export class ExtensionHostLifecycle {
 
   /** Publish a host-originated bus event such as a provider observation. */
   emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
-    if (this.#disposed) {
+    if (this.#lifecycle.tag === "disposed") {
       return;
     }
     this.#bus.emitFromHost(type, payload);
@@ -82,9 +111,7 @@ export class ExtensionHostLifecycle {
     readonly workspace: string;
   }): void {
     this.#assertUsable();
-    if (this.#activated) {
-      throw new Error("Coding agent extensions are already active");
-    }
+    this.#assertNotActivated();
     this.#services.bindRuntimeServices(options);
   }
 
@@ -146,13 +173,9 @@ export class ExtensionHostLifecycle {
 
   async activate(agent: Agent, mode: CodingAgentExtensionMode): Promise<void> {
     this.#assertUsable();
-    if (this.#activated) {
-      throw new Error("Coding agent extensions are already active");
-    }
+    this.#assertNotActivated();
     this.#services.assertMode(mode);
-    this.#activated = true;
-    this.#agent = agent;
-    this.#mode = mode;
+    this.#toLifecycle({ tag: "activating", agent, mode });
     try {
       for (const extension of this.#extensions) {
         const activate = extension.activate;
@@ -190,7 +213,7 @@ export class ExtensionHostLifecycle {
           }
         );
         if (cleanup !== undefined) {
-          if (this.#disposed) {
+          if (this.#lifecycle.tag === "disposed") {
             await cleanup();
           } else {
             this.#cleanups.push({ cleanup, id: extension.id });
@@ -201,13 +224,16 @@ export class ExtensionHostLifecycle {
       await this.dispose();
       throw error;
     }
+    if (this.#lifecycle.tag === "activating") {
+      this.#toLifecycle({ tag: "active", agent, mode });
+    }
   }
 
   async dispose(): Promise<void> {
-    if (this.#disposed) {
+    if (this.#lifecycle.tag === "disposed") {
       return;
     }
-    this.#disposed = true;
+    this.#toLifecycle({ tag: "disposed", mode: this.#mode });
     // Drain in-flight bus deliveries (bounded by the host timeout) before
     // aborting and running cleanups so handlers finish against live
     // services instead of resuming mid-teardown.
@@ -222,7 +248,6 @@ export class ExtensionHostLifecycle {
       }
     }
     this.#cleanups = [];
-    this.#agent = undefined;
     failures.push(...(await this.#services.dispose()));
     this.#collections.events.length = 0;
     if (failures.length > 0) {
@@ -256,8 +281,38 @@ export class ExtensionHostLifecycle {
   }
 
   #assertUsable(): void {
-    if (this.#disposed) {
+    if (this.#lifecycle.tag === "disposed") {
       throw new Error("Coding agent extension host is disposed");
     }
+  }
+
+  #assertNotActivated(): void {
+    if (
+      this.#lifecycle.tag === "activating" ||
+      this.#lifecycle.tag === "active"
+    ) {
+      throw new Error("Coding agent extensions are already active");
+    }
+  }
+
+  get #agent(): Agent | undefined {
+    const lifecycle = this.#lifecycle;
+    return lifecycle.tag === "activating" || lifecycle.tag === "active"
+      ? lifecycle.agent
+      : undefined;
+  }
+
+  get #mode(): CodingAgentExtensionMode | undefined {
+    const lifecycle = this.#lifecycle;
+    return lifecycle.tag === "idle" ? undefined : lifecycle.mode;
+  }
+
+  #toLifecycle(next: HostLifecycleState): void {
+    if (!HOST_LIFECYCLE_TRANSITIONS[this.#lifecycle.tag].includes(next.tag)) {
+      throw new Error(
+        `[extension-host] invalid lifecycle transition: ${JSON.stringify(this.#lifecycle.tag)} -> ${JSON.stringify(next.tag)}`
+      );
+    }
+    this.#lifecycle = next;
   }
 }
