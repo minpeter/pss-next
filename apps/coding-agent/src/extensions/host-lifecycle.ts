@@ -1,4 +1,5 @@
 import type { Agent } from "@minpeter/pss-runtime";
+import { Fsm } from "@minpeter/pss-runtime/fsm";
 import type { TuiCommandContext } from "../tui/command";
 import { CodingAgentExtensionError } from "./error";
 import { ExtensionHostEventBus } from "./event-bus";
@@ -44,15 +45,18 @@ type HostLifecycleState =
     }
   | { readonly tag: "disposed"; readonly mode?: CodingAgentExtensionMode };
 
-const HOST_LIFECYCLE_TRANSITIONS: Record<
-  HostLifecycleState["tag"],
-  HostLifecycleState["tag"][]
-> = {
-  idle: ["activating", "disposed"],
-  activating: ["active", "disposed"],
-  active: ["disposed"],
-  disposed: [],
-};
+function createHostLifecycleMachine(): Fsm<HostLifecycleState> {
+  return new Fsm<HostLifecycleState>({
+    initial: { tag: "idle" },
+    name: "extension-host-lifecycle",
+    transitions: {
+      idle: ["activating", "disposed"],
+      activating: ["active", "disposed"],
+      active: ["disposed"],
+      disposed: [],
+    },
+  });
+}
 
 export class ExtensionHostLifecycle {
   readonly #bus: ExtensionHostEventBus;
@@ -60,7 +64,7 @@ export class ExtensionHostLifecycle {
   readonly #collections: ExtensionRegistryCollections;
   readonly #controller = new AbortController();
   readonly #extensions: readonly CodingAgentExtension[];
-  #lifecycle: HostLifecycleState = { tag: "idle" };
+  readonly #lifecycle = createHostLifecycleMachine();
   readonly #services: ExtensionHostServices;
   readonly #timeoutMs: number;
 
@@ -92,7 +96,7 @@ export class ExtensionHostLifecycle {
 
   /** Publish a host-originated bus event such as a provider observation. */
   emitHostEvent(type: string, payload?: ExtensionJsonValue): void {
-    if (this.#lifecycle.tag === "disposed") {
+    if (this.#lifecycle.state.tag === "disposed") {
       return;
     }
     this.#bus.emitFromHost(type, payload);
@@ -175,7 +179,7 @@ export class ExtensionHostLifecycle {
     this.#assertUsable();
     this.#assertNotActivated();
     this.#services.assertMode(mode);
-    this.#toLifecycle({ tag: "activating", agent, mode });
+    this.#lifecycle.to({ tag: "activating", agent, mode });
     try {
       for (const extension of this.#extensions) {
         const activate = extension.activate;
@@ -213,7 +217,7 @@ export class ExtensionHostLifecycle {
           }
         );
         if (cleanup !== undefined) {
-          if (this.#lifecycle.tag === "disposed") {
+          if (this.#lifecycle.state.tag === "disposed") {
             await cleanup();
           } else {
             this.#cleanups.push({ cleanup, id: extension.id });
@@ -224,16 +228,16 @@ export class ExtensionHostLifecycle {
       await this.dispose();
       throw error;
     }
-    if (this.#lifecycle.tag === "activating") {
-      this.#toLifecycle({ tag: "active", agent, mode });
+    if (this.#lifecycle.state.tag === "activating") {
+      this.#lifecycle.to({ tag: "active", agent, mode });
     }
   }
 
   async dispose(): Promise<void> {
-    if (this.#lifecycle.tag === "disposed") {
+    if (this.#lifecycle.state.tag === "disposed") {
       return;
     }
-    this.#toLifecycle({ tag: "disposed", mode: this.#mode });
+    this.#lifecycle.to({ tag: "disposed", mode: this.#mode });
     // Drain in-flight bus deliveries (bounded by the host timeout) before
     // aborting and running cleanups so handlers finish against live
     // services instead of resuming mid-teardown.
@@ -281,38 +285,26 @@ export class ExtensionHostLifecycle {
   }
 
   #assertUsable(): void {
-    if (this.#lifecycle.tag === "disposed") {
+    if (this.#lifecycle.state.tag === "disposed") {
       throw new Error("Coding agent extension host is disposed");
     }
   }
 
   #assertNotActivated(): void {
-    if (
-      this.#lifecycle.tag === "activating" ||
-      this.#lifecycle.tag === "active"
-    ) {
+    if (this.#lifecycle.in("activating", "active")) {
       throw new Error("Coding agent extensions are already active");
     }
   }
 
   get #agent(): Agent | undefined {
-    const lifecycle = this.#lifecycle;
+    const lifecycle = this.#lifecycle.state;
     return lifecycle.tag === "activating" || lifecycle.tag === "active"
       ? lifecycle.agent
       : undefined;
   }
 
   get #mode(): CodingAgentExtensionMode | undefined {
-    const lifecycle = this.#lifecycle;
+    const lifecycle = this.#lifecycle.state;
     return lifecycle.tag === "idle" ? undefined : lifecycle.mode;
-  }
-
-  #toLifecycle(next: HostLifecycleState): void {
-    if (!HOST_LIFECYCLE_TRANSITIONS[this.#lifecycle.tag].includes(next.tag)) {
-      throw new Error(
-        `[extension-host] invalid lifecycle transition: ${JSON.stringify(this.#lifecycle.tag)} -> ${JSON.stringify(next.tag)}`
-      );
-    }
-    this.#lifecycle = next;
   }
 }

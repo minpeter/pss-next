@@ -1,9 +1,7 @@
 import type { AgentTurn } from "@minpeter/pss-runtime";
+import { InvalidStateTransitionError } from "@minpeter/pss-runtime/fsm";
 import { describe, expect, it, vi } from "vitest";
-import {
-  InvalidSessionTransitionError,
-  TuiSessionMachine,
-} from "./session-state";
+import { TuiSessionMachine } from "./session-state";
 
 const fakeRun = (): AgentTurn => ({}) as AgentTurn;
 
@@ -37,7 +35,7 @@ describe("TuiSessionMachine prompt", () => {
     const session = new TuiSessionMachine();
     session.awaitInput(vi.fn());
     expect(() => session.awaitInput(vi.fn())).toThrow(
-      InvalidSessionTransitionError
+      InvalidStateTransitionError
     );
   });
 

@@ -1,4 +1,5 @@
 import type { AgentTurn } from "@minpeter/pss-runtime";
+import { Fsm } from "@minpeter/pss-runtime/fsm";
 
 /**
  * Explicit state machines for the interactive TUI session.
@@ -31,42 +32,53 @@ export type TurnState =
       readonly run: AgentTurn;
     };
 
-const PROMPT_TRANSITIONS: Record<PromptState["tag"], PromptState["tag"][]> = {
-  idle: ["awaiting", "closed"],
-  awaiting: ["processing", "closed"],
-  processing: ["awaiting", "closed"],
-  closed: [],
-};
+function createPromptMachine(): Fsm<PromptState> {
+  return new Fsm<PromptState>({
+    initial: { tag: "idle" },
+    name: "tui-session-prompt",
+    transitions: {
+      idle: ["awaiting", "closed"],
+      awaiting: ["processing", "closed"],
+      processing: ["awaiting", "closed"],
+      closed: [],
+    },
+  });
+}
 
-export class InvalidSessionTransitionError extends Error {
-  constructor(machine: string, from: string, to: string) {
-    super(
-      `[tui-session:${machine}] invalid transition: ${JSON.stringify(from)} -> ${JSON.stringify(to)}`
-    );
-    this.name = "InvalidSessionTransitionError";
-  }
+function createTurnMachine(): Fsm<TurnState> {
+  return new Fsm<TurnState>({
+    initial: { tag: "none" },
+    name: "tui-session-turn",
+    transitions: {
+      none: ["active"],
+      // `active -> active` covers steering replacement runs and the
+      // per-run `interrupted` flag update.
+      active: ["active", "none"],
+    },
+  });
 }
 
 export class TuiSessionMachine {
-  #prompt: PromptState = { tag: "idle" };
-  #turn: TurnState = { tag: "none" };
+  readonly #prompt = createPromptMachine();
+  readonly #turn = createTurnMachine();
 
   get promptState(): PromptState {
-    return this.#prompt;
+    return this.#prompt.state;
   }
 
   get turnState(): TurnState {
-    return this.#turn;
+    return this.#turn.state;
   }
 
   /** Whether the session has been closed (exit requested or loop ended). */
   get closed(): boolean {
-    return this.#prompt.tag === "closed";
+    return this.#prompt.state.tag === "closed";
   }
 
   /** The currently streaming turn, if any. */
   get activeTurn(): Extract<TurnState, { tag: "active" }> | undefined {
-    return this.#turn.tag === "active" ? this.#turn : undefined;
+    const turn = this.#turn.state;
+    return turn.tag === "active" ? turn : undefined;
   }
 
   // -------------------------------------------------------------------------
@@ -78,11 +90,11 @@ export class TuiSessionMachine {
    * session is already closed so the main loop can exit.
    */
   awaitInput(resolve: (value: string | null) => void): void {
-    if (this.#prompt.tag === "closed") {
+    if (this.#prompt.state.tag === "closed") {
       resolve(null);
       return;
     }
-    this.#toPrompt({ tag: "awaiting", resolve });
+    this.#prompt.to({ tag: "awaiting", resolve });
   }
 
   /**
@@ -91,12 +103,12 @@ export class TuiSessionMachine {
    * previous "ignore submit without resolver" behavior.
    */
   submitInput(text: string): boolean {
-    if (this.#prompt.tag !== "awaiting") {
+    const prompt = this.#prompt.state;
+    if (prompt.tag !== "awaiting") {
       return false;
     }
-    const { resolve } = this.#prompt;
-    this.#toPrompt({ tag: "processing" });
-    resolve(text);
+    this.#prompt.to({ tag: "processing" });
+    prompt.resolve(text);
     return true;
   }
 
@@ -105,12 +117,12 @@ export class TuiSessionMachine {
    * `null` so the main loop unblocks.
    */
   close(): void {
-    if (this.#prompt.tag === "closed") {
+    const prompt = this.#prompt.state;
+    if (prompt.tag === "closed") {
       return;
     }
-    const pending =
-      this.#prompt.tag === "awaiting" ? this.#prompt.resolve : undefined;
-    this.#toPrompt({ tag: "closed" });
+    const pending = prompt.tag === "awaiting" ? prompt.resolve : undefined;
+    this.#prompt.to({ tag: "closed" });
     pending?.(null);
   }
 
@@ -123,7 +135,7 @@ export class TuiSessionMachine {
    * with a newly started one, so `active -> active` is a legal transition.
    */
   beginTurn(run: AgentTurn): void {
-    this.#turn = { tag: "active", interrupted: false, run };
+    this.#turn.to({ tag: "active", interrupted: false, run });
   }
 
   /**
@@ -131,20 +143,18 @@ export class TuiSessionMachine {
    * `undefined` when no turn is active.
    */
   markInterrupted(): AgentTurn | undefined {
-    if (this.#turn.tag !== "active") {
+    const turn = this.#turn.state;
+    if (turn.tag !== "active") {
       return;
     }
-    this.#turn = { ...this.#turn, interrupted: true };
-    return this.#turn.run;
+    this.#turn.to({ ...turn, interrupted: true });
+    return turn.run;
   }
 
   /** Whether `run` is still the active turn and was interrupted. */
   wasInterrupted(run: AgentTurn): boolean {
-    return (
-      this.#turn.tag === "active" &&
-      this.#turn.run === run &&
-      this.#turn.interrupted
-    );
+    const turn = this.#turn.state;
+    return turn.tag === "active" && turn.run === run && turn.interrupted;
   }
 
   /**
@@ -153,19 +163,9 @@ export class TuiSessionMachine {
    * predecessor.
    */
   endTurn(run: AgentTurn): void {
-    if (this.#turn.tag === "active" && this.#turn.run === run) {
-      this.#turn = { tag: "none" };
+    const turn = this.#turn.state;
+    if (turn.tag === "active" && turn.run === run) {
+      this.#turn.to({ tag: "none" });
     }
-  }
-
-  #toPrompt(next: PromptState): void {
-    if (!PROMPT_TRANSITIONS[this.#prompt.tag].includes(next.tag)) {
-      throw new InvalidSessionTransitionError(
-        "prompt",
-        this.#prompt.tag,
-        next.tag
-      );
-    }
-    this.#prompt = next;
   }
 }

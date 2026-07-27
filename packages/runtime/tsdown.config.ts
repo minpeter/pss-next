@@ -13,6 +13,7 @@ export default defineConfig({
     "src/namespace.ts",
     "src/evals/index.ts",
     "src/evals/cli-bin.ts",
+    "src/fsm/index.ts",
     "src/channel/index.ts",
     "src/testing/index.ts",
   ],

@@ -1,4 +1,4 @@
-import { Fsm } from "../../internal/fsm";
+import { Fsm } from "../../fsm";
 import type { AgentEvent } from "./events";
 
 export interface AgentTurn {

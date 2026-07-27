@@ -1,4 +1,6 @@
+import { deferred } from "../../internal/deferred";
 import type { AgentThreadContext } from "./agent-thread-context";
+import { assertThreadMachineInvariants } from "./agent-thread-machines";
 import { runThreadInputDrainLoop } from "./thread-drain";
 
 export async function drainAgentThreadInputQueue(
@@ -13,14 +15,13 @@ export async function drainAgentThreadInputQueue(
     return await current.promise;
   }
 
-  let finishLoop!: () => void;
-  let failLoop!: (error: unknown) => void;
-  const loopSettled = new Promise<void>((resolve, reject) => {
-    finishLoop = resolve;
-    failLoop = reject;
+  const loopSettled = deferred();
+  loopSettled.promise.catch(() => undefined);
+  drain.to({
+    tag: "draining",
+    promise: loopSettled.promise,
+    restartRequested: false,
   });
-  loopSettled.catch(() => undefined);
-  drain.to({ tag: "draining", promise: loopSettled, restartRequested: false });
 
   const loop = runThreadInputDrainLoop({
     activate: ({ abort, run, runtimeInput, turnId }) => {
@@ -54,7 +55,7 @@ export async function drainAgentThreadInputQueue(
     state: context.state,
     threadKey: context.threadKey,
   });
-  loop.then(finishLoop, failLoop);
+  loop.then(loopSettled.resolve, loopSettled.reject);
 
   try {
     await loop;
@@ -65,6 +66,8 @@ export async function drainAgentThreadInputQueue(
       state.restartRequested &&
       terminal.state.tag === "open";
     drain.to({ tag: "idle" });
+    // The loop has settled: every activated turn must have been released.
+    assertThreadMachineInvariants(context);
     if (shouldRestart) {
       await drainAgentThreadInputQueue(context);
     }

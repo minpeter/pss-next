@@ -1,4 +1,4 @@
-import { Fsm } from "../../internal/fsm";
+import { Fsm } from "../../fsm";
 import type { RuntimeInputState } from "../input/runtime-input";
 import type { BufferedAgentTurn } from "../protocol/turn";
 
@@ -134,6 +134,44 @@ export function createThreadTurnMachine(): Fsm<ThreadTurnState> {
       finishing: ["none"],
     },
   });
+}
+
+/**
+ * Cross-machine invariants that the transition tables alone cannot express.
+ *
+ * The four thread machines are deliberately orthogonal to avoid a
+ * state-explosion, so the relationships *between* them are enforced here
+ * instead of by call-site discipline:
+ *
+ * 1. A turn only exists inside a running drain loop
+ *    (`turn != none  =>  drain = draining`).
+ * 2. Shutdown only happens on a killed or deleted thread
+ *    (`lifecycle in stopping|stopped  =>  terminal != open`).
+ *
+ * Call this at machine synchronization points (drain-loop settle, shutdown).
+ */
+export function assertThreadMachineInvariants(machines: {
+  readonly drain: Fsm<ThreadDrainState>;
+  readonly lifecycle: Fsm<ThreadLifecycleState>;
+  readonly terminal: Fsm<ThreadTerminalState>;
+  readonly turn: Fsm<ThreadTurnState>;
+}): void {
+  if (
+    machines.turn.state.tag !== "none" &&
+    machines.drain.state.tag !== "draining"
+  ) {
+    throw new Error(
+      `[thread-machines] invariant violated: turn is ${JSON.stringify(machines.turn.state.tag)} while drain is ${JSON.stringify(machines.drain.state.tag)}`
+    );
+  }
+  if (
+    machines.lifecycle.in("stopping", "stopped") &&
+    machines.terminal.state.tag === "open"
+  ) {
+    throw new Error(
+      `[thread-machines] invariant violated: lifecycle is ${JSON.stringify(machines.lifecycle.state.tag)} while terminal is still "open"`
+    );
+  }
 }
 
 /** Run of the turn that is actively accepting steering input. */

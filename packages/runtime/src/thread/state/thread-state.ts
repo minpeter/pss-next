@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai";
-import { Fsm } from "../../internal/fsm";
+import { Fsm } from "../../fsm";
+import { deferred } from "../../internal/deferred";
 import type {
   CommitResult,
   ExpectedThreadVersion,
@@ -123,21 +124,25 @@ export class ThreadState {
       return await current.promise;
     }
 
-    const promise = this.#loadStoredSnapshot().then(
+    const load = deferred();
+    // Transition before wiring the continuation so the machine state never
+    // depends on microtask scheduling.
+    this.#machine.to({ tag: "loading", promise: load.promise });
+    this.#loadStoredSnapshot().then(
       (applySnapshot) => {
         // A delete may have superseded the load; discard the snapshot then
         // so a slow load cannot resurrect deleted state in memory.
         if (this.#machine.toIf("loading", { tag: "ready" })) {
           applySnapshot();
         }
+        load.resolve();
       },
       (error: unknown) => {
         this.#machine.toIf("loading", { tag: "unloaded" });
-        throw error;
+        load.reject(error);
       }
     );
-    this.#machine.to({ tag: "loading", promise });
-    return await promise;
+    return await load.promise;
   }
 
   modelSnapshot(): ModelMessage[] {
@@ -275,7 +280,11 @@ export class ThreadState {
       history: this.#history.modelSnapshot(),
       storeVersion: this.#storeVersion,
     };
-    const promise = this.#enqueueWrite(async () => {
+    const del = deferred();
+    // Transition before wiring the continuation so the machine state never
+    // depends on microtask scheduling.
+    this.#machine.to({ tag: "deleting", promise: del.promise, rollbackTag });
+    this.#enqueueWrite(async () => {
       try {
         await this.#persistence.store.delete(this.#persistence.key);
       } catch (error) {
@@ -295,9 +304,8 @@ export class ThreadState {
       this.#storeVersion = undefined;
       this.#appliedMigrations = {};
       this.#history = new ModelMessageHistory();
-    });
-    this.#machine.to({ tag: "deleting", promise, rollbackTag });
-    return await promise;
+    }).then(del.resolve, del.reject);
+    return await del.promise;
   }
 
   #enqueueWrite(operation: () => Promise<void>): Promise<void> {

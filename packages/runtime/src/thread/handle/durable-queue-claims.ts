@@ -1,6 +1,6 @@
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
 import type { AgentHost } from "../../execution/host/types";
-import { Fsm } from "../../internal/fsm";
+import { Fsm } from "../../fsm";
 import {
   createRuntimeInputState,
   type QueuedInput,

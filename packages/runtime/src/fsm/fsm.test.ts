@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Fsm, InvalidStateTransitionError } from "./fsm";
+import { Fsm, InvalidStateTransitionError } from "./index";
 
 type LightState =
   | { readonly tag: "red" }

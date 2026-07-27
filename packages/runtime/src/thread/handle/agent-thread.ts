@@ -2,6 +2,7 @@ import type {
   StoredThreadEvent,
   ThreadEventReadOptions,
 } from "../../execution/host/types";
+import { deferred } from "../../internal/deferred";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { AgentInput, UserInput } from "../input/input";
 import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
@@ -23,6 +24,7 @@ import { killAgentThread } from "./agent-thread-kill";
 import {
   activeTurnRun,
   activeTurnRuntimeInput,
+  assertThreadMachineInvariants,
   turnAbort,
 } from "./agent-thread-machines";
 import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
@@ -136,7 +138,12 @@ export class AgentThread {
     }
 
     const killPromise = this.kill();
-    const deletePromise: Promise<void> = killPromise
+    const settled = deferred();
+    const deletePromise = settled.promise;
+    // Transition before wiring the continuation so the machine state never
+    // depends on microtask scheduling.
+    terminal.to({ tag: "deleting", deletePromise, killPromise });
+    killPromise
       .then(() => this.#deleteThread())
       .then(
         () => {
@@ -145,14 +152,14 @@ export class AgentThread {
             deletePromise,
             killPromise,
           });
+          settled.resolve();
         },
         (error: unknown) => {
           // Roll back to `killed` so the delete can be retried.
           terminal.toIf("deleting", { tag: "killed", killPromise });
-          throw error;
+          settled.reject(error);
         }
       );
-    terminal.to({ tag: "deleting", deletePromise, killPromise });
     return deletePromise;
   }
 
@@ -238,19 +245,21 @@ export class AgentThread {
       return Promise.resolve();
     }
 
-    const promise = this.#context.state.ensureLoaded().then(
+    const start = deferred();
+    lifecycle.to({ tag: "starting", promise: start.promise });
+    this.#context.state.ensureLoaded().then(
       () => {
         lifecycle.toIf("starting", { tag: "started" });
+        start.resolve();
       },
       (error: unknown) => {
         // A failed load is retryable: return to `created` so the next call
         // reloads instead of replaying the first failure forever.
         lifecycle.toIf("starting", { tag: "created" });
-        throw error;
+        start.reject(error);
       }
     );
-    lifecycle.to({ tag: "starting", promise });
-    return promise;
+    return start.promise;
   }
 
   async #deleteThread(): Promise<void> {
@@ -271,14 +280,18 @@ export class AgentThread {
     // A failed start means there is nothing to stop; shutdown (and thus
     // delete/dispose) must still complete instead of replaying the load
     // failure.
-    const settled =
+    const startSettled =
       current.tag === "starting"
         ? current.promise.catch(() => undefined)
         : Promise.resolve();
-    const promise = settled.then(() => {
+    const stop = deferred();
+    lifecycle.to({ tag: "stopping", promise: stop.promise });
+    // Shutdown is only reachable through kill/delete/dispose.
+    assertThreadMachineInvariants(this.#context);
+    startSettled.then(() => {
       lifecycle.toIf("stopping", { tag: "stopped" });
+      stop.resolve();
     });
-    lifecycle.to({ tag: "stopping", promise });
-    return await promise;
+    return await stop.promise;
   }
 }

@@ -1,5 +1,5 @@
 import { AgentHookRuntime } from "../../agent/core/hook-runtime";
-import type { Fsm } from "../../internal/fsm";
+import type { Fsm } from "../../fsm";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { QueuedInput, QueuedRuntimeInput } from "../input/runtime-input";
 import type { ThreadExecutionOptions } from "../runtime/execution";
