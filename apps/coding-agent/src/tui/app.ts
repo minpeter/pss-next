@@ -41,6 +41,7 @@ import {
   type ReloadableExtensions,
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
+import { TokenUsageTracker } from "./usage-footer";
 
 export interface StartTuiOptions {
   readonly extensions?: readonly CodingAgentExtensionInput[];
@@ -53,13 +54,6 @@ export interface StartTuiOptions {
 }
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
-
-const formatTokens = (n: number): string => {
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(1)}k`;
-  }
-  return String(n);
-};
 
 const resolveModelSubtitle = (): string | undefined => {
   try {
@@ -146,13 +140,15 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     }
 
     const footer: { text?: string } = {};
-    const usageTotals = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const usageTracker = new TokenUsageTracker();
+
+    const renderUsageFooter = (): void => {
+      footer.text = usageTracker.footerText();
+    };
 
     const resetUsageTotals = (): void => {
-      usageTotals.inputTokens = 0;
-      usageTotals.outputTokens = 0;
-      usageTotals.totalTokens = 0;
-      footer.text = undefined;
+      usageTracker.reset();
+      renderUsageFooter();
     };
 
     const modelId = resolveModelSubtitle();
@@ -171,12 +167,16 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       },
       footer,
       onModelUsage: (usage) => {
-        usageTotals.inputTokens += usage.inputTokens ?? 0;
-        usageTotals.outputTokens += usage.outputTokens ?? 0;
-        usageTotals.totalTokens +=
-          usage.totalTokens ??
-          (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-        footer.text = `${formatTokens(usageTotals.totalTokens)} tokens (${formatTokens(usageTotals.inputTokens)} in / ${formatTokens(usageTotals.outputTokens)} out)`;
+        usageTracker.addUsage(usage);
+        renderUsageFooter();
+      },
+      onOutputDelta: (text) => {
+        usageTracker.addOutputDelta(text);
+        renderUsageFooter();
+      },
+      onStreamStart: () => {
+        usageTracker.beginTurn();
+        renderUsageFooter();
       },
       onExtensionUiReady: async (createUi) => {
         createExtensionUiForHost = createUi;

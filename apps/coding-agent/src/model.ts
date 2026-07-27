@@ -31,6 +31,10 @@ export function createOpenAICompatibleModelFromEnv({
     name: providerName,
     apiKey: env.AI_API_KEY,
     baseURL: env.AI_BASE_URL,
+    // Request usage chunks in streaming responses (`stream_options:
+    // {"include_usage": true}`). Without this, OpenAI-compatible servers
+    // omit token usage entirely and the TUI can only report 0 tokens.
+    includeUsage: true,
     ...(fetch === undefined ? {} : { fetch }),
   });
 

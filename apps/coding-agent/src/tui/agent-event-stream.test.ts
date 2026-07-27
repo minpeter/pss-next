@@ -5,7 +5,10 @@ import type { TuiStreamPart } from "./stream-handlers";
 
 const collect = async (
   events: AgentEvent[],
-  options?: { onModelUsage?: (usage: ModelUsage) => void }
+  options?: {
+    onModelUsage?: (usage: ModelUsage) => void;
+    onOutputDelta?: (text: string) => void;
+  }
 ): Promise<TuiStreamPart[]> => {
   const parts: TuiStreamPart[] = [];
   const source = (async function* () {
@@ -18,6 +21,35 @@ const collect = async (
 };
 
 describe("agentEventStreamParts", () => {
+  it("forwards streamed output fragments to onOutputDelta", async () => {
+    const onOutputDelta = vi.fn();
+    await collect(
+      [
+        { type: "step-start" },
+        { type: "assistant-reasoning-delta", text: "thinking" },
+        { type: "assistant-output-delta", text: "Hello" },
+        {
+          type: "tool-call-input-start",
+          toolCallId: "call-1",
+          toolName: "bash",
+        },
+        {
+          type: "tool-call-input-delta",
+          inputTextDelta: '{"command":"ls"}',
+          toolCallId: "call-1",
+        },
+        { type: "step-end" },
+      ],
+      { onOutputDelta }
+    );
+
+    expect(onOutputDelta.mock.calls.map(([text]) => text)).toEqual([
+      "thinking",
+      "Hello",
+      '{"command":"ls"}',
+    ]);
+  });
+
   it("streams assistant text deltas without replaying the committed text", async () => {
     const parts = await collect([
       { type: "step-start" },

@@ -529,6 +529,12 @@ export interface AgentTUIConfig {
     createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
   ) => void | Promise<void>;
   onModelUsage?: (usage: ModelUsage) => void;
+  /**
+   * Receives streamed output text fragments (assistant text, reasoning,
+   * tool-call input) so the host can estimate token usage live between
+   * authoritative `onModelUsage` calls.
+   */
+  onOutputDelta?: (text: string) => void;
   onSetup?: () => void | Promise<void>;
   onStreamStart?: () => void | Promise<void>;
   onTurnComplete?: (
@@ -900,6 +906,14 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
             config.onModelUsage?.(usage);
             updateHeader();
           },
+          ...(config.onOutputDelta === undefined
+            ? {}
+            : {
+                onOutputDelta: (text: string) => {
+                  config.onOutputDelta?.(text);
+                  updateHeader();
+                },
+              }),
         }),
         {
           showReasoning: true,

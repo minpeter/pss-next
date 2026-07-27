@@ -66,6 +66,7 @@ describe("createOpenAICompatibleModelFromEnv", () => {
       name: "custom",
       apiKey: "ai-token-1;ai-token-2",
       baseURL: "https://llm.test/v1",
+      includeUsage: true,
     });
     expect(providerMock).toHaveBeenCalledWith("minimax/MiniMax-M2.7");
     expect(model).toEqual({ provider: "test" });
@@ -91,6 +92,7 @@ describe("createOpenAICompatibleModelFromEnv", () => {
       name: "dotenv-provider",
       apiKey: "dotenv-token",
       baseURL: "https://dotenv.test/v1",
+      includeUsage: true,
     });
     expect(providerMock).toHaveBeenCalledWith("dotenv-model");
     expect(model).toEqual({ provider: "test" });
