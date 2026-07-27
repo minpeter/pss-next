@@ -172,6 +172,7 @@ function createSwitchableModel(initial: ProviderLanguageModel): {
 }
 
 const TRAILING_SLASHES_PATTERN = /\/+$/;
+const MODEL_CATALOG_TIMEOUT_MS = 15_000;
 
 async function fetchProviderModelIds(
   baseURL: string,
@@ -179,32 +180,49 @@ async function fetchProviderModelIds(
   fetch: typeof globalThis.fetch
 ): Promise<string[]> {
   const endpoint = `${baseURL.replace(TRAILING_SLASHES_PATTERN, "")}/models`;
-  const response = await fetch(endpoint, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Model listing failed: ${response.status} ${response.statusText}`
-    );
-  }
-  const payload: unknown = await response.json();
-  const entries =
-    typeof payload === "object" && payload !== null && "data" in payload
-      ? (payload as { data: unknown }).data
-      : undefined;
-  if (!Array.isArray(entries)) {
-    throw new Error("Model listing failed: unexpected response shape");
-  }
-  const ids: string[] = [];
-  for (const entry of entries) {
-    if (
-      typeof entry === "object" &&
-      entry !== null &&
-      "id" in entry &&
-      typeof (entry as { id: unknown }).id === "string"
-    ) {
-      ids.push((entry as { id: string }).id);
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    MODEL_CATALOG_TIMEOUT_MS
+  );
+  try {
+    const response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Model listing failed: ${response.status} ${response.statusText}`
+      );
     }
+    const payload: unknown = await response.json();
+    const entries =
+      typeof payload === "object" && payload !== null && "data" in payload
+        ? (payload as { data: unknown }).data
+        : undefined;
+    if (!Array.isArray(entries)) {
+      throw new Error("Model listing failed: unexpected response shape");
+    }
+    const ids: string[] = [];
+    for (const entry of entries) {
+      if (
+        typeof entry === "object" &&
+        entry !== null &&
+        "id" in entry &&
+        typeof (entry as { id: unknown }).id === "string"
+      ) {
+        ids.push((entry as { id: string }).id);
+      }
+    }
+    return ids;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Model listing timed out after ${MODEL_CATALOG_TIMEOUT_MS / 1000} seconds`
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return ids;
 }

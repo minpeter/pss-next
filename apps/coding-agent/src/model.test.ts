@@ -225,9 +225,13 @@ describe("createCodingModelSessionFromEnv", () => {
         "model-a",
         "model-b",
       ]);
-      expect(fetchSpy).toHaveBeenCalledWith("https://llm.test/v1/models", {
-        headers: { Authorization: "Bearer ai-token" },
-      });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://llm.test/v1/models",
+        expect.objectContaining({
+          headers: { Authorization: "Bearer ai-token" },
+          signal: expect.any(AbortSignal),
+        })
+      );
     } finally {
       fetchSpy.mockRestore();
     }
@@ -251,9 +255,55 @@ describe("createCodingModelSessionFromEnv", () => {
     const session = createCodingModelSessionFromEnv({ runtimeEnv, fetch });
 
     await expect(session.listModelIds()).resolves.toEqual(["model-a"]);
-    expect(fetch).toHaveBeenCalledWith("https://llm.test/v1/models", {
-      headers: { Authorization: "Bearer ai-token" },
+    expect(fetch).toHaveBeenCalledWith(
+      "https://llm.test/v1/models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer ai-token" },
+        signal: expect.any(AbortSignal),
+      })
+    );
+  });
+
+  it("times out a model catalog request instead of leaving the TUI stuck", async () => {
+    providerMock.mockReturnValue({
+      modelId: "model-a",
+      provider: "test",
+      specificationVersion: "v4",
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
     });
+    let signal: AbortSignal | undefined;
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation((_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true }
+          );
+        });
+      });
+    vi.useFakeTimers();
+    try {
+      const { createCodingModelSessionFromEnv } = await import("./model");
+      const session = createCodingModelSessionFromEnv({ runtimeEnv, fetch });
+      const listing = session.listModelIds();
+      // Register the rejection handler before advancing fake time, otherwise
+      // Vitest observes the abort rejection as temporarily unhandled.
+      const rejected = expect(listing).rejects.toThrow(
+        "Model listing timed out after 15 seconds"
+      );
+
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await rejected;
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("only exposes and switches to -free models on the keyless Zen tier", async () => {
