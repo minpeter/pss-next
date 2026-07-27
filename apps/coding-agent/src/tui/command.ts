@@ -12,7 +12,7 @@ export type TuiCommandAction =
   | { type: "new-session" }
   | { type: "refresh-header" }
   | { type: "reload" }
-  | { type: "select-model" };
+  | { type: "select-model"; query?: string };
 
 export interface TuiCommandResult {
   action?: TuiCommandAction;

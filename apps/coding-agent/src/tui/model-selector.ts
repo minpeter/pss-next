@@ -45,6 +45,8 @@ export interface ModelSelectorOptions {
   /** Removes decorative spacing on a very short terminal. */
   readonly compact?: boolean;
   readonly currentModelId: string;
+  /** Initial fuzzy-search text, for example from `/model <query>`. */
+  readonly initialQuery?: string;
   /** Maximum number of model rows visible at once. */
   readonly maxVisibleModels?: number;
   readonly modelIds: readonly string[];
@@ -105,10 +107,11 @@ export class ModelSelectorComponent extends Container {
       1,
       0
     );
+    this.#searchInput.setValue(options.initialQuery ?? "");
     this.#searchInput.onSubmit = () => this.#confirmSelection();
     this.#searchInput.onEscape = () => this.#cancel();
     this.#rebuildLayout();
-    this.#updateList();
+    this.#applyFilter(this.#searchInput.getValue());
   }
 
   /** Recalculate the selector layout after a terminal-height change. */

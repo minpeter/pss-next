@@ -14,8 +14,8 @@ export interface CreateModelCommandOptions {
  *
  * - `/model` asks the TUI to open its pi-style inline picker
  *   (`select-model` action).
- * - `/model <id>` switches directly; the id is validated against the
- *   catalog when the provider exposes one.
+ * - `/model <id>` switches directly when it exactly matches a catalog id;
+ *   otherwise it opens the picker with `<id>` as its fuzzy-search query.
  * - `/model list` prints the catalog.
  */
 export const createModelCommand = (
@@ -31,10 +31,10 @@ export const createModelCommand = (
     if (requested === undefined || requested === "") {
       return { success: true, action: { type: "select-model" } };
     }
-    if (requested === "list") {
+    if (requested === "list" && args.length === 1) {
       return await printModelList(options);
     }
-    return await switchToModel(options, requested);
+    return await selectOrSwitchModel(options, args.join(" "));
   },
 });
 
@@ -59,31 +59,27 @@ async function printModelList(
   };
 }
 
-async function switchToModel(
+async function selectOrSwitchModel(
   options: CreateModelCommandOptions,
-  requested: string
+  query: string
 ): Promise<TuiCommandResult> {
+  const requested = query.trim();
   const current = options.currentModelId();
   if (requested === current) {
     return { success: true, message: `Model unchanged (${current}).` };
   }
 
   const catalog = await loadCatalog(options);
-  if (catalog.error === undefined && !catalog.ids.includes(requested)) {
-    return {
-      success: false,
-      message: `Unknown model ${JSON.stringify(requested)}. Run /model to pick from the catalog.`,
-    };
+  if (catalog.error === undefined && catalog.ids.includes(requested)) {
+    return applySwitch(options, requested);
   }
 
-  const result = applySwitch(options, requested);
-  if (catalog.error !== undefined && result.success) {
-    return {
-      ...result,
-      message: `${result.message} (catalog unavailable; the id was not validated)`,
-    };
-  }
-  return result;
+  // A partial (or currently unavailable) id is a picker query, not a failed
+  // direct switch. This makes `/model mi` immediately search for `mi`.
+  return {
+    action: { query: requested, type: "select-model" },
+    success: true,
+  };
 }
 
 function applySwitch(

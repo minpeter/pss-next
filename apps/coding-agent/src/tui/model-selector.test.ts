@@ -11,12 +11,16 @@ const ESCAPE = "\x1b";
 
 const createSelector = (overrides?: {
   currentModelId?: string;
+  initialQuery?: string;
   modelIds?: string[];
 }) => {
   const onSelect = vi.fn();
   const onCancel = vi.fn();
   const selector = new ModelSelectorComponent({
     currentModelId: overrides?.currentModelId ?? "model-b",
+    ...(overrides?.initialQuery === undefined
+      ? {}
+      : { initialQuery: overrides.initialQuery }),
     modelIds: overrides?.modelIds ?? ["model-a", "model-b", "model-c"],
     onCancel,
     onSelect,
@@ -70,6 +74,22 @@ describe("ModelSelectorComponent", () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("starts filtered from an initial model query", () => {
+    const { onSelect, plainLines, selector } = createSelector({
+      currentModelId: "gpt-5",
+      initialQuery: "deepseek",
+      modelIds: ["gpt-5", "claude-sonnet-4", "deepseek-v4-flash-free"],
+    });
+
+    expect(plainLines().find((line) => line.includes("→"))).toContain(
+      "deepseek-v4-flash-free"
+    );
+    expect(plainLines().join("\n")).not.toContain("claude-sonnet-4");
+
+    selector.handleInput(ENTER);
+    expect(onSelect).toHaveBeenCalledWith("deepseek-v4-flash-free");
   });
 
   it("filters with typed text and selects the top match", () => {

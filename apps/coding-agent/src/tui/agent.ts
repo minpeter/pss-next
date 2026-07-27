@@ -1140,7 +1140,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
    * (which filters Kitty key releases and re-renders after every key).
    * Resolves when the picker settles and the editor is restored.
    */
-  const showModelSelector = async (): Promise<void> => {
+  const showModelSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.modelSelector;
     if (selectorConfig === undefined) {
       addSystemMessage(chatContainer, "Model selection is not available.");
@@ -1189,6 +1189,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       selector = new ModelSelectorComponent({
         compact: layout.compact,
         currentModelId: selectorConfig.currentModelId(),
+        ...(initialQuery === undefined ? {} : { initialQuery }),
         maxVisibleModels: layout.maxVisibleModels,
         modelIds,
         onCancel: () => settle(undefined),
@@ -1243,7 +1244,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "select-model") {
-      await showModelSelector();
+      await showModelSelector(commandResult.action.query);
       return;
     }
 

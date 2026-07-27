@@ -30,26 +30,30 @@ describe("/model command", () => {
     expect(result.message).toContain("Model switched to model-b");
   });
 
-  it("rejects ids that are not in the catalog", async () => {
+  it("opens the picker with a partial model id as its search query", async () => {
     const { command, switchModel } = createHarness();
 
-    const result = await command.execute({ args: ["nope"] });
+    const result = await command.execute({ args: ["model", "b"] });
 
     expect(switchModel).not.toHaveBeenCalled();
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Unknown model "nope"');
+    expect(result).toEqual({
+      action: { query: "model b", type: "select-model" },
+      success: true,
+    });
   });
 
-  it("switches blindly with a note when the catalog is unavailable", async () => {
+  it("uses the picker query when the catalog is unavailable", async () => {
     const { command, switchModel } = createHarness({
       catalog: new Error("catalog down"),
     });
 
     const result = await command.execute({ args: ["model-x"] });
 
-    expect(switchModel).toHaveBeenCalledWith("model-x");
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("catalog unavailable");
+    expect(switchModel).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      action: { query: "model-x", type: "select-model" },
+      success: true,
+    });
   });
 
   it("is a no-op when the requested model is already active", async () => {
