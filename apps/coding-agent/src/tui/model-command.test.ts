@@ -19,6 +19,17 @@ const createHarness = (overrides?: { catalog?: string[] | Error }) => {
 };
 
 describe("/model command", () => {
+  it("provides live fuzzy model completions", async () => {
+    const { command } = createHarness({
+      catalog: ["mimo-v2.5-free", "north-mini-code-free", "claude-sonnet"],
+    });
+
+    await expect(command.getArgumentCompletions?.("mi")).resolves.toEqual([
+      { label: "mimo-v2.5-free", value: "mimo-v2.5-free" },
+      { label: "north-mini-code-free", value: "north-mini-code-free" },
+    ]);
+  });
+
   it("switches to an explicit model id from the catalog", async () => {
     const { command, switchModel } = createHarness();
 

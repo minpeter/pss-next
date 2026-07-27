@@ -30,6 +30,7 @@ export interface TuiCommandContext {
 
 export interface TuiCommand {
   aliases?: readonly string[];
+  /** Static completion values for simple commands. */
   argumentSuggestions?: readonly string[];
   description: string;
   displayName?: string;
@@ -39,7 +40,17 @@ export interface TuiCommand {
     },
     context?: TuiCommandContext
   ) => Promise<TuiCommandResult> | TuiCommandResult;
+  /** Async completion source for commands backed by runtime data. */
+  getArgumentCompletions?: (
+    argumentPrefix: string
+  ) => Promise<TuiCommandArgumentCompletion[] | null>;
   name: string;
+}
+
+export interface TuiCommandArgumentCompletion {
+  readonly description?: string;
+  readonly label: string;
+  readonly value: string;
 }
 
 export interface ParsedCommand {

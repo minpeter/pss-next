@@ -23,8 +23,9 @@ export const createModelCommand = (
 ): TuiCommand => ({
   name: "model",
   aliases: ["models"],
-  argumentSuggestions: ["list"],
   description: "Show or switch the active model",
+  getArgumentCompletions: async (argumentPrefix) =>
+    await completeModelArgument(options, argumentPrefix),
   execute: async ({ args }): Promise<TuiCommandResult> => {
     const requested = args[0]?.trim();
 
@@ -37,6 +38,40 @@ export const createModelCommand = (
     return await selectOrSwitchModel(options, args.join(" "));
   },
 });
+
+async function completeModelArgument(
+  options: CreateModelCommandOptions,
+  argumentPrefix: string
+): Promise<
+  | {
+      readonly label: string;
+      readonly value: string;
+    }[]
+  | null
+> {
+  const query = argumentPrefix.trim().toLowerCase();
+  const current = options.currentModelId();
+  const catalog = await loadCatalog(options);
+  const values = ["list", ...catalog.ids];
+  const matches = values.filter((value) => fuzzyIncludes(value, query));
+  if (matches.length === 0) {
+    return null;
+  }
+  return matches.map((value) => ({
+    label: value === current ? `${value} ✓` : value,
+    value,
+  }));
+}
+
+const fuzzyIncludes = (value: string, query: string): boolean => {
+  let queryIndex = 0;
+  for (const character of value.toLowerCase()) {
+    if (character === query[queryIndex]) {
+      queryIndex += 1;
+    }
+  }
+  return queryIndex === query.length;
+};
 
 async function printModelList(
   options: CreateModelCommandOptions

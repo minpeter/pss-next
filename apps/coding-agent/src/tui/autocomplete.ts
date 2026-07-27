@@ -25,35 +25,38 @@ export const createAutocompleteCommands = (
     command: {
       argumentSuggestions?: readonly string[];
       description: string;
+      getArgumentCompletions?: (
+        argumentPrefix: string
+      ) => Promise<AutocompleteItem[] | null>;
       name: string;
     },
     name: string,
     description: string
   ): SlashCommand => {
     const suggestions = command.argumentSuggestions;
+    const staticCompletions =
+      suggestions && suggestions.length > 0
+        ? (argumentPrefix: string): AutocompleteItem[] | null => {
+            const matches = suggestions.filter((suggestion) =>
+              suggestion.toLowerCase().startsWith(argumentPrefix.toLowerCase())
+            );
+
+            if (matches.length === 0) {
+              return null;
+            }
+
+            return matches.map((match) => ({
+              value: match,
+              label: match,
+            }));
+          }
+        : undefined;
 
     return {
       name,
       description,
       getArgumentCompletions:
-        suggestions && suggestions.length > 0
-          ? (argumentPrefix: string) => {
-              const matches = suggestions.filter((suggestion) =>
-                suggestion
-                  .toLowerCase()
-                  .startsWith(argumentPrefix.toLowerCase())
-              );
-
-              if (matches.length === 0) {
-                return null;
-              }
-
-              return matches.map((match) => ({
-                value: match,
-                label: match,
-              }));
-            }
-          : undefined,
+        command.getArgumentCompletions ?? staticCompletions,
     } satisfies SlashCommand;
   };
 
