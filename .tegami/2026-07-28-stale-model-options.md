@@ -1,11 +1,9 @@
 ---
 packages:
   npm:@minpeter/pss-coding-agent:
-    replay:
-      - exit-prerelease(npm:@minpeter/pss-coding-agent)
+    type: patch
   npm:@minpeter/pss-runtime:
-    replay:
-      - exit-prerelease(npm:@minpeter/pss-runtime)
+    type: patch
 ---
 
 ## Tighten model options and remove stale internal code
