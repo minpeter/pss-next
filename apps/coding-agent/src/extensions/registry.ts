@@ -163,6 +163,10 @@ export function createCodingAgentExtensionRegistry({
       case "model-provider":
         registerModelProvider(validated.provider);
         return;
+      case "resources":
+        collections.resourceRoots.prompts.push(...validated.prompts);
+        collections.resourceRoots.skills.push(...validated.skills);
+        return;
       case "thread-migration":
         if (
           collections.migrations.some(({ id }) => id === validated.migration.id)

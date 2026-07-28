@@ -247,6 +247,43 @@ extension without affecting the publisher. The `host:` and `provider:`
 namespaces are reserved for host-originated events; extensions can subscribe
 to them but cannot publish into them.
 
+### Context resources: AGENTS.md, prompt templates, and skills
+
+File-based context resources work without writing an extension:
+
+- **AGENTS.md context files** — `~/.pss/AGENTS.md` plus every `AGENTS.md`
+  from the repository root (the first ancestor containing `.git`) down to
+  the working directory are injected into the system prompt, closest file
+  last.
+- **Prompt templates** — `*.md` files in `~/.pss/prompts/` (global) and
+  `<project>/.pss/prompts/` (project, trust-gated) become `/name` slash
+  commands in the TUI and expand `pss exec --prompt "/name args"` prompts.
+  `$ARGUMENTS` receives the full argument string and `$1`–`$9` positional
+  arguments; bodies without placeholders get the arguments appended. An
+  optional `description:` frontmatter line labels the command. Built-in and
+  extension commands always win name collisions; shadowed templates are
+  skipped with a notice. Project templates beat global ones, which beat
+  extension-contributed ones.
+- **Skills** — `~/.pss/skills/<name>/SKILL.md` and (trust-gated)
+  `<project>/.pss/skills/<name>/SKILL.md` directories with `name`/
+  `description` frontmatter. Only the metadata is loaded eagerly; the
+  system prompt lists each skill and the model reads the `SKILL.md` on
+  demand when a task matches.
+- **Extension contribution** — extensions can contribute resource
+  directories with the `resources` capability:
+
+  ```ts
+  import { resources } from "@minpeter/pss-coding-agent/extension";
+  pss.provide(resources({ prompts: ["/abs/prompts"], skills: ["/abs/skills"] }));
+  ```
+
+Untrusted project resources are blocked with a notice (the same trust gate
+the extension loader uses), and malformed trust settings fail safe.
+Context resources are discovered at session startup and re-discovered by
+`/reload`, so edited templates, skills, AGENTS.md files, and freshly
+contributed extension resource roots apply without a restart; a failed
+reload keeps the previous resources with the previous runtime.
+
 ### Provider observations
 
 The host publishes read-only provider HTTP observations on the bus:

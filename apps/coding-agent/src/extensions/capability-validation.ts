@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { TuiCommand } from "../tui/command";
@@ -25,6 +26,11 @@ export type ValidatedCapability =
   | {
       readonly kind: "model-provider";
       readonly provider: CodingAgentExtensionModelProvider;
+    }
+  | {
+      readonly kind: "resources";
+      readonly prompts: readonly string[];
+      readonly skills: readonly string[];
     }
   | {
       readonly kind: "thread-migration";
@@ -70,6 +76,28 @@ export function validateExtensionCapability(
         kind,
         provider: snapshotModelProvider(capability.provider),
       };
+    case "resources": {
+      assertKeys(
+        capability,
+        ["kind", "prompts", "skills"],
+        "Extension capability",
+        ["kind"]
+      );
+      const prompts = snapshotResourceDirectories(
+        capability.prompts,
+        `Extension "${extensionId}" resource prompt directories`
+      );
+      const skills = snapshotResourceDirectories(
+        capability.skills,
+        `Extension "${extensionId}" resource skill directories`
+      );
+      if (prompts.length === 0 && skills.length === 0) {
+        throw new TypeError(
+          "Resources capability must provide at least one directory"
+        );
+      }
+      return { kind, prompts, skills };
+    }
     case "thread-migration":
       assertKeys(capability, ["kind", "migration"], "Extension capability");
       return {
@@ -204,6 +232,24 @@ export function snapshotThreadMigration(
     migrate: migration.migrate as ThreadStateMigration["migrate"],
     version: migration.version as number,
   });
+}
+
+function snapshotResourceDirectories(
+  value: unknown,
+  label: string
+): readonly string[] {
+  const directories = snapshotOptionalStringArray(value, label);
+  for (const directory of directories) {
+    if (directory.trim().length === 0) {
+      throw new TypeError(`${label} must not contain empty paths`);
+    }
+    if (!isAbsolute(directory)) {
+      throw new TypeError(
+        `${label} must be absolute paths (got ${JSON.stringify(directory)})`
+      );
+    }
+  }
+  return Object.freeze(directories);
 }
 
 export function snapshotToolEntries(

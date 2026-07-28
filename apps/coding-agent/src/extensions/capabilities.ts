@@ -37,10 +37,18 @@ export interface ModelProviderCapability extends Capability<"model-provider"> {
   readonly provider: CodingAgentExtensionModelProvider;
 }
 
+export interface ResourcesCapability extends Capability<"resources"> {
+  /** Absolute directories containing `*.md` prompt templates. */
+  readonly prompts: readonly string[];
+  /** Absolute directories containing `<name>/SKILL.md` skill folders. */
+  readonly skills: readonly string[];
+}
+
 export type ExtensionCapability =
   | CommandCapability
   | InstructionsCapability
   | ModelProviderCapability
+  | ResourcesCapability
   | ThreadMigrationCapability
   | ToolRendererCapability
   | ToolsCapability;
@@ -73,6 +81,17 @@ export function modelProvider(
     kind: "model-provider",
     provider,
   }) as ModelProviderCapability;
+}
+
+export function resources(options: {
+  readonly prompts?: readonly string[];
+  readonly skills?: readonly string[];
+}): ResourcesCapability {
+  return Object.freeze({
+    kind: "resources",
+    prompts: Object.freeze([...(options.prompts ?? [])]),
+    skills: Object.freeze([...(options.skills ?? [])]),
+  }) as ResourcesCapability;
 }
 
 export function threadMigration(

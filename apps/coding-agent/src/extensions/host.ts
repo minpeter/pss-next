@@ -137,6 +137,17 @@ export class CodingAgentExtensionHost {
     return { ...this.#collections.tools };
   }
 
+  /** Extension-contributed prompt/skill resource directories. */
+  get resourceRoots(): {
+    readonly prompts: readonly string[];
+    readonly skills: readonly string[];
+  } {
+    return {
+      prompts: [...this.#collections.resourceRoots.prompts],
+      skills: [...this.#collections.resourceRoots.skills],
+    };
+  }
+
   get threadMigrations(): readonly ThreadStateMigration[] {
     return [...this.#collections.migrations];
   }

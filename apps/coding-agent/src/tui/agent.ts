@@ -1224,16 +1224,22 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
+  const showActionlessCommandResult = (
+    commandResult: TuiCommandResult | null
+  ): void => {
+    if (commandResult?.message) {
+      addSystemMessage(chatContainer, commandResult.message);
+    } else if (commandResult === null) {
+      addSystemMessage(chatContainer, "Unknown command.");
+    }
+    tui.requestRender();
+  };
+
   const handleCommandResult = async (
     commandResult: TuiCommandResult | null
   ): Promise<void> => {
     if (!(commandResult?.success && commandResult.action)) {
-      if (commandResult?.message) {
-        addSystemMessage(chatContainer, commandResult.message);
-      } else if (commandResult === null) {
-        addSystemMessage(chatContainer, "Unknown command.");
-      }
-      tui.requestRender();
+      showActionlessCommandResult(commandResult);
       return;
     }
 
@@ -1249,6 +1255,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     if (commandResult.action.type === "select-model") {
       await showModelSelector(commandResult.action.query);
+      return;
+    }
+
+    if (commandResult.action.type === "submit-prompt") {
+      // Prompt-template commands expand into a normal user turn.
+      await processUserInputMessage(commandResult.action.prompt);
       return;
     }
 

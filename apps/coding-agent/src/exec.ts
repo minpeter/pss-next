@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import {
   type AgentEvent,
@@ -7,11 +8,14 @@ import {
   isStreamAgentEvent,
 } from "@minpeter/pss-runtime";
 import { createCodingAgent } from "./coding-agent";
+import { loadContextResources } from "./context";
+import { expandPromptForExec } from "./context/prompt-templates";
 import type {
   CodingAgentExtensionInput,
   ExtensionJsonValue,
 } from "./extensions";
 import { createCodingAgentExtensionHost } from "./extensions";
+import { composeCodingAgentInstructions } from "./instructions";
 import type { WebToolsAvailability } from "./tools";
 
 interface TokenUsageSummary {
@@ -50,6 +54,8 @@ export interface RunCodingAgentExecOptions {
     emit: (type: string, payload: ExtensionJsonValue) => void
   ) => void;
   readonly extensions?: readonly CodingAgentExtensionInput[];
+  /** Overrides the home directory used for context-resource discovery. */
+  readonly home?: string;
   readonly model: AgentOptions["model"];
   readonly prompt: string;
   readonly resultFile?: string;
@@ -111,9 +117,41 @@ function recordEvent(
   }
 }
 
+async function resolveExecContext({
+  extensionHost,
+  home,
+  prompt,
+  stdout,
+  workspace,
+}: {
+  readonly extensionHost: Awaited<
+    ReturnType<typeof createCodingAgentExtensionHost>
+  >;
+  readonly home: string;
+  readonly prompt: string;
+  readonly stdout: TextOutput;
+  readonly workspace: string;
+}): Promise<{ readonly instructions: string; readonly prompt: string }> {
+  const contextResources = await loadContextResources({
+    cwd: workspace,
+    home,
+    resourceRoots: extensionHost.resourceRoots,
+  });
+  for (const notice of contextResources.notices) {
+    writeJsonLine(stdout, { message: notice, type: "context_notice" });
+  }
+  return {
+    instructions: composeCodingAgentInstructions(
+      contextResources.instructionFragments
+    ),
+    prompt: expandPromptForExec(prompt, contextResources.promptTemplates),
+  };
+}
+
 export async function runCodingAgentExec({
   bindProviderObservation,
   extensions = [],
+  home = homedir(),
   model,
   prompt,
   resultFile,
@@ -140,12 +178,22 @@ export async function runCodingAgentExec({
   const absoluteWorkspace = resolve(workspace);
   const extensionHost = await createCodingAgentExtensionHost(extensions);
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
+  let resolvedPrompt = prompt;
   try {
     bindProviderObservation?.((type, payload) => {
       extensionHost.emitHostEvent(type, payload);
     });
+    const context = await resolveExecContext({
+      extensionHost,
+      home,
+      prompt,
+      stdout,
+      workspace: absoluteWorkspace,
+    });
+    resolvedPrompt = context.prompt;
     agent = await createCodingAgent({
       extensionHost,
+      instructions: context.instructions,
       model,
       webTools: { webToolsAvailability },
       workspace: absoluteWorkspace,
@@ -187,7 +235,7 @@ export async function runCodingAgentExec({
   });
 
   try {
-    const turn = await thread.send(prompt);
+    const turn = await thread.send(resolvedPrompt);
     // If the timer fired while send() was still starting, interrupt() was a
     // no-op; interrupt again now that the turn is active.
     if (timeoutFired) {
