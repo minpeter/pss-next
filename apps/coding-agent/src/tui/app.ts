@@ -72,6 +72,10 @@ export interface StartTuiOptions {
   readonly tools?: ToolSet;
 }
 
+interface StartTuiDependencies {
+  readonly createTui: typeof createAgentTUI;
+}
+
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
 
 /**
@@ -137,7 +141,10 @@ const modelSubtitleLabel = (
   return `${modelSession.currentModelId()}${modelSession.isFreeTier ? " (free tier)" : ""}`;
 };
 
-export async function startTui(options: StartTuiOptions = {}): Promise<number> {
+export async function startTui(
+  options: StartTuiOptions = {},
+  dependencies: StartTuiDependencies = { createTui: createAgentTUI }
+): Promise<number> {
   const threadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
@@ -703,7 +710,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     try {
-      await createAgentTUI(tuiConfig);
+      await dependencies.createTui(tuiConfig);
     } finally {
       emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
