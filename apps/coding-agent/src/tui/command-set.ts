@@ -44,9 +44,7 @@ const newSessionAction = (): TuiCommandResult => ({
 
 export const createClearCommand = (): TuiCommand => ({
   name: "clear",
-  displayName: "clear (new)",
-  aliases: ["new"],
-  description: "Start a new session",
+  description: "Clear the current session history",
   execute: () => newSessionAction(),
 });
 

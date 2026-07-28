@@ -54,6 +54,7 @@ describe("thread inspection", () => {
         autoCompaction: { maxInputTokens: 64_000 },
         directory,
         key,
+        keyFromEnv: false,
       });
 
       expect(formatThreadInspectionReport(report)).toBe(`threadKey: inspect:key
@@ -79,6 +80,7 @@ autoCompaction: auto max=64000`);
         autoCompaction: undefined,
         directory,
         key,
+        keyFromEnv: false,
       });
 
       expect(formatThreadInspectionReport(report)).toBe(`threadKey: missing:key

@@ -5,6 +5,12 @@ export type {
   ThreadStateMigration,
 } from "@minpeter/pss-runtime";
 export type {
+  CodingAgentSessionGuard,
+  SessionChangeEvent,
+  SessionGuardDecision,
+} from "../sessions/session-guards";
+export type { SessionLifecycleReason } from "../sessions/session-manager";
+export type {
   TuiCommand,
   TuiCommandAction,
   TuiCommandResult,
@@ -19,6 +25,7 @@ export type {
   InstructionsCapability,
   ModelProviderCapability,
   ResourcesCapability,
+  SessionGuardCapability,
   ThreadMigrationCapability,
   ToolRendererCapability,
   ToolsCapability,
@@ -28,6 +35,7 @@ export {
   instructions,
   modelProvider,
   resources,
+  sessionGuard,
   threadMigration,
   toolRenderer,
   tools,

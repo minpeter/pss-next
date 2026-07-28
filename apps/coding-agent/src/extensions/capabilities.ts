@@ -1,5 +1,6 @@
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
+import type { CodingAgentSessionGuard } from "../sessions/session-guards";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { CodingAgentExtensionModelProvider } from "./types";
@@ -37,6 +38,10 @@ export interface ModelProviderCapability extends Capability<"model-provider"> {
   readonly provider: CodingAgentExtensionModelProvider;
 }
 
+export interface SessionGuardCapability extends Capability<"session-guard"> {
+  readonly guard: CodingAgentSessionGuard;
+}
+
 export interface ResourcesCapability extends Capability<"resources"> {
   /** Absolute directories containing `*.md` prompt templates. */
   readonly prompts: readonly string[];
@@ -49,6 +54,7 @@ export type ExtensionCapability =
   | InstructionsCapability
   | ModelProviderCapability
   | ResourcesCapability
+  | SessionGuardCapability
   | ThreadMigrationCapability
   | ToolRendererCapability
   | ToolsCapability;
@@ -81,6 +87,15 @@ export function modelProvider(
     kind: "model-provider",
     provider,
   }) as ModelProviderCapability;
+}
+
+export function sessionGuard(
+  guard: CodingAgentSessionGuard
+): SessionGuardCapability {
+  return Object.freeze({
+    guard,
+    kind: "session-guard",
+  }) as SessionGuardCapability;
 }
 
 export function resources(options: {

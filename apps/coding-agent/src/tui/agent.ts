@@ -1264,11 +1264,34 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    if (commandResult.action.type === "session") {
+      handleSessionAction(commandResult, commandResult.action.clear);
+      return;
+    }
+
     if (commandResult.action.type === "refresh-header") {
       await config.onCommandAction?.(commandResult.action);
       updateHeader();
     }
 
+    if (commandResult.message) {
+      addSystemMessage(chatContainer, commandResult.message);
+    }
+    tui.requestRender();
+  };
+
+  const handleSessionAction = (
+    commandResult: TuiCommandResult,
+    clear: boolean
+  ): void => {
+    // Session commands already swapped the thread handle; the TUI only
+    // resets the transcript view and refreshes the header.
+    if (clear) {
+      clearStatus();
+      chatContainer.clear();
+      addNewSessionMessage(chatContainer);
+    }
+    updateHeader();
     if (commandResult.message) {
       addSystemMessage(chatContainer, commandResult.message);
     }

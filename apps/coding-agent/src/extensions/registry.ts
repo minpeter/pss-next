@@ -167,6 +167,12 @@ export function createCodingAgentExtensionRegistry({
         collections.resourceRoots.prompts.push(...validated.prompts);
         collections.resourceRoots.skills.push(...validated.skills);
         return;
+      case "session-guard":
+        collections.sessionGuards.push({
+          extensionId,
+          guard: validated.guard,
+        });
+        return;
       case "thread-migration":
         if (
           collections.migrations.some(({ id }) => id === validated.migration.id)

@@ -103,6 +103,40 @@ describe("coding-agent CLI", () => {
     }
   });
 
+  it("accepts --name and starts the TUI", async () => {
+    let started = 0;
+
+    const exitCode = await runCodingAgentCli({
+      argv: ["--name", "spike"],
+      loadExtensions: () => Promise.resolve({ extensions: [], notices: [] }),
+      start: () => {
+        started += 1;
+        return Promise.resolve(0);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(started).toBe(1);
+  });
+
+  it("rejects --name without a value", async () => {
+    let output = "";
+
+    const exitCode = await runCodingAgentCli({
+      argv: ["--name"],
+      start: () =>
+        Promise.reject(new Error("TUI should not start for bad flags")),
+      stdout: {
+        write(text: string): void {
+          output += text;
+        },
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(output).toContain("--name requires a value.");
+  });
+
   it("rejects -e without a path value", async () => {
     let output = "";
 
@@ -189,6 +223,46 @@ describe("coding-agent CLI", () => {
       expect(exitCode).toBe(0);
       expect(output).toContain("threadKey: workspace:demo\n");
       expect(output).toContain("messageCount: 0\n");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("inspects the active session unless PSS_THREAD_KEY forces a key", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pss-coding-agent-cli-"));
+    let output = "";
+
+    try {
+      await writeFile(
+        join(directory, "sessions.json"),
+        JSON.stringify({
+          active: { "/repo/demo": "cwd:/repo/demo#abc" },
+          schemaVersion: 1,
+          sessions: [
+            {
+              createdAt: "2026-01-01T00:00:00.000Z",
+              cwd: "/repo/demo",
+              key: "cwd:/repo/demo#abc",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        })
+      );
+
+      const exitCode = await runCodingAgentCli({
+        argv: ["inspect-thread"],
+        cwd: "/repo/demo",
+        env: { PSS_THREAD_DIR: directory },
+        home: "/home/me",
+        stdout: {
+          write(text: string): void {
+            output += text;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(output).toContain("threadKey: cwd:/repo/demo#abc\n");
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

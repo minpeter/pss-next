@@ -1,5 +1,6 @@
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
+import type { RegisteredSessionGuard } from "../sessions/session-guards";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { RegisteredAgentHooks } from "./compose-hooks";
@@ -21,6 +22,7 @@ export interface ExtensionRegistryCollections {
   readonly owners: ExtensionContributionOwners;
   readonly renderers: ToolRendererMap;
   readonly resourceRoots: { prompts: string[]; skills: string[] };
+  readonly sessionGuards: RegisteredSessionGuard[];
   readonly tools: ToolSet;
 }
 
@@ -49,6 +51,7 @@ export function createExtensionRegistryCollections(): ExtensionRegistryCollectio
     },
     renderers: Object.create(null) as ToolRendererMap,
     resourceRoots: { prompts: [], skills: [] },
+    sessionGuards: [],
     tools: Object.create(null) as ToolSet,
   };
 }
@@ -102,6 +105,7 @@ export function commitExtensionRegistryCollections(
   target.migrations.push(...staged.migrations);
   target.resourceRoots.prompts.push(...staged.resourceRoots.prompts);
   target.resourceRoots.skills.push(...staged.resourceRoots.skills);
+  target.sessionGuards.push(...staged.sessionGuards);
   for (const [id, provider] of staged.modelProviders) {
     target.modelProviders.set(id, provider);
     target.owners.modelProviders.set(id, extensionId);

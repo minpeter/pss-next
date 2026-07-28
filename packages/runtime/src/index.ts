@@ -181,6 +181,15 @@ export {
   type ThreadMigrationSnapshot,
   type ThreadStateMigration,
 } from "./thread/state/migrations";
+export {
+  type AgentThreadSnapshot,
+  type DecodedThreadState,
+  decodeStoredThreadState,
+  encodeThreadSnapshot,
+  type ThreadCompactionRecord,
+  ThreadCompactionValidationError,
+  ThreadStateValidationError,
+} from "./thread/state/snapshot";
 export type {
   CommitResult,
   ExpectedThreadVersion,

@@ -6,6 +6,8 @@ export interface CodingAgentThreadConfig {
   readonly autoCompaction: AgentOptions["autoCompaction"];
   readonly directory: string;
   readonly key: string;
+  /** True when PSS_THREAD_KEY forced the key (session index is bypassed). */
+  readonly keyFromEnv: boolean;
 }
 
 export function resolveCodingAgentThreadConfig(
@@ -13,10 +15,12 @@ export function resolveCodingAgentThreadConfig(
   cwd = process.cwd(),
   home = homedir()
 ): CodingAgentThreadConfig {
+  const envKey = nonEmpty(env.PSS_THREAD_KEY);
   return {
     autoCompaction: resolveAutoCompaction(env),
     directory: nonEmpty(env.PSS_THREAD_DIR) ?? join(home, ".pss", "threads"),
-    key: nonEmpty(env.PSS_THREAD_KEY) ?? `cwd:${cwd}`,
+    key: envKey ?? `cwd:${cwd}`,
+    keyFromEnv: envKey !== undefined,
   };
 }
 
