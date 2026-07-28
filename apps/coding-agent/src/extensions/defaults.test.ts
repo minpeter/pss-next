@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createCodingAgentExtensionHost } from "../host";
-import type { CodingAgentExtensionInput } from "../types";
 import {
-  createCodingAgentExtensionHostWithBuiltIns,
-  withBuiltInCodingAgentExtensions,
-} from "./index";
+  createCodingAgentExtensionHostWithDefaults,
+  withDefaultCodingAgentExtensions,
+} from "./defaults";
+import { createCodingAgentExtensionHost } from "./host";
+import type { CodingAgentExtensionInput } from "./types";
 
-describe("built-in coding-agent extensions", () => {
-  it("lets an explicit assistant renderer override bundled LaTeX", async () => {
+describe("default coding-agent extensions", () => {
+  it("lets an explicit assistant renderer override default LaTeX", async () => {
     const preferredRenderer = () => ({
       invalidate() {
         return;
@@ -28,7 +28,7 @@ describe("built-in coding-agent extensions", () => {
       id: "preferred-renderer",
     };
     const host = await createCodingAgentExtensionHost(
-      withBuiltInCodingAgentExtensions([preferredExtension])
+      withDefaultCodingAgentExtensions([preferredExtension])
     );
 
     expect(host.assistantRenderer).toBe(preferredRenderer);
@@ -36,7 +36,7 @@ describe("built-in coding-agent extensions", () => {
     await host.dispose();
   });
 
-  it("restores the bundled fallback after an override is removed", async () => {
+  it("restores the default fallback after an override is removed", async () => {
     const overrideRenderer = () => ({
       invalidate() {
         return;
@@ -57,11 +57,11 @@ describe("built-in coding-agent extensions", () => {
       id: "reload-override",
     };
 
-    const initialHost = await createCodingAgentExtensionHostWithBuiltIns([]);
-    const replacementHost = await createCodingAgentExtensionHostWithBuiltIns([
+    const initialHost = await createCodingAgentExtensionHostWithDefaults([]);
+    const replacementHost = await createCodingAgentExtensionHostWithDefaults([
       overrideExtension,
     ]);
-    const recoveredHost = await createCodingAgentExtensionHostWithBuiltIns([]);
+    const recoveredHost = await createCodingAgentExtensionHostWithDefaults([]);
 
     expect(initialHost.getAssistantRendererOwner()).toBe(
       "@minpeter/pss-extension-latex"

@@ -7,9 +7,9 @@ import defaultLatexExtension, {
   LATEX_OUTPUT_INSTRUCTIONS,
 } from "@minpeter/pss-extension-latex";
 import { describe, expect, it } from "vitest";
-import { createAssistantRendererNotifications } from "../../tui/assistant-renderer";
-import { createCodingAgentExtensionHost } from "../host";
-import type { CodingAgentExtensionModule } from "../types";
+import { createAssistantRendererNotifications } from "../tui/assistant-renderer";
+import { createCodingAgentExtensionHost } from "./host";
+import type { CodingAgentExtensionModule } from "./types";
 
 const latexModule: CodingAgentExtensionModule = {
   default: defaultLatexExtension,
@@ -33,7 +33,7 @@ const markdownTheme: MarkdownTheme = {
   underline: (text) => text,
 };
 
-describe("built-in LaTeX extension", () => {
+describe("coding-agent LaTeX extension integration", () => {
   it("contributes the renderer and output instructions", async () => {
     const host = await createCodingAgentExtensionHost([latexModule]);
     const renderer = host.assistantRenderer;

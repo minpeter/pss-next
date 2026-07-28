@@ -15,7 +15,7 @@ import type {
   CodingAgentExtensionInput,
   ExtensionJsonValue,
 } from "./extensions";
-import { createCodingAgentExtensionHostWithBuiltIns } from "./extensions/built-in";
+import { createCodingAgentExtensionHostWithDefaults } from "./extensions/defaults";
 import { composeCodingAgentInstructions } from "./instructions";
 import type { WebToolsAvailability } from "./tools";
 
@@ -176,7 +176,7 @@ export async function runCodingAgentExec({
   };
   const absoluteWorkspace = resolve(workspace);
   const extensionHost =
-    await createCodingAgentExtensionHostWithBuiltIns(extensions);
+    await createCodingAgentExtensionHostWithDefaults(extensions);
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   let resolvedPrompt = prompt;
   try {

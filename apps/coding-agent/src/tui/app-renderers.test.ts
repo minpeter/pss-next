@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { AgentOptions } from "@minpeter/pss-runtime";
 import { describe, expect, it } from "vitest";
 import type { CodingAgentExtensionInput } from "../extensions";
-import { createCodingAgentExtensionHostWithBuiltIns } from "../extensions/built-in";
+import { createCodingAgentExtensionHostWithDefaults } from "../extensions/defaults";
 import type { AgentTUIConfig } from "./agent";
 import {
   installAssistantRendererRuntime,
@@ -178,7 +178,7 @@ describe("TUI extension renderer merging", () => {
       },
       id: "app-reload-override",
     };
-    const startup = await createCodingAgentExtensionHostWithBuiltIns([]);
+    const startup = await createCodingAgentExtensionHostWithDefaults([]);
     const runtime: Pick<
       AgentTUIConfig,
       "assistantRenderer" | "assistantRendererSignal"
@@ -190,7 +190,7 @@ describe("TUI extension renderer merging", () => {
       host,
     }: {
       host: Awaited<
-        ReturnType<typeof createCodingAgentExtensionHostWithBuiltIns>
+        ReturnType<typeof createCodingAgentExtensionHostWithDefaults>
       >;
     }): void => {
       installAssistantRendererRuntime(runtime, host);
@@ -205,7 +205,7 @@ describe("TUI extension renderer merging", () => {
       activateHost: () => Promise.resolve(),
       createAgent: () => Promise.resolve(agent),
       createHost: (loaded) =>
-        createCodingAgentExtensionHostWithBuiltIns(loaded.extensions),
+        createCodingAgentExtensionHostWithDefaults(loaded.extensions),
       disposePrevious: async () => {
         await startup.dispose();
         return [];
@@ -221,7 +221,7 @@ describe("TUI extension renderer merging", () => {
       recoverPrevious: async () => ({
         agent,
         commands: [],
-        host: await createCodingAgentExtensionHostWithBuiltIns([]),
+        host: await createCodingAgentExtensionHostWithDefaults([]),
         toolRenderers: {},
       }),
     });
@@ -231,14 +231,14 @@ describe("TUI extension renderer merging", () => {
     const replacementSignal = runtime.assistantRendererSignal;
 
     let recovered:
-      | Awaited<ReturnType<typeof createCodingAgentExtensionHostWithBuiltIns>>
+      | Awaited<ReturnType<typeof createCodingAgentExtensionHostWithDefaults>>
       | undefined;
     await expect(
       buildReloadedExtensionRuntime({
         activateHost: () => Promise.reject(new Error("activation failed")),
         createAgent: () => Promise.resolve(agent),
         createHost: (loaded) =>
-          createCodingAgentExtensionHostWithBuiltIns(loaded.extensions),
+          createCodingAgentExtensionHostWithDefaults(loaded.extensions),
         disposePrevious: async () => {
           await replacement.host.dispose();
           return [];
@@ -252,7 +252,7 @@ describe("TUI extension renderer merging", () => {
         mergeCommands: () => [],
         mergeToolRenderers: () => ({}),
         recoverPrevious: async () => {
-          recovered = await createCodingAgentExtensionHostWithBuiltIns([]);
+          recovered = await createCodingAgentExtensionHostWithDefaults([]);
           return {
             agent,
             commands: [],

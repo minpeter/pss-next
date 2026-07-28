@@ -24,7 +24,7 @@ import type {
   CodingAgentExtensionInput,
   CodingAgentExtensionUi,
 } from "../extensions";
-import { createCodingAgentExtensionHostWithBuiltIns } from "../extensions/built-in";
+import { createCodingAgentExtensionHostWithDefaults } from "../extensions/defaults";
 import { snapshotExtensionState } from "../extensions/state-snapshot";
 import { composeCodingAgentInstructions } from "../instructions";
 import { type CodingModelSession, createCodingModelSession } from "../model";
@@ -149,7 +149,7 @@ export async function startTui(
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
-  let extensionHost = await createCodingAgentExtensionHostWithBuiltIns(
+  let extensionHost = await createCodingAgentExtensionHostWithDefaults(
     options.extensions ?? []
   );
   providerEmitter.current = (type, payload) => {
@@ -566,7 +566,7 @@ export async function startTui(
           activateHost: activateReplacementHost,
           createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
           createHost: async (loaded) => {
-            const host = await createCodingAgentExtensionHostWithBuiltIns(
+            const host = await createCodingAgentExtensionHostWithDefaults(
               loaded.extensions
             );
             // Re-discover context resources against the replacement host so
@@ -623,7 +623,7 @@ export async function startTui(
             // with, not the replacement's half-adopted ones.
             contextResources = previous.context;
             const recoveredHost =
-              await createCodingAgentExtensionHostWithBuiltIns(
+              await createCodingAgentExtensionHostWithDefaults(
                 currentExtensionInputs
               );
             let recoveredAgent:
