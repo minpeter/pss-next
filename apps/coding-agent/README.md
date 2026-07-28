@@ -415,12 +415,14 @@ cached under
 Kitty Unicode-placeholder cells, so TUI redraws and scrolling keep the image
 attached to its text rows.
 
-Install `latex`, `dvipng`, and ImageMagick (`magick`, or the legacy `convert`)
-to enable image rendering. Missing tools, invalid TeX, unsupported terminals,
-and incomplete streamed delimiters fall back to the original Markdown instead
-of failing the turn. When an executable is missing, the TUI shows one
-installation notice per session instead of silently failing or repeating the
-warning for every formula. Set `PSS_LATEX=0` to disable rendering,
+On Linux, install `bwrap`, `prlimit`, `latex`, `dvipng`, and ImageMagick
+(`magick`, or the legacy `convert`) to enable image rendering. Native TeX is
+disabled on other platforms and whenever the OS sandbox or resource limiter is
+unavailable. Missing tools, invalid TeX, unsupported terminals, and incomplete
+streamed delimiters fall back to the original Markdown instead of failing the
+turn. When an executable is missing, the TUI shows one installation notice per
+session instead of silently failing or repeating the warning for every
+formula. Set `PSS_LATEX=0` to disable rendering,
 `PSS_LATEX_COLOR=#202020` to choose the six-digit foreground color (useful for
 light terminal themes), `PSS_LATEX_SCALE=0.9` to tune formula size from `0.5`
 to `2`, `PSS_LATEX_ASPECT=1.05` for a small terminal-specific horizontal
@@ -429,11 +431,10 @@ cache.
 Model-generated TeX runs without shell escape or an inherited credential
 environment, in a private temporary directory, with restricted file
 input/output, bounded output, file and image limits, process-tree cancellation,
-and a per-stage timeout. `dvipng` disables Ghostscript and raw PostScript. On
-Linux, an available Bubblewrap installation also isolates PID, IPC, and network
-namespaces and exposes only read-only system roots plus the writable private
-render directory. The same TeX, process, cache, and size controls remain active
-on other platforms.
+and a per-stage timeout. `dvipng` disables Ghostscript and raw PostScript.
+Bubblewrap isolates PID, IPC, network, UTS, and filesystem access, exposing
+only read-only system roots plus the writable private render directory;
+`prlimit` bounds CPU time, address space, file size, and open descriptors.
 
 ## CLI
 

@@ -355,8 +355,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     const tuiConfig: AgentTUIConfig = {
-      assistantRenderer: extensionHost.assistantRenderer,
-      assistantRendererSignal: extensionHost.signal,
+      ...assistantRendererRuntime(extensionHost),
       thread: {
         interrupt: () => thread.interrupt(),
         send: (input) => thread.send(input),
@@ -523,8 +522,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       agent = nextAgent;
       extensionHost = host;
       thread = agent.thread(currentSession.key);
-      tuiConfig.assistantRenderer = host.assistantRenderer;
-      tuiConfig.assistantRendererSignal = host.signal;
+      installAssistantRendererRuntime(tuiConfig, host);
       tuiConfig.commands = [...commands];
       tuiConfig.toolRenderers = toolRenderers;
     };
@@ -751,6 +749,30 @@ export function mergeToolRenderers(
     merged[toolName] = renderer;
   }
   return merged;
+}
+
+type AssistantRendererRuntimeConfig = Pick<
+  AgentTUIConfig,
+  "assistantRenderer" | "assistantRendererSignal"
+>;
+
+type AssistantRendererRuntimeHost = Pick<
+  CodingAgentExtensionHost,
+  "assistantRenderer" | "signal"
+>;
+
+const assistantRendererRuntime = (
+  host: AssistantRendererRuntimeHost
+): AssistantRendererRuntimeConfig => ({
+  assistantRenderer: host.assistantRenderer,
+  assistantRendererSignal: host.signal,
+});
+
+export function installAssistantRendererRuntime(
+  config: AssistantRendererRuntimeConfig,
+  host: AssistantRendererRuntimeHost
+): void {
+  Object.assign(config, assistantRendererRuntime(host));
 }
 
 function guardExtensionCommands(

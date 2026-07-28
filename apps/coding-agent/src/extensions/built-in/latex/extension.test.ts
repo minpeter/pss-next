@@ -6,7 +6,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { createAssistantRendererNotifications } from "../../../tui/assistant-renderer";
 import { createCodingAgentExtensionHost } from "../../host";
-import { createLatexExtension, LATEX_OUTPUT_INSTRUCTIONS } from "./index";
+import defaultLatexExtension, {
+  createLatexExtension,
+  LATEX_OUTPUT_INSTRUCTIONS,
+} from "./index";
 
 const markdownTheme: MarkdownTheme = {
   bold: (text) => text,
@@ -26,6 +29,10 @@ const markdownTheme: MarkdownTheme = {
 };
 
 describe("built-in LaTeX extension", () => {
+  it("exports its factory as the package default", () => {
+    expect(defaultLatexExtension().id).toBe(createLatexExtension().id);
+  });
+
   it("contributes the renderer and output instructions", async () => {
     const host = await createCodingAgentExtensionHost([createLatexExtension()]);
     const renderer = host.assistantRenderer;

@@ -38,3 +38,7 @@ export const createLatexExtension = () =>
     },
     id: "@minpeter/pss-coding-agent/latex",
   });
+
+const createDefaultLatexExtension = () => createLatexExtension();
+
+export default createDefaultLatexExtension;

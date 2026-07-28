@@ -454,19 +454,6 @@ const executablePath = async (executable: string): Promise<string> => {
   throw new MissingExecutableError(executable);
 };
 
-const optionalExecutablePath = async (
-  executable: string
-): Promise<string | undefined> => {
-  try {
-    return await executablePath(executable);
-  } catch (error) {
-    if (error instanceof MissingExecutableError) {
-      return;
-    }
-    throw error;
-  }
-};
-
 const allowedProcessEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
   cwd: string
@@ -508,13 +495,10 @@ const sandboxedInvocation = async (
   const resolvedExecutable = await executablePath(executable);
   const env = allowedProcessEnvironment(options.env, options.cwd);
   if (process.platform !== "linux") {
-    return { args: [...args], env, executable: resolvedExecutable };
+    throw new MissingExecutableError("bwrap");
   }
-  const bubblewrap = await optionalExecutablePath("bwrap");
-  if (bubblewrap === undefined) {
-    return { args: [...args], env, executable: resolvedExecutable };
-  }
-  const prlimit = await optionalExecutablePath("prlimit");
+  const bubblewrap = await executablePath("bwrap");
+  const prlimit = await executablePath("prlimit");
   const sandboxDirectory = "/tmp/work";
   const sandboxEnvironment = allowedProcessEnvironment(env, sandboxDirectory);
   const setEnvironment = Object.entries(sandboxEnvironment).flatMap(
@@ -542,20 +526,17 @@ const sandboxedInvocation = async (
       }
     }
   }
-  const limitedCommand =
-    prlimit === undefined
-      ? [resolvedExecutable, ...args]
-      : [
-          prlimit,
-          `--as=${SANDBOX_ADDRESS_SPACE_BYTES}`,
-          "--core=0",
-          "--cpu=15",
-          `--fsize=${SANDBOX_FILE_BYTES}`,
-          "--nofile=128",
-          "--",
-          resolvedExecutable,
-          ...args,
-        ];
+  const limitedCommand = [
+    prlimit,
+    `--as=${SANDBOX_ADDRESS_SPACE_BYTES}`,
+    "--core=0",
+    "--cpu=15",
+    `--fsize=${SANDBOX_FILE_BYTES}`,
+    "--nofile=128",
+    "--",
+    resolvedExecutable,
+    ...args,
+  ];
   return {
     args: [
       "--die-with-parent",
