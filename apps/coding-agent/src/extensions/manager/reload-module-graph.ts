@@ -96,8 +96,12 @@ export interface CommonJsReloadTransaction {
  * and a failed reload's rollback the still-active previous runtime could
  * observe a freshly re-executed helper through a *lazy* `require()` issued
  * during that window. Modules loaded during activation keep their original
- * references and are unaffected. Full isolation needs a separate module
- * context (worker/vm) and is tracked as follow-up work.
+ * references and are unaffected. The staging pass in `reload-staging.ts`
+ * narrows the window to commit-time failures: candidates are first imported
+ * in an isolated worker module context, so a candidate that cannot even
+ * load never triggers eviction here at all. Remaining commit-time failures
+ * (for example an activation error after a clean import) still rely on the
+ * snapshot/rollback below.
  */
 export function beginCommonJsReloadTransaction(
   roots: readonly string[]
