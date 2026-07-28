@@ -24,6 +24,8 @@ export * from "./extensions";
 export { CODING_AGENT_INSTRUCTIONS } from "./instructions";
 export type {
   CodingModelSession,
+  CreateCodingModelSessionFromEnvOptions,
+  CreateCodingModelSessionOptions,
   CreateOpenAICompatibleModelFromDotenvOptions,
   CreateOpenAICompatibleModelFromEnvOptions,
 } from "./model";
