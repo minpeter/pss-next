@@ -35,4 +35,10 @@ describe("workspace metadata", () => {
       readPnpmWorkspacePatterns(pnpmWorkspace)
     );
   });
+
+  it("allows the shared pi-tui version during clean frozen installs", () => {
+    const pnpmWorkspace = readFileSync("pnpm-workspace.yaml", "utf8");
+
+    expect(pnpmWorkspace).toContain("  - '@earendil-works/pi-tui@0.80.10'");
+  });
 });

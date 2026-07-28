@@ -19,6 +19,7 @@ allowBuilds:
   ssh2: false
   workerd: true
 minimumReleaseAgeExclude:
+  - '@earendil-works/pi-tui@0.80.10'
   - typescript
   - '@typescript/*'
   - rolldown-plugin-dts
