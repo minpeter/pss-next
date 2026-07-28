@@ -64,12 +64,12 @@ describe("built-in coding-agent extensions", () => {
     const recoveredHost = await createCodingAgentExtensionHostWithBuiltIns([]);
 
     expect(initialHost.getAssistantRendererOwner()).toBe(
-      "@minpeter/pss-coding-agent/latex"
+      "@minpeter/pss-extension-latex"
     );
     expect(replacementHost.assistantRenderer).toBe(overrideRenderer);
     expect(replacementHost.getAssistantRendererOwner()).toBe("reload-override");
     expect(recoveredHost.getAssistantRendererOwner()).toBe(
-      "@minpeter/pss-coding-agent/latex"
+      "@minpeter/pss-extension-latex"
     );
 
     await Promise.all([

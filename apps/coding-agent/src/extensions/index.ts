@@ -32,10 +32,6 @@ export type {
   BaseToolCallView,
   ToolRendererMap,
 } from "../tui/tool-call-view";
-export {
-  createLatexExtension,
-  LATEX_OUTPUT_INSTRUCTIONS,
-} from "./built-in/latex";
 export type {
   CommandCapability,
   ExtensionCapability,

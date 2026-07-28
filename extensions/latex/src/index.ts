@@ -1,4 +1,8 @@
-import { defineCodingAgentExtension } from "../../types";
+import {
+  assistantRenderer,
+  type ExtensionFactory,
+  instructions,
+} from "@minpeter/pss-extension-api";
 import { LatexMarkdown } from "./latex-markdown";
 
 export const LATEX_OUTPUT_INSTRUCTIONS = `Format mathematical notation consistently in user-facing responses:
@@ -17,28 +21,27 @@ const missingDependencyMessage = (executable: string): string => {
   return `LaTeX display math is unavailable because ${dependency} was not found. Install the optional LaTeX dependencies; the original Markdown will be shown for now.`;
 };
 
-export const createLatexExtension = () =>
-  defineCodingAgentExtension({
-    configure(registry) {
-      registry.instructions.append(LATEX_OUTPUT_INSTRUCTIONS);
-      registry.tui.registerAssistantRenderer(
-        ({ markdownTheme, notifyOnce, requestRender, signal }) =>
-          new LatexMarkdown("", 1, 0, markdownTheme, {
-            onMissingTool(executable) {
-              notifyOnce(
-                "latex:missing-dependency",
-                missingDependencyMessage(executable)
-              );
-            },
-            requestRender,
-            signal,
-          }),
-        { fallback: true }
-      );
-    },
-    id: "@minpeter/pss-coding-agent/latex",
-  });
+export const createLatexExtension: ExtensionFactory = (pss) => {
+  pss.provide(instructions(LATEX_OUTPUT_INSTRUCTIONS));
+  pss.provide(
+    assistantRenderer(
+      ({ markdownTheme, notifyOnce, requestRender, signal }) =>
+        new LatexMarkdown("", 1, 0, markdownTheme, {
+          onMissingTool(executable) {
+            notifyOnce(
+              "latex:missing-dependency",
+              missingDependencyMessage(executable)
+            );
+          },
+          requestRender,
+          signal,
+        }),
+      { fallback: true }
+    )
+  );
+};
 
-const createDefaultLatexExtension = () => createLatexExtension();
+const createDefaultLatexExtension: ExtensionFactory = (pss) =>
+  createLatexExtension(pss);
 
 export default createDefaultLatexExtension;

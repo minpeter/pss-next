@@ -362,18 +362,18 @@ speculative guidance.
 
 ### LaTeX display math in the TUI
 
-LaTeX support is implemented as the bundled
-`@minpeter/pss-coding-agent/latex` extension. The coding-agent core only owns
-the generic, exclusive assistant-renderer capability and the ordinary Markdown
-fallback; the extension owns formula parsing, rendering, caching, Kitty
-placement, instructions, and dependency notices. This uses the same extension
-registration, conflict attribution, and `/reload` lifecycle as third-party
-extensions.
+LaTeX support is implemented by the official
+`@minpeter/pss-extension-latex` package. The coding-agent includes it by
+default but only owns the generic, exclusive assistant-renderer capability and
+the ordinary Markdown fallback; the extension package owns formula parsing,
+rendering, caching, Kitty placement, instructions, and dependency notices.
+This uses the same extension registration, conflict attribution, and `/reload`
+lifecycle as third-party extensions.
 
-The extension has a dedicated package subpath:
+The extension is independently importable:
 
 ```ts
-import createLatexExtension from "@minpeter/pss-coding-agent/latex";
+import createLatexExtension from "@minpeter/pss-extension-latex";
 ```
 
 Bundled LaTeX registers as the fallback assistant renderer. A third-party

@@ -3,13 +3,18 @@ import {
   type MarkdownTheme,
   setCapabilities,
 } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
-import { createAssistantRendererNotifications } from "../../../tui/assistant-renderer";
-import { createCodingAgentExtensionHost } from "../../host";
 import defaultLatexExtension, {
-  createLatexExtension,
   LATEX_OUTPUT_INSTRUCTIONS,
-} from "./index";
+} from "@minpeter/pss-extension-latex";
+import { describe, expect, it } from "vitest";
+import { createAssistantRendererNotifications } from "../../tui/assistant-renderer";
+import { createCodingAgentExtensionHost } from "../host";
+import type { CodingAgentExtensionModule } from "../types";
+
+const latexModule: CodingAgentExtensionModule = {
+  default: defaultLatexExtension,
+  id: "@minpeter/pss-extension-latex",
+};
 
 const markdownTheme: MarkdownTheme = {
   bold: (text) => text,
@@ -29,12 +34,8 @@ const markdownTheme: MarkdownTheme = {
 };
 
 describe("built-in LaTeX extension", () => {
-  it("exports its factory as the package default", () => {
-    expect(defaultLatexExtension().id).toBe(createLatexExtension().id);
-  });
-
   it("contributes the renderer and output instructions", async () => {
-    const host = await createCodingAgentExtensionHost([createLatexExtension()]);
+    const host = await createCodingAgentExtensionHost([latexModule]);
     const renderer = host.assistantRenderer;
 
     expect(host.instructionFragments).toEqual([LATEX_OUTPUT_INSTRUCTIONS]);
@@ -101,15 +102,11 @@ describe("built-in LaTeX extension", () => {
         images: "kitty",
         trueColor: true,
       });
-      const initialHost = await createCodingAgentExtensionHost([
-        createLatexExtension(),
-      ]);
+      const initialHost = await createCodingAgentExtensionHost([latexModule]);
       await renderMissingDependency(initialHost, "x = 101");
       await initialHost.dispose();
 
-      const reloadedHost = await createCodingAgentExtensionHost([
-        createLatexExtension(),
-      ]);
+      const reloadedHost = await createCodingAgentExtensionHost([latexModule]);
       await renderMissingDependency(reloadedHost, "x = 102");
       await reloadedHost.dispose();
 

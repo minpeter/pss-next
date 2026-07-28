@@ -1,0 +1,46 @@
+{
+  "name": "@minpeter/pss-extension-latex",
+  "version": "0.0.0",
+  "description": "Sandboxed LaTeX display rendering for the PSS coding-agent TUI.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@minpeter/pss-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minpeter/pss-runtime.git",
+    "directory": "extensions/latex"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "ultracite check ."
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.80.10",
+    "@minpeter/pss-extension-api": "workspace:^"
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

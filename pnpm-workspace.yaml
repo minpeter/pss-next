@@ -4,6 +4,7 @@ packages:
   - "packages/*"
   - "examples/*"
   - "experimental/*"
+  - "extensions/*"
 overrides:
   read-yaml-file: 2.1.0
   typescript: ^7.0.2

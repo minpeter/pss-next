@@ -268,7 +268,7 @@ describe("TUI extension renderer merging", () => {
       throw new Error("Expected a recovered extension host");
     }
     expect(recovered.getAssistantRendererOwner()).toBe(
-      "@minpeter/pss-coding-agent/latex"
+      "@minpeter/pss-extension-latex"
     );
     expect(runtime.assistantRenderer).toBe(recovered.assistantRenderer);
     expect(runtime.assistantRendererSignal).toBe(recovered.signal);

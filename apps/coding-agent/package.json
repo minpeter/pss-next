@@ -48,11 +48,6 @@
       "@minpeter/pss-source": "./src/extensions/index.ts",
       "types": "./dist/extensions/index.d.ts",
       "import": "./dist/extensions/index.js"
-    },
-    "./latex": {
-      "@minpeter/pss-source": "./src/extensions/built-in/latex/index.ts",
-      "types": "./dist/extensions/built-in/latex/index.d.ts",
-      "import": "./dist/extensions/built-in/latex/index.js"
     }
   },
   "bin": {
@@ -86,6 +81,7 @@
     "@earendil-works/pi-tui": "^0.80.10",
     "@minpeter/opensearch": "0.1.1",
     "@minpeter/pss-extension-api": "workspace:^",
+    "@minpeter/pss-extension-latex": "workspace:^",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",
     "ai": "7.0.37",
