@@ -20,6 +20,7 @@ export interface ExtensionRegistryCollections {
   readonly modelProviders: Map<string, CodingAgentExtensionModelProvider>;
   readonly owners: ExtensionContributionOwners;
   readonly renderers: ToolRendererMap;
+  readonly resourceRoots: { prompts: string[]; skills: string[] };
   readonly tools: ToolSet;
 }
 
@@ -47,6 +48,7 @@ export function createExtensionRegistryCollections(): ExtensionRegistryCollectio
       tools: new Map(),
     },
     renderers: Object.create(null) as ToolRendererMap,
+    resourceRoots: { prompts: [], skills: [] },
     tools: Object.create(null) as ToolSet,
   };
 }
@@ -98,6 +100,8 @@ export function commitExtensionRegistryCollections(
   target.hooks.push(...staged.hooks);
   target.instructions.push(...staged.instructions);
   target.migrations.push(...staged.migrations);
+  target.resourceRoots.prompts.push(...staged.resourceRoots.prompts);
+  target.resourceRoots.skills.push(...staged.resourceRoots.skills);
   for (const [id, provider] of staged.modelProviders) {
     target.modelProviders.set(id, provider);
     target.owners.modelProviders.set(id, extensionId);

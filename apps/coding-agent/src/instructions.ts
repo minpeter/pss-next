@@ -1,3 +1,13 @@
+/**
+ * Compose the base coding-agent instructions with context resource
+ * fragments (AGENTS.md context files, skill listings).
+ */
+export function composeCodingAgentInstructions(
+  fragments: readonly string[]
+): string {
+  return [CODING_AGENT_INSTRUCTIONS, ...fragments].join("\n\n");
+}
+
 export const CODING_AGENT_INSTRUCTIONS = `You are PSS, a coding agent working directly in the provided workspace.
 
 Use the dedicated tools instead of guessing:

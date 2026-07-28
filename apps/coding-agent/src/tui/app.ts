@@ -10,6 +10,11 @@ import { createFileHost } from "@minpeter/pss-runtime/platform/file";
 import type { ToolSet } from "ai";
 import { createCodingAgent } from "../coding-agent";
 import {
+  type ContextResources,
+  loadContextResources,
+  mergePromptTemplateCommands,
+} from "../context";
+import {
   formatModelEnvSetupHelp,
   isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
@@ -21,6 +26,7 @@ import {
   createCodingAgentExtensionHost,
 } from "../extensions";
 import { snapshotExtensionState } from "../extensions/state-snapshot";
+import { composeCodingAgentInstructions } from "../instructions";
 import { type CodingModelSession, createCodingModelSession } from "../model";
 import {
   createProviderObservationFetch,
@@ -98,12 +104,21 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     extensionHost.emitHostEvent(type, payload);
   };
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
+  let contextResources: ContextResources;
   try {
+    contextResources = await loadContextResources({
+      cwd: process.cwd(),
+      home: homedir(),
+      resourceRoots: extensionHost.resourceRoots,
+    });
     ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
       autoCompaction: threadConfig.autoCompaction,
       extensionHost,
       host: createFileHost({ directory: threadConfig.directory }),
+      instructions: composeCodingAgentInstructions(
+        contextResources.instructionFragments
+      ),
       model,
       tools: options.tools,
       workspace: process.cwd(),
@@ -125,7 +140,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     let extensionUi: CodingAgentExtensionUi | undefined;
     let extensionUiAbort: AbortController | undefined;
 
-    const noticeLines: string[] = [];
+    const noticeLines: string[] = [...contextResources.notices];
     if (modelSession?.isFreeTier) {
       noticeLines.push(
         `No AI_API_KEY configured — using the OpenCode Zen free tier (model ${modelSession.currentModelId()}). Free models are rate-limited and may change; set AI_API_KEY to use your own provider.`
@@ -154,6 +169,17 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         ? []
         : [createReloadCommand()]),
     ];
+    // Prompt-template commands sit below built-in and extension commands:
+    // shadowed templates are skipped with a notice instead of failing.
+    const composeCommands = (
+      host: CodingAgentExtensionHost
+    ): { commands: TuiCommand[]; notices: readonly string[] } =>
+      mergePromptTemplateCommands(
+        guardExtensionCommands(builtInCommands, host.commands),
+        contextResources.promptTemplates
+      );
+    const initialCommandMerge = composeCommands(extensionHost);
+    noticeLines.push(...initialCommandMerge.notices);
     let currentExtensionInputs: readonly CodingAgentExtensionInput[] =
       options.extensions ?? [];
     const deferredRefreshes: (() => Promise<void>)[] = [];
@@ -201,7 +227,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         send: (input) => thread.send(input),
         steer: (input) => thread.steer(input),
       },
-      commands: guardExtensionCommands(builtInCommands, extensionHost.commands),
+      commands: initialCommandMerge.commands,
       header,
       footer,
       ...(activeModelSession === undefined
@@ -328,6 +354,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         autoCompaction: threadConfig.autoCompaction,
         extensionHost: host,
         host: createFileHost({ directory: threadConfig.directory }),
+        instructions: composeCodingAgentInstructions(
+          contextResources.instructionFragments
+        ),
         model,
         tools: options.tools,
         workspace: process.cwd(),
@@ -356,121 +385,164 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       });
       const previous = {
         agent,
+        context: contextResources,
         host: extensionHost,
         thread,
         uiAbort: extensionUiAbort,
       };
-      const swap = await buildReloadedExtensionRuntime<
-        Awaited<ReturnType<typeof createCodingAgent>>,
-        CodingAgentExtensionHost
-      >({
-        activateHost: activateReplacementHost,
-        createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
-        createHost: (loaded) =>
-          createCodingAgentExtensionHost(loaded.extensions),
-        disposePrevious: async () => {
-          previous.thread.interrupt();
-          try {
-            return await disposePreviousExtensionRuntime({
-              agent: previous.agent,
-              disposeThread: () => previous.thread.dispose(),
-              host: previous.host,
+      let reloadCommandNotices: readonly string[] = [];
+      let swap: Awaited<
+        ReturnType<
+          typeof buildReloadedExtensionRuntime<
+            Awaited<ReturnType<typeof createCodingAgent>>,
+            CodingAgentExtensionHost
+          >
+        >
+      >;
+      const buildSwap = () =>
+        buildReloadedExtensionRuntime<
+          Awaited<ReturnType<typeof createCodingAgent>>,
+          CodingAgentExtensionHost
+        >({
+          activateHost: activateReplacementHost,
+          createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
+          createHost: async (loaded) => {
+            const host = await createCodingAgentExtensionHost(
+              loaded.extensions
+            );
+            // Re-discover context resources against the replacement host so
+            // edited AGENTS.md files, templates, skills, and freshly
+            // contributed resource roots apply without a restart. A failing
+            // reload restores the previous resources with the previous
+            // runtime.
+            contextResources = await loadContextResources({
+              cwd: process.cwd(),
+              home: homedir(),
+              resourceRoots: host.resourceRoots,
             });
-          } finally {
-            // Even when cleanup was detached by the timeout, late writes
-            // must not touch state the replacement runtime now owns, and
-            // stale prompts must release the terminal.
-            previous.uiAbort?.abort();
-            await previous.host.revokeExtensionState();
-          }
-        },
-        loadExtensions: reloadExtensions,
-        mergeCommands: (host) =>
-          guardExtensionCommands(builtInCommands, host.commands),
-        mergeToolRenderers: (host) =>
-          mergeToolRenderers(
-            createToolRenderers(),
-            host.toolRenderers,
-            (name) => host.getToolRendererOwner(name)
-          ),
-        // Snapshot the replacement extensions' state files so a failed
-        // activation cannot leave partially upgraded state for the
-        // recovered runtime.
-        snapshotState: (extensionIds) => snapshotExtensionState(extensionIds),
-        // Rebuild a runtime from the previous inputs so the session stays
-        // usable when replacement activation fails after old cleanup ran.
-        recoverPrevious: async () => {
-          const recoveredHost = await createCodingAgentExtensionHost(
-            currentExtensionInputs
-          );
-          let recoveredAgent:
-            | Awaited<ReturnType<typeof createCodingAgent>>
-            | undefined;
-          try {
-            recoveredAgent = await createReplacementAgent(recoveredHost);
-            const commands = guardExtensionCommands(
-              builtInCommands,
-              recoveredHost.commands
-            );
-            const toolRenderers = mergeToolRenderers(
+            return host;
+          },
+          disposePrevious: async () => {
+            previous.thread.interrupt();
+            try {
+              return await disposePreviousExtensionRuntime({
+                agent: previous.agent,
+                disposeThread: () => previous.thread.dispose(),
+                host: previous.host,
+              });
+            } finally {
+              // Even when cleanup was detached by the timeout, late writes
+              // must not touch state the replacement runtime now owns, and
+              // stale prompts must release the terminal.
+              previous.uiAbort?.abort();
+              await previous.host.revokeExtensionState();
+            }
+          },
+          loadExtensions: reloadExtensions,
+          mergeCommands: (host) => {
+            const merged = composeCommands(host);
+            reloadCommandNotices = merged.notices;
+            return merged.commands;
+          },
+          mergeToolRenderers: (host) =>
+            mergeToolRenderers(
               createToolRenderers(),
-              recoveredHost.toolRenderers,
-              (name) => recoveredHost.getToolRendererOwner(name)
+              host.toolRenderers,
+              (name) => host.getToolRendererOwner(name)
+            ),
+          // Snapshot the replacement extensions' state files so a failed
+          // activation cannot leave partially upgraded state for the
+          // recovered runtime.
+          snapshotState: (extensionIds) => snapshotExtensionState(extensionIds),
+          // Rebuild a runtime from the previous inputs so the session stays
+          // usable when replacement activation fails after old cleanup ran.
+          recoverPrevious: async () => {
+            // The recovered runtime must run with the resources it was built
+            // with, not the replacement's half-adopted ones.
+            contextResources = previous.context;
+            const recoveredHost = await createCodingAgentExtensionHost(
+              currentExtensionInputs
             );
-            // Recovery activation needs the same boundary as replacement
-            // activation; a hanging recovered cleanup must fail recovery
-            // instead of freezing the session.
-            await boundedReloadOperation(
-              activateReplacementHost(recoveredHost, recoveredAgent),
-              RECOVERY_ACTIVATION_TIMEOUT_MS,
-              "Recovered extension activation"
-            );
-            installRuntime(
-              recoveredHost,
-              recoveredAgent,
-              commands,
-              toolRenderers
-            );
-          } catch (error) {
-            await recoveredHost.revokeExtensionState().catch(() => undefined);
-            await Promise.allSettled([
-              recoveredAgent === undefined
-                ? Promise.resolve()
-                : boundedReloadOperation(
-                    recoveredAgent.dispose(),
-                    RECOVERY_ACTIVATION_TIMEOUT_MS,
-                    "Recovered agent disposal"
-                  ),
-              boundedReloadOperation(
-                recoveredHost.dispose(),
+            let recoveredAgent:
+              | Awaited<ReturnType<typeof createCodingAgent>>
+              | undefined;
+            try {
+              recoveredAgent = await createReplacementAgent(recoveredHost);
+              const commands = composeCommands(recoveredHost).commands;
+              const toolRenderers = mergeToolRenderers(
+                createToolRenderers(),
+                recoveredHost.toolRenderers,
+                (name) => recoveredHost.getToolRendererOwner(name)
+              );
+              // Recovery activation needs the same boundary as replacement
+              // activation; a hanging recovered cleanup must fail recovery
+              // instead of freezing the session.
+              await boundedReloadOperation(
+                activateReplacementHost(recoveredHost, recoveredAgent),
                 RECOVERY_ACTIVATION_TIMEOUT_MS,
-                "Recovered host disposal"
-              ),
-            ]);
-            throw error;
-          }
-        },
-        // Commit reloaded migrations for the stored thread before swapping so
-        // a rejecting migration cannot strand the next prompt and stateful
-        // migrations never re-run on the next load. The returned revert
-        // restores the snapshot if a later reload phase fails.
-        validateHost: async (host) => {
-          // Migration callbacks are extension-controlled and bounded by the
-          // host timeout; the durable commit itself is awaited to
-          // completion so the reported reload outcome always matches the
-          // stored thread state.
-          const committed = await commitThreadStateMigrations({
-            migrations: host.threadMigrations,
-            store: reloadFileHost.store.threads,
-            threadKey: threadStoreKey(threadConfig.key),
-            timeoutMs: host.timeoutMs,
-          });
-          return committed === undefined ? undefined : () => committed.revert();
-        },
-      });
+                "Recovered extension activation"
+              );
+              installRuntime(
+                recoveredHost,
+                recoveredAgent,
+                commands,
+                toolRenderers
+              );
+            } catch (error) {
+              await recoveredHost.revokeExtensionState().catch(() => undefined);
+              await Promise.allSettled([
+                recoveredAgent === undefined
+                  ? Promise.resolve()
+                  : boundedReloadOperation(
+                      recoveredAgent.dispose(),
+                      RECOVERY_ACTIVATION_TIMEOUT_MS,
+                      "Recovered agent disposal"
+                    ),
+                boundedReloadOperation(
+                  recoveredHost.dispose(),
+                  RECOVERY_ACTIVATION_TIMEOUT_MS,
+                  "Recovered host disposal"
+                ),
+              ]);
+              throw error;
+            }
+          },
+          // Commit reloaded migrations for the stored thread before swapping so
+          // a rejecting migration cannot strand the next prompt and stateful
+          // migrations never re-run on the next load. The returned revert
+          // restores the snapshot if a later reload phase fails.
+          validateHost: async (host) => {
+            // Migration callbacks are extension-controlled and bounded by the
+            // host timeout; the durable commit itself is awaited to
+            // completion so the reported reload outcome always matches the
+            // stored thread state.
+            const committed = await commitThreadStateMigrations({
+              migrations: host.threadMigrations,
+              store: reloadFileHost.store.threads,
+              threadKey: threadStoreKey(threadConfig.key),
+              timeoutMs: host.timeoutMs,
+            });
+            return committed === undefined
+              ? undefined
+              : () => committed.revert();
+          },
+        });
+      try {
+        swap = await buildSwap();
+      } catch (error) {
+        // Failures before recovery leave the previous runtime installed;
+        // it must keep the resources it was built with (recovery restores
+        // them itself, so this is idempotent).
+        contextResources = previous.context;
+        throw error;
+      }
       installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);
       currentExtensionInputs = swap.loadedExtensions;
-      for (const notice of swap.notices) {
+      for (const notice of [
+        ...swap.notices,
+        ...contextResources.notices,
+        ...reloadCommandNotices,
+      ]) {
         extensionUi?.notify(notice);
       }
     };

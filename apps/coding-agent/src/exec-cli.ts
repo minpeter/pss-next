@@ -244,6 +244,7 @@ export async function runExecCli({
       providerEmitter.current = emit;
     },
     extensions,
+    home,
     model: createOpenAICompatibleModelFromEnv({
       fetch: createProviderObservationFetch(providerEmitter),
       runtimeEnv,
