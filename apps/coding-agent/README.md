@@ -230,6 +230,13 @@ dependency still requires `pss extension update` or a restart. The command
 appears only when the session was started through the `pss` CLI, which can
 rediscover extensions.
 
+Before anything in the live process is touched, every reload candidate is
+first imported in an isolated worker-thread module context (staging). A
+candidate that throws at module scope or exports the wrong shape fails the
+reload during staging, so the live runtime's module graph and CommonJS
+cache stay untouched. Staging runs module side effects once in the
+discarded worker context before the real import at commit time.
+
 ### Inter-extension events
 
 `services.events` is a shared bus for extension-to-extension communication:

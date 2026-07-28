@@ -15,6 +15,7 @@ import {
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
 import { extensionScopePaths } from "./extensions/manager/paths";
 import { beginCommonJsReloadTransaction } from "./extensions/manager/reload-module-graph";
+import { beginExtensionStagingSession } from "./extensions/manager/reload-staging";
 import { readExtensionSettings } from "./extensions/manager/settings";
 import {
   activeSessionKey,
@@ -181,15 +182,76 @@ async function runTuiCommand({
       return 1;
     }
   }
-  const reloadExtensions = async (): Promise<
-    LoadedConfiguredExtensions & { rollbackModuleCache(): void }
-  > => {
+  const reloadExtensions = createTuiExtensionReloader({
+    cwd,
+    extensionPaths,
+    home,
+  });
+  return await (
+    start ??
+    ((loaded: readonly CodingAgentExtensionInput[]) =>
+      startTui({
+        extensions: loaded,
+        reloadExtensions,
+        ...(sessionName === undefined ? {} : { sessionName }),
+      }))
+  )(extensions);
+}
+
+/**
+ * Build the `/reload` loader for a TUI session. Exported for tests: the
+ * staged-then-commit ordering (worker staging before any main-context
+ * import or CommonJS eviction) is the reload-isolation contract from #262.
+ */
+export function createTuiExtensionReloader({
+  cwd,
+  extensionPaths,
+  home,
+}: {
+  readonly cwd: string;
+  readonly extensionPaths: readonly string[];
+  readonly home: string;
+}): () => Promise<
+  LoadedConfiguredExtensions & { rollbackModuleCache(): void }
+> {
+  return async () => {
     const cacheBust = Date.now().toString(36);
     const targets = await resolveCliExtensionTargets({
       cwd,
       paths: extensionPaths,
     });
     const targetIds = new Set(targets.map((target) => target.id));
+    // Stage every candidate in an isolated worker module context first: a
+    // candidate that fails to import (or exports the wrong shape) fails the
+    // reload here, before the live runtime's module graph or CommonJS cache
+    // is touched at all.
+    const staging = beginExtensionStagingSession();
+    const stagingAbort = new AbortController();
+    try {
+      await boundedReloadOperation(
+        (async () => {
+          await importCliExtensions({
+            importer: staging.importer,
+            signal: stagingAbort.signal,
+            targets,
+          });
+          await loadConfiguredCodingAgentExtensions({
+            cwd,
+            ...(targetIds.size === 0 ? {} : { excludeIds: targetIds }),
+            home,
+            importer: staging.importer,
+            signal: stagingAbort.signal,
+          });
+        })(),
+        RELOAD_IMPORT_TIMEOUT_MS,
+        "Extension reload staging"
+      );
+    } catch (error) {
+      stagingAbort.abort();
+      throw error;
+    } finally {
+      await staging.dispose();
+    }
     // Evict extension-owned CommonJS modules so cache-busted imports
     // re-execute helpers; the snapshot restores them if the reload fails.
     const transaction = beginCommonJsReloadTransaction(
@@ -230,15 +292,6 @@ async function runTuiCommand({
       throw error;
     }
   };
-  return await (
-    start ??
-    ((loaded: readonly CodingAgentExtensionInput[]) =>
-      startTui({
-        extensions: loaded,
-        reloadExtensions,
-        ...(sessionName === undefined ? {} : { sessionName }),
-      }))
-  )(extensions);
 }
 
 const RELOAD_IMPORT_TIMEOUT_MS = 30_000;
