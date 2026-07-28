@@ -284,6 +284,46 @@ Context resources are discovered at session startup and re-discovered by
 contributed extension resource roots apply without a restart; a failed
 reload keeps the previous resources with the previous runtime.
 
+### Sessions
+
+The TUI manages named, resumable, forkable sessions per working directory.
+Metadata (names, fork parentage, the active session) lives in a sidecar
+`sessions.json` next to the thread files:
+
+- `/new [name]` — start a new empty session
+- `/resume` — interactive picker (switch, rename, or delete a session;
+  deleting the live session is blocked — switch away first);
+  `/resume <key|name>` switches directly (with completions)
+- `/name <name>` — name the current session (also `pss --name <name>` at
+  startup)
+- `/fork` — pick a branch point: the latest state or *before an earlier
+  user message* (the fork keeps the truncated history and only the
+  compaction records that fit it); `/fork <name>` forks at the latest
+  state under that name. Applied thread migrations carry over so they
+  never re-run on the fork, and the parent thread key is recorded
+- `/clear` — wipe the current session in place (legacy behavior)
+
+Session recency updates on every completed turn, so the `/resume` picker
+sorts by actual use.
+
+Extensions observe the lifecycle through host bus events
+(`host:session-start` with reason `startup` | `new` | `resume` | `fork` |
+`clear`, `host:session-switch`, `host:session-shutdown`) and can veto
+switches and forks with the `sessionGuard` capability:
+
+```ts
+import { sessionGuard } from "@minpeter/pss-coding-agent/extension";
+pss.provide(
+  sessionGuard({
+    beforeSwitch: ({ fromKey, toKey, reason }) =>
+      hasUnsavedWork(fromKey) ? { cancel: true, reason: "unsaved work" } : undefined,
+  })
+);
+```
+
+Guard errors, timeouts, and malformed decisions fail closed (the change is
+cancelled). See `docs/rfc/session-lifecycle.md` for the full design.
+
 ### Provider observations
 
 The host publishes read-only provider HTTP observations on the bus:

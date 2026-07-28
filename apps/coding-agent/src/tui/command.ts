@@ -12,6 +12,7 @@ export type TuiCommandAction =
   | { type: "new-session" }
   | { type: "refresh-header" }
   | { type: "reload" }
+  | { clear: boolean; type: "session" }
   | { prompt: string; type: "submit-prompt" }
   | { type: "select-model"; query?: string };
 

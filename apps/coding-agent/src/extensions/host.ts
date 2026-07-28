@@ -5,6 +5,7 @@ import type {
   ThreadStateMigration,
 } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
+import type { RegisteredSessionGuard } from "../sessions/session-guards";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import { composeAgentHooks, type RegisteredAgentHooks } from "./compose-hooks";
@@ -135,6 +136,11 @@ export class CodingAgentExtensionHost {
 
   get tools(): ToolSet {
     return { ...this.#collections.tools };
+  }
+
+  /** Cancelable pre-switch/pre-fork session decision points (#258). */
+  get sessionGuards(): readonly RegisteredSessionGuard[] {
+    return [...this.#collections.sessionGuards];
   }
 
   /** Extension-contributed prompt/skill resource directories. */

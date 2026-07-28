@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
+import type { CodingAgentSessionGuard } from "../sessions/session-guards";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import {
@@ -31,6 +32,10 @@ export type ValidatedCapability =
       readonly kind: "resources";
       readonly prompts: readonly string[];
       readonly skills: readonly string[];
+    }
+  | {
+      readonly guard: CodingAgentSessionGuard;
+      readonly kind: "session-guard";
     }
   | {
       readonly kind: "thread-migration";
@@ -98,6 +103,9 @@ export function validateExtensionCapability(
       }
       return { kind, prompts, skills };
     }
+    case "session-guard":
+      assertKeys(capability, ["guard", "kind"], "Extension capability");
+      return { guard: snapshotSessionGuard(capability.guard), kind };
     case "thread-migration":
       assertKeys(capability, ["kind", "migration"], "Extension capability");
       return {
@@ -231,6 +239,40 @@ export function snapshotThreadMigration(
     id: qualifiedId,
     migrate: migration.migrate as ThreadStateMigration["migrate"],
     version: migration.version as number,
+  });
+}
+
+function snapshotSessionGuard(value: unknown): CodingAgentSessionGuard {
+  const guard = snapshotDataRecord(value, "Session guard");
+  assertKeys(guard, ["beforeFork", "beforeSwitch"], "Session guard", []);
+  let handlers = 0;
+  for (const name of ["beforeFork", "beforeSwitch"] as const) {
+    const handler = guard[name];
+    if (handler === undefined) {
+      continue;
+    }
+    if (typeof handler !== "function") {
+      throw new TypeError(`Session guard "${name}" must be a function`);
+    }
+    handlers += 1;
+  }
+  if (handlers === 0) {
+    throw new TypeError(
+      "Session guard must provide beforeFork or beforeSwitch"
+    );
+  }
+  return Object.freeze({
+    ...(guard.beforeFork === undefined
+      ? {}
+      : {
+          beforeFork: guard.beforeFork as CodingAgentSessionGuard["beforeFork"],
+        }),
+    ...(guard.beforeSwitch === undefined
+      ? {}
+      : {
+          beforeSwitch:
+            guard.beforeSwitch as CodingAgentSessionGuard["beforeSwitch"],
+        }),
   });
 }
 

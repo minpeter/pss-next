@@ -9,6 +9,7 @@ describe("resolveCodingAgentThreadConfig", () => {
       autoCompaction: undefined,
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
+      keyFromEnv: false,
     });
   });
 
@@ -26,6 +27,7 @@ describe("resolveCodingAgentThreadConfig", () => {
       autoCompaction: undefined,
       directory: ".pss/threads",
       key: "workspace:demo",
+      keyFromEnv: true,
     });
   });
 
@@ -40,6 +42,7 @@ describe("resolveCodingAgentThreadConfig", () => {
       autoCompaction: undefined,
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
+      keyFromEnv: false,
     });
   });
 
@@ -54,6 +57,7 @@ describe("resolveCodingAgentThreadConfig", () => {
       autoCompaction: { maxInputTokens: 64_000 },
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
+      keyFromEnv: false,
     });
   });
 

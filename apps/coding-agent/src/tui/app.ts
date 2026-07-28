@@ -32,6 +32,15 @@ import {
   createProviderObservationFetch,
   type ProviderObservationEmitter,
 } from "../provider-observation";
+import {
+  approveSessionChange,
+  type SessionChangeEvent,
+} from "../sessions/session-guards";
+import type { SessionIndexEntry } from "../sessions/session-index";
+import {
+  createSessionManager,
+  type SessionLifecycleReason,
+} from "../sessions/session-manager";
 import { resolveCodingAgentThreadConfig } from "../thread-config";
 import { planAutoUpdate, runAutoUpdate } from "../update/auto-update";
 import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
@@ -48,6 +57,7 @@ import {
   type ReloadableExtensions,
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
+import { createSessionCommands } from "./session-commands";
 import { TokenUsageTracker } from "./usage-footer";
 
 export interface StartTuiOptions {
@@ -56,11 +66,46 @@ export interface StartTuiOptions {
   readonly model?: AgentOptions["model"];
   /** Re-runs extension discovery for `/reload`; absent means unavailable. */
   readonly reloadExtensions?: () => Promise<ReloadableExtensions>;
+  /** Display name recorded for the startup session (`--name`). */
+  readonly sessionName?: string;
   /** Replaces the TUI's default optional OpenSearch tools. */
   readonly tools?: ToolSet;
 }
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
+
+/**
+ * Resolve (and record) the session this startup drives. The session index
+ * must never block startup: on failure the legacy per-directory key is
+ * used without recording metadata, and a notice is surfaced.
+ */
+async function resolveStartupSessionEntry(
+  sessionManager: ReturnType<typeof createSessionManager>,
+  threadConfig: ReturnType<typeof resolveCodingAgentThreadConfig>,
+  sessionName: string | undefined
+): Promise<{ entry: SessionIndexEntry; notice?: string }> {
+  try {
+    return {
+      entry: await sessionManager.resolveStartupSession({
+        ...(sessionName === undefined ? {} : { name: sessionName }),
+        ...(threadConfig.keyFromEnv ? { overrideKey: threadConfig.key } : {}),
+      }),
+    };
+  } catch (error) {
+    const at = new Date().toISOString();
+    return {
+      entry: {
+        createdAt: at,
+        cwd: process.cwd(),
+        key: threadConfig.key,
+        updatedAt: at,
+      },
+      notice: `Session index unavailable: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
 
 const resolveModelSubtitle = (): string | undefined => {
   try {
@@ -133,7 +178,20 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   }
   let exitCode = 0;
   try {
-    let thread = agent.thread(threadConfig.key);
+    const sessionManager = createSessionManager({
+      cwd: process.cwd(),
+      directory: threadConfig.directory,
+      threads: createFileHost({ directory: threadConfig.directory }).store
+        .threads,
+    });
+    const startupSession = await resolveStartupSessionEntry(
+      sessionManager,
+      threadConfig,
+      options.sessionName
+    );
+    let currentSession = startupSession.entry;
+    const sessionIndexNotice = startupSession.notice;
+    let thread = agent.thread(currentSession.key);
     let createExtensionUiForHost:
       | ((hostSignal?: AbortSignal) => CodingAgentExtensionUi)
       | undefined;
@@ -141,6 +199,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     let extensionUiAbort: AbortController | undefined;
 
     const noticeLines: string[] = [...contextResources.notices];
+    if (sessionIndexNotice !== undefined) {
+      noticeLines.push(sessionIndexNotice);
+    }
     if (modelSession?.isFreeTier) {
       noticeLines.push(
         `No AI_API_KEY configured — using the OpenCode Zen free tier (model ${modelSession.currentModelId()}). Free models are rate-limited and may change; set AI_API_KEY to use your own provider.`
@@ -153,6 +214,20 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     const activeModelSession = modelSession;
     const builtInCommands = [
       createClearCommand(),
+      // Session commands close over helpers defined below; the wrappers
+      // defer evaluation to call time.
+      ...createSessionCommands({
+        currentSession: () => currentSession,
+        ensureApproved: (kind, event) =>
+          ensureSessionChangeApproved(kind, event),
+        manager: sessionManager,
+        onRenamed: (entry) => {
+          currentSession = entry;
+          header.subtitle = buildSubtitle();
+        },
+        switchThread: (entry, reason) => switchThread(entry, reason),
+        ui: () => extensionUi,
+      }),
       ...(activeModelSession === undefined
         ? []
         : [
@@ -217,9 +292,67 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       renderUsageFooter();
     };
 
-    const buildSubtitle = (): string =>
-      `${modelSubtitleLabel(modelSession)}\n${process.cwd()}`;
+    const buildSubtitle = (): string => {
+      const base = `${modelSubtitleLabel(modelSession)}\n${process.cwd()}`;
+      return currentSession.name === undefined
+        ? base
+        : `${base}\nsession: ${currentSession.name}`;
+    };
     const header = { title: "pss", subtitle: buildSubtitle() };
+
+    const emitSessionEvent = (
+      type: string,
+      payload: Parameters<CodingAgentExtensionHost["emitHostEvent"]>[1]
+    ): void => {
+      extensionHost.emitHostEvent(type, payload);
+    };
+
+    // Cancelable pre-switch/pre-fork decision points (#258): any
+    // registered extension session guard can cancel the change; guard
+    // failures fail closed.
+    const ensureSessionChangeApproved = async (
+      kind: "fork" | "switch",
+      event: SessionChangeEvent
+    ): Promise<void> => {
+      const approval = await approveSessionChange({
+        event,
+        guards: extensionHost.sessionGuards,
+        kind,
+        signal: extensionHost.signal,
+        timeoutMs: extensionHost.timeoutMs,
+      });
+      if (!approval.approved) {
+        throw new Error(
+          `Session change cancelled by extension "${approval.extensionId}": ${approval.reason}`
+        );
+      }
+    };
+
+    const switchThread = async (
+      entry: SessionIndexEntry,
+      reason: SessionLifecycleReason
+    ): Promise<void> => {
+      const fromKey = currentSession.key;
+      const previous = thread;
+      previous.interrupt();
+      // Best-effort: a failing disposal of the outgoing handle must not
+      // strand the switch half-way (disposal evicts it from the agent).
+      await previous.dispose().catch(() => undefined);
+      thread = agent.thread(entry.key);
+      currentSession = entry;
+      resetUsageTotals();
+      header.subtitle = buildSubtitle();
+      emitSessionEvent("host:session-switch", {
+        fromKey,
+        reason,
+        toKey: entry.key,
+      });
+      emitSessionEvent("host:session-start", {
+        key: entry.key,
+        ...(entry.name === undefined ? {} : { name: entry.name }),
+        reason,
+      });
+    };
 
     const tuiConfig: AgentTUIConfig = {
       thread: {
@@ -254,12 +387,24 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         usageTracker.beginTurn();
         renderUsageFooter();
       },
+      onTurnComplete: () => {
+        // Keep /resume recency meaningful: every completed turn bumps the
+        // session's updatedAt (best-effort; never surfaces to the user).
+        sessionManager.touchSession(currentSession.key).catch(() => undefined);
+      },
       onExtensionUiReady: async (createUi) => {
         createExtensionUiForHost = createUi;
         extensionUiAbort = new AbortController();
         extensionUi = createUi(extensionUiAbort.signal);
         extensionHost.bindUi(extensionUi);
         await extensionHost.activate(agent, "tui");
+        emitSessionEvent("host:session-start", {
+          key: currentSession.key,
+          ...(currentSession.name === undefined
+            ? {}
+            : { name: currentSession.name }),
+          reason: "startup",
+        });
       },
       onSetup: () => {
         for (const refresh of deferredRefreshes) {
@@ -278,7 +423,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             const stale = thread;
             stale.interrupt();
             await stale.dispose().catch(() => undefined);
-            thread = agent.thread(threadConfig.key);
+            thread = agent.thread(currentSession.key);
             throw error;
           }
           return;
@@ -291,8 +436,13 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         previous.interrupt();
         await previous.delete();
         await previous.dispose();
-        thread = agent.thread(threadConfig.key);
+        thread = agent.thread(currentSession.key);
         resetUsageTotals();
+        sessionManager.touchSession(currentSession.key).catch(() => undefined);
+        emitSessionEvent("host:session-start", {
+          key: currentSession.key,
+          reason: "clear",
+        });
       },
       setupMessages: noticeLines,
       toolRenderers: mergeToolRenderers(
@@ -370,7 +520,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     ): void => {
       agent = nextAgent;
       extensionHost = host;
-      thread = agent.thread(threadConfig.key);
+      thread = agent.thread(currentSession.key);
       tuiConfig.commands = [...commands];
       tuiConfig.toolRenderers = toolRenderers;
     };
@@ -519,7 +669,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             const committed = await commitThreadStateMigrations({
               migrations: host.threadMigrations,
               store: reloadFileHost.store.threads,
-              threadKey: threadStoreKey(threadConfig.key),
+              threadKey: threadStoreKey(currentSession.key),
               timeoutMs: host.timeoutMs,
             });
             return committed === undefined
@@ -550,6 +700,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     try {
       await createAgentTUI(tuiConfig);
     } finally {
+      emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
       await thread.dispose().catch(() => undefined);
     }
