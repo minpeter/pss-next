@@ -1,15 +1,9 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { assistantRenderer, instructions } from "@minpeter/pss-extension-api";
 import { createAgent } from "@minpeter/pss-runtime";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
-import {
-  assistantRenderer,
-  command,
-  instructions,
-  threadMigration,
-  toolRenderer,
-  tools,
-} from "./capabilities";
+import { command, threadMigration, toolRenderer, tools } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
 

@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { extensionCapabilityBrand } from "@minpeter/pss-extension-api";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
@@ -62,7 +63,9 @@ export function validateExtensionCapability(
   value: unknown,
   extensionId: string
 ): ValidatedCapability {
-  const capability = snapshotDataRecord(value, "Extension capability");
+  const capability = snapshotDataRecord(value, "Extension capability", [
+    extensionCapabilityBrand,
+  ]);
   const kind = requiredString(capability.kind, "Extension capability kind");
   switch (kind) {
     case "assistant-renderer":

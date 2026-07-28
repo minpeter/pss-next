@@ -1,8 +1,9 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { instructions } from "@minpeter/pss-extension-api";
 import { createAgent } from "@minpeter/pss-runtime";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
-import { instructions, tools } from "./capabilities";
+import { tools } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type {
   CodingAgentExtensionApi,
