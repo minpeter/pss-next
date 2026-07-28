@@ -48,6 +48,11 @@
       "@minpeter/pss-source": "./src/extensions/index.ts",
       "types": "./dist/extensions/index.d.ts",
       "import": "./dist/extensions/index.js"
+    },
+    "./latex": {
+      "@minpeter/pss-source": "./src/extensions/built-in/latex/index.ts",
+      "types": "./dist/extensions/built-in/latex/index.d.ts",
+      "import": "./dist/extensions/built-in/latex/index.js"
     }
   },
   "bin": {

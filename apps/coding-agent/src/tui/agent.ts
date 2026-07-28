@@ -20,6 +20,10 @@ import {
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import { agentEventStreamParts } from "./agent-event-stream";
+import {
+  type AssistantRenderer,
+  createAssistantRendererNotifications,
+} from "./assistant-renderer";
 import { createAliasAwareAutocompleteProvider } from "./autocomplete";
 import {
   isCommand,
@@ -470,9 +474,14 @@ interface StreamViewFactories {
 }
 
 const createStreamViewFactories = (options: {
+  assistantRenderer?: AssistantRenderer;
+  assistantRendererSignal?: AbortSignal;
+  assistantViews: Set<AssistantStreamView>;
   chatContainer: Container;
   flags: PiTuiRenderFlags;
   markdownTheme: MarkdownTheme;
+  notifyAssistantRenderer: (message: string) => void;
+  notifyAssistantRendererOnce: (key: string, message: string) => void;
   requestRender: () => void;
   toolRenderers?: ToolRendererMap;
 }): StreamViewFactories => {
@@ -492,7 +501,14 @@ const createStreamViewFactories = (options: {
 
   const ensureAssistantView = (): AssistantStreamView => {
     if (!assistantView) {
-      assistantView = new AssistantStreamView(options.markdownTheme);
+      assistantView = new AssistantStreamView(options.markdownTheme, {
+        assistantRenderer: options.assistantRenderer,
+        notify: options.notifyAssistantRenderer,
+        notifyOnce: options.notifyAssistantRendererOnce,
+        requestRender: options.requestRender,
+        signal: options.assistantRendererSignal,
+      });
+      options.assistantViews.add(assistantView);
       addChatComponent(options.chatContainer, assistantView, {
         addLeadingSpacer: !suppressAssistantLeadingSpacer,
       });
@@ -612,6 +628,8 @@ export interface TurnUsage {
 }
 
 export interface AgentTUIConfig {
+  assistantRenderer?: AssistantRenderer;
+  assistantRendererSignal?: AbortSignal;
   commands?: TuiCommand[];
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
@@ -670,6 +688,24 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const chatContainer = new Container();
   const overlayContainer = new Container();
   const footerStatusBar = new FooterStatusBar(tui);
+  const assistantViews = new Set<AssistantStreamView>();
+  const disposeAssistantViews = (): void => {
+    for (const view of assistantViews) {
+      view.dispose();
+    }
+    assistantViews.clear();
+  };
+  const clearChat = (): void => {
+    disposeAssistantViews();
+    chatContainer.clear();
+  };
+
+  const assistantRendererNotifications = createAssistantRendererNotifications(
+    (message) => {
+      addSystemMessage(chatContainer, message);
+      tui.requestRender();
+    }
+  );
 
   const title = new Text("", 1, 0);
   const help = new Text(
@@ -912,9 +948,14 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       ensureAssistantView,
       ensureToolView,
     } = createStreamViewFactories({
+      assistantRenderer: config.assistantRenderer,
+      assistantRendererSignal: config.assistantRendererSignal,
+      assistantViews,
       chatContainer,
       flags,
       markdownTheme,
+      notifyAssistantRenderer: assistantRendererNotifications.notify,
+      notifyAssistantRendererOnce: assistantRendererNotifications.notifyOnce,
       requestRender: () => tui.requestRender(),
       toolRenderers: config.toolRenderers,
     });
@@ -1127,7 +1168,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     clearStatus();
-    chatContainer.clear();
+    clearChat();
     addNewSessionMessage(chatContainer);
     await config.onCommandAction?.(commandResult.action);
     updateHeader();
@@ -1288,7 +1329,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     // resets the transcript view and refreshes the header.
     if (clear) {
       clearStatus();
-      chatContainer.clear();
+      clearChat();
       addNewSessionMessage(chatContainer);
     }
     updateHeader();
@@ -1493,6 +1534,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
   } finally {
     extensionUiController.abort();
+    disposeAssistantViews();
     clearStatus();
     footerStatusBar.stop();
     session.close();

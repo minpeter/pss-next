@@ -9,6 +9,17 @@ import { defineCodingAgentExtension } from "./types";
 describe("CodingAgentExtensionHost", () => {
   it("configures extensions in order and composes runtime hooks", async () => {
     const configured: string[] = [];
+    const assistantRenderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
     const host = await createCodingAgentExtensionHost([
       defineCodingAgentExtension({
         configure(registry) {
@@ -48,6 +59,7 @@ describe("CodingAgentExtensionHost", () => {
             "extension_status",
             () => undefined
           );
+          registry.tui.registerAssistantRenderer(assistantRenderer);
         },
         id: "first",
       }),
@@ -91,6 +103,7 @@ describe("CodingAgentExtensionHost", () => {
     expect(host.commands.map(({ name }) => name)).toEqual(["extension"]);
     expect(Object.keys(host.tools)).toEqual(["extension_status"]);
     expect(Object.keys(host.toolRenderers)).toEqual(["extension_status"]);
+    expect(host.assistantRenderer).toBe(assistantRenderer);
     expect(decision).toEqual({
       action: "transform",
       value: { text: "second:first:hello", type: "user-input" },

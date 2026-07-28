@@ -19,12 +19,12 @@ import {
   isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
 } from "../env";
-import {
-  type CodingAgentExtensionHost,
-  type CodingAgentExtensionInput,
-  type CodingAgentExtensionUi,
-  createCodingAgentExtensionHost,
+import type {
+  CodingAgentExtensionHost,
+  CodingAgentExtensionInput,
+  CodingAgentExtensionUi,
 } from "../extensions";
+import { createCodingAgentExtensionHostWithBuiltIns } from "../extensions/built-in";
 import { snapshotExtensionState } from "../extensions/state-snapshot";
 import { composeCodingAgentInstructions } from "../instructions";
 import { type CodingModelSession, createCodingModelSession } from "../model";
@@ -142,7 +142,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
-  let extensionHost = await createCodingAgentExtensionHost(
+  let extensionHost = await createCodingAgentExtensionHostWithBuiltIns(
     options.extensions ?? []
   );
   providerEmitter.current = (type, payload) => {
@@ -355,6 +355,8 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     const tuiConfig: AgentTUIConfig = {
+      assistantRenderer: extensionHost.assistantRenderer,
+      assistantRendererSignal: extensionHost.signal,
       thread: {
         interrupt: () => thread.interrupt(),
         send: (input) => thread.send(input),
@@ -521,6 +523,8 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       agent = nextAgent;
       extensionHost = host;
       thread = agent.thread(currentSession.key);
+      tuiConfig.assistantRenderer = host.assistantRenderer;
+      tuiConfig.assistantRendererSignal = host.signal;
       tuiConfig.commands = [...commands];
       tuiConfig.toolRenderers = toolRenderers;
     };
@@ -557,7 +561,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           activateHost: activateReplacementHost,
           createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
           createHost: async (loaded) => {
-            const host = await createCodingAgentExtensionHost(
+            const host = await createCodingAgentExtensionHostWithBuiltIns(
               loaded.extensions
             );
             // Re-discover context resources against the replacement host so
@@ -610,9 +614,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             // The recovered runtime must run with the resources it was built
             // with, not the replacement's half-adopted ones.
             contextResources = previous.context;
-            const recoveredHost = await createCodingAgentExtensionHost(
-              currentExtensionInputs
-            );
+            const recoveredHost =
+              await createCodingAgentExtensionHostWithBuiltIns(
+                currentExtensionInputs
+              );
             let recoveredAgent:
               | Awaited<ReturnType<typeof createCodingAgent>>
               | undefined;

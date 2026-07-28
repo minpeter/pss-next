@@ -6,6 +6,10 @@ import type {
   ThreadStateMigration,
 } from "@minpeter/pss-runtime";
 import type { LanguageModel, ToolSet } from "ai";
+import type {
+  AssistantRenderer,
+  AssistantRendererRegistrationOptions,
+} from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { ExtensionCapability } from "./capabilities";
@@ -173,6 +177,10 @@ export interface CodingAgentExtensionRegistry {
     register(name: string, tool: ToolSet[string]): void;
   };
   readonly tui: {
+    registerAssistantRenderer(
+      renderer: AssistantRenderer,
+      options?: AssistantRendererRegistrationOptions
+    ): void;
     registerToolRenderer(
       toolName: string,
       renderer: ToolRendererMap[string]

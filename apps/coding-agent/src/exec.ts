@@ -11,10 +11,11 @@ import { createCodingAgent } from "./coding-agent";
 import { loadContextResources } from "./context";
 import { expandPromptForExec } from "./context/prompt-templates";
 import type {
+  CodingAgentExtensionHost,
   CodingAgentExtensionInput,
   ExtensionJsonValue,
 } from "./extensions";
-import { createCodingAgentExtensionHost } from "./extensions";
+import { createCodingAgentExtensionHostWithBuiltIns } from "./extensions/built-in";
 import { composeCodingAgentInstructions } from "./instructions";
 import type { WebToolsAvailability } from "./tools";
 
@@ -124,9 +125,7 @@ async function resolveExecContext({
   stdout,
   workspace,
 }: {
-  readonly extensionHost: Awaited<
-    ReturnType<typeof createCodingAgentExtensionHost>
-  >;
+  readonly extensionHost: CodingAgentExtensionHost;
   readonly home: string;
   readonly prompt: string;
   readonly stdout: TextOutput;
@@ -176,7 +175,8 @@ export async function runCodingAgentExec({
     },
   };
   const absoluteWorkspace = resolve(workspace);
-  const extensionHost = await createCodingAgentExtensionHost(extensions);
+  const extensionHost =
+    await createCodingAgentExtensionHostWithBuiltIns(extensions);
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   let resolvedPrompt = prompt;
   try {

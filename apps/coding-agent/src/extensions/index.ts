@@ -11,6 +11,13 @@ export type {
 } from "../sessions/session-guards";
 export type { SessionLifecycleReason } from "../sessions/session-manager";
 export type {
+  AssistantRenderer,
+  AssistantRendererContext,
+  AssistantRendererNotifications,
+  AssistantRendererRegistrationOptions,
+  AssistantTextView,
+} from "../tui/assistant-renderer";
+export type {
   TuiCommand,
   TuiCommandAction,
   TuiCommandResult,
@@ -19,7 +26,12 @@ export type {
   BaseToolCallView,
   ToolRendererMap,
 } from "../tui/tool-call-view";
+export {
+  createLatexExtension,
+  LATEX_OUTPUT_INSTRUCTIONS,
+} from "./built-in/latex";
 export type {
+  AssistantRendererCapability,
   CommandCapability,
   ExtensionCapability,
   InstructionsCapability,
@@ -31,6 +43,7 @@ export type {
   ToolsCapability,
 } from "./capabilities";
 export {
+  assistantRenderer,
   command,
   instructions,
   modelProvider,

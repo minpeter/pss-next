@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
+import type { AssistantRenderer } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import {
@@ -22,6 +23,12 @@ import type { CodingAgentExtensionModelProvider } from "./types";
 const MIGRATION_ID_PATTERN = /^[A-Za-z0-9@][A-Za-z0-9@/._:-]*$/;
 
 export type ValidatedCapability =
+  | {
+      readonly kind: "assistant-renderer";
+      readonly fallback: boolean;
+      readonly override: boolean;
+      readonly renderer: AssistantRenderer;
+    }
   | { readonly command: TuiCommand; readonly kind: "command" }
   | { readonly fragments: readonly string[]; readonly kind: "instructions" }
   | {
@@ -58,6 +65,34 @@ export function validateExtensionCapability(
   const capability = snapshotDataRecord(value, "Extension capability");
   const kind = requiredString(capability.kind, "Extension capability kind");
   switch (kind) {
+    case "assistant-renderer":
+      assertKeys(
+        capability,
+        ["fallback", "kind", "override", "renderer"],
+        "Extension capability"
+      );
+      if (typeof capability.renderer !== "function") {
+        throw new TypeError("Assistant renderer must be a function");
+      }
+      if (
+        typeof capability.fallback !== "boolean" ||
+        typeof capability.override !== "boolean"
+      ) {
+        throw new TypeError(
+          "Assistant renderer fallback and override must be booleans"
+        );
+      }
+      if (capability.fallback && capability.override) {
+        throw new TypeError(
+          "Assistant renderer cannot be both a fallback and an override"
+        );
+      }
+      return {
+        fallback: capability.fallback,
+        kind,
+        override: capability.override,
+        renderer: capability.renderer as AssistantRenderer,
+      };
     case "command":
       assertKeys(capability, ["command", "kind"], "Extension capability");
       return { command: snapshotCommand(capability.command), kind };

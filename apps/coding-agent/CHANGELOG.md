@@ -1,5 +1,35 @@
 ## @minpeter/pss-coding-agent@0.0.14-next.5 (next)
 
+### Render LaTeX display math in Kitty-graphics terminals
+
+Assistant `$$ ... $$` and `\[ ... \]` display blocks now render through
+LaTeX, DVI, `dvipng`, and LCD/padding post-processing into cached transparent
+PNGs. Kitty Unicode-placeholder cells keep formulas attached to TUI rows while
+scrolling and redrawing. Base model instructions now standardize renderable
+equations on complete `$$` display blocks with valid double-backslash row
+terminators. Compact `$...$` expressions receive inline highlighting. The
+renderer repairs the common single-backslash model error, retains a
+high-resolution source at smaller logical dimensions, matches placeholder cells
+to the source and terminal-cell aspect ratios, and reserves one blank terminal
+row around display formulas for Codex-like spacing. Formula scale and an
+optional terminal-specific horizontal correction are configurable with
+`PSS_LATEX_SCALE` and `PSS_LATEX_ASPECT`. The TUI reports missing executables once
+per session. Unsupported terminals, invalid TeX, and incomplete streams safely
+retain the original Markdown.
+
+The feature ships entirely as the bundled
+`@minpeter/pss-coding-agent/latex` extension and is available from that package
+subpath. A new assistant-renderer capability provides the TUI component,
+session-scoped notifications, lifecycle cancellation, redraw, ownership,
+conflict, and reload boundary without leaving LaTeX-specific rendering behavior
+in the coding-agent core. Bundled LaTeX is a fallback renderer; a third-party
+renderer must explicitly opt into replacing it.
+
+Native rendering now uses an allowlisted environment, bounded queue and cache
+reads, process-tree cancellation, PNG dimension limits, and disabled
+Ghostscript/raw-PostScript paths. Linux uses Bubblewrap isolation when
+available.
+
 ### Add hashline edit diffs to the coding-agent TUI
 
 The coding agent now renders anchored `edit_file` results as sorted,

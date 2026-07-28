@@ -360,6 +360,81 @@ response bodies, URLs, headers, or credentials. Legacy replay records without
 metadata remain readable as a generic `Request failed` message without
 speculative guidance.
 
+### LaTeX display math in the TUI
+
+LaTeX support is implemented as the bundled
+`@minpeter/pss-coding-agent/latex` extension. The coding-agent core only owns
+the generic, exclusive assistant-renderer capability and the ordinary Markdown
+fallback; the extension owns formula parsing, rendering, caching, Kitty
+placement, instructions, and dependency notices. This uses the same extension
+registration, conflict attribution, and `/reload` lifecycle as third-party
+extensions.
+
+The extension has a dedicated package subpath:
+
+```ts
+import createLatexExtension from "@minpeter/pss-coding-agent/latex";
+```
+
+Bundled LaTeX registers as the fallback assistant renderer. A third-party
+renderer can replace it only by explicitly registering with
+`{ override: true }`; a bare second renderer remains a source-attributed
+configuration error. Renderer contexts receive an `AbortSignal`,
+session-scoped `notifyOnce`, and a redraw callback, and optional view disposal
+runs when the transcript is cleared or the TUI stops.
+
+On Kitty-graphics terminals (Kitty, Ghostty, WezTerm, and Warp), complete
+Markdown display-math blocks are rendered as typeset images:
+
+```markdown
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+```
+
+Both `$$ ... $$` and `\[ ... \]` are supported. Short `$...$` expressions
+are rendered as highlighted inline Markdown, while the coding-agent system
+instructions reserve complete `$$` blocks for standalone equations, fractions,
+derivations, matrices, and other non-trivial notation. Display delimiters stay
+on their own lines. The renderer still accepts `\[ ... \]` for user- or
+context-supplied Markdown. The prompt also requires two literal backslashes for
+rows in `cases`, matrices, arrays, and aligned equations; the renderer repairs
+the common single-backslash-at-end-of-row model error before invoking TeX.
+Delimiters inside inline, fenced, or indented code remain plain Markdown.
+
+Rendering uses `latex -> DVI -> dvipng`, followed by ImageMagick trimming,
+sharpening, and transparent padding. It retains a high-resolution PNG while
+using smaller logical display dimensions, so Kitty downsamples instead of
+upscaling a low-resolution source. Placeholder columns are derived from the PNG
+aspect ratio and the terminal's measured cell width/height rather than rounding
+width and height independently, which avoids horizontally compressed formulas.
+Every display formula also gets one terminal blank row above and below,
+matching Codex's visual spacing. The final PNG is
+cached under
+`$XDG_CACHE_HOME/pss/latex` (normally `~/.cache/pss/latex`) and placed with
+Kitty Unicode-placeholder cells, so TUI redraws and scrolling keep the image
+attached to its text rows.
+
+Install `latex`, `dvipng`, and ImageMagick (`magick`, or the legacy `convert`)
+to enable image rendering. Missing tools, invalid TeX, unsupported terminals,
+and incomplete streamed delimiters fall back to the original Markdown instead
+of failing the turn. When an executable is missing, the TUI shows one
+installation notice per session instead of silently failing or repeating the
+warning for every formula. Set `PSS_LATEX=0` to disable rendering,
+`PSS_LATEX_COLOR=#202020` to choose the six-digit foreground color (useful for
+light terminal themes), `PSS_LATEX_SCALE=0.9` to tune formula size from `0.5`
+to `2`, `PSS_LATEX_ASPECT=1.05` for a small terminal-specific horizontal
+correction from `0.75` to `1.25`, or `PSS_LATEX_CACHE_DIR` to override the PNG
+cache.
+Model-generated TeX runs without shell escape or an inherited credential
+environment, in a private temporary directory, with restricted file
+input/output, bounded output, file and image limits, process-tree cancellation,
+and a per-stage timeout. `dvipng` disables Ghostscript and raw PostScript. On
+Linux, an available Bubblewrap installation also isolates PID, IPC, and network
+namespaces and exposes only read-only system roots plus the writable private
+render directory. The same TeX, process, cache, and size controls remain active
+on other platforms.
+
 ## CLI
 
 ```sh
