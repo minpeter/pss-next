@@ -36,9 +36,9 @@ describe("workspace metadata", () => {
     );
   });
 
-  it("allows the shared pi-tui version during clean frozen installs", () => {
+  it("keeps host-provided peers out of package dependency snapshots", () => {
     const pnpmWorkspace = readFileSync("pnpm-workspace.yaml", "utf8");
 
-    expect(pnpmWorkspace).toContain("  - '@earendil-works/pi-tui@0.80.10'");
+    expect(pnpmWorkspace).toContain("autoInstallPeers: false");
   });
 });

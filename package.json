@@ -37,6 +37,7 @@
   "devDependencies": {
     "@ai-sdk/openai-compatible": "3.0.14",
     "@biomejs/biome": "2.5.5",
+    "@earendil-works/pi-tui": "^0.80.10",
     "@minpeter/pss-coding-agent": "workspace:*",
     "@minpeter/pss-runtime": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
