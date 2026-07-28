@@ -1,16 +1,11 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
-
-/** Provider-side language model shape, derived structurally from the factory. */
-type ProviderLanguageModel = ReturnType<
-  ReturnType<typeof createOpenAICompatible>
->;
-
 import { config } from "dotenv";
 import {
   type CodingAgentRuntimeEnv,
   FREE_TIER_PROVIDER_LABEL,
   isFreeTierModelId,
+  type ResolvedOpenAICompatibleModelEnv,
   readOpenAICompatibleModelEnv,
 } from "./env";
 import {
@@ -18,9 +13,11 @@ import {
   type ModelCatalogCacheOptions,
 } from "./model-catalog-cache";
 
+/** Provider-side shapes derived structurally from the installed SDK factory. */
+type OpenAICompatibleProvider = ReturnType<typeof createOpenAICompatible>;
+type ProviderLanguageModel = ReturnType<OpenAICompatibleProvider>;
+
 export interface CreateOpenAICompatibleModelFromEnvOptions {
-  /** Optional persistent catalog-cache root/clock for embedders and tests. */
-  catalogCache?: ModelCatalogCacheOptions;
   /** Custom fetch, e.g. for provider observation. */
   fetch?: typeof globalThis.fetch;
   providerName?: string;
@@ -28,13 +25,23 @@ export interface CreateOpenAICompatibleModelFromEnvOptions {
 }
 
 export interface CreateOpenAICompatibleModelFromDotenvOptions {
-  /** Optional persistent catalog-cache root/clock for embedders and tests. */
-  catalogCache?: ModelCatalogCacheOptions;
   /** Custom fetch, e.g. for provider observation. */
   fetch?: typeof globalThis.fetch;
   override?: boolean;
   providerName?: string;
   quiet?: boolean;
+}
+
+export interface CreateCodingModelSessionFromEnvOptions
+  extends CreateOpenAICompatibleModelFromEnvOptions {
+  /** Optional persistent catalog-cache root/clock for embedders and tests. */
+  catalogCache?: ModelCatalogCacheOptions;
+}
+
+export interface CreateCodingModelSessionOptions
+  extends CreateOpenAICompatibleModelFromDotenvOptions {
+  /** Optional persistent catalog-cache root/clock for embedders and tests. */
+  catalogCache?: ModelCatalogCacheOptions;
 }
 
 /**
@@ -55,28 +62,40 @@ export interface CodingModelSession {
   switchModel(modelId: string): void;
 }
 
-export function createOpenAICompatibleModelFromEnv({
+function createOpenAICompatibleProviderFromEnv({
   fetch,
   providerName,
   runtimeEnv = process.env,
-}: CreateOpenAICompatibleModelFromEnvOptions = {}): LanguageModel {
-  // Keep this legacy factory returning the provider's native model instance.
-  // Workflows discover provider serialization hooks from its constructor;
-  // only the interactive session API needs the switchable wrapper.
+}: CreateOpenAICompatibleModelFromEnvOptions): {
+  readonly env: ResolvedOpenAICompatibleModelEnv;
+  readonly provider: OpenAICompatibleProvider;
+} {
   const env = readOpenAICompatibleModelEnv({ runtimeEnv });
   const provider = createOpenAICompatible({
     name:
       providerName ?? (env.isFreeTier ? FREE_TIER_PROVIDER_LABEL : "custom"),
     apiKey: env.AI_API_KEY,
     baseURL: env.AI_BASE_URL,
+    // Request usage chunks in streaming responses (`stream_options:
+    // {"include_usage": true}`). Without this, compatible servers may omit
+    // token usage entirely.
     includeUsage: true,
     ...(fetch === undefined ? {} : { fetch }),
   });
+  return { env, provider };
+}
+
+export function createOpenAICompatibleModelFromEnv(
+  options: CreateOpenAICompatibleModelFromEnvOptions = {}
+): LanguageModel {
+  // Return the provider's native model instance: workflows discover provider
+  // serialization hooks from its constructor, while only interactive sessions
+  // need the switchable wrapper.
+  const { env, provider } = createOpenAICompatibleProviderFromEnv(options);
   return provider(env.AI_MODEL);
 }
 
 export function createCodingLanguageModel({
-  catalogCache,
   fetch,
   override = true,
   providerName,
@@ -85,7 +104,6 @@ export function createCodingLanguageModel({
   config({ override, quiet });
 
   return createOpenAICompatibleModelFromEnv({
-    ...(catalogCache === undefined ? {} : { catalogCache }),
     ...(fetch === undefined ? {} : { fetch }),
     ...(providerName === undefined ? {} : { providerName }),
   });
@@ -98,7 +116,7 @@ export function createCodingModelSession({
   override = true,
   providerName,
   quiet = true,
-}: CreateOpenAICompatibleModelFromDotenvOptions = {}): CodingModelSession {
+}: CreateCodingModelSessionOptions = {}): CodingModelSession {
   config({ override, quiet });
 
   return createCodingModelSessionFromEnv({
@@ -112,19 +130,12 @@ export function createCodingModelSessionFromEnv({
   catalogCache,
   fetch,
   providerName,
-  runtimeEnv = process.env,
-}: CreateOpenAICompatibleModelFromEnvOptions = {}): CodingModelSession {
-  const env = readOpenAICompatibleModelEnv({ runtimeEnv });
-  const provider = createOpenAICompatible({
-    name:
-      providerName ?? (env.isFreeTier ? FREE_TIER_PROVIDER_LABEL : "custom"),
-    apiKey: env.AI_API_KEY,
-    baseURL: env.AI_BASE_URL,
-    // Request usage chunks in streaming responses (`stream_options:
-    // {"include_usage": true}`). Without this, OpenAI-compatible servers
-    // omit token usage entirely and the TUI can only report 0 tokens.
-    includeUsage: true,
-    ...(fetch === undefined ? {} : { fetch }),
+  runtimeEnv,
+}: CreateCodingModelSessionFromEnvOptions = {}): CodingModelSession {
+  const { env, provider } = createOpenAICompatibleProviderFromEnv({
+    fetch,
+    providerName,
+    runtimeEnv,
   });
   const switchable = createSwitchableModel(provider(env.AI_MODEL));
   const persistentCatalogCache = new ModelCatalogCache(catalogCache);

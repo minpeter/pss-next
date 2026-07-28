@@ -11,7 +11,8 @@
     "apps/*",
     "benchmarks/*",
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "experimental/*"
   ],
   "scripts": {
     "dev": "pnpm --filter @minpeter/pss-example-basic start",

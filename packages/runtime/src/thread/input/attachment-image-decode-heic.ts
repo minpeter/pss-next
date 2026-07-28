@@ -183,11 +183,7 @@ async function decodeHeicWithLibheifEsmUnlocked(
   }
 }
 
-let _avifInitPromise: Promise<void> | undefined;
-let _webpInitPromise: Promise<void> | undefined;
-let _runtimeReadyPromise: Promise<void> | undefined;
-
-/** True when AVIF + WebP + HEIF decode wasm modules are installed. */
+/** Provide harmless values for Emscripten's Node probes in Workers. */
 function polyfillEmscriptenNodeShims(): void {
   const g = globalThis as typeof globalThis & {
     __dirname?: string;

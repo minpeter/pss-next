@@ -5,14 +5,15 @@ import {
   Spacer,
 } from "@earendil-works/pi-tui";
 
-import { colors } from "./colors";
 import { sanitizeTerminalText } from "./terminal-safety";
 
+const ANSI_RESET = "\x1b[0m";
 const LEADING_NEWLINES = /^\n+/;
 const OUTER_NEWLINES = /^\n+|\n+$/g;
+const THINKING_TEXT_STYLE = "\x1b[2m\x1b[3m\x1b[90m";
 
 const styleThinkingText = (text: string): string =>
-  `${colors.dim}${colors.italic}${colors.gray}${text}${colors.reset}`;
+  `${THINKING_TEXT_STYLE}${text}${ANSI_RESET}`;
 
 interface AssistantStreamSegment {
   content: string;

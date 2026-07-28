@@ -3,6 +3,8 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"]

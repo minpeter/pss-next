@@ -2,7 +2,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LanguageModel } from "ai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "vitest";
+import type {
+  CreateCodingModelSessionFromEnvOptions,
+  CreateCodingModelSessionOptions,
+  CreateOpenAICompatibleModelFromDotenvOptions,
+  CreateOpenAICompatibleModelFromEnvOptions,
+} from "./model";
 
 const { createOpenAICompatibleMock, dotenvConfigMock, providerMock } =
   vi.hoisted(() => ({
@@ -18,6 +32,25 @@ vi.mock("@ai-sdk/openai-compatible", () => ({
 vi.mock("dotenv", () => ({
   config: dotenvConfigMock,
 }));
+
+type HasCatalogCache<T> = "catalogCache" extends keyof T ? true : false;
+
+describe("model factory option contracts", () => {
+  it("offers catalog caching only to model sessions", () => {
+    expectTypeOf<
+      HasCatalogCache<CreateOpenAICompatibleModelFromEnvOptions>
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      HasCatalogCache<CreateOpenAICompatibleModelFromDotenvOptions>
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      HasCatalogCache<CreateCodingModelSessionFromEnvOptions>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<
+      HasCatalogCache<CreateCodingModelSessionOptions>
+    >().toEqualTypeOf<true>();
+  });
+});
 
 describe("createOpenAICompatibleModelFromEnv", () => {
   const aiEnvKeys = ["AI_API_KEY", "AI_BASE_URL", "AI_MODEL"] as const;

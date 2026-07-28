@@ -247,18 +247,6 @@ describe("Cloudflare Durable Object host adapter", () => {
   });
 });
 
-function _notificationRunRecord(runId: string, idempotencyKey = runId) {
-  return {
-    checkpointVersion: 0,
-    dedupeKey: idempotencyKey,
-    kind: "notification",
-    rootRunId: runId,
-    runId,
-    threadKey: "room:demo:user:edge",
-    status: "queued",
-  } as const;
-}
-
 function runWithEvents(events: readonly AgentEvent[]): AgentTurn {
   return {
     events: () => eventStream(events),
