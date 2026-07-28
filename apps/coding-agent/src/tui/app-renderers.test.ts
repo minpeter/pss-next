@@ -3,6 +3,7 @@ import type { CodingAgentExtensionInput } from "../extensions";
 import { createCodingAgentExtensionHostWithBuiltIns } from "../extensions/built-in";
 import type { AgentTUIConfig } from "./agent";
 import { installAssistantRendererRuntime, mergeToolRenderers } from "./app";
+import { buildReloadedExtensionRuntime } from "./reload";
 
 describe("TUI extension renderer merging", () => {
   it("installs startup reload and recovery assistant renderers", async () => {
@@ -26,28 +27,94 @@ describe("TUI extension renderer merging", () => {
       id: "app-reload-override",
     };
     const startup = await createCodingAgentExtensionHostWithBuiltIns([]);
-    const replacement = await createCodingAgentExtensionHostWithBuiltIns([
-      overrideExtension,
-    ]);
-    const recovered = await createCodingAgentExtensionHostWithBuiltIns([]);
     const runtime: Pick<
       AgentTUIConfig,
       "assistantRenderer" | "assistantRendererSignal"
     > = {};
+    const agent = {
+      dispose: () => Promise.resolve(),
+    };
+    const installRuntime = ({
+      host,
+    }: {
+      host: Awaited<
+        ReturnType<typeof createCodingAgentExtensionHostWithBuiltIns>
+      >;
+    }): void => {
+      installAssistantRendererRuntime(runtime, host);
+    };
 
     installAssistantRendererRuntime(runtime, startup);
     expect(runtime.assistantRenderer).toBe(startup.assistantRenderer);
     expect(runtime.assistantRendererSignal).toBe(startup.signal);
+    const startupSignal = runtime.assistantRendererSignal;
 
-    await startup.dispose();
-    expect(runtime.assistantRendererSignal?.aborted).toBe(true);
-    installAssistantRendererRuntime(runtime, replacement);
+    const replacement = await buildReloadedExtensionRuntime({
+      activateHost: () => Promise.resolve(),
+      createAgent: () => Promise.resolve(agent),
+      createHost: (loaded) =>
+        createCodingAgentExtensionHostWithBuiltIns(loaded.extensions),
+      disposePrevious: async () => {
+        await startup.dispose();
+        return [];
+      },
+      installRuntime,
+      loadExtensions: () =>
+        Promise.resolve({
+          extensions: [overrideExtension],
+          notices: [],
+        }),
+      mergeCommands: () => [],
+      mergeToolRenderers: () => ({}),
+      recoverPrevious: async () => ({
+        agent,
+        commands: [],
+        host: await createCodingAgentExtensionHostWithBuiltIns([]),
+        toolRenderers: {},
+      }),
+    });
+    expect(startupSignal?.aborted).toBe(true);
     expect(runtime.assistantRenderer).toBe(overrideRenderer);
-    expect(runtime.assistantRendererSignal).toBe(replacement.signal);
+    expect(runtime.assistantRendererSignal).toBe(replacement.host.signal);
+    const replacementSignal = runtime.assistantRendererSignal;
 
-    await replacement.dispose();
-    expect(runtime.assistantRendererSignal?.aborted).toBe(true);
-    installAssistantRendererRuntime(runtime, recovered);
+    let recovered:
+      | Awaited<ReturnType<typeof createCodingAgentExtensionHostWithBuiltIns>>
+      | undefined;
+    await expect(
+      buildReloadedExtensionRuntime({
+        activateHost: () => Promise.reject(new Error("activation failed")),
+        createAgent: () => Promise.resolve(agent),
+        createHost: (loaded) =>
+          createCodingAgentExtensionHostWithBuiltIns(loaded.extensions),
+        disposePrevious: async () => {
+          await replacement.host.dispose();
+          return [];
+        },
+        installRuntime,
+        loadExtensions: () =>
+          Promise.resolve({
+            extensions: [overrideExtension],
+            notices: [],
+          }),
+        mergeCommands: () => [],
+        mergeToolRenderers: () => ({}),
+        recoverPrevious: async () => {
+          recovered = await createCodingAgentExtensionHostWithBuiltIns([]);
+          return {
+            agent,
+            commands: [],
+            host: recovered,
+            toolRenderers: {},
+          };
+        },
+      })
+    ).rejects.toThrow("activation failed");
+    expect(replacementSignal?.aborted).toBe(true);
+    expect(recovered).toBeDefined();
+    if (recovered === undefined) {
+      throw new Error("Expected a recovered extension host");
+    }
     expect(recovered.getAssistantRendererOwner()).toBe(
       "@minpeter/pss-coding-agent/latex"
     );

@@ -208,39 +208,42 @@ describe("LatexMarkdown", () => {
     expect(view.render(80).join("\n")).toContain(formula);
   });
 
-  it("refuses native TeX when the resource limiter is unavailable", async () => {
-    const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
-    const binaryRoot = await mkdtemp(join(tmpdir(), "pss-latex-bin-"));
-    temporaryDirectories.push(cacheRoot, binaryRoot);
-    process.env.PATH = binaryRoot;
-    process.env.PSS_LATEX_CACHE_DIR = cacheRoot;
-    process.env.PSS_LATEX = "1";
-    await Promise.all([
-      writeFile(join(binaryRoot, "latex"), "#!/bin/sh\nexit 99\n", {
-        mode: 0o755,
-      }),
-      writeFile(join(binaryRoot, "bwrap"), "#!/bin/sh\nexit 99\n", {
-        mode: 0o755,
-      }),
-    ]);
-    setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
-    let missingTool: string | undefined;
-    let resolveRender: (() => void) | undefined;
-    const rendered = new Promise<void>((resolve) => {
-      resolveRender = resolve;
-    });
-    const view = new LatexMarkdown("$$\nx = 405\n$$", 1, 0, markdownTheme, {
-      onMissingTool: (executable) => {
-        missingTool = executable;
-      },
-      requestRender: () => resolveRender?.(),
-    });
+  it.runIf(process.platform === "linux")(
+    "refuses native TeX when the resource limiter is unavailable",
+    async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+      const binaryRoot = await mkdtemp(join(tmpdir(), "pss-latex-bin-"));
+      temporaryDirectories.push(cacheRoot, binaryRoot);
+      process.env.PATH = binaryRoot;
+      process.env.PSS_LATEX_CACHE_DIR = cacheRoot;
+      process.env.PSS_LATEX = "1";
+      await Promise.all([
+        writeFile(join(binaryRoot, "latex"), "#!/bin/sh\nexit 99\n", {
+          mode: 0o755,
+        }),
+        writeFile(join(binaryRoot, "bwrap"), "#!/bin/sh\nexit 99\n", {
+          mode: 0o755,
+        }),
+      ]);
+      setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
+      let missingTool: string | undefined;
+      let resolveRender: (() => void) | undefined;
+      const rendered = new Promise<void>((resolve) => {
+        resolveRender = resolve;
+      });
+      const view = new LatexMarkdown("$$\nx = 405\n$$", 1, 0, markdownTheme, {
+        onMissingTool: (executable) => {
+          missingTool = executable;
+        },
+        requestRender: () => resolveRender?.(),
+      });
 
-    view.render(80);
-    await rendered;
+      view.render(80);
+      await rendered;
 
-    expect(missingTool).toBe("prlimit");
-  });
+      expect(missingTool).toBe("prlimit");
+    }
+  );
 
   it("upgrades a cached display block asynchronously without invoking TeX", async () => {
     const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));

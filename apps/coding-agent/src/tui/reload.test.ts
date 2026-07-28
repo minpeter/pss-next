@@ -4,6 +4,7 @@ import type { TuiCommand } from "./command";
 import {
   buildReloadedExtensionRuntime,
   disposePreviousExtensionRuntime,
+  type ExtensionRuntimeInstallation,
 } from "./reload";
 
 interface FakeAgent {
@@ -52,16 +53,28 @@ const command: TuiCommand = {
   name: "noop",
 };
 
+function fakeInstallation(): ExtensionRuntimeInstallation<FakeAgent, FakeHost> {
+  return {
+    agent: fakeAgent(),
+    commands: [command],
+    host: fakeHost(),
+    toolRenderers: {},
+  };
+}
+
 function baseOptions(overrides: {
   readonly activateHost?: (host: FakeHost, agent: FakeAgent) => Promise<void>;
   readonly createAgent?: () => Promise<FakeAgent>;
   readonly createHost?: () => Promise<FakeHost>;
   readonly disposePrevious?: () => Promise<readonly string[]>;
+  readonly installRuntime?: (
+    runtime: ReturnType<typeof fakeInstallation>
+  ) => void;
   readonly loadExtensions?: () => Promise<
     LoadedConfiguredExtensions & { rollbackModuleCache?: () => void }
   >;
   readonly mergeCommands?: () => readonly TuiCommand[];
-  readonly recoverPrevious?: () => Promise<void>;
+  readonly recoverPrevious?: () => Promise<ReturnType<typeof fakeInstallation>>;
   readonly snapshotState?: () => Promise<{
     discard(): Promise<void>;
     restore(): Promise<void>;
@@ -75,10 +88,12 @@ function baseOptions(overrides: {
     disposePrevious:
       overrides.disposePrevious ??
       (() => Promise.resolve([] as readonly string[])),
+    installRuntime: overrides.installRuntime ?? (() => undefined),
     loadExtensions: overrides.loadExtensions ?? (() => Promise.resolve(loaded)),
     mergeCommands: overrides.mergeCommands ?? (() => [command]),
     mergeToolRenderers: () => ({}),
-    recoverPrevious: overrides.recoverPrevious ?? (() => Promise.resolve()),
+    recoverPrevious:
+      overrides.recoverPrevious ?? (() => Promise.resolve(fakeInstallation())),
     ...(overrides.snapshotState === undefined
       ? {}
       : { snapshotState: overrides.snapshotState }),
@@ -114,6 +129,9 @@ describe("buildReloadedExtensionRuntime", () => {
           order.push("dispose-previous");
           return Promise.resolve(["cleanup-notice"]);
         },
+        installRuntime: () => {
+          order.push("install");
+        },
         loadExtensions: () => {
           order.push("load");
           return Promise.resolve(loaded);
@@ -138,6 +156,7 @@ describe("buildReloadedExtensionRuntime", () => {
       "agent",
       "dispose-previous",
       "activate",
+      "install",
     ]);
     expect(swap.agent).toBe(agent);
     expect(swap.host).toBe(host);
@@ -249,6 +268,8 @@ describe("buildReloadedExtensionRuntime", () => {
     const agent = fakeAgent();
     const rollbacks: boolean[] = [];
     const recoveries: boolean[] = [];
+    const recovered = fakeInstallation();
+    const installed: ReturnType<typeof fakeInstallation>[] = [];
 
     // When / Then
     await expect(
@@ -264,9 +285,12 @@ describe("buildReloadedExtensionRuntime", () => {
                 rollbacks.push(true);
               },
             }),
+          installRuntime: (runtime) => {
+            installed.push(runtime);
+          },
           recoverPrevious: () => {
             recoveries.push(true);
-            return Promise.resolve();
+            return Promise.resolve(recovered);
           },
         })
       )
@@ -275,6 +299,7 @@ describe("buildReloadedExtensionRuntime", () => {
     expect(host.disposed).toEqual([true]);
     expect(rollbacks).toEqual([true]);
     expect(recoveries).toEqual([true]);
+    expect(installed).toEqual([recovered]);
   });
 
   it("recovers the previous runtime even when the migration revert fails", async () => {
@@ -288,7 +313,7 @@ describe("buildReloadedExtensionRuntime", () => {
           activateHost: () => Promise.reject(new Error("activation exploded")),
           recoverPrevious: () => {
             recoveries.push(true);
-            return Promise.resolve();
+            return Promise.resolve(fakeInstallation());
           },
           validateHost: () =>
             Promise.resolve(() =>

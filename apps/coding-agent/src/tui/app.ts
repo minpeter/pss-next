@@ -591,6 +591,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             }
           },
           loadExtensions: reloadExtensions,
+          installRuntime: ({ agent, commands, host, toolRenderers }) => {
+            installRuntime(host, agent, commands, toolRenderers);
+          },
           mergeCommands: (host) => {
             const merged = composeCommands(host);
             reloadCommandNotices = merged.notices;
@@ -635,12 +638,12 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
                 RECOVERY_ACTIVATION_TIMEOUT_MS,
                 "Recovered extension activation"
               );
-              installRuntime(
-                recoveredHost,
-                recoveredAgent,
+              return {
+                agent: recoveredAgent,
                 commands,
-                toolRenderers
-              );
+                host: recoveredHost,
+                toolRenderers,
+              };
             } catch (error) {
               await recoveredHost.revokeExtensionState().catch(() => undefined);
               await Promise.allSettled([
@@ -689,7 +692,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         contextResources = previous.context;
         throw error;
       }
-      installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);
       currentExtensionInputs = swap.loadedExtensions;
       for (const notice of [
         ...swap.notices,

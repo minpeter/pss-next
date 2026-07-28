@@ -12,16 +12,22 @@ interface ReloadableHost {
   revokeExtensionState?(): Promise<void> | void;
 }
 
-export interface ExtensionRuntimeSwap<
+export interface ExtensionRuntimeInstallation<
   Agent extends ReloadableAgent,
   Host extends ReloadableHost,
 > {
   readonly agent: Agent;
   readonly commands: readonly TuiCommand[];
   readonly host: Host;
+  readonly toolRenderers: ToolRendererMap;
+}
+
+export interface ExtensionRuntimeSwap<
+  Agent extends ReloadableAgent,
+  Host extends ReloadableHost,
+> extends ExtensionRuntimeInstallation<Agent, Host> {
   readonly loadedExtensions: LoadedConfiguredExtensions["extensions"];
   readonly notices: readonly string[];
-  readonly toolRenderers: ToolRendererMap;
 }
 
 /** Reload result plus an optional module-cache rollback for failures. */
@@ -55,10 +61,15 @@ export async function buildReloadedExtensionRuntime<
   /** Bounded cleanup of the previous runtime; returns cleanup notices. */
   readonly disposePrevious: () => Promise<readonly string[]>;
   readonly loadExtensions: () => Promise<ReloadableExtensions>;
+  readonly installRuntime: (
+    runtime: ExtensionRuntimeInstallation<Agent, Host>
+  ) => void;
   readonly mergeCommands: (host: Host) => readonly TuiCommand[];
   readonly mergeToolRenderers: (host: Host) => ToolRendererMap;
   /** Rebuild a runtime from the previous inputs after activation failure. */
-  readonly recoverPrevious: () => Promise<void>;
+  readonly recoverPrevious: () => Promise<
+    ExtensionRuntimeInstallation<Agent, Host>
+  >;
   /**
    * Snapshot the replacement extensions' state files right before
    * activation so a failed activation cannot leave partially upgraded
@@ -138,6 +149,7 @@ export async function buildReloadedExtensionRuntime<
       timeoutMs,
       "Replacement extension activation"
     );
+    options.installRuntime({ agent, commands, host, toolRenderers });
   } catch (activationError) {
     await disposeSettled(agent, host, timeoutMs);
     // Disposal may have been detached by its timeout while a replacement
@@ -160,7 +172,8 @@ export async function buildReloadedExtensionRuntime<
       }
     }
     try {
-      await options.recoverPrevious();
+      const recovered = await options.recoverPrevious();
+      options.installRuntime(recovered);
     } catch (recoveryError) {
       throw new AggregateError(
         [...failures, recoveryError],
