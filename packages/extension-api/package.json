@@ -35,7 +35,7 @@
     "lint": "ultracite check ."
   },
   "peerDependencies": {
-    "@earendil-works/pi-tui": "^0.80.10"
+    "@earendil-works/pi-tui": "^0.82.1"
   },
   "devDependencies": {
     "tsdown": "^0.22.14",
