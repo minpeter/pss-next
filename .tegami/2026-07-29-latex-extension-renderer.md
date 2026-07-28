@@ -2,6 +2,8 @@
 packages:
   npm:@minpeter/pss-coding-agent:
     type: patch
+  npm:@minpeter/pss-extension-latex:
+    type: patch
 ---
 
 ## Render LaTeX display math through an overridable extension
@@ -15,12 +17,13 @@ deduplicates missing-dependency notices for the lifetime of the TUI session.
 Formula scale and terminal-specific horizontal correction are configurable
 with `PSS_LATEX_SCALE` and `PSS_LATEX_ASPECT`.
 
-The implementation ships as the bundled
-`@minpeter/pss-coding-agent/latex` extension and as a dedicated package
-subpath. The assistant-renderer capability now exposes lifecycle cancellation,
+The implementation ships as the independently versioned
+`@minpeter/pss-extension-latex` package, which coding-agent includes by
+default. The assistant-renderer capability now exposes lifecycle cancellation,
 disposal, redraw, notification, ownership, conflict, and reload boundaries.
-Bundled LaTeX registers as a fallback; third-party renderers must explicitly
-opt into replacing it, and removing an override restores the bundled renderer.
+Official LaTeX registers as a fallback; third-party renderers must explicitly
+opt into replacing it, and removing an override restores the official
+renderer.
 
 Native rendering uses an allowlisted environment, bounded queue and cache
 reads, process-tree cancellation, PNG dimension limits, disabled

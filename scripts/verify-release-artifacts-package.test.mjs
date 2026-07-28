@@ -24,6 +24,31 @@ describe("verifyReleaseArtifacts package checks", () => {
     ).toEqual([]);
   });
 
+  it("passes for independently published extension packages", () => {
+    const cwd = createFixture();
+
+    expect(
+      verifyReleaseArtifacts({
+        cwd,
+        packages: ["extension-api", "extension-latex"],
+      })
+    ).toEqual([]);
+  });
+
+  it("resolves the LaTeX extension from the extensions workspace", () => {
+    const cwd = createFixture();
+    rmSync(resolve(cwd, "extensions/latex/dist"), {
+      force: true,
+      recursive: true,
+    });
+
+    expect(
+      verifyReleaseArtifacts({ cwd, packages: ["extension-latex"] })
+    ).toEqual([
+      "extensions/latex/dist is missing; run the package build first",
+    ]);
+  });
+
   it("rejects extensionless relative imports that would break Node ESM", () => {
     const cwd = createFixture();
     writeFileSync(
