@@ -36,7 +36,7 @@
     "@opentelemetry/api": "^1.9.1",
     "@trpc/client": "11.18.0",
     "@trpc/server": "11.18.0",
-    "agents": "0.17.4",
+    "agents": "0.20.0",
     "chat": "4.35.0",
     "evlog": "^2.22.4",
     "zod": "^4.4.3"
