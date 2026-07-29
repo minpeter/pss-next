@@ -11,6 +11,9 @@ Small agent runtime workspace.
   TUI, and the `pss exec` headless runner, with OpenSearch-backed `web_search`
   and `web_fetch` tools enabled by default.
 
+> Just want the terminal agent? Head to [`apps/coding-agent`](apps/coding-agent/README.md)
+> for the `pss` TUI, the `pss exec` runner, and how to install them.
+
 ## Use
 
 ```ts
