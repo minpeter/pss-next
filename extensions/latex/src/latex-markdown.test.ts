@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -11,6 +12,7 @@ import {
   setCellDimensions,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { encode } from "fast-png";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   extractDisplayMath,
@@ -42,6 +44,8 @@ const canRenderUnicode =
   hasExecutable("bwrap") &&
   hasExecutable("prlimit") &&
   (hasExecutable("magick") || hasExecutable("convert"));
+const containsNonAscii = (value: string): boolean =>
+  Array.from(value).some((character) => (character.codePointAt(0) ?? 0) > 0x7f);
 const relativeLuminance = (color: string): number => {
   const channels = [1, 3, 5].map((offset) => {
     const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
@@ -54,11 +58,12 @@ const relativeLuminance = (color: string): number => {
   );
 };
 const fakePng = (width: number, height: number): Buffer => {
-  const png = Buffer.alloc(24);
-  Buffer.from("89504e470d0a1a0a", "hex").copy(png);
-  png.writeUInt32BE(width, 16);
-  png.writeUInt32BE(height, 20);
-  return png;
+  const data = new Uint8Array(width * height * 4);
+  data[0] = 118;
+  data[1] = 118;
+  data[2] = 118;
+  data[3] = 255;
+  return Buffer.from(encode({ channels: 4, data, depth: 8, height, width }));
 };
 const cacheFormulaPng = async (
   cacheRoot: string,
@@ -67,9 +72,11 @@ const cacheFormulaPng = async (
   height: number
 ): Promise<void> => {
   const key = createHash("sha256")
-    .update("latex-dvi-dvipng-lcd-v7")
+    .update("latex-dvi-dvipng-lcd-v8")
     .update("\0")
     .update("#e8e8e8")
+    .update("\0")
+    .update(containsNonAscii(formula) ? "zh-Hans" : "ascii")
     .update("\0")
     .update(formula)
     .digest("hex");
@@ -86,6 +93,38 @@ const kittyGrid = (
     imageLine,
     rows: Number(header.match(KITTY_ROWS_PATTERN)?.[1] ?? 0),
   };
+};
+const kittyPng = (lines: readonly string[]): Buffer => {
+  const line = lines.find((candidate) => candidate.includes("\x1b_Ga=T")) ?? "";
+  const payload = line
+    .split("\x1b_G")
+    .slice(1)
+    .map((command) =>
+      command.slice(command.indexOf(";") + 1, command.indexOf("\x1b\\"))
+    )
+    .join("");
+  return Buffer.from(payload, "base64");
+};
+const visiblePngBounds = (
+  png: Buffer
+): { height: number; width: number } | undefined => {
+  const result = spawnSync(
+    "magick",
+    ["png:-", "-trim", "-format", "%w %h", "info:"],
+    { input: png }
+  );
+  if (result.status !== 0) {
+    return;
+  }
+  const [width, height] = result.stdout
+    .toString("utf8")
+    .trim()
+    .split(" ")
+    .map(Number);
+  if (!(width && height)) {
+    return;
+  }
+  return { height, width };
 };
 
 const markdownTheme: MarkdownTheme = {
@@ -129,6 +168,30 @@ const renderCachedDisplay = async (
   await rendered;
 
   const lines = view.render(80);
+  view.dispose();
+  return lines;
+};
+const renderLiveDisplay = async (
+  cacheRoot: string,
+  formula: string
+): Promise<string[]> => {
+  process.env.PSS_LATEX_CACHE_DIR = cacheRoot;
+  process.env.PSS_LATEX_COLOR = "#767676";
+  process.env.PSS_LATEX = "1";
+  setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
+  setCellDimensions({ heightPx: 18, widthPx: 9 });
+  let resolveRender: (() => void) | undefined;
+  const rendered = new Promise<void>((resolve) => {
+    resolveRender = resolve;
+  });
+  const view = new LatexMarkdown(`$$\n${formula}\n$$`, 1, 0, markdownTheme, {
+    requestRender: () => resolveRender?.(),
+  });
+
+  view.render(100);
+  await rendered;
+
+  const lines = view.render(100);
   view.dispose();
   return lines;
 };
@@ -369,8 +432,52 @@ describe("LatexMarkdown", () => {
           return command.slice(separator + 1, terminator);
         });
       const png = Buffer.from(payloads.join(""), "base64");
-      expect(png.readUInt32BE(16)).toBeGreaterThan(500);
+      expect(png.readUInt32BE(16)).toBeGreaterThan(100);
       expect(png.readUInt32BE(20)).toBeGreaterThan(20);
+    }
+  );
+
+  it.runIf(canRenderUnicode)(
+    "renders multilingual text without blank or missing glyph output",
+    { timeout: 30_000 },
+    async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+      temporaryDirectories.push(cacheRoot);
+      const cases = [
+        ["korean", String.raw`\text{타원곡선}`, 100],
+        ["japanese", String.raw`\text{楕円曲線かな}`, 180],
+        ["simplified", String.raw`\text{椭圆曲线}`, 120],
+        ["traditional", String.raw`\text{橢圓曲線}`, 120],
+        ["accented-latin", String.raw`\text{résumé}`, 120],
+        ["cyrillic", String.raw`\text{контрпример}`, 180],
+        ["greek", String.raw`\text{παράδειγμα}`, 160],
+        ["arabic", String.raw`\text{مرحبا بالعالم}`, 180],
+        ["hebrew", String.raw`\text{שלום עולם}`, 140],
+        ["devanagari", String.raw`\text{नमस्ते दुनिया}`, 180],
+        ["thai", String.raw`\text{สวัสดีชาวโลก}`, 180],
+        ["combining", String.raw`\text{é ä ñ}`, 100],
+      ] as const;
+
+      for (const [name, formula, minimumWidth] of cases) {
+        const lines = await renderLiveDisplay(cacheRoot, formula);
+        const bounds = visiblePngBounds(kittyPng(lines));
+        expect(bounds, name).toBeDefined();
+        expect(bounds?.width, name).toBeGreaterThanOrEqual(minimumWidth);
+      }
+    }
+  );
+
+  it.runIf(canRenderUnicode)(
+    "renders multilingual text without silently dropping emoji",
+    async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+      temporaryDirectories.push(cacheRoot);
+      const formula = String.raw`\text{proof ✅}`;
+      const lines = await renderLiveDisplay(cacheRoot, formula);
+      const output = lines.join("\n");
+
+      expect(output).toContain(formula);
+      expect(output).not.toContain("\x1b_Ga=T");
     }
   );
 

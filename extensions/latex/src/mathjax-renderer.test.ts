@@ -1,23 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { renderMathJaxSvg } from "./mathjax-renderer";
+import { renderMathJaxChtml } from "./mathjax-renderer";
+import { renderUnicodeFormula } from "./unicode-browser-renderer";
 
-const SVG_WIDTH_PATTERN = /\bwidth="([0-9]+)px"/;
-const SVG_HEIGHT_PATTERN = /\bheight="([0-9]+)px"/;
+describe("renderMathJaxChtml", () => {
+  it("preserves Unicode text in browser-layout math", async () => {
+    const formula = String.raw`\text{타원곡선} \implies \text{椭圆曲线}`;
 
-describe("renderMathJaxSvg", () => {
-  it("normalizes CJK display math into a portable SVG", async () => {
-    const formula = String.raw`\text{타원곡선} \implies \text{弗赖 곡선}`;
+    const result = await renderMathJaxChtml(formula);
 
-    const svg = await renderMathJaxSvg(formula, "#e8e8e8");
+    expect(result.html).toContain("타원곡선");
+    expect(result.html).toContain("椭圆曲线");
+    expect(result.html).toContain("mjx-mtext");
+    expect(result.css).toContain("@font-face");
+  });
 
-    expect(svg).toContain("타원곡선");
-    expect(svg).toContain("弗赖 곡선");
-    expect(svg.match(SVG_WIDTH_PATTERN)?.[1]).toBeDefined();
-    expect(svg.match(SVG_HEIGHT_PATTERN)?.[1]).toBeDefined();
-    expect(svg).not.toContain("currentColor");
-    expect(svg).toContain('fill="#e8e8e8"');
-    expect(svg).toContain(
-      'font-family="Noto Sans CJK KR, Noto Sans CJK JP, NanumGothic, sans-serif"'
+  it("preserves RTL text order in Unicode runs", async () => {
+    const result = await renderUnicodeFormula(
+      String.raw`\text{שלום עולם}`,
+      "#e8e8e8"
+    );
+
+    expect(result.png.length).toBeGreaterThan(500);
+    const run = result.probe.runs[0];
+    expect(run).toMatchObject({
+      direction: "rtl",
+      fontAvailable: true,
+      text: "שלום עולם",
+      visible: true,
+    });
+    expect(run?.clusterLefts[0]).toBeGreaterThan(
+      run?.clusterLefts.at(-1) ?? Number.POSITIVE_INFINITY
     );
   });
 });

@@ -20,9 +20,13 @@ import {
   Markdown,
   type MarkdownTheme,
 } from "@earendil-works/pi-tui";
-import { renderMathJaxSvg } from "./mathjax-renderer";
+import { decode } from "fast-png";
+import {
+  renderUnicodeFormula,
+  resolveCjkLocale,
+} from "./unicode-browser-renderer";
 
-const CACHE_VERSION = "latex-dvi-dvipng-lcd-v7";
+const CACHE_VERSION = "latex-dvi-dvipng-lcd-v8";
 const DEFAULT_COLOR = "#767676";
 const DEFAULT_DPI = 288;
 const DEFAULT_DISPLAY_DPI = 120;
@@ -401,6 +405,8 @@ const formulaCacheKey = (formula: string): string =>
     .update("\0")
     .update(latexColor())
     .update("\0")
+    .update(containsUnicode(formula) ? resolveCjkLocale() : "ascii")
+    .update("\0")
     .update(formula)
     .digest("hex");
 
@@ -689,7 +695,26 @@ const readBoundedPng = async (path: string): Promise<Buffer> => {
     if (totalBytes > MAX_PNG_BYTES) {
       throw new Error("LaTeX renderer produced an oversized PNG");
     }
-    return buffer.subarray(0, totalBytes);
+    const png = buffer.subarray(0, totalBytes);
+    const decoded = decode(png);
+    if (decoded.channels === 2 || decoded.channels === 4) {
+      const alphaOffset = decoded.channels - 1;
+      let visible = false;
+      for (
+        let index = alphaOffset;
+        index < decoded.data.length;
+        index += decoded.channels
+      ) {
+        if ((decoded.data[index] ?? 0) > 0) {
+          visible = true;
+          break;
+        }
+      }
+      if (!visible) {
+        throw new Error("LaTeX renderer produced a blank PNG");
+      }
+    }
+    return png;
   } finally {
     await file.close();
   }
@@ -782,8 +807,12 @@ const renderLatex = async (
     signal?.throwIfAborted();
     const normalizedFormula = normalizeLatexFormula(formula);
     if (unicode) {
-      const svg = await renderMathJaxSvg(normalizedFormula, latexColor());
-      await writeFile(join(workingDirectory, "formula.svg"), svg, {
+      const rendered = await renderUnicodeFormula(
+        normalizedFormula,
+        latexColor(),
+        signal
+      );
+      await writeFile(join(workingDirectory, "formula-raw.png"), rendered.png, {
         mode: 0o600,
       });
     } else {
@@ -802,7 +831,7 @@ const renderLatex = async (
     if (unicode) {
       await postProcessPng(
         workingDirectory,
-        "formula.svg",
+        "formula-raw.png",
         "formula.png",
         signal
       );
