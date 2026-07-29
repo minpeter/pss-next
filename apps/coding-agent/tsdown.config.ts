@@ -1,5 +1,13 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { defineConfig } from "tsdown";
+import { configureBuildTemp } from "./build-temp.ts";
+
+configureBuildTemp({
+  ensureDirectory: (path) => mkdirSync(path, { recursive: true }),
+  env: process.env,
+  home: homedir(),
+});
 
 const packageJson: unknown = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8")
