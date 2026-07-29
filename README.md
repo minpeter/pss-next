@@ -186,3 +186,11 @@ Commit the generated `.tegami/*.md` changelog with the feature or fix. On
 `main`, `pnpm tegami ci` opens or updates the Version Packages pull request.
 After that PR merges, the next release run publishes from the committed Tegami
 publish lock using npm Trusted Publishing.
+
+## License
+
+This project is licensed under the [Sustainable Use License](LICENSE.md).
+
+You can use, modify, and distribute it for free for internal business,
+non-commercial, or personal use. Reselling it or offering it as a paid product
+or service requires a separate commercial license.

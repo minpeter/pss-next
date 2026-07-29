@@ -2,6 +2,7 @@
   "name": "@minpeter/pss-runtime",
   "version": "0.3.0-next.4",
   "description": "Generic agent runtime for threads, model loops, and synchronized run events.",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -75,7 +76,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE.md"
   ],
   "repository": {
     "type": "git",

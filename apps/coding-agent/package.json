@@ -2,6 +2,7 @@
   "name": "@minpeter/pss-coding-agent",
   "version": "0.0.14-next.5",
   "description": "Code at the speed of thought",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -57,7 +58,8 @@
   "files": [
     "dist",
     "bin",
-    "README.md"
+    "README.md",
+    "LICENSE.md"
   ],
   "repository": {
     "type": "git",
