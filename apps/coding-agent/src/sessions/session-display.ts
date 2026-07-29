@@ -2,7 +2,7 @@ import type { SessionIndexEntry } from "./session-index";
 
 export const sessionDisplayLabel = (entry: SessionIndexEntry): string => {
   const shortKey = sessionShortKey(entry.key);
-  return entry.name === undefined ? shortKey : `${entry.name} · ${shortKey}`;
+  return `${entry.name ?? "untitled"} · ${shortKey}`;
 };
 
 export const sessionUpdatedLabel = (entry: SessionIndexEntry): string =>
