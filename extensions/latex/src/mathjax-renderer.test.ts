@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { renderMathJaxChtml } from "./mathjax-renderer";
-import { renderUnicodeFormula } from "./unicode-browser-renderer";
+import {
+  browserGeometryWithinLimits,
+  renderUnicodeFormula,
+  unicodeBrowserLaunchOptions,
+  unicodeFormulaSupported,
+} from "./unicode-browser-renderer";
 
 describe("renderMathJaxChtml", () => {
   it("preserves Unicode text in browser-layout math", async () => {
@@ -64,5 +69,51 @@ x^n+y^n=z^n
     expect(run?.clusterLefts[0]).toBeGreaterThan(
       run?.clusterLefts.at(-1) ?? Number.POSITIVE_INFINITY
     );
+  });
+
+  it("rejects malformed Unicode TeX instead of rendering an error image", async () => {
+    await expect(renderMathJaxChtml(String.raw`\text{한글`)).rejects.toThrow();
+  });
+
+  it.each([
+    ["regional flag", String.raw`\text{🇺🇸}`],
+    ["keycap", String.raw`\text{1️⃣}`],
+    ["ZWJ", String.raw`\text{👩‍💻}`],
+  ])("falls back for %s emoji sequences", (_name, formula) => {
+    expect(unicodeFormulaSupported(formula)).toBe(false);
+  });
+
+  it("requires the Chromium sandbox", () => {
+    expect(
+      unicodeBrowserLaunchOptions("/usr/bin/google-chrome").chromiumSandbox
+    ).toBe(true);
+  });
+
+  it("ignores untrusted browser executable overrides", async () => {
+    const original = process.env.PSS_LATEX_BROWSER;
+    process.env.PSS_LATEX_BROWSER = "/bin/false";
+    try {
+      const rendered = await renderUnicodeFormula(
+        String.raw`\text{한글}`,
+        "#e8e8e8"
+      );
+      expect(rendered.png.length).toBeGreaterThan(500);
+    } finally {
+      if (original === undefined) {
+        delete process.env.PSS_LATEX_BROWSER;
+      } else {
+        process.env.PSS_LATEX_BROWSER = original;
+      }
+    }
+  });
+
+  it("rejects dangerous HTML macros and oversized browser geometry", () => {
+    expect(
+      unicodeFormulaSupported(String.raw`\style{font-size:100000px}{\text{한}}`)
+    ).toBe(false);
+    expect(unicodeFormulaSupported(String.raw`\href{x}{\text{한}}`)).toBe(
+      false
+    );
+    expect(browserGeometryWithinLimits(10_000, 13_496)).toBe(false);
   });
 });

@@ -53,6 +53,21 @@ fallback instead of blank or partial output.
   invalidated with cache v10.
 - Commit `654dda4`.
 
+### Post-implementation security QA
+
+- Removed workspace-controlled browser executable overrides.
+- Required Chromium's process sandbox and fail-closed behavior.
+- Rejected MathJax HTML macros and oversized pre-screenshot geometry.
+- Rejected malformed MathJax error output to visible source fallback.
+- Expanded emoji fallback to flags, keycaps, ZWJ, variation selectors, and
+  tag sequences.
+- Corrected the v10 locale-aware cache-hit test so native tools are unavailable
+  during the assertion.
+- Required xterm image count equality, explicit terminal disposal, complete
+  teardown for PASS, and child-process-ancestry cleanup.
+- Final post-security xterm evidence:
+  `.omo/evidence/latex-xterm-visual-qa/security-final-20260729T045424Z/`
+
 ## Evidence
 
 - Durable execution ledger:

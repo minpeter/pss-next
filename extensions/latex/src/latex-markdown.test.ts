@@ -592,9 +592,11 @@ describe("LatexMarkdown", () => {
     setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
     const formula = "x^2 + y^2 = z^2";
     const key = createHash("sha256")
-      .update("latex-dvi-dvipng-lcd-v7")
+      .update("latex-dvi-dvipng-lcd-v10")
       .update("\0")
       .update("#e8e8e8")
+      .update("\0")
+      .update("ascii")
       .update("\0")
       .update(formula)
       .digest("hex");
@@ -606,6 +608,7 @@ describe("LatexMarkdown", () => {
         "base64"
       )
     );
+    process.env.PATH = "";
     let resolveRender: (() => void) | undefined;
     const rendered = new Promise<void>((resolve) => {
       resolveRender = resolve;

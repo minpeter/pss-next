@@ -7,6 +7,9 @@ import { renderMathJaxChtml } from "./mathjax-renderer";
 
 const require = createRequire(import.meta.url);
 const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+const REGIONAL_INDICATOR_PATTERN = /\p{Regional_Indicator}/u;
+const UNSAFE_TEX_MACRO_PATTERN =
+  /\\(?:class|cssId|href|htmlClass|htmlId|htmlStyle|style)\b/u;
 const RTL_PATTERN = /[\p{Script=Arabic}\p{Script=Hebrew}]/u;
 const KOREAN_LANGUAGE_PATTERN = /^ko/i;
 const JAPANESE_LANGUAGE_PATTERN = /^ja/i;
@@ -19,10 +22,19 @@ const SCRIPT_PATTERNS = {
   thai: "\\p{Script=Thai}",
 } as const;
 const CJK_LOCALES = ["ko", "ja", "zh-Hans", "zh-Hant"] as const;
+const MAX_BROWSER_DIMENSION = 8192;
+const MAX_BROWSER_PIXELS = 16 * 1024 * 1024;
+const BROWSER_SCREENSHOT_TIMEOUT_MS = 10_000;
+const KEYCAP_COMBINER = 0x20_e3;
+const ZERO_WIDTH_JOINER = 0x20_0d;
+const EMOJI_VARIATION_SELECTOR = 0xfe_0f;
+const TAG_CHARACTER_START = 0xe_00_20;
+const TAG_CHARACTER_END = 0xe_00_7f;
 
 type CjkLocale = (typeof CJK_LOCALES)[number];
 
 interface BrowserProbe {
+  readonly containerHeight: number;
   readonly containerWidth: number;
   readonly fontsReady: boolean;
   readonly runs: readonly {
@@ -45,9 +57,45 @@ export class UnicodeRenderUnsupportedError extends Error {
   override readonly name = "UnicodeRenderUnsupportedError";
 }
 
+export const unicodeFormulaSupported = (formula: string): boolean =>
+  !(
+    EMOJI_PATTERN.test(formula) ||
+    REGIONAL_INDICATOR_PATTERN.test(formula) ||
+    UNSAFE_TEX_MACRO_PATTERN.test(formula) ||
+    Array.from(formula).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (
+        codePoint === KEYCAP_COMBINER ||
+        codePoint === ZERO_WIDTH_JOINER ||
+        codePoint === EMOJI_VARIATION_SELECTOR ||
+        (codePoint >= TAG_CHARACTER_START && codePoint <= TAG_CHARACTER_END)
+      );
+    })
+  );
+
+export const unicodeBrowserLaunchOptions = (
+  executablePath: string
+): NonNullable<Parameters<typeof chromium.launch>[0]> => ({
+  args: ["--disable-breakpad", "--disable-crash-reporter"],
+  chromiumSandbox: true,
+  executablePath,
+  headless: true,
+});
+
+export const browserGeometryWithinLimits = (
+  width: number,
+  height: number
+): boolean =>
+  Number.isFinite(width) &&
+  Number.isFinite(height) &&
+  width > 0 &&
+  height > 0 &&
+  width <= MAX_BROWSER_DIMENSION &&
+  height <= MAX_BROWSER_DIMENSION &&
+  width * height <= MAX_BROWSER_PIXELS;
+
 const browserExecutable = async (): Promise<string> => {
   const candidates = [
-    process.env.PSS_LATEX_BROWSER,
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
@@ -92,6 +140,13 @@ const mathFontRoot = (): string => {
 
 const assertBrowserProbe = (probe: BrowserProbe): void => {
   if (
+    !browserGeometryWithinLimits(probe.containerWidth, probe.containerHeight)
+  ) {
+    throw new UnicodeRenderUnsupportedError(
+      "Unicode browser geometry exceeds limits"
+    );
+  }
+  if (
     !probe.fontsReady ||
     probe.runs.some((run) => !(run.fontAvailable && run.visible))
   ) {
@@ -121,7 +176,7 @@ export const renderUnicodeFormula = async (
   color: string,
   signal?: AbortSignal
 ): Promise<UnicodeBrowserRender> => {
-  if (EMOJI_PATTERN.test(formula)) {
+  if (!unicodeFormulaSupported(formula)) {
     throw new UnicodeRenderUnsupportedError(
       "Emoji formulas use source fallback"
     );
@@ -129,11 +184,9 @@ export const renderUnicodeFormula = async (
   signal?.throwIfAborted();
   const { css, html } = await renderMathJaxChtml(formula);
   const executablePath = await browserExecutable();
-  const browser = await chromium.launch({
-    args: ["--disable-breakpad", "--disable-crash-reporter"],
-    executablePath,
-    headless: true,
-  });
+  const browser = await chromium.launch(
+    unicodeBrowserLaunchOptions(executablePath)
+  );
   const onAbort = (): void => {
     browser.close().catch(() => undefined);
   };
@@ -234,6 +287,7 @@ mjx-mtext bdi{font-style:normal;font-weight:400;white-space:pre}
         await new Promise(requestAnimationFrame);
         const container = document.querySelector("mjx-container");
         return {
+          containerHeight: container?.getBoundingClientRect().height ?? 0,
           containerWidth: container?.getBoundingClientRect().width ?? 0,
           fontsReady: true,
           runs: runs.map(({ bdi, font, text }) => {
@@ -271,6 +325,7 @@ mjx-mtext bdi{font-style:normal;font-weight:400;white-space:pre}
     const png = await page.locator("mjx-container").screenshot({
       animations: "disabled",
       omitBackground: true,
+      timeout: BROWSER_SCREENSHOT_TIMEOUT_MS,
       type: "png",
     });
     return { png, probe };

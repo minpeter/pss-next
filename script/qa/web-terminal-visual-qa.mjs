@@ -27,6 +27,35 @@ const chromeCrashpadPids = () =>
     })
     .map(Number);
 
+const processDescendants = (rootPid) => {
+  const parents = new Map();
+  for (const entry of readdirSync("/proc")) {
+    if (!PROCESS_ID_PATTERN.test(entry)) {
+      continue;
+    }
+    try {
+      const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
+      const fields = stat.slice(stat.lastIndexOf(") ") + 2).split(" ");
+      parents.set(Number(entry), Number(fields[1]));
+    } catch {
+      parents.set(Number(entry), -1);
+    }
+  }
+  const descendants = new Set([rootPid]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, parentPid] of parents) {
+      if (descendants.has(parentPid) && !descendants.has(pid)) {
+        descendants.add(pid);
+        changed = true;
+      }
+    }
+  }
+  descendants.delete(rootPid);
+  return descendants;
+};
+
 const parseArgs = () => {
   const result = {};
   for (let index = 2; index < process.argv.length; index += 2) {
@@ -136,7 +165,9 @@ const cases = [
   { background: "#0d1117", foreground: "#e6edf3", name: "dark" },
 ];
 let browser;
+let browserServer;
 let server;
+let ownedCrashpadPids = [];
 const results = [];
 const teardown = {
   browserClosed: false,
@@ -144,7 +175,6 @@ const teardown = {
   serverClosed: false,
   terminalDisposed: false,
 };
-const existingCrashpads = new Set(chromeCrashpadPids());
 try {
   const outputs = [];
   for (const item of cases) {
@@ -169,6 +199,7 @@ body{margin:0;padding:16px;background:#111;display:flex;gap:16px;align-items:fle
 </style><body><script type="module">
 import {Terminal} from "/xterm.mjs";
 const outputs=${JSON.stringify(outputs)};
+const terminals=[];
 for(const item of outputs){
   const section=document.createElement("section");section.className="case";
   section.style.background=item.background;
@@ -187,6 +218,7 @@ for(const item of outputs){
     scrollback:0
   });
   terminal.open(wrap);
+  terminals.push(terminal);
   await new Promise(resolve=>terminal.write(item.text,resolve));
   await document.fonts.ready;
   const cell=terminal._core._renderService.dimensions.css.cell;
@@ -201,6 +233,10 @@ for(const item of outputs){
   }
 }
 await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+window.__QA_DISPOSE__=()=>{
+  for(const terminal of terminals)terminal.dispose();
+  return terminals.length;
+};
 window.__QA_READY__=true;
 </script>`;
   server = createServer(async (request, response) => {
@@ -221,11 +257,16 @@ window.__QA_READY__=true;
     server.listen(0, "127.0.0.1", resolveListen);
   });
   const address = server.address();
-  browser = await chromium.launch({
+  browserServer = await chromium.launchServer({
     args: ["--disable-breakpad", "--disable-crash-reporter"],
     executablePath: "/usr/bin/google-chrome",
     headless: true,
   });
+  browser = await chromium.connect(browserServer.wsEndpoint());
+  const browserDescendants = processDescendants(browserServer.process().pid);
+  ownedCrashpadPids = chromeCrashpadPids().filter((pid) =>
+    browserDescendants.has(pid)
+  );
   const page = await browser.newPage({
     viewport: { height: 1200, width: 2800 },
   });
@@ -244,12 +285,15 @@ window.__QA_READY__=true;
       background: item.background,
       foreground: item.foreground,
       formulas: metadata?.formulas ?? 0,
+      images: metadata?.images?.length ?? 0,
       margins: metadata?.images?.every((image) => image.margin) ?? false,
       name: item.name,
       screenshot,
     });
   }
-  teardown.terminalDisposed = true;
+  teardown.terminalDisposed =
+    (await page.evaluate(() => window.__QA_DISPOSE__?.() ?? 0)) ===
+    cases.length;
 } finally {
   if (browser) {
     await browser.close();
@@ -259,20 +303,33 @@ window.__QA_READY__=true;
     await new Promise((resolveClose) => server.close(resolveClose));
     teardown.serverClosed = true;
   }
-  for (const pid of chromeCrashpadPids()) {
-    if (!existingCrashpads.has(pid)) {
+  if (browserServer) {
+    await browserServer.close().catch(() => undefined);
+  }
+  let crashpadKillFailed = false;
+  for (const pid of ownedCrashpadPids) {
+    try {
       process.kill(pid);
+    } catch {
+      crashpadKillFailed = true;
     }
   }
-  teardown.crashpadHandlersClosed = chromeCrashpadPids().every((pid) =>
-    existingCrashpads.has(pid)
-  );
+  teardown.crashpadHandlersClosed =
+    !crashpadKillFailed &&
+    ownedCrashpadPids.every(
+      (pid) => !readdirSync("/proc").includes(String(pid))
+    );
   await writeFile(
     join(evidenceDir, "teardown.json"),
     JSON.stringify(teardown, null, 2)
   );
 }
-const passed = results.every((result) => result.formulas > 0 && result.margins);
+const passed =
+  Object.values(teardown).every(Boolean) &&
+  results.every(
+    (result) =>
+      result.formulas > 0 && result.images === result.formulas && result.margins
+  );
 await writeFile(
   join(evidenceDir, "qa-result.json"),
   JSON.stringify({ passed, results }, null, 2)

@@ -42,8 +42,12 @@ export const renderMathJaxChtml = async (
   const mathJax = await mathJaxRuntime();
   const node = await mathJax.tex2chtmlPromise(formula, { display: true });
   const style = mathJax.startup.output.styleSheet(mathJax.startup.document);
-  return {
+  const result = {
     css: mathJax.startup.adaptor.textContent(style),
     html: mathJax.startup.adaptor.serializeXML(node),
   };
+  if (result.html.includes("<mjx-merror")) {
+    throw new Error("MathJax rejected the Unicode formula");
+  }
+  return result;
 };
