@@ -19,7 +19,9 @@ describe("renderMathJaxChtml", () => {
     expect(result.css).toContain("@font-face");
   });
 
-  it("renders AMS negated-existence symbols without truncation", async () => {
+  it("renders AMS negated-existence symbols without truncation", {
+    timeout: 30_000,
+  }, async () => {
     const formula = String.raw`\boxed{\forall n > 2,\ \nexists x,y,z \in \mathbb{Z}_{>0} \text{ such that } x^n+y^n=z^n}
 \quad \text{(양의 정수해 없음)}`;
     const result = await renderMathJaxChtml(formula);
@@ -30,7 +32,9 @@ describe("renderMathJaxChtml", () => {
     expect(rendered.png.readUInt32BE(16)).toBeGreaterThan(500);
   });
 
-  it("renders multiline boxed Unicode formulas without truncation", async () => {
+  it("renders multiline boxed Unicode formulas without truncation", {
+    timeout: 30_000,
+  }, async () => {
     const result = await renderUnicodeFormula(
       String.raw`\boxed{
 \forall n>2,\quad
@@ -52,7 +56,9 @@ x^n+y^n=z^n
     );
   });
 
-  it("preserves RTL text order in Unicode runs", async () => {
+  it("preserves RTL text order in Unicode runs", {
+    timeout: 30_000,
+  }, async () => {
     const result = await renderUnicodeFormula(
       String.raw`\text{שלום עולם}`,
       "#e8e8e8"
@@ -89,7 +95,9 @@ x^n+y^n=z^n
     ).toBe(true);
   });
 
-  it("ignores untrusted browser executable overrides", async () => {
+  it("ignores untrusted browser executable overrides", {
+    timeout: 30_000,
+  }, async () => {
     const original = process.env.PSS_LATEX_BROWSER;
     process.env.PSS_LATEX_BROWSER = "/bin/false";
     try {

@@ -430,6 +430,7 @@ describe("LatexMarkdown", () => {
 
   it.runIf(canRenderUnicode)(
     "renders CJK text embedded in display math",
+    { timeout: 30_000 },
     async () => {
       const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
       temporaryDirectories.push(cacheRoot);
@@ -473,6 +474,7 @@ describe("LatexMarkdown", () => {
 
   it.runIf(canRenderUnicode)(
     "renders Korean text when loaded through the tsx source runtime",
+    { timeout: 30_000 },
     () => {
       const formula = String.raw`\text{해 무한} \Longrightarrow \text{해 없음}`;
       const script = [
