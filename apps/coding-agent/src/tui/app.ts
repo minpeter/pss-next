@@ -49,7 +49,7 @@ import { cliVersion } from "../update/cli-version";
 import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
-import { createClearCommand, createReloadCommand } from "./command-set";
+import { createReloadCommand } from "./command-set";
 import { createModelCommand } from "./model-command";
 import {
   boundedReloadOperation,
@@ -228,7 +228,6 @@ export async function startTui(
     // opaque, so the selector is not offered then.
     const activeModelSession = modelSession;
     const builtInCommands = [
-      createClearCommand(),
       // Session commands close over helpers defined below; the wrappers
       // defer evaluation to call time.
       ...createSessionCommands({

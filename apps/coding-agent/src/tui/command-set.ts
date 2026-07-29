@@ -1,4 +1,4 @@
-import type { TuiCommand, TuiCommandResult } from "./command";
+import type { TuiCommand } from "./command";
 
 export interface TuiCommandSet {
   commandAliasLookup: Map<string, string>;
@@ -36,17 +36,6 @@ export function buildTuiCommandSet(
     commands: [...mergedCommands.values()],
   };
 }
-
-const newSessionAction = (): TuiCommandResult => ({
-  success: true,
-  action: { type: "new-session" },
-});
-
-export const createClearCommand = (): TuiCommand => ({
-  name: "clear",
-  description: "Clear the current session history",
-  execute: () => newSessionAction(),
-});
 
 export const createReloadCommand = (): TuiCommand => ({
   name: "reload",

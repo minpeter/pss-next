@@ -55,6 +55,7 @@ export function createSessionCommands(
 
 function createNewCommand(context: SessionCommandContext): TuiCommand {
   return {
+    aliases: ["clear"],
     description: "Start a new session: /new [name]",
     execute: (input) =>
       runSessionCommand(async () => {

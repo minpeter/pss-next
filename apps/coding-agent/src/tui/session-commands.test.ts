@@ -115,6 +115,16 @@ function command(context: SessionCommandContext, name: string) {
 }
 
 describe("/new", () => {
+  it("owns clear as an alias", () => {
+    const { context } = createContext();
+    expect(command(context, "new").aliases).toContain("clear");
+    expect(
+      createSessionCommands(context).some(
+        (candidate) => candidate.name === "clear"
+      )
+    ).toBe(false);
+  });
+
   it("creates a named session and switches to it", async () => {
     const { context, manager, switched } = createContext();
     const result = await command(context, "new").execute({
