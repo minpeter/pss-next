@@ -211,12 +211,13 @@ describe("/resume", () => {
       "resume"
     ).getArgumentCompletions?.("sp");
     expect(completions).toEqual([
-      {
+      expect.objectContaining({
         description: "updated 2026-01-01 00:00",
-        label: "spike  #2",
         value: "spike",
-      },
+      }),
     ]);
+    const label = completions?.[0]?.label ?? "";
+    expect(visibleWidth(label.slice(0, label.indexOf("#")))).toBe(21);
   });
 
   it("keeps the short id visible in long autocomplete labels", async () => {
@@ -233,6 +234,24 @@ describe("/resume", () => {
     const label = completions?.[0]?.label ?? "";
     expect(visibleWidth(label)).toBeLessThanOrEqual(30);
     expect(label).toContain("#deadbeef");
+  });
+
+  it("aligns hashes across short and long autocomplete titles", async () => {
+    const { context, manager } = createContext();
+    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      entry("cwd:/work#aaaaaaaa"),
+      entry("cwd:/work#bbbbbbbb", {
+        name: "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong",
+      }),
+    ]);
+    const completions = await command(
+      context,
+      "resume"
+    ).getArgumentCompletions?.("");
+    const hashColumns = completions?.map(({ label }) =>
+      visibleWidth(label.slice(0, label.indexOf("#")))
+    );
+    expect(hashColumns).toEqual([21, 21]);
   });
 
   it("defers no-argument selection to the TUI without mutating sessions", async () => {

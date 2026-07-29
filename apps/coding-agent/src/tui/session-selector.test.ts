@@ -46,8 +46,13 @@ describe("SessionSelectorComponent", () => {
   it("shows each session as one compact line", () => {
     const { text } = createSelector();
     const rendered = text();
-    expect(rendered).toContain("→ main  #current");
-    expect(rendered).toContain("parser spike  #spike");
+    const sessionRows = rendered
+      .split("\n")
+      .filter((line) => line.includes("updated"));
+    expect(sessionRows).toHaveLength(2);
+    expect(sessionRows[0]).toContain("main");
+    expect(sessionRows[1]).toContain("parser spike");
+    expect(sessionRows.map((line) => line.indexOf("#"))).toEqual([24, 24]);
     expect(rendered).not.toContain("cwd:/work");
   });
 
@@ -112,7 +117,8 @@ describe("SessionSelectorComponent", () => {
       .render(80)
       .map((line) => line.replace(ANSI_PATTERN, ""))
       .join("\n");
-    expect(rendered).toContain("→ main  #aaaaaaaa");
+    expect(rendered).toContain("main");
+    expect(rendered).toContain("#aaaaaaaa");
     expect(rendered).toContain("updated 2026-07-29 ✓");
     expect(rendered).not.toContain("#bbbbbbbb");
     expect(rendered).not.toContain("2026-07-27");
