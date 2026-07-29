@@ -395,6 +395,19 @@ export async function startTui(
         usageTracker.addUsage(usage);
         renderUsageFooter();
       },
+      sessionSelector: {
+        currentSessionKey: () => currentSession.key,
+        listSessions: () => sessionManager.listSessions(),
+        switchSession: async (sessionKey: string) => {
+          await ensureSessionChangeApproved("switch", {
+            fromKey: currentSession.key,
+            reason: "resume",
+            toKey: sessionKey,
+          });
+          const entry = await sessionManager.switchToSession(sessionKey);
+          await switchThread(entry, "resume");
+        },
+      },
       onOutputDelta: (text) => {
         usageTracker.addOutputDelta(text);
         renderUsageFooter();

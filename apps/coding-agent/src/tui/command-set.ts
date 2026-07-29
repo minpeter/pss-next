@@ -1,4 +1,4 @@
-import type { TuiCommand } from "./command";
+import type { TuiCommand, TuiCommandResult } from "./command";
 
 export interface TuiCommandSet {
   commandAliasLookup: Map<string, string>;

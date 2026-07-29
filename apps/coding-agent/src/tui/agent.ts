@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
 import type { CodingAgentExtensionUi } from "../extensions/types";
+import type { SessionIndexEntry } from "../sessions/session-index";
 import { agentEventStreamParts } from "./agent-event-stream";
 import {
   type AssistantRenderer,
@@ -43,6 +44,7 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
@@ -669,6 +671,11 @@ export interface AgentTUIConfig {
     input: string,
     hooks: PreprocessHooks
   ) => Promise<PreprocessResult | undefined>;
+  sessionSelector?: {
+    currentSessionKey(): string;
+    listSessions(): Promise<readonly SessionIndexEntry[]>;
+    switchSession(sessionKey: string): Promise<void>;
+  };
   setupMessages?: string[];
   showRawToolIo?: boolean;
   theme?: {
@@ -789,6 +796,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
   let activeModelSelector: ModelSelectorComponent | undefined;
+  let activeSessionSelector: SessionSelectorComponent | undefined;
   let commandInputListenerActive = false;
   const extensionUiController = new AbortController();
 
@@ -871,6 +879,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (selector !== undefined) {
       const layout = getModelSelectorLayout();
       selector.setLayout(layout.maxVisibleModels, layout.compact);
+    }
+    const sessionSelector = activeSessionSelector;
+    if (sessionSelector !== undefined) {
+      const layout = getModelSelectorLayout();
+      sessionSelector.setLayout(layout.maxVisibleModels, layout.compact);
     }
     tui.requestRender(true);
   };
@@ -1272,6 +1285,82 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
+  const showSessionSelector = async (): Promise<void> => {
+    const selectorConfig = config.sessionSelector;
+    if (selectorConfig === undefined) {
+      addSystemMessage(chatContainer, "Session selection is not available.");
+      tui.requestRender();
+      return;
+    }
+
+    showLoader("Loading sessions...");
+    let sessions: readonly SessionIndexEntry[];
+    try {
+      sessions = await selectorConfig.listSessions();
+    } catch (error) {
+      clearStatus();
+      addSystemMessage(
+        chatContainer,
+        `Could not list sessions: ${error instanceof Error ? error.message : String(error)}`
+      );
+      tui.requestRender();
+      return;
+    }
+    clearStatus();
+    if (sessions.length === 0) {
+      addSystemMessage(chatContainer, "No sessions recorded yet.");
+      tui.requestRender();
+      return;
+    }
+
+    const selection = await new Promise<string | undefined>((resolve) => {
+      commandInputListenerActive = true;
+      let selector: SessionSelectorComponent | undefined;
+      const settle = (sessionKey: string | undefined): void => {
+        commandInputListenerActive = false;
+        if (activeSessionSelector === selector) {
+          activeSessionSelector = undefined;
+        }
+        composerLayer.setContent(editor);
+        tui.setFocus(composerLayer);
+        tui.requestRender();
+        resolve(sessionKey);
+      };
+      const layout = getModelSelectorLayout();
+      selector = new SessionSelectorComponent({
+        compact: layout.compact,
+        currentSessionKey: selectorConfig.currentSessionKey(),
+        maxVisibleSessions: layout.maxVisibleModels,
+        onCancel: () => settle(undefined),
+        onSelect: (sessionKey) => settle(sessionKey),
+        sessions,
+      });
+      activeSessionSelector = selector;
+      composerLayer.setContent(selector);
+      tui.setFocus(composerLayer);
+      tui.requestRender();
+    });
+
+    if (
+      selection === undefined ||
+      selection === selectorConfig.currentSessionKey()
+    ) {
+      return;
+    }
+    try {
+      await selectorConfig.switchSession(selection);
+      clearChat();
+      addNewSessionMessage(chatContainer);
+      updateHeader();
+    } catch (error) {
+      addSystemMessage(
+        chatContainer,
+        `Session switch failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    tui.requestRender();
+  };
+
   const showActionlessCommandResult = (
     commandResult: TuiCommandResult | null
   ): void => {
@@ -1303,6 +1392,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     if (commandResult.action.type === "select-model") {
       await showModelSelector(commandResult.action.query);
+      return;
+    }
+
+    if (commandResult.action.type === "select-session") {
+      await showSessionSelector();
       return;
     }
 

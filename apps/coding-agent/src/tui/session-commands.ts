@@ -83,7 +83,7 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
     execute: (input) =>
       runSessionCommand(async () => {
         if (input.args.length === 0) {
-          return await runSessionPicker(context);
+          return { action: { type: "select-session" }, success: true };
         }
         const query = input.args.join(" ");
         const entry = await context.manager.findSession(query);
@@ -200,101 +200,6 @@ async function resumeSession(
   };
 }
 
-/**
- * Interactive `/resume` picker: choose a session, then switch, rename, or
- * delete it. Falls back to a plain listing when no interactive UI is bound
- * (embedded hosts).
- */
-async function runSessionPicker(
-  context: SessionCommandContext
-): Promise<TuiCommandResult> {
-  const sessions = await context.manager.listSessions();
-  if (sessions.length === 0) {
-    return {
-      message: "No sessions recorded for this directory yet.",
-      success: true,
-    };
-  }
-  const ui = context.ui?.();
-  if (ui === undefined) {
-    return { message: formatSessionList(context, sessions), success: true };
-  }
-  const currentKey = context.currentSession().key;
-  const selectedKey = await ui.select({
-    label: "Sessions (Enter to choose, Esc to cancel)",
-    options: sessions.slice(0, MAX_PICKER_OPTIONS).map((session) => ({
-      description: `updated ${session.updatedAt}`,
-      label:
-        session.key === currentKey
-          ? `${describeSession(session)} (current)`
-          : describeSession(session),
-      value: session.key,
-    })),
-  });
-  const target = sessions.find((session) => session.key === selectedKey);
-  if (target === undefined) {
-    return { message: "Resume cancelled.", success: true };
-  }
-  return await runSessionAction(context, ui, target);
-}
-
-async function runSessionAction(
-  context: SessionCommandContext,
-  ui: CodingAgentExtensionUi,
-  target: SessionIndexEntry
-): Promise<TuiCommandResult> {
-  const isCurrent = target.key === context.currentSession().key;
-  const action = await ui.select({
-    label: `Session ${describeSession(target)}`,
-    options: [
-      ...(isCurrent ? [] : [{ label: "Switch to it", value: "switch" }]),
-      { label: "Rename", value: "rename" },
-      // Deleting the session that drives the live thread would strand the
-      // active handle; switch away first.
-      ...(isCurrent ? [] : [{ label: "Delete", value: "delete" }]),
-      { label: "Cancel", value: "cancel" },
-    ],
-  });
-  if (action === "switch") {
-    return await resumeSession(context, target);
-  }
-  if (action === "rename") {
-    const name = await ui.input({
-      ...(target.name === undefined ? {} : { initialValue: target.name }),
-      label: "New session name",
-    });
-    if (name === undefined || name.trim().length === 0) {
-      return { message: "Rename cancelled.", success: true };
-    }
-    const renamed = await context.manager.renameSession(
-      target.key,
-      name.trim()
-    );
-    if (target.key === context.currentSession().key) {
-      context.onRenamed(renamed);
-    }
-    return {
-      action: { type: "refresh-header" },
-      message: `Session named ${JSON.stringify(name.trim())}.`,
-      success: true,
-    };
-  }
-  if (action === "delete") {
-    const confirmed = await ui.confirm(
-      `Delete session ${describeSession(target)}? This removes its stored history.`
-    );
-    if (!confirmed) {
-      return { message: "Delete cancelled.", success: true };
-    }
-    await context.manager.removeSession(target.key);
-    return {
-      message: `Deleted session ${describeSession(target)}.`,
-      success: true,
-    };
-  }
-  return { message: "Resume cancelled.", success: true };
-}
-
 type ForkPointChoice =
   | { readonly beforeHistoryIndex?: number; readonly kind: "chosen" }
   | { readonly kind: "cancelled" };
@@ -333,21 +238,6 @@ async function pickForkPoint(
     return { kind: "chosen" };
   }
   return { beforeHistoryIndex: Number(value), kind: "chosen" };
-}
-
-function formatSessionList(
-  context: SessionCommandContext,
-  sessions: readonly SessionIndexEntry[]
-): string {
-  const currentKey = context.currentSession().key;
-  const lines = sessions.map((session) => {
-    const marker = session.key === currentKey ? "* " : "  ";
-    return `${marker}${describeSession(session)} — updated ${session.updatedAt}`;
-  });
-  return [
-    "Sessions for this directory (/resume <key|name> to switch):",
-    ...lines,
-  ].join("\n");
 }
 
 async function runSessionCommand(

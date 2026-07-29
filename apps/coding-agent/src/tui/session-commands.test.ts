@@ -153,16 +153,13 @@ describe("/new", () => {
 });
 
 describe("/resume", () => {
-  it("lists sessions when no interactive UI is bound", async () => {
-    const { context, manager } = createContext();
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work", { name: "main" }),
-      entry("cwd:/work#2", { updatedAt: "2026-01-02T00:00:00.000Z" }),
-    ]);
+  it("opens the inline session selector without arguments", async () => {
+    const { context } = createContext();
     const result = await command(context, "resume").execute({ args: [] });
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("cwd:/work#2");
-    expect(result.message).toContain('* cwd:/work "main"');
+    expect(result).toEqual({
+      action: { type: "select-session" },
+      success: true,
+    });
   });
 
   it("switches to a matching session", async () => {
@@ -212,84 +209,16 @@ describe("/resume", () => {
     expect(completions).toEqual([expect.objectContaining({ value: "spike" })]);
   });
 
-  it("switches through the interactive picker", async () => {
-    const { selectOptions, ui } = fakeUi({
-      selects: ["cwd:/work#2", "switch"],
-    });
-    const { context, manager, switched } = createContext({ ui: () => ui });
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work"),
-      entry("cwd:/work#2"),
-    ]);
+  it("defers no-argument selection to the TUI without mutating sessions", async () => {
+    const { context, manager, switched } = createContext();
     const result = await command(context, "resume").execute({ args: [] });
-    expect(manager.switchToSession).toHaveBeenCalledWith("cwd:/work#2");
-    expect(switched[0]?.[1]).toBe("resume");
-    expect(result).toMatchObject({
-      action: { clear: true, type: "session" },
+    expect(result).toEqual({
+      action: { type: "select-session" },
       success: true,
     });
-    // The current session is marked and its action list omits switch/delete.
-    expect(selectOptions[0]?.[0]?.label).toContain("(current)");
-  });
-
-  it("renames through the picker and syncs the header for the current session", async () => {
-    const { ui } = fakeUi({
-      inputs: ["renamed"],
-      selects: ["cwd:/work", "rename"],
-    });
-    const { context, manager } = createContext({ ui: () => ui });
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work"),
-    ]);
-    const result = await command(context, "resume").execute({ args: [] });
-    expect(manager.renameSession).toHaveBeenCalledWith("cwd:/work", "renamed");
-    expect(context.onRenamed).toHaveBeenCalled();
-    expect(result).toMatchObject({ success: true });
-  });
-
-  it("deletes non-current sessions after confirmation", async () => {
-    const { selectOptions, ui } = fakeUi({
-      confirms: [true],
-      selects: ["cwd:/work#2", "delete"],
-    });
-    const { context, manager } = createContext({ ui: () => ui });
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work"),
-      entry("cwd:/work#2"),
-    ]);
-    const result = await command(context, "resume").execute({ args: [] });
-    expect(manager.removeSession).toHaveBeenCalledWith("cwd:/work#2");
-    expect(result.message).toContain("Deleted");
-    // The non-current target offers switch and delete.
-    expect(selectOptions[1]?.map((option) => option.value)).toEqual([
-      "switch",
-      "rename",
-      "delete",
-      "cancel",
-    ]);
-  });
-
-  it("never offers delete for the current session", async () => {
-    const { selectOptions, ui } = fakeUi({ selects: ["cwd:/work", "cancel"] });
-    const { context, manager } = createContext({ ui: () => ui });
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work"),
-    ]);
-    await command(context, "resume").execute({ args: [] });
-    expect(selectOptions[1]?.map((option) => option.value)).toEqual([
-      "rename",
-      "cancel",
-    ]);
-  });
-
-  it("cancels cleanly when the picker is dismissed", async () => {
-    const { ui } = fakeUi({ selects: [undefined] });
-    const { context, manager, switched } = createContext({ ui: () => ui });
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      entry("cwd:/work"),
-    ]);
-    const result = await command(context, "resume").execute({ args: [] });
-    expect(result).toMatchObject({ success: true });
+    expect(manager.switchToSession).not.toHaveBeenCalled();
+    expect(manager.renameSession).not.toHaveBeenCalled();
+    expect(manager.removeSession).not.toHaveBeenCalled();
     expect(switched).toEqual([]);
   });
 });
