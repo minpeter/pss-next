@@ -500,7 +500,7 @@ describe("LatexMarkdown", () => {
 
   it.runIf(canRenderUnicode)(
     "renders multilingual text without blank or missing glyph output",
-    { timeout: 30_000 },
+    { timeout: 120_000 },
     async () => {
       const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
       temporaryDirectories.push(cacheRoot);

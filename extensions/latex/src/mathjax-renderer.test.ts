@@ -105,7 +105,15 @@ x^n+y^n=z^n
         String.raw`\text{한글}`,
         "#e8e8e8"
       );
-      expect(rendered.png.length).toBeGreaterThan(500);
+      expect(rendered.png.subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+      );
+      expect(rendered.probe.runs).toContainEqual(
+        expect.objectContaining({
+          text: "한글",
+          visible: true,
+        })
+      );
     } finally {
       if (original === undefined) {
         delete process.env.PSS_LATEX_BROWSER;
