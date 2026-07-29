@@ -29,7 +29,7 @@ const provider = createOpenAICompatible({
 
 const agent = await createAgent({
   instructions: "Keep every answer under 3 lines.",
-  model: provider(process.env.AI_MODEL ?? "minimax/MiniMax-M2.7"),
+  model: provider(process.env.AI_MODEL ?? "minimax/MiniMax-M3"),
 });
 
 const thread = agent.thread("default");

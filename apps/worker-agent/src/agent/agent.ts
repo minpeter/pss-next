@@ -30,7 +30,7 @@ const DEFAULT_BASE_URL = "https://apis.opengateway.ai/v1";
 export const WORKER_AGENT_NAMESPACE = "worker-agent";
 
 /** Default model id when `AI_MODEL` is unset (also used on wide-event `ai.model`). */
-export const DEFAULT_MODEL = "minimax/MiniMax-M2.7";
+export const DEFAULT_MODEL = "minimax/MiniMax-M3";
 
 export const WORKER_AGENT_AUTO_COMPACTION: AgentAutoCompactionOptions = {
   maxInputTokens: 128_000,

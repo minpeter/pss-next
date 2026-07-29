@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL =
   "https://apis.opengateway.ai/v1";
-export const DEFAULT_OPENAI_COMPATIBLE_MODEL_ID = "minimax/MiniMax-M2.7";
+export const DEFAULT_OPENAI_COMPATIBLE_MODEL_ID = "minimax/MiniMax-M3";
 
 /**
  * Keyless fallback provider: OpenCode Zen's free tier. `public` is Zen's

@@ -93,7 +93,7 @@ describe("createOpenAICompatibleModelFromEnv", () => {
       runtimeEnv: {
         AI_API_KEY: " ai-token-1;ai-token-2 ",
         AI_BASE_URL: " https://llm.test/v1 ",
-        AI_MODEL: " minimax/MiniMax-M2.7 ",
+        AI_MODEL: " minimax/MiniMax-M3 ",
       },
     });
 
@@ -104,7 +104,7 @@ describe("createOpenAICompatibleModelFromEnv", () => {
       baseURL: "https://llm.test/v1",
       includeUsage: true,
     });
-    expect(providerMock).toHaveBeenCalledWith("minimax/MiniMax-M2.7");
+    expect(providerMock).toHaveBeenCalledWith("minimax/MiniMax-M3");
     expect(model).toMatchObject({ provider: "test" });
   });
 
