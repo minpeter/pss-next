@@ -10,11 +10,12 @@
 Small agent runtime workspace. Everything ships under the `pss` prefix, short
 for Plugsuits.
 
-- `@minpeter/pss-runtime`: runtime, threads, model loop, core hooks, and
-  instrumentation.
-- `@minpeter/pss-coding-agent`: model wiring, workspace coding tools, the `pss`
-  TUI, and the `pss exec` headless runner, with OpenSearch-backed `web_search`
-  and `web_fetch` tools enabled by default.
+- [`@minpeter/pss-runtime`](packages/runtime/README.md): runtime, threads,
+  model loop, core hooks, storage, and instrumentation.
+- [`@minpeter/pss-coding-agent`](apps/coding-agent/README.md): model wiring,
+  workspace coding tools, the `pss` TUI, and the `pss exec` headless runner.
+- [`examples/`](examples): runnable setups, from a basic CLI to subagents and
+  evals.
 
 ## Use
 
@@ -44,12 +45,6 @@ for await (const event of turn.events()) {
 `turn.events()` drives the turn. The runtime waits at `turn-start`,
 `step-start`, and `step-end` until the consumer continues, so consume the
 events to let the turn progress.
-
-The rest lives next to the code it describes:
-[`packages/runtime/README.md`](packages/runtime/README.md) for hooks, streaming
-deltas, storage, and subagents; [`apps/coding-agent/README.md`](apps/coding-agent/README.md)
-for the CLI, extensions, and environment variables; `examples/` for runnable
-setups.
 
 ## License
 
