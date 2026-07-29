@@ -17,3 +17,7 @@ file in their published `files` list.
 Internal business, non-commercial, and personal use stay free, including
 modification and free redistribution. Reselling the software or offering it as
 a paid product or service requires a separate commercial license.
+
+The license applies retroactively to every earlier release, including the ones
+published with no license field, so previously installed versions are covered by
+the same terms instead of being left unlicensed.

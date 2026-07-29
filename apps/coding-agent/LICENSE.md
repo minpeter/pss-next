@@ -9,6 +9,10 @@ Portions of this software are licensed as follows:
 - Content outside of the above mentioned files or restrictions is available under the "Sustainable Use
   License" as defined below.
 
+These terms also apply retroactively to every earlier release of this software, including releases
+published before this license file was added and releases that declared no license at all. Those releases
+are covered by the Sustainable Use License below on the same terms as current releases.
+
 ## Sustainable Use License
 
 Version 1.0
