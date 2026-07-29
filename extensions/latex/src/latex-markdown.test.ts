@@ -472,6 +472,31 @@ describe("LatexMarkdown", () => {
   );
 
   it.runIf(canRenderUnicode)(
+    "renders Korean text when loaded through the tsx source runtime",
+    () => {
+      const formula = String.raw`\text{해 무한} \Longrightarrow \text{해 없음}`;
+      const script = [
+        'import { renderUnicodeFormula } from "./src/unicode-browser-renderer.ts";',
+        `const rendered = await renderUnicodeFormula(${JSON.stringify(formula)}, "#767676");`,
+        "process.stdout.write(String(rendered.png.length));",
+      ].join("\n");
+
+      const result = spawnSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "--eval", script],
+        {
+          cwd: join(import.meta.dirname, ".."),
+          encoding: "utf8",
+          timeout: 30_000,
+        }
+      );
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(Number(result.stdout)).toBeGreaterThan(0);
+    }
+  );
+
+  it.runIf(canRenderUnicode)(
     "renders multilingual text without blank or missing glyph output",
     { timeout: 30_000 },
     async () => {

@@ -228,36 +228,29 @@ mjx-mtext bdi{font-style:normal;font-weight:400;white-space:pre}
         const hangulPattern = new RegExp(patterns.hangul, "u");
         const japanesePattern = new RegExp(patterns.japanese, "u");
         const thaiPattern = new RegExp(patterns.thai, "u");
-        const selectFont = (text: string): string => {
-          if (hangulPattern.test(text)) {
-            return "Noto Sans CJK KR";
-          }
-          if (japanesePattern.test(text)) {
-            return "Noto Sans CJK JP";
-          }
-          if (hanPattern.test(text)) {
-            return {
-              ja: "Noto Sans CJK JP",
-              ko: "Noto Sans CJK KR",
-              "zh-Hans": "Noto Sans CJK SC",
-              "zh-Hant": "Noto Sans CJK TC",
-            }[locale];
-          }
-          if (thaiPattern.test(text)) {
-            return "Loma";
-          }
-          if (devanagariPattern.test(text)) {
-            return "FreeSans";
-          }
-          return "DejaVu Sans";
-        };
         const runs = Array.from(document.querySelectorAll("mjx-mtext")).flatMap(
           (element) => {
             const text = element.textContent ?? "";
             if (!text.trim()) {
               return [];
             }
-            const font = selectFont(text);
+            let font = "DejaVu Sans";
+            if (hangulPattern.test(text)) {
+              font = "Noto Sans CJK KR";
+            } else if (japanesePattern.test(text)) {
+              font = "Noto Sans CJK JP";
+            } else if (hanPattern.test(text)) {
+              font = {
+                ja: "Noto Sans CJK JP",
+                ko: "Noto Sans CJK KR",
+                "zh-Hans": "Noto Sans CJK SC",
+                "zh-Hant": "Noto Sans CJK TC",
+              }[locale];
+            } else if (thaiPattern.test(text)) {
+              font = "Loma";
+            } else if (devanagariPattern.test(text)) {
+              font = "FreeSans";
+            }
             const bdi = document.createElement("bdi");
             bdi.dir = "auto";
             bdi.style.fontFamily = `"${font}"`;
