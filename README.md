@@ -1,14 +1,15 @@
 <p align="center">
-  <img src="assets/runtime-banner.png" alt="Plugsuits next banner" width="100%" />
+  <img src="assets/runtime-banner.png" alt="Plugsuits banner" width="100%" />
 </p>
 
-# Plugsuits <sub><sup>(next)<sup>[\*](https://github.com/minpeter/plugsuits)</sup></sup></sub>
+# Plugsuits
 
 > Just want the terminal agent? [`apps/coding-agent`](apps/coding-agent/README.md)
 > opens with the install steps for the `pss` TUI and the `pss exec` runner.
 
-Small agent runtime workspace. Everything ships under the `pss` prefix, short
-for Plugsuits.
+Small agent runtime workspace, and the successor to
+[minpeter/plugsuits](https://github.com/minpeter/plugsuits). Everything ships
+under the `pss` prefix, short for Plugsuits.
 
 - [`@minpeter/pss-runtime`](packages/runtime/README.md): runtime, threads,
   model loop, core hooks, storage, and instrumentation.
