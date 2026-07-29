@@ -14,8 +14,6 @@ for Plugsuits.
   model loop, core hooks, storage, and instrumentation.
 - [`@minpeter/pss-coding-agent`](apps/coding-agent/README.md): model wiring,
   workspace coding tools, the `pss` TUI, and the `pss exec` headless runner.
-- [`examples/`](examples): runnable setups, from a basic CLI to subagents and
-  evals.
 
 ## Use
 
