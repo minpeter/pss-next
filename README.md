@@ -1,4 +1,8 @@
-# pss-next
+<p align="center">
+  <img src="assets/runtime-banner.png" alt="pss-runtime banner" width="100%" />
+</p>
+
+# pss-runtime
 
 Small agent runtime workspace.
 
