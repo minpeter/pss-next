@@ -6,7 +6,6 @@ import {
 } from "@minpeter/pss-runtime";
 import type { ModelMessage } from "ai";
 import {
-  activeSessionKey,
   listSessionsForCwd,
   readSessionIndex,
   removeSession,
@@ -80,11 +79,9 @@ export interface SessionManager {
   removeSession(key: string): Promise<void>;
   renameSession(key: string, name: string): Promise<SessionIndexEntry>;
   /**
-   * Resolve which thread key this startup should use: an explicit override
-   * wins, then the recorded active session, then the legacy per-cwd key.
-   * The resolved session is registered; it is also marked active unless an
-   * override forced it (an env-forced run must not change what the next
-   * plain startup resumes).
+   * Resolve which thread key this startup should use. An explicit override
+   * reuses that key; otherwise every process gets a new per-cwd session.
+   * Existing sessions remain available through `/resume`.
    */
   resolveStartupSession(options?: {
     readonly name?: string;
@@ -257,8 +254,7 @@ export function createSessionManager(
       }),
     resolveStartupSession: ({ name, overrideKey } = {}) =>
       enqueue((document) => {
-        const key =
-          overrideKey ?? activeSessionKey(document, cwd) ?? `cwd:${cwd}`;
+        const key = overrideKey ?? newSessionKey(cwd);
         const existing = document.sessions.find(
           (session) => session.key === key
         );

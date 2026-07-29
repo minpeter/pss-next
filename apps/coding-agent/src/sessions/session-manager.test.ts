@@ -7,6 +7,7 @@ import { createSessionManager } from "./session-manager";
 
 const UNKNOWN_SESSION = /Unknown session/;
 const NOT_A_USER_MESSAGE = /does not reference a user message/;
+const UNIQUE_WORK_SESSION = /^cwd:\/work#[0-9a-f]{8}$/;
 
 let directory: string;
 
@@ -54,21 +55,20 @@ function manager(threads = memoryThreadStore()) {
 }
 
 describe("createSessionManager", () => {
-  it("registers the legacy key on first startup", async () => {
+  it("creates a uniquely keyed session on first startup", async () => {
     const { manager: sessions } = manager();
     const entry = await sessions.resolveStartupSession();
-    expect(entry.key).toBe("cwd:/work");
+    expect(entry.key).toMatch(UNIQUE_WORK_SESSION);
     expect(await sessions.listSessions()).toHaveLength(1);
   });
 
-  it("resumes the recorded active session on the next startup", async () => {
+  it("creates a distinct session on every startup", async () => {
     const { manager: sessions } = manager();
-    await sessions.resolveStartupSession();
-    const created = await sessions.createSession("spike");
+    const first = await sessions.resolveStartupSession();
     const next = createSessionManager({ cwd: "/work", directory });
-    const resumed = await next.resolveStartupSession();
-    expect(resumed.key).toBe(created.key);
-    expect(resumed.name).toBe("spike");
+    const second = await next.resolveStartupSession();
+    expect(second.key).not.toBe(first.key);
+    expect(await next.listSessions()).toHaveLength(2);
   });
 
   it("prefers an explicit override key and records a startup name", async () => {
@@ -85,10 +85,9 @@ describe("createSessionManager", () => {
     const regular = await sessions.resolveStartupSession();
     await sessions.resolveStartupSession({ overrideKey: "ci:forced" });
 
-    const next = createSessionManager({ cwd: "/work", directory });
-    expect((await next.resolveStartupSession()).key).toBe(regular.key);
+    expect((await sessions.getSession(regular.key))?.key).toBe(regular.key);
     // The forced key is still registered for /name and /fork.
-    expect((await next.findSession("ci:forced"))?.key).toBe("ci:forced");
+    expect((await sessions.findSession("ci:forced"))?.key).toBe("ci:forced");
   });
 
   it("creates uniquely keyed sessions and marks them active", async () => {
@@ -96,8 +95,7 @@ describe("createSessionManager", () => {
     const first = await sessions.createSession();
     const second = await sessions.createSession();
     expect(first.key).not.toBe(second.key);
-    const next = createSessionManager({ cwd: "/work", directory });
-    expect((await next.resolveStartupSession()).key).toBe(second.key);
+    expect((await sessions.getSession(second.key))?.key).toBe(second.key);
   });
 
   it("forks durable state and records the parent-thread reference", async () => {
@@ -245,8 +243,9 @@ describe("createSessionManager", () => {
     await sessions.createSession();
     const switched = await sessions.switchToSession(first.key);
     expect(switched.key).toBe(first.key);
-    const next = createSessionManager({ cwd: "/work", directory });
-    expect((await next.resolveStartupSession()).key).toBe(first.key);
+    expect((await sessions.getSession(first.key))?.updatedAt).toBe(
+      switched.updatedAt
+    );
   });
 
   it("rejects switching to unknown sessions", async () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -80,7 +81,7 @@ const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
 
 /**
  * Resolve (and record) the session this startup drives. The session index
- * must never block startup: on failure the legacy per-directory key is
+ * must never block startup: on failure a process-unique per-directory key is
  * used without recording metadata, and a notice is surfaced.
  */
 async function resolveStartupSessionEntry(
@@ -101,7 +102,9 @@ async function resolveStartupSessionEntry(
       entry: {
         createdAt: at,
         cwd: process.cwd(),
-        key: threadConfig.key,
+        key: threadConfig.keyFromEnv
+          ? threadConfig.key
+          : `cwd:${process.cwd()}#${randomUUID().slice(0, 8)}`,
         updatedAt: at,
       },
       notice: `Session index unavailable: ${
