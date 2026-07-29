@@ -10,9 +10,6 @@ Small agent runtime workspace.
 - `@minpeter/pss-coding-agent`: model wiring, workspace coding tools, the `pss`
   TUI, and the `pss exec` headless runner, with OpenSearch-backed `web_search`
   and `web_fetch` tools enabled by default.
-- `@minpeter/pss-benchmark-nextjs` (private): Next.js AI Agent Evals harness
-  that runs the coding agent in Docker and produces leaderboard-comparable
-  scores. See `benchmarks/nextjs/README.md`.
 
 ## Use
 
