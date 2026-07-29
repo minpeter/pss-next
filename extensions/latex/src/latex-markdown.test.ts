@@ -30,6 +30,8 @@ const originalLatexSetting = process.env.PSS_LATEX;
 const originalLatexAspect = process.env.PSS_LATEX_ASPECT;
 const originalLatexScale = process.env.PSS_LATEX_SCALE;
 const originalPath = process.env.PATH;
+const KITTY_COLUMNS_PATTERN = /(?:^|,)c=([0-9]+)/;
+const KITTY_ROWS_PATTERN = /(?:^|,)r=([0-9]+)/;
 const temporaryDirectories: string[] = [];
 const hasExecutable = (name: string): boolean =>
   (process.env.PATH ?? "")
@@ -51,6 +53,40 @@ const relativeLuminance = (color: string): number => {
     (channels[2] ?? 0) * 0.0722
   );
 };
+const fakePng = (width: number, height: number): Buffer => {
+  const png = Buffer.alloc(24);
+  Buffer.from("89504e470d0a1a0a", "hex").copy(png);
+  png.writeUInt32BE(width, 16);
+  png.writeUInt32BE(height, 20);
+  return png;
+};
+const cacheFormulaPng = async (
+  cacheRoot: string,
+  formula: string,
+  width: number,
+  height: number
+): Promise<void> => {
+  const key = createHash("sha256")
+    .update("latex-dvi-dvipng-lcd-v7")
+    .update("\0")
+    .update("#e8e8e8")
+    .update("\0")
+    .update(formula)
+    .digest("hex");
+  await mkdir(cacheRoot, { recursive: true });
+  await writeFile(join(cacheRoot, `${key}.png`), fakePng(width, height));
+};
+const kittyGrid = (
+  lines: readonly string[]
+): { columns: number; imageLine: number; rows: number } => {
+  const imageLine = lines.findIndex((line) => line.includes("\x1b_Ga=T"));
+  const header = lines[imageLine]?.split("\x1b_G")[1]?.split(";")[0] ?? "";
+  return {
+    columns: Number(header.match(KITTY_COLUMNS_PATTERN)?.[1] ?? 0),
+    imageLine,
+    rows: Number(header.match(KITTY_ROWS_PATTERN)?.[1] ?? 0),
+  };
+};
 
 const markdownTheme: MarkdownTheme = {
   bold: (text) => text,
@@ -67,6 +103,34 @@ const markdownTheme: MarkdownTheme = {
   quoteBorder: (text) => text,
   strikethrough: (text) => text,
   underline: (text) => text,
+};
+const renderCachedDisplay = async (
+  cacheRoot: string,
+  formula: string,
+  width: number,
+  height: number,
+  markdown = `before\n\n$$${formula}$$\n\nafter`
+): Promise<string[]> => {
+  process.env.PSS_LATEX_CACHE_DIR = cacheRoot;
+  process.env.PSS_LATEX_COLOR = "#e8e8e8";
+  process.env.PSS_LATEX = "1";
+  setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
+  setCellDimensions({ heightPx: 18, widthPx: 9 });
+  await cacheFormulaPng(cacheRoot, formula, width, height);
+  let resolveRender: (() => void) | undefined;
+  const rendered = new Promise<void>((resolve) => {
+    resolveRender = resolve;
+  });
+  const view = new LatexMarkdown(markdown, 1, 0, markdownTheme, {
+    requestRender: () => resolveRender?.(),
+  });
+
+  view.render(80);
+  await rendered;
+
+  const lines = view.render(80);
+  view.dispose();
+  return lines;
 };
 
 beforeEach(() => {
@@ -221,6 +285,52 @@ describe("normalizeLatexFormula", () => {
 });
 
 describe("LatexMarkdown", () => {
+  it("keeps cached one-line native display math compact", async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+    temporaryDirectories.push(cacheRoot);
+    const formula = String.raw`\text{abc}`;
+    const lines = await renderCachedDisplay(cacheRoot, formula, 89, 45);
+
+    expect(kittyGrid(lines)).toMatchObject({
+      columns: 4,
+      rows: 1,
+    });
+  });
+
+  it("normalizes one-line Unicode size to the native grid", async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+    temporaryDirectories.push(cacheRoot);
+    const native = await renderCachedDisplay(
+      cacheRoot,
+      String.raw`\text{abc}`,
+      89,
+      45
+    );
+    const unicode = await renderCachedDisplay(
+      cacheRoot,
+      String.raw`\text{한글}`,
+      136,
+      70
+    );
+
+    expect(kittyGrid(unicode)).toMatchObject(kittyGrid(native));
+  });
+
+  it("keeps a real margin after multi-row images", async () => {
+    const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+    temporaryDirectories.push(cacheRoot);
+    const lines = await renderCachedDisplay(
+      cacheRoot,
+      String.raw`\frac{\text{한글}}{x}`,
+      180,
+      161
+    );
+    const grid = kittyGrid(lines);
+
+    expect(grid.rows).toBeGreaterThan(1);
+    expect(lines[grid.imageLine + grid.rows]?.trim()).toBe("");
+  });
+
   it.runIf(canRenderUnicode)(
     "renders CJK text embedded in display math",
     async () => {

@@ -26,6 +26,7 @@ const CACHE_VERSION = "latex-dvi-dvipng-lcd-v7";
 const DEFAULT_COLOR = "#767676";
 const DEFAULT_DPI = 288;
 const DEFAULT_DISPLAY_DPI = 120;
+const MATHJAX_DISPLAY_SCALE = 0.25;
 const MAX_FORMULA_LENGTH = 8192;
 const MAX_PROCESS_OUTPUT_BYTES = 128 * 1024;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
@@ -357,19 +358,22 @@ const latexAspectCorrection = (): number => {
     : 1;
 };
 
-const latexDisplayScale = (): number => {
+const latexDisplayScale = (unicode: boolean): number => {
   const configured = Number(process.env.PSS_LATEX_SCALE ?? "1");
   const userScale = Number.isFinite(configured)
     ? Math.max(0.5, Math.min(2, configured))
     : 1;
-  return (DEFAULT_DISPLAY_DPI / DEFAULT_DPI) * userScale;
+  const rendererScale = unicode
+    ? MATHJAX_DISPLAY_SCALE
+    : DEFAULT_DISPLAY_DPI / DEFAULT_DPI;
+  return rendererScale * userScale;
 };
 
-const displayDimensions = ({
-  heightPx,
-  widthPx,
-}: PngDimensions): { displayHeightPx: number; displayWidthPx: number } => {
-  const scale = latexDisplayScale();
+const displayDimensions = (
+  { heightPx, widthPx }: PngDimensions,
+  unicode: boolean
+): { displayHeightPx: number; displayWidthPx: number } => {
+  const scale = latexDisplayScale(unicode);
   return {
     displayHeightPx: Math.max(1, Math.ceil(heightPx * scale)),
     displayWidthPx: Math.max(1, Math.ceil(widthPx * scale)),
@@ -753,6 +757,7 @@ const renderLatex = async (
   const key = formulaCacheKey(formula);
   const directory = cacheDirectory();
   const cachedPath = join(directory, `${key}.png`);
+  const unicode = containsUnicode(formula);
 
   try {
     const cached = await readBoundedPng(cachedPath);
@@ -760,7 +765,7 @@ const renderLatex = async (
     if (dimensionsWithinLimits(dimensions)) {
       return {
         ...dimensions,
-        ...displayDimensions(dimensions),
+        ...displayDimensions(dimensions, unicode),
         base64: cached.toString("base64"),
         imageId: 0,
       };
@@ -774,7 +779,6 @@ const renderLatex = async (
   try {
     const texPath = join(workingDirectory, "formula.tex");
     const outputPngPath = join(workingDirectory, "formula.png");
-    const unicode = containsUnicode(formula);
     signal?.throwIfAborted();
     const normalizedFormula = normalizeLatexFormula(formula);
     if (unicode) {
@@ -861,7 +865,7 @@ const renderLatex = async (
 
     return {
       ...dimensions,
-      ...displayDimensions(dimensions),
+      ...displayDimensions(dimensions, unicode),
       base64: png.toString("base64"),
       imageId: 0,
     };
@@ -973,8 +977,9 @@ export const kittyPlaceholderLines = (
   const availableWidth = Math.max(1, width - paddingX * 2);
   const cells = getCellDimensions();
   const displayHeightPx = image.displayHeightPx ?? image.heightPx;
+  const displayWidthPx = image.displayWidthPx ?? image.widthPx;
   const columnsPerRow =
-    (image.widthPx / image.heightPx) *
+    (displayWidthPx / displayHeightPx) *
     (cells.heightPx / cells.widthPx) *
     latexAspectCorrection();
   let rows = Math.max(
@@ -1137,7 +1142,7 @@ export class LatexMarkdown implements Component {
       if (part.type === "math" && state?.status === "ready" && state.image) {
         ensureDisplayMargin(lines);
         lines.push(...new LatexImage(state.image, this.paddingX).render(width));
-        ensureDisplayMargin(lines);
+        lines.push("");
       } else if (part.raw.length > 0) {
         appendMarkdownLines(lines, this.renderMarkdown(part.raw, 0, width));
       }
