@@ -29,7 +29,7 @@
     "lint": "ultracite check ."
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.14",
+    "@ai-sdk/openai-compatible": "3.0.16",
     "@chat-adapter/state-memory": "4.35.0",
     "@chat-adapter/telegram": "4.35.0",
     "@minpeter/pss-runtime": "workspace:*",
