@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/runtime-banner.png" alt="Plugsuits (Next) banner" width="100%" />
+  <img src="assets/runtime-banner.png" alt="Plugsuits next banner" width="100%" />
 </p>
 
-# Plugsuits (Next)
+# Plugsuits <sub><sup>next</sup></sub>
 
 > Just want the terminal agent? [`apps/coding-agent`](apps/coding-agent/README.md)
 > opens with the install steps for the `pss` TUI and the `pss exec` runner.
