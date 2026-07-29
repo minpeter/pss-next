@@ -175,12 +175,15 @@ describe("/resume", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects unknown queries", async () => {
+  it("opens the picker with unmatched text as its search query", async () => {
     const { context, switched } = createContext();
     const result = await command(context, "resume").execute({
-      args: ["ghost"],
+      args: ["parser", "spike"],
     });
-    expect(result.success).toBe(false);
+    expect(result).toEqual({
+      action: { query: "parser spike", type: "select-session" },
+      success: true,
+    });
     expect(switched).toEqual([]);
   });
 

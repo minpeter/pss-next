@@ -7,6 +7,7 @@ import type { SessionIndexEntry } from "../sessions/session-index";
 import { sanitizeTerminalText } from "./terminal-safety";
 
 const ANSI_RESET = "\x1b[0m";
+const ANSI_BOLD = "\x1b[1m";
 const ANSI_CYAN = "\x1b[36m";
 const ANSI_DIM = "\x1b[2m";
 const ANSI_GRAY = "\x1b[90m";
@@ -22,6 +23,17 @@ export class SessionSelectorRule implements Component {
 
   render(width: number): string[] {
     return [style(ANSI_GRAY, "─".repeat(Math.max(0, width)))];
+  }
+}
+
+export class SessionSelectorTitle implements Component {
+  invalidate(): void {
+    return;
+  }
+
+  render(width: number): string[] {
+    const title = `${style(ANSI_BOLD, "Resume a session")} ${style(ANSI_DIM, "— type to search · enter to resume · esc to cancel")}`;
+    return [truncateToWidth(title, width)];
   }
 }
 

@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { SessionSelectorComponent } from "./session-selector";
 
@@ -58,11 +59,41 @@ describe("SessionSelectorComponent", () => {
     expect(onSelect).toHaveBeenCalledWith("cwd:/work#spike");
   });
 
+  it("starts filtered from an initial query", () => {
+    const onSelect = vi.fn();
+    const selector = new SessionSelectorComponent({
+      currentSessionKey: "cwd:/work#current",
+      initialQuery: "spike",
+      onCancel: vi.fn(),
+      onSelect,
+      sessions,
+    });
+    const rendered = selector
+      .render(80)
+      .map((line) => line.replace(ANSI_PATTERN, ""))
+      .join("\n");
+    expect(rendered).toContain("→ parser spike");
+    expect(rendered).not.toContain("main ✓");
+    selector.handleInput(ENTER);
+    expect(onSelect).toHaveBeenCalledWith("cwd:/work#spike");
+  });
+
   it("moves with arrows and cancels with escape", () => {
     const { onCancel, onSelect, selector } = createSelector();
     selector.handleInput(DOWN_ARROW);
     selector.handleInput(ESCAPE);
     expect(onCancel).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps every rendered line within narrow terminal bounds", () => {
+    const { selector } = createSelector();
+    const lines = selector.render(40);
+    expect(lines.every((line) => visibleWidth(line) <= 40)).toBe(true);
+    expect(
+      lines.filter((line) =>
+        line.replace(ANSI_PATTERN, "").includes("Resume a session")
+      )
+    ).toHaveLength(1);
   });
 });

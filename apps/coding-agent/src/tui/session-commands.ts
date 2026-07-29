@@ -87,10 +87,14 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
         }
         const query = input.args.join(" ");
         const entry = await context.manager.findSession(query);
-        if (entry === undefined) {
+        if (
+          entry === undefined ||
+          (entry.key !== query &&
+            entry.name?.toLowerCase() !== query.toLowerCase())
+        ) {
           return {
-            message: `No session matches ${JSON.stringify(query)}. Use /resume to list sessions.`,
-            success: false,
+            action: { query, type: "select-session" },
+            success: true,
           };
         }
         return await resumeSession(context, entry);

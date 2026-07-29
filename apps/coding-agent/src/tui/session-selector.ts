@@ -10,10 +10,10 @@ import type { SessionIndexEntry } from "../sessions/session-index";
 import {
   SessionSelectorRow,
   SessionSelectorRule,
+  SessionSelectorTitle,
 } from "./session-selector-row";
 
 const ANSI_RESET = "\x1b[0m";
-const ANSI_BOLD = "\x1b[1m";
 const ANSI_DIM = "\x1b[2m";
 const MAX_VISIBLE_SESSIONS = 10;
 
@@ -48,7 +48,6 @@ export class SessionSelectorComponent extends Container {
   #selectedIndex = 0;
   readonly #sessions: readonly SessionIndexEntry[];
   #settled = false;
-  readonly #title: Text;
   #focused = false;
 
   get focused(): boolean {
@@ -76,11 +75,6 @@ export class SessionSelectorComponent extends Container {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     ];
     this.#filtered = this.#sessions;
-    this.#title = new Text(
-      `${style(ANSI_BOLD, "Resume a session")} ${style(ANSI_DIM, "— type to search · enter to resume · esc to cancel")}`,
-      1,
-      0
-    );
     this.#searchInput.handleInput(options.initialQuery ?? "");
     this.#searchInput.onSubmit = () => this.#confirmSelection();
     this.#searchInput.onEscape = () => this.#cancel();
@@ -127,7 +121,7 @@ export class SessionSelectorComponent extends Container {
       this.addChild(new SessionSelectorRule());
       this.addChild(new Spacer(1));
     }
-    this.addChild(this.#title);
+    this.addChild(new SessionSelectorTitle());
     if (!this.#compact) {
       this.addChild(new Spacer(1));
     }

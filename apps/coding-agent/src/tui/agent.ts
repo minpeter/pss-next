@@ -1285,7 +1285,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
-  const showSessionSelector = async (): Promise<void> => {
+  const showSessionSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.sessionSelector;
     if (selectorConfig === undefined) {
       addSystemMessage(chatContainer, "Session selection is not available.");
@@ -1330,6 +1330,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       selector = new SessionSelectorComponent({
         compact: layout.compact,
         currentSessionKey: selectorConfig.currentSessionKey(),
+        ...(initialQuery === undefined ? {} : { initialQuery }),
         maxVisibleSessions: layout.maxVisibleModels,
         onCancel: () => settle(undefined),
         onSelect: (sessionKey) => settle(sessionKey),
@@ -1396,7 +1397,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "select-session") {
-      await showSessionSelector();
+      await showSessionSelector(commandResult.action.query);
       return;
     }
 
