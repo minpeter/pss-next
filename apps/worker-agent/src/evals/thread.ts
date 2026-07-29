@@ -28,7 +28,7 @@ import { createWorkerAgentTools } from "../tools";
 import { loadWorkerAgentEvalEnv } from "./eval-env";
 import { createScriptedModel, type ScriptedResult } from "./scripted-model";
 
-const DEFAULT_MODEL = "minimax/MiniMax-M2.7";
+const DEFAULT_MODEL = "minimax/MiniMax-M3";
 const REAL_ENV_FLAG = "PSS_WORKER_AGENT_EVAL_REAL";
 const EvalModelEnvSchema = z.looseObject({
   AI_API_KEY: z.string().trim().min(1),

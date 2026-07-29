@@ -1,7 +1,7 @@
 # pnpm ship → wrangler secret bulk .dev.vars (whole file)
 AI_API_KEY=...
 AI_BASE_URL=https://apis.opengateway.ai/v1
-AI_MODEL=minimax/MiniMax-M2.7
+AI_MODEL=minimax/MiniMax-M3
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_BOT_USERNAME=your_bot
 # Separate from TELEGRAM_BOT_TOKEN. Allowed: A-Z a-z 0-9 _ -

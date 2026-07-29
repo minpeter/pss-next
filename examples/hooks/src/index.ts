@@ -10,7 +10,7 @@ const env = createEnv({
   server: {
     AI_API_KEY: z.string().trim().min(1),
     AI_BASE_URL: z.url().trim().default("https://apis.opengateway.ai/v1"),
-    AI_MODEL: z.string().trim().min(1).default("minimax/MiniMax-M2.7"),
+    AI_MODEL: z.string().trim().min(1).default("minimax/MiniMax-M3"),
   },
 });
 

@@ -18,13 +18,19 @@ describe("runtime docs", () => {
     );
     expect(readme).toContain("const agent = await createAgent({");
     expect(readme).toContain('const thread = agent.thread("default")');
-    expect(readme).toContain("PSS_THREAD_DIR");
-    expect(readme).toContain("PSS_THREAD_KEY");
     expect(readme).not.toContain(
       'import { Agent } from "@minpeter/pss-runtime"'
     );
     expect(readme).not.toContain("new Agent({");
     expect(readme).not.toContain("agent.session(");
+    expect(readme).not.toContain("~/.pss/sessions");
+  });
+
+  it("documents thread storage env vars next to the CLI", () => {
+    const readme = readRepoFile("apps/coding-agent/README.md");
+
+    expect(readme).toContain("PSS_THREAD_DIR");
+    expect(readme).toContain("PSS_THREAD_KEY");
     expect(readme).not.toContain("~/.pss/sessions");
   });
 
