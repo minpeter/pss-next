@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   getCapabilities,
   getCellDimensions,
@@ -16,7 +17,9 @@ import {
   highlightInlineMath,
   kittyPlaceholderLines,
   LatexMarkdown,
+  latexColor,
   normalizeLatexFormula,
+  postProcessPngArgs,
 } from "./latex-markdown";
 
 const originalCellDimensions = getCellDimensions();
@@ -28,6 +31,26 @@ const originalLatexAspect = process.env.PSS_LATEX_ASPECT;
 const originalLatexScale = process.env.PSS_LATEX_SCALE;
 const originalPath = process.env.PATH;
 const temporaryDirectories: string[] = [];
+const hasExecutable = (name: string): boolean =>
+  (process.env.PATH ?? "")
+    .split(delimiter)
+    .some((directory) => existsSync(join(directory, name)));
+const canRenderUnicode =
+  process.platform === "linux" &&
+  hasExecutable("bwrap") &&
+  hasExecutable("prlimit") &&
+  (hasExecutable("magick") || hasExecutable("convert"));
+const relativeLuminance = (color: string): number => {
+  const channels = [1, 3, 5].map((offset) => {
+    const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.040_45 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return (
+    (channels[0] ?? 0) * 0.2126 +
+    (channels[1] ?? 0) * 0.7152 +
+    (channels[2] ?? 0) * 0.0722
+  );
+};
 
 const markdownTheme: MarkdownTheme = {
   bold: (text) => text,
@@ -150,6 +173,27 @@ describe("highlightInlineMath", () => {
   });
 });
 
+describe("render appearance", () => {
+  it("uses a default glyph color with readable light and dark contrast", () => {
+    delete process.env.PSS_LATEX_COLOR;
+
+    const luminance = relativeLuminance(latexColor());
+
+    expect(1.05 / (luminance + 0.05)).toBeGreaterThanOrEqual(4.5);
+    expect((luminance + 0.05) / 0.05).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("forces a transparent canvas before reading an SVG", () => {
+    const args = postProcessPngArgs("formula.svg", "formula.png");
+    const inputIndex = args.indexOf("formula.svg");
+    const backgroundIndex = args.indexOf("-background");
+
+    expect(backgroundIndex).toBeGreaterThanOrEqual(0);
+    expect(backgroundIndex).toBeLessThan(inputIndex);
+    expect(args[backgroundIndex + 1]).toBe("none");
+  });
+});
+
 describe("normalizeLatexFormula", () => {
   it("repairs single row terminators emitted by models", () => {
     const formula = [
@@ -177,6 +221,49 @@ describe("normalizeLatexFormula", () => {
 });
 
 describe("LatexMarkdown", () => {
+  it.runIf(canRenderUnicode)(
+    "renders CJK text embedded in display math",
+    async () => {
+      const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
+      temporaryDirectories.push(cacheRoot);
+      process.env.PSS_LATEX_CACHE_DIR = cacheRoot;
+      process.env.PSS_LATEX = "1";
+      setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
+      const formula = String.raw`\text{반례 존재} \implies \text{弗赖 곡선 생성}`;
+      let resolveRender: (() => void) | undefined;
+      const rendered = new Promise<void>((resolve) => {
+        resolveRender = resolve;
+      });
+      const view = new LatexMarkdown(
+        `$$\n${formula}\n$$`,
+        1,
+        0,
+        markdownTheme,
+        {
+          requestRender: () => resolveRender?.(),
+        }
+      );
+
+      view.render(100);
+      await rendered;
+
+      const output = view.render(100).join("\n");
+      expect(output).toContain("\x1b_Ga=T");
+      expect(output).not.toContain(`$$\n${formula}\n$$`);
+      const payloads = output
+        .split("\x1b_G")
+        .slice(1)
+        .map((command) => {
+          const separator = command.indexOf(";");
+          const terminator = command.indexOf("\x1b\\");
+          return command.slice(separator + 1, terminator);
+        });
+      const png = Buffer.from(payloads.join(""), "base64");
+      expect(png.readUInt32BE(16)).toBeGreaterThan(500);
+      expect(png.readUInt32BE(20)).toBeGreaterThan(20);
+    }
+  );
+
   it("refuses native TeX when the OS sandbox is unavailable", async () => {
     const cacheRoot = await mkdtemp(join(tmpdir(), "pss-latex-test-"));
     const binaryRoot = await mkdtemp(join(tmpdir(), "pss-latex-bin-"));
@@ -254,7 +341,7 @@ describe("LatexMarkdown", () => {
     setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
     const formula = "x^2 + y^2 = z^2";
     const key = createHash("sha256")
-      .update("latex-dvi-dvipng-lcd-v4")
+      .update("latex-dvi-dvipng-lcd-v7")
       .update("\0")
       .update("#e8e8e8")
       .update("\0")
@@ -290,8 +377,8 @@ describe("LatexMarkdown", () => {
     const imageLine = outputLines.findIndex((line) =>
       line.includes("\x1b_Ga=T")
     );
-    expect(output).toContain("\x1b_Ga=T,f=100,q=2,U=1");
-    expect(output).toContain("\u{10eeee}");
+    expect(output).toContain("\x1b_Ga=T,f=100,q=2,C=1");
+    expect(output).not.toContain("\u{10eeee}");
     expect(output).not.toContain(`$$${formula}$$`);
     expect(outputLines[imageLine - 1]?.trim()).toBe("");
     expect(outputLines[imageLine + 1]?.trim()).toBe("");
@@ -299,7 +386,24 @@ describe("LatexMarkdown", () => {
 });
 
 describe("kittyPlaceholderLines", () => {
-  it("transmits a virtual image and emits movable Unicode placeholder cells", () => {
+  it("does not expose Kitty Unicode placeholder code points", () => {
+    setCellDimensions({ heightPx: 18, widthPx: 9 });
+
+    const lines = kittyPlaceholderLines(
+      {
+        base64: Buffer.from("png bytes").toString("base64"),
+        heightPx: 36,
+        imageId: 0x12_34_56,
+        widthPx: 36,
+      },
+      20,
+      1
+    );
+
+    expect(lines.join("")).not.toContain("\u{10eeee}");
+  });
+
+  it("transmits a direct image and reserves its terminal rows", () => {
     setCellDimensions({ heightPx: 18, widthPx: 9 });
 
     const lines = kittyPlaceholderLines(
@@ -314,14 +418,11 @@ describe("kittyPlaceholderLines", () => {
     );
 
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain(
-      "\x1b_Ga=T,f=100,q=2,U=1,i=1193046,c=4,r=2,m=0;"
-    );
-    expect(lines[0]).toContain("\u{10eeee}\u0305");
-    expect(lines[1]).toContain("\u{10eeee}\u030d");
-    expect(lines[0]).toContain("\x1b[38;2;18;52;86m");
-    expect(visibleWidth(lines[0] ?? "")).toBe(5);
-    expect(visibleWidth(lines[1] ?? "")).toBe(5);
+    expect(lines[0]).toContain("\x1b_Ga=T,f=100,q=2,C=1,c=4,r=2,i=1193046;");
+    expect(lines[0]).not.toContain("\u{10eeee}");
+    expect(lines[1]).toBe("");
+    expect(visibleWidth(lines[0] ?? "")).toBe(1);
+    expect(visibleWidth(lines[1] ?? "")).toBe(0);
   });
 
   it("matches the placeholder grid to the PNG aspect ratio", () => {
@@ -380,6 +481,6 @@ describe("kittyPlaceholderLines", () => {
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("c=10,r=1");
-    expect(visibleWidth(lines[0] ?? "")).toBe(11);
+    expect(visibleWidth(lines[0] ?? "")).toBe(1);
   });
 });

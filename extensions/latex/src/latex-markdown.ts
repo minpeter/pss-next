@@ -14,14 +14,16 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import {
   type Component,
+  encodeKitty,
   getCapabilities,
   getCellDimensions,
   Markdown,
   type MarkdownTheme,
 } from "@earendil-works/pi-tui";
+import { renderMathJaxSvg } from "./mathjax-renderer";
 
-const CACHE_VERSION = "latex-dvi-dvipng-lcd-v4";
-const DEFAULT_COLOR = "#e8e8e8";
+const CACHE_VERSION = "latex-dvi-dvipng-lcd-v7";
+const DEFAULT_COLOR = "#767676";
 const DEFAULT_DPI = 288;
 const DEFAULT_DISPLAY_DPI = 120;
 const MAX_FORMULA_LENGTH = 8192;
@@ -34,8 +36,6 @@ const PROCESS_TIMEOUT_MS = 10_000;
 const SANDBOX_ADDRESS_SPACE_BYTES = 1024 * 1024 * 1024;
 const SANDBOX_FILE_BYTES = 16 * 1024 * 1024;
 const PNG_SIGNATURE = "89504e470d0a1a0a";
-const KITTY_CHUNK_SIZE = 4096;
-const KITTY_PLACEHOLDER = "\u{10eeee}";
 const FENCED_CODE_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
 const INDENTED_CODE_PATTERN = /^(?: {4}|\t)/;
 const LATEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
@@ -43,13 +43,7 @@ const MARKDOWN_LINES_PATTERN = /.*(?:\n|$)/g;
 const SINGLE_ROW_TERMINATOR_PATTERN = /(?<!\\)\\(?=[ \t]*(?:\n|$))/g;
 const BACKTICK_RUN_PATTERN = /`+/g;
 
-// Kitty's row/column combining characters. Formula images are capped to the
-// terminal viewport, so keeping the first 64 values is ample and avoids
-// shipping the protocol's full 256-entry table.
-const ROW_COLUMN_DIACRITICS =
-  "0305 030d 030e 0310 0312 033d 033e 033f 0346 034a 034b 034c 0350 0351 0352 0357 035b 0363 0364 0365 0366 0367 0368 0369 036a 036b 036c 036d 036e 036f 0483 0484 0485 0486 0487 0592 0593 0594 0595 0597 0598 0599 059c 059d 059e 059f 05a0 05a1 05a8 05a9 05ab 05ac 05af 05c4 0610 0611 0612 0613 0614 0615 0616 0617 0657 0658"
-    .split(" ")
-    .map((value) => Number.parseInt(value, 16));
+const MAX_IMAGE_ROWS = 64;
 
 export interface DisplayMathPart {
   formula?: string;
@@ -349,7 +343,7 @@ const pngDimensions = (bytes: Buffer): PngDimensions | undefined => {
   return { heightPx, widthPx };
 };
 
-const latexColor = (): string => {
+export const latexColor = (): string => {
   const configured = process.env.PSS_LATEX_COLOR;
   return configured && LATEX_COLOR_PATTERN.test(configured)
     ? configured.toLowerCase()
@@ -389,6 +383,9 @@ const dvipngColor = (): string => {
   );
   return `rgb ${channels.join(" ")}`;
 };
+
+const containsUnicode = (value: string): boolean =>
+  Array.from(value).some((character) => (character.codePointAt(0) ?? 0) > 0x7f);
 
 const cacheDirectory = (): string =>
   process.env.PSS_LATEX_CACHE_DIR ??
@@ -694,35 +691,40 @@ const readBoundedPng = async (path: string): Promise<Buffer> => {
   }
 };
 
+export const postProcessPngArgs = (input: string, output: string): string[] => [
+  "-limit",
+  "memory",
+  "256MiB",
+  "-limit",
+  "map",
+  "512MiB",
+  "-limit",
+  "disk",
+  "256MiB",
+  "-background",
+  "none",
+  input,
+  "-alpha",
+  "on",
+  "-trim",
+  "+repage",
+  "-filter",
+  "LanczosSharp",
+  "-unsharp",
+  "0x0.8+0.45+0",
+  "-bordercolor",
+  "none",
+  "-border",
+  "10x5",
+  output,
+];
 const postProcessPng = async (
   cwd: string,
   input: string,
   output: string,
   signal?: AbortSignal
 ): Promise<void> => {
-  const args = [
-    "-limit",
-    "memory",
-    "256MiB",
-    "-limit",
-    "map",
-    "512MiB",
-    "-limit",
-    "disk",
-    "256MiB",
-    input,
-    "-trim",
-    "+repage",
-    "-filter",
-    "LanczosSharp",
-    "-unsharp",
-    "0x0.8+0.45+0",
-    "-bordercolor",
-    "none",
-    "-border",
-    "10x5",
-    output,
-  ];
+  const args = postProcessPngArgs(input, output);
   try {
     await runProcess("magick", args, { cwd, signal });
   } catch (error) {
@@ -772,10 +774,17 @@ const renderLatex = async (
   try {
     const texPath = join(workingDirectory, "formula.tex");
     const outputPngPath = join(workingDirectory, "formula.png");
+    const unicode = containsUnicode(formula);
     signal?.throwIfAborted();
-    await writeFile(texPath, texDocument(normalizeLatexFormula(formula)), {
-      mode: 0o600,
-    });
+    const normalizedFormula = normalizeLatexFormula(formula);
+    if (unicode) {
+      const svg = await renderMathJaxSvg(normalizedFormula, latexColor());
+      await writeFile(join(workingDirectory, "formula.svg"), svg, {
+        mode: 0o600,
+      });
+    } else {
+      await writeFile(texPath, texDocument(normalizedFormula), { mode: 0o600 });
+    }
 
     // openin_any/openout_any keep untrusted model-generated TeX inside the
     // dedicated temporary directory. Shell escape is disabled independently.
@@ -786,45 +795,54 @@ const renderLatex = async (
       shell_escape: "f",
       TEXMFOUTPUT: ".",
     };
-    await runProcess(
-      "latex",
-      [
-        "-interaction=nonstopmode",
-        "-halt-on-error",
-        "-no-shell-escape",
-        "-output-directory",
-        ".",
-        "formula.tex",
-      ],
-      { cwd: workingDirectory, env: texEnv, signal }
-    );
-    await runProcess(
-      "dvipng",
-      [
-        "--nogs",
-        "--norawps",
-        "-D",
-        String(DEFAULT_DPI),
-        "-T",
-        "tight",
-        "-z",
-        "9",
-        "-bg",
-        "Transparent",
-        "-fg",
-        dvipngColor(),
-        "-o",
+    if (unicode) {
+      await postProcessPng(
+        workingDirectory,
+        "formula.svg",
+        "formula.png",
+        signal
+      );
+    } else {
+      await runProcess(
+        "latex",
+        [
+          "-interaction=nonstopmode",
+          "-halt-on-error",
+          "-no-shell-escape",
+          "-output-directory",
+          ".",
+          "formula.tex",
+        ],
+        { cwd: workingDirectory, env: texEnv, signal }
+      );
+      await runProcess(
+        "dvipng",
+        [
+          "--nogs",
+          "--norawps",
+          "-D",
+          String(DEFAULT_DPI),
+          "-T",
+          "tight",
+          "-z",
+          "9",
+          "-bg",
+          "Transparent",
+          "-fg",
+          dvipngColor(),
+          "-o",
+          "formula-raw.png",
+          "formula.dvi",
+        ],
+        { cwd: workingDirectory, env: texEnv, signal }
+      );
+      await postProcessPng(
+        workingDirectory,
         "formula-raw.png",
-        "formula.dvi",
-      ],
-      { cwd: workingDirectory, env: texEnv, signal }
-    );
-    await postProcessPng(
-      workingDirectory,
-      "formula-raw.png",
-      "formula.png",
-      signal
-    );
+        "formula.png",
+        signal
+      );
+    }
 
     const png = await readBoundedPng(outputPngPath);
     const dimensions = pngDimensions(png);
@@ -946,29 +964,7 @@ const renderLatexCached = (
   return pending;
 };
 
-const encodeKittyVirtualImage = (
-  base64: string,
-  imageId: number,
-  columns: number,
-  rows: number
-): string => {
-  const chunks: string[] = [];
-  for (let offset = 0; offset < base64.length; offset += KITTY_CHUNK_SIZE) {
-    const chunk = base64.slice(offset, offset + KITTY_CHUNK_SIZE);
-    const first = offset === 0;
-    const last = offset + KITTY_CHUNK_SIZE >= base64.length;
-    if (first) {
-      chunks.push(
-        `\x1b_Ga=T,f=100,q=2,U=1,i=${imageId},c=${columns},r=${rows},m=${last ? 0 : 1};${chunk}\x1b\\`
-      );
-    } else {
-      chunks.push(`\x1b_Gm=${last ? 0 : 1};${chunk}\x1b\\`);
-    }
-  }
-  return chunks.join("");
-};
-
-/** Build Kitty Unicode-placeholder rows for a rendered PNG. */
+/** Build a direct Kitty image line followed by its reserved terminal rows. */
 export const kittyPlaceholderLines = (
   image: RenderedLatex,
   width: number,
@@ -983,44 +979,27 @@ export const kittyPlaceholderLines = (
     latexAspectCorrection();
   let rows = Math.max(
     1,
-    Math.min(
-      ROW_COLUMN_DIACRITICS.length,
-      Math.round(displayHeightPx / cells.heightPx)
-    )
+    Math.min(MAX_IMAGE_ROWS, Math.round(displayHeightPx / cells.heightPx))
   );
   let columns = Math.max(1, Math.round(rows * columnsPerRow));
   if (columns > availableWidth) {
     columns = availableWidth;
     rows = Math.max(
       1,
-      Math.min(
-        ROW_COLUMN_DIACRITICS.length,
-        Math.round(columns / columnsPerRow)
-      )
+      Math.min(MAX_IMAGE_ROWS, Math.round(columns / columnsPerRow))
     );
   }
-  const red = Math.floor(image.imageId / 65_536) % 256;
-  const green = Math.floor(image.imageId / 256) % 256;
-  const blue = image.imageId % 256;
-  const color = `\x1b[38;2;${red};${green};${blue}m`;
-  const resetForeground = "\x1b[39m";
   const leftMargin = " ".repeat(paddingX);
-  const lines: string[] = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    // The first cell carries its row. Following cells inherit row/image ID and
-    // increment the column, which keeps placeholders compact and diffable.
-    const firstCell = `${KITTY_PLACEHOLDER}${String.fromCodePoint(ROW_COLUMN_DIACRITICS[row] ?? ROW_COLUMN_DIACRITICS[0])}`;
-    const placeholders = firstCell + KITTY_PLACEHOLDER.repeat(columns - 1);
-    const transmission =
-      row === 0
-        ? encodeKittyVirtualImage(image.base64, image.imageId, columns, rows)
-        : "";
-    lines.push(
-      `${transmission}${leftMargin}${color}${placeholders}${resetForeground}`
-    );
-  }
-  return lines;
+  const transmission = encodeKitty(image.base64, {
+    columns,
+    imageId: image.imageId,
+    moveCursor: false,
+    rows,
+  });
+  return [
+    `${leftMargin}${transmission}`,
+    ...Array.from({ length: rows - 1 }, () => ""),
+  ];
 };
 
 const isBlankRenderLine = (line: string | undefined): boolean =>
