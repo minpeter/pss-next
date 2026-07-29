@@ -1,3 +1,4 @@
+import type { ExtensionAPI as SharedExtensionAPI } from "@minpeter/pss-extension-api";
 import type {
   Agent,
   AgentEvent,
@@ -6,6 +7,10 @@ import type {
   ThreadStateMigration,
 } from "@minpeter/pss-runtime";
 import type { LanguageModel, ToolSet } from "ai";
+import type {
+  AssistantRenderer,
+  AssistantRendererRegistrationOptions,
+} from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { ExtensionCapability } from "./capabilities";
@@ -173,6 +178,10 @@ export interface CodingAgentExtensionRegistry {
     register(name: string, tool: ToolSet[string]): void;
   };
   readonly tui: {
+    registerAssistantRenderer(
+      renderer: AssistantRenderer,
+      options?: AssistantRendererRegistrationOptions
+    ): void;
     registerToolRenderer(
       toolName: string,
       renderer: ToolRendererMap[string]
@@ -181,13 +190,13 @@ export interface CodingAgentExtensionRegistry {
   use(hooks: AgentHooks): void;
 }
 
-export interface CodingAgentExtensionApi {
+export interface CodingAgentExtensionApi
+  extends SharedExtensionAPI<ExtensionCapability> {
   on<Type extends AgentEvent["type"]>(
     type: Type,
     handler: CodingAgentExtensionEventHandler<Type>
   ): void;
   on(type: "activate", handler: CodingAgentExtensionActivationHandler): void;
-  provide(capability: ExtensionCapability): void;
   use(hooks: AgentHooks): void;
 }
 

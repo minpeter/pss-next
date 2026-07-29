@@ -1,14 +1,9 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { assistantRenderer, instructions } from "@minpeter/pss-extension-api";
 import { createAgent } from "@minpeter/pss-runtime";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
-import {
-  command,
-  instructions,
-  threadMigration,
-  toolRenderer,
-  tools,
-} from "./capabilities";
+import { command, threadMigration, toolRenderer, tools } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
 
@@ -21,6 +16,147 @@ const qaTool = tool({
 });
 
 describe("coding-agent extension capabilities", () => {
+  it("registers one assistant renderer through the capability API", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["assistant renderer"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const host = await createCodingAgentExtensionHost([
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(renderer));
+        },
+        id: "assistant-renderer",
+      },
+    ]);
+
+    expect(host.assistantRenderer).toBe(renderer);
+    expect(host.getAssistantRendererOwner()).toBe("assistant-renderer");
+    await host.dispose();
+  });
+
+  it("rejects conflicting assistant renderers", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+
+    await expect(
+      createCodingAgentExtensionHost([
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer));
+          },
+          id: "first-renderer",
+        },
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer));
+          },
+          id: "second-renderer",
+        },
+      ])
+    ).rejects.toMatchObject({
+      cause: {
+        message:
+          'Assistant renderer from extension "second-renderer" conflicts with extension "first-renderer"',
+      },
+    });
+  });
+
+  it("lets a default assistant renderer replace a bundled fallback", async () => {
+    const fallback = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["fallback"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const preferred = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["preferred"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const host = await createCodingAgentExtensionHost([
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(fallback, { fallback: true }));
+        },
+        id: "bundled-fallback",
+      },
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(preferred, { override: true }));
+        },
+        id: "preferred-renderer",
+      },
+    ]);
+
+    expect(host.assistantRenderer).toBe(preferred);
+    expect(host.getAssistantRendererOwner()).toBe("preferred-renderer");
+    await host.dispose();
+  });
+
+  it("requires explicit intent to replace a bundled fallback", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+
+    await expect(
+      createCodingAgentExtensionHost([
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer, { fallback: true }));
+          },
+          id: "bundled-fallback",
+        },
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer));
+          },
+          id: "implicit-replacement",
+        },
+      ])
+    ).rejects.toMatchObject({
+      cause: {
+        message:
+          'Assistant renderer from extension "implicit-replacement" conflicts with extension "bundled-fallback"; register with { override: true } to replace the fallback',
+      },
+    });
+  });
+
   it("exposes only the three factory composition methods", async () => {
     let keys: string[] = [];
     const host = await createCodingAgentExtensionHost([

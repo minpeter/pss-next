@@ -1,4 +1,8 @@
 import type { AgentEvent, AgentHooks } from "@minpeter/pss-runtime";
+import type {
+  AssistantRenderer,
+  AssistantRendererRegistrationOptions,
+} from "../tui/assistant-renderer";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { ExtensionCapability } from "./capabilities";
 import {
@@ -65,6 +69,34 @@ export function createCodingAgentExtensionRegistry({
     );
     collections.commands.push(command);
     recordCommandOwners(collections.owners.commands, [command], extensionId);
+  };
+  const registerAssistantRenderer = (
+    renderer: unknown,
+    options: AssistantRendererRegistrationOptions = {}
+  ) => {
+    assertOpen();
+    if (typeof renderer !== "function") {
+      throw new TypeError("Assistant renderer must be a function");
+    }
+    if (collections.assistantRenderer !== undefined) {
+      const existingOwner = collections.owners.assistantRenderer ?? extensionId;
+      throw new Error(
+        `Assistant renderer from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
+    }
+    const fallback = options.fallback === true;
+    const override = options.override === true;
+    if (fallback && override) {
+      throw new TypeError(
+        "Assistant renderer cannot be both a fallback and an override"
+      );
+    }
+    collections.assistantRenderer = {
+      fallback,
+      override,
+      renderer: renderer as AssistantRenderer,
+    };
+    collections.owners.assistantRenderer = extensionId;
   };
   const registerInstruction = (value: unknown) => {
     assertOpen();
@@ -152,6 +184,19 @@ export function createCodingAgentExtensionRegistry({
     assertOpen();
     const validated = validateExtensionCapability(capability, extensionId);
     switch (validated.kind) {
+      case "assistant-renderer":
+        if (validated.fallback) {
+          registerAssistantRenderer(validated.renderer, {
+            fallback: true,
+          });
+        } else if (validated.override) {
+          registerAssistantRenderer(validated.renderer, {
+            override: true,
+          });
+        } else {
+          registerAssistantRenderer(validated.renderer);
+        }
+        return;
       case "command":
         registerCommand(validated.command);
         return;
@@ -209,7 +254,10 @@ export function createCodingAgentExtensionRegistry({
     runtime: { use },
     storage: { registerThreadMigration: registerMigration },
     tools: { register: registerTool },
-    tui: { registerToolRenderer: registerRenderer },
+    tui: {
+      registerAssistantRenderer,
+      registerToolRenderer: registerRenderer,
+    },
     use,
   };
 }

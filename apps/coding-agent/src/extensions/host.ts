@@ -6,6 +6,7 @@ import type {
 } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { RegisteredSessionGuard } from "../sessions/session-guards";
+import type { AssistantRenderer } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import { composeAgentHooks, type RegisteredAgentHooks } from "./compose-hooks";
@@ -90,6 +91,10 @@ export class CodingAgentExtensionHost {
           ),
       };
     });
+  }
+
+  get assistantRenderer(): AssistantRenderer | undefined {
+    return this.#collections.assistantRenderer?.renderer;
   }
 
   get hookRegistrations(): readonly RegisteredAgentHooks[] {
@@ -190,6 +195,10 @@ export class CodingAgentExtensionHost {
 
   getToolOwner(name: string): string | undefined {
     return this.#collections.owners.tools.get(name);
+  }
+
+  getAssistantRendererOwner(): string | undefined {
+    return this.#collections.owners.assistantRenderer;
   }
 
   getToolRendererOwner(name: string): string | undefined {

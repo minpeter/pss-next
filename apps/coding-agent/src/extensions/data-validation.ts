@@ -1,6 +1,10 @@
 export type DataRecord = Readonly<Record<string, unknown>>;
 
-export function snapshotDataRecord(value: unknown, label: string): DataRecord {
+export function snapshotDataRecord(
+  value: unknown,
+  label: string,
+  allowedSymbols: readonly symbol[] = []
+): DataRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be a plain data object`);
   }
@@ -10,7 +14,7 @@ export function snapshotDataRecord(value: unknown, label: string): DataRecord {
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
   for (const key of Reflect.ownKeys(descriptors)) {
-    if (typeof key === "symbol") {
+    if (typeof key === "symbol" && !allowedSymbols.includes(key)) {
       throw new TypeError(`${label} contains unsupported symbol property`);
     }
     const descriptor = Reflect.get(descriptors, key) as

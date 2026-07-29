@@ -1,3 +1,7 @@
+import type {
+  AssistantRendererCapability,
+  InstructionsCapability,
+} from "@minpeter/pss-extension-api";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
@@ -10,10 +14,6 @@ declare const capabilityBrand: unique symbol;
 interface Capability<Kind extends string> {
   readonly kind: Kind;
   readonly [capabilityBrand]: true;
-}
-
-export interface InstructionsCapability extends Capability<"instructions"> {
-  readonly fragments: readonly string[];
 }
 
 export interface ToolsCapability extends Capability<"tools"> {
@@ -50,6 +50,7 @@ export interface ResourcesCapability extends Capability<"resources"> {
 }
 
 export type ExtensionCapability =
+  | AssistantRendererCapability
   | CommandCapability
   | InstructionsCapability
   | ModelProviderCapability
@@ -58,13 +59,6 @@ export type ExtensionCapability =
   | ThreadMigrationCapability
   | ToolRendererCapability
   | ToolsCapability;
-
-export function instructions(...fragments: string[]): InstructionsCapability {
-  return Object.freeze({
-    fragments: Object.freeze([...fragments]),
-    kind: "instructions",
-  }) as InstructionsCapability;
-}
 
 export function tools(definitions: ToolSet): ToolsCapability {
   return Object.freeze({

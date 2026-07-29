@@ -4,6 +4,67 @@ import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
 
 describe("coding-agent extension capability security", () => {
+  it("rejects malformed assistant renderer capabilities", async () => {
+    const invalidRenderer: CodingAgentExtensionModule = {
+      default(pss) {
+        pss.provide({
+          fallback: false,
+          kind: "assistant-renderer",
+          override: false,
+          renderer: "not-a-function",
+        } as never);
+      },
+      id: "invalid-assistant-renderer",
+    };
+    const extraProperty: CodingAgentExtensionModule = {
+      default(pss) {
+        pss.provide({
+          extra: true,
+          fallback: false,
+          kind: "assistant-renderer",
+          override: false,
+          renderer: () => undefined,
+        } as never);
+      },
+      id: "extra-assistant-renderer-property",
+    };
+
+    await expect(
+      createCodingAgentExtensionHost([invalidRenderer])
+    ).rejects.toMatchObject({
+      cause: { message: "Assistant renderer must be a function" },
+    });
+    await expect(
+      createCodingAgentExtensionHost([extraProperty])
+    ).rejects.toMatchObject({
+      cause: {
+        message: 'Extension capability contains unsupported property "extra"',
+      },
+    });
+  });
+
+  it("rejects contradictory assistant renderer registration intent", async () => {
+    const contradictory: CodingAgentExtensionModule = {
+      default(pss) {
+        pss.provide({
+          fallback: true,
+          kind: "assistant-renderer",
+          override: true,
+          renderer: () => undefined,
+        } as never);
+      },
+      id: "contradictory-assistant-renderer",
+    };
+
+    await expect(
+      createCodingAgentExtensionHost([contradictory])
+    ).rejects.toMatchObject({
+      cause: {
+        message: "Assistant renderer cannot be both a fallback and an override",
+      },
+    });
+  });
+
   it("rejects accessor capability envelopes", async () => {
     const capability = {};
     Object.defineProperty(capability, "kind", {

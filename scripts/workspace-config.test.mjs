@@ -35,4 +35,10 @@ describe("workspace metadata", () => {
       readPnpmWorkspacePatterns(pnpmWorkspace)
     );
   });
+
+  it("keeps host-provided peers out of package dependency snapshots", () => {
+    const pnpmWorkspace = readFileSync("pnpm-workspace.yaml", "utf8");
+
+    expect(pnpmWorkspace).toContain("autoInstallPeers: false");
+  });
 });

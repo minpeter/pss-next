@@ -19,12 +19,12 @@ import {
   isModelEnvValidationError,
   readOpenAICompatibleModelEnv,
 } from "../env";
-import {
-  type CodingAgentExtensionHost,
-  type CodingAgentExtensionInput,
-  type CodingAgentExtensionUi,
-  createCodingAgentExtensionHost,
+import type {
+  CodingAgentExtensionHost,
+  CodingAgentExtensionInput,
+  CodingAgentExtensionUi,
 } from "../extensions";
+import { createCodingAgentExtensionHostWithDefaults } from "../extensions/defaults";
 import { snapshotExtensionState } from "../extensions/state-snapshot";
 import { composeCodingAgentInstructions } from "../instructions";
 import { type CodingModelSession, createCodingModelSession } from "../model";
@@ -70,6 +70,10 @@ export interface StartTuiOptions {
   readonly sessionName?: string;
   /** Replaces the TUI's default optional OpenSearch tools. */
   readonly tools?: ToolSet;
+}
+
+interface StartTuiDependencies {
+  readonly createTui: typeof createAgentTUI;
 }
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
@@ -137,12 +141,20 @@ const modelSubtitleLabel = (
   return `${modelSession.currentModelId()}${modelSession.isFreeTier ? " (free tier)" : ""}`;
 };
 
-export async function startTui(options: StartTuiOptions = {}): Promise<number> {
+const foregroundThemeConfig = (): Pick<AgentTUIConfig, "theme"> => {
+  const foregroundColor = process.env.PSS_TUI_FOREGROUND;
+  return foregroundColor === undefined ? {} : { theme: { foregroundColor } };
+};
+
+export async function startTui(
+  options: StartTuiOptions = {},
+  dependencies: StartTuiDependencies = { createTui: createAgentTUI }
+): Promise<number> {
   const threadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
-  let extensionHost = await createCodingAgentExtensionHost(
+  let extensionHost = await createCodingAgentExtensionHostWithDefaults(
     options.extensions ?? []
   );
   providerEmitter.current = (type, payload) => {
@@ -355,6 +367,8 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     const tuiConfig: AgentTUIConfig = {
+      ...assistantRendererRuntime(extensionHost),
+      ...foregroundThemeConfig(),
       thread: {
         interrupt: () => thread.interrupt(),
         send: (input) => thread.send(input),
@@ -521,6 +535,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
       agent = nextAgent;
       extensionHost = host;
       thread = agent.thread(currentSession.key);
+      installAssistantRendererRuntime(tuiConfig, host);
       tuiConfig.commands = [...commands];
       tuiConfig.toolRenderers = toolRenderers;
     };
@@ -557,7 +572,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
           activateHost: activateReplacementHost,
           createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
           createHost: async (loaded) => {
-            const host = await createCodingAgentExtensionHost(
+            const host = await createCodingAgentExtensionHostWithDefaults(
               loaded.extensions
             );
             // Re-discover context resources against the replacement host so
@@ -589,6 +604,9 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             }
           },
           loadExtensions: reloadExtensions,
+          installRuntime: ({ agent, commands, host, toolRenderers }) => {
+            installRuntime(host, agent, commands, toolRenderers);
+          },
           mergeCommands: (host) => {
             const merged = composeCommands(host);
             reloadCommandNotices = merged.notices;
@@ -610,9 +628,10 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
             // The recovered runtime must run with the resources it was built
             // with, not the replacement's half-adopted ones.
             contextResources = previous.context;
-            const recoveredHost = await createCodingAgentExtensionHost(
-              currentExtensionInputs
-            );
+            const recoveredHost =
+              await createCodingAgentExtensionHostWithDefaults(
+                currentExtensionInputs
+              );
             let recoveredAgent:
               | Awaited<ReturnType<typeof createCodingAgent>>
               | undefined;
@@ -632,12 +651,12 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
                 RECOVERY_ACTIVATION_TIMEOUT_MS,
                 "Recovered extension activation"
               );
-              installRuntime(
-                recoveredHost,
-                recoveredAgent,
+              return {
+                agent: recoveredAgent,
                 commands,
-                toolRenderers
-              );
+                host: recoveredHost,
+                toolRenderers,
+              };
             } catch (error) {
               await recoveredHost.revokeExtensionState().catch(() => undefined);
               await Promise.allSettled([
@@ -686,7 +705,6 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
         contextResources = previous.context;
         throw error;
       }
-      installRuntime(swap.host, swap.agent, swap.commands, swap.toolRenderers);
       currentExtensionInputs = swap.loadedExtensions;
       for (const notice of [
         ...swap.notices,
@@ -698,7 +716,7 @@ export async function startTui(options: StartTuiOptions = {}): Promise<number> {
     };
 
     try {
-      await createAgentTUI(tuiConfig);
+      await dependencies.createTui(tuiConfig);
     } finally {
       emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
@@ -746,6 +764,30 @@ export function mergeToolRenderers(
     merged[toolName] = renderer;
   }
   return merged;
+}
+
+type AssistantRendererRuntimeConfig = Pick<
+  AgentTUIConfig,
+  "assistantRenderer" | "assistantRendererSignal"
+>;
+
+type AssistantRendererRuntimeHost = Pick<
+  CodingAgentExtensionHost,
+  "assistantRenderer" | "signal"
+>;
+
+const assistantRendererRuntime = (
+  host: AssistantRendererRuntimeHost
+): AssistantRendererRuntimeConfig => ({
+  assistantRenderer: host.assistantRenderer,
+  assistantRendererSignal: host.signal,
+});
+
+export function installAssistantRendererRuntime(
+  config: AssistantRendererRuntimeConfig,
+  host: AssistantRendererRuntimeHost
+): void {
+  Object.assign(config, assistantRendererRuntime(host));
 }
 
 function guardExtensionCommands(

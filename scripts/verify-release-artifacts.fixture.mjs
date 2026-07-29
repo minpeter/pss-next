@@ -65,7 +65,12 @@ export function createTrackedTempRoot(prefix) {
 export function createFixture() {
   const cwd = createTrackedTempRoot("pss-release-artifacts-");
 
-  for (const packageName of ["runtime", "coding-agent"]) {
+  for (const packageName of [
+    "runtime",
+    "extension-api",
+    "extension-latex",
+    "coding-agent",
+  ]) {
     const packageRoot = fixturePackageRoot(cwd, packageName);
     mkdirSync(join(packageRoot, "dist"), { recursive: true });
     writeFileSync(
@@ -101,9 +106,13 @@ function packageMetadata(packageName) {
 }
 
 function fixturePackageRoot(cwd, packageName) {
-  return packageName === "coding-agent"
-    ? join(cwd, "apps", "coding-agent")
-    : join(cwd, "packages", packageName);
+  if (packageName === "coding-agent") {
+    return join(cwd, "apps", "coding-agent");
+  }
+  if (packageName === "extension-latex") {
+    return join(cwd, "extensions", "latex");
+  }
+  return join(cwd, "packages", packageName);
 }
 
 function writePackageDeclarationFixtures(cwd, packageName, packageRoot) {
@@ -115,6 +124,9 @@ function writePackageDeclarationFixtures(cwd, packageName, packageRoot) {
 
   if (packageName === "runtime") {
     writeRuntimeDeclarationFixtures(cwd, packageName);
+    return;
+  }
+  if (packageName !== "coding-agent") {
     return;
   }
 

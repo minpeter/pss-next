@@ -1,6 +1,7 @@
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { RegisteredSessionGuard } from "../sessions/session-guards";
+import type { AssistantRenderer } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { RegisteredAgentHooks } from "./compose-hooks";
@@ -12,7 +13,14 @@ import {
 } from "./registry-conflicts";
 import type { CodingAgentExtensionModelProvider } from "./types";
 
+export interface RegisteredAssistantRenderer {
+  readonly fallback: boolean;
+  readonly override: boolean;
+  readonly renderer: AssistantRenderer;
+}
+
 export interface ExtensionRegistryCollections {
+  assistantRenderer?: RegisteredAssistantRenderer;
   readonly commands: TuiCommand[];
   readonly events: RegisteredCodingAgentExtensionEvent[];
   readonly hooks: RegisteredAgentHooks[];
@@ -27,6 +35,7 @@ export interface ExtensionRegistryCollections {
 }
 
 interface ExtensionContributionOwners {
+  assistantRenderer?: string;
   readonly commands: Map<string, string>;
   readonly migrations: Map<string, string>;
   readonly modelProviders: Map<string, string>;
@@ -61,6 +70,22 @@ export function commitExtensionRegistryCollections(
   staged: ExtensionRegistryCollections,
   extensionId: string
 ): void {
+  const existingAssistantRenderer = target.assistantRenderer;
+  const incomingAssistantRenderer = staged.assistantRenderer;
+  if (
+    existingAssistantRenderer !== undefined &&
+    incomingAssistantRenderer !== undefined &&
+    !(existingAssistantRenderer.fallback && incomingAssistantRenderer.override)
+  ) {
+    const existingOwner = target.owners.assistantRenderer ?? extensionId;
+    const overrideHint =
+      existingAssistantRenderer.fallback && !incomingAssistantRenderer.override
+        ? "; register with { override: true } to replace the fallback"
+        : "";
+    throw new Error(
+      `Assistant renderer from extension "${extensionId}" conflicts with extension "${existingOwner}"${overrideHint}`
+    );
+  }
   assertNoCommandConflicts(
     target.commands,
     staged.commands,
@@ -106,6 +131,10 @@ export function commitExtensionRegistryCollections(
   target.resourceRoots.prompts.push(...staged.resourceRoots.prompts);
   target.resourceRoots.skills.push(...staged.resourceRoots.skills);
   target.sessionGuards.push(...staged.sessionGuards);
+  if (incomingAssistantRenderer !== undefined) {
+    target.assistantRenderer = incomingAssistantRenderer;
+    target.owners.assistantRenderer = extensionId;
+  }
   for (const [id, provider] of staged.modelProviders) {
     target.modelProviders.set(id, provider);
     target.owners.modelProviders.set(id, extensionId);
