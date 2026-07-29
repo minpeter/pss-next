@@ -46,8 +46,8 @@ describe("SessionSelectorComponent", () => {
   it("shows each session as one compact line", () => {
     const { text } = createSelector();
     const rendered = text();
-    expect(rendered).toContain("→ main · #current");
-    expect(rendered).toContain("parser spike · #spike");
+    expect(rendered).toContain("→ main  #current");
+    expect(rendered).toContain("parser spike  #spike");
     expect(rendered).not.toContain("cwd:/work");
   });
 
@@ -112,7 +112,7 @@ describe("SessionSelectorComponent", () => {
       .render(80)
       .map((line) => line.replace(ANSI_PATTERN, ""))
       .join("\n");
-    expect(rendered).toContain("→ main · #aaaaaaaa");
+    expect(rendered).toContain("→ main  #aaaaaaaa");
     expect(rendered).toContain("updated 2026-07-29 ✓");
     expect(rendered).not.toContain("#bbbbbbbb");
     expect(rendered).not.toContain("2026-07-27");
@@ -165,6 +165,7 @@ describe("SessionSelectorComponent", () => {
       .filter((line) => line.includes("updated"));
     expect(rows).toHaveLength(2);
     expect(rows[0]?.indexOf("updated")).toBe(rows[1]?.indexOf("updated"));
+    expect(rows[0]?.indexOf("updated")).toBe(35);
     expect(rows.join("\n")).not.toContain(
       "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong"
     );

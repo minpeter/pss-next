@@ -1,8 +1,5 @@
 import type { CodingAgentExtensionUi } from "../extensions/types";
-import {
-  sessionDisplayLabel,
-  sessionUpdatedLabel,
-} from "../sessions/session-display";
+import { sessionUpdatedLabel } from "../sessions/session-display";
 import type { SessionChangeEvent } from "../sessions/session-guards";
 import type { SessionIndexEntry } from "../sessions/session-index";
 import {
@@ -15,6 +12,7 @@ import type {
   TuiCommandArgumentCompletion,
   TuiCommandResult,
 } from "./command";
+import { sessionPrimaryLabel } from "./session-option-format";
 
 /** Extension-UI select is capped at 100 options. */
 const MAX_PICKER_OPTIONS = 100;
@@ -117,7 +115,7 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
         }
         completions.push({
           description: sessionUpdatedLabel(session),
-          label: sessionDisplayLabel(session),
+          label: sessionPrimaryLabel(session),
           value,
         });
       }

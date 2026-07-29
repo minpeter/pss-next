@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import type { SessionIndexEntry } from "../sessions/session-index";
@@ -212,10 +213,26 @@ describe("/resume", () => {
     expect(completions).toEqual([
       {
         description: "updated 2026-01-01 00:00",
-        label: "spike · #2",
+        label: "spike  #2",
         value: "spike",
       },
     ]);
+  });
+
+  it("keeps the short id visible in long autocomplete labels", async () => {
+    const { context, manager } = createContext();
+    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      entry("cwd:/work#deadbeef", {
+        name: "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong",
+      }),
+    ]);
+    const completions = await command(
+      context,
+      "resume"
+    ).getArgumentCompletions?.("ultra");
+    const label = completions?.[0]?.label ?? "";
+    expect(visibleWidth(label)).toBeLessThanOrEqual(30);
+    expect(label).toContain("#deadbeef");
   });
 
   it("defers no-argument selection to the TUI without mutating sessions", async () => {
