@@ -79,7 +79,7 @@
     "preview:edit": "tsx --conditions=@minpeter/pss-source scripts/preview-edit-render.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.14",
+    "@ai-sdk/openai-compatible": "3.0.16",
     "@earendil-works/pi-tui": "^0.82.1",
     "@minpeter/opensearch": "0.1.1",
     "@minpeter/pss-extension-api": "workspace:^",

@@ -35,7 +35,7 @@
     "repo:affected": "turbo query affected"
   },
   "devDependencies": {
-    "@ai-sdk/openai-compatible": "3.0.14",
+    "@ai-sdk/openai-compatible": "3.0.16",
     "@babel/core": "8.0.1",
     "@biomejs/biome": "2.5.5",
     "@earendil-works/pi-tui": "^0.82.1",
