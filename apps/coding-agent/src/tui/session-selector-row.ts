@@ -4,7 +4,9 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import {
+  sessionDisplayKey,
   sessionDisplayLabel,
+  sessionDisplayTitle,
   sessionUpdatedLabel,
 } from "../sessions/session-display";
 import type { SessionIndexEntry } from "../sessions/session-index";
@@ -16,6 +18,9 @@ const ANSI_CYAN = "\x1b[36m";
 const ANSI_DIM = "\x1b[2m";
 const ANSI_GRAY = "\x1b[90m";
 const ANSI_GREEN = "\x1b[32m";
+const LABEL_COLUMN_MAX_WIDTH = 48;
+const LABEL_COLUMN_MIN_WIDTH = 16;
+const COLUMN_GAP = "  ";
 
 const style = (prefix: string, text: string): string =>
   `${prefix}${text}${ANSI_RESET}`;
@@ -59,12 +64,27 @@ export class SessionSelectorRow implements Component {
   render(width: number): string[] {
     const prefix = this.#selected ? "→ " : "  ";
     const suffix = this.#current ? " ✓" : "";
-    const content = `${sanitizeTerminalText(sessionDisplayLabel(this.#entry))}  ${sessionUpdatedLabel(this.#entry)}`;
-    const contentWidth = Math.max(
+    const availableWidth = Math.max(
       0,
       width - 1 - visibleWidth(prefix) - visibleWidth(suffix)
     );
-    const line = `${prefix}${truncateToWidth(content, contentWidth)}`;
+    const updated = sessionUpdatedLabel(this.#entry);
+    const updatedWidth = visibleWidth(updated);
+    const showUpdated =
+      availableWidth >=
+      LABEL_COLUMN_MIN_WIDTH + visibleWidth(COLUMN_GAP) + updatedWidth;
+    const labelWidth = showUpdated
+      ? Math.min(
+          LABEL_COLUMN_MAX_WIDTH,
+          availableWidth - visibleWidth(COLUMN_GAP) - updatedWidth
+        )
+      : availableWidth;
+    const label = compactSessionLabel(this.#entry, labelWidth);
+    const paddedLabel = `${label}${" ".repeat(Math.max(0, labelWidth - visibleWidth(label)))}`;
+    const content = showUpdated
+      ? `${paddedLabel}${COLUMN_GAP}${updated}`
+      : paddedLabel;
+    const line = `${prefix}${content}`;
     return [
       this.#selected
         ? `${style(ANSI_CYAN, ` ${line}`)}${this.#current ? style(ANSI_GREEN, suffix) : ""}`
@@ -72,3 +92,23 @@ export class SessionSelectorRow implements Component {
     ];
   }
 }
+
+const compactSessionLabel = (
+  entry: SessionIndexEntry,
+  width: number
+): string => {
+  const key = sanitizeTerminalText(sessionDisplayKey(entry));
+  const separator = " · ";
+  const reservedWidth = visibleWidth(separator) + visibleWidth(key);
+  if (width <= reservedWidth) {
+    return truncateToWidth(
+      sanitizeTerminalText(sessionDisplayLabel(entry)),
+      width
+    );
+  }
+  const title = truncateToWidth(
+    sanitizeTerminalText(sessionDisplayTitle(entry)),
+    width - reservedWidth
+  );
+  return `${title}${separator}${key}`;
+};

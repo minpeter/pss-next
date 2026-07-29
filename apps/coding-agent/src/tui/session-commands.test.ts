@@ -211,7 +211,7 @@ describe("/resume", () => {
     ).getArgumentCompletions?.("sp");
     expect(completions).toEqual([
       {
-        description: "updated 2026-01-01T00:00:00.000Z",
+        description: "updated 2026-01-01 00:00",
         label: "spike · #2",
         value: "spike",
       },

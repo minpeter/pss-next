@@ -46,12 +46,8 @@ describe("SessionSelectorComponent", () => {
   it("shows each session as one compact line", () => {
     const { text } = createSelector();
     const rendered = text();
-    expect(rendered).toContain(
-      "→ main · #current  updated 2026-01-03T00:00:00.000Z ✓"
-    );
-    expect(rendered).toContain(
-      "parser spike · #spike  updated 2026-01-02T00:00:00.000Z"
-    );
+    expect(rendered).toContain("→ main · #current");
+    expect(rendered).toContain("parser spike · #spike");
     expect(rendered).not.toContain("cwd:/work");
   });
 
@@ -116,7 +112,8 @@ describe("SessionSelectorComponent", () => {
       .render(80)
       .map((line) => line.replace(ANSI_PATTERN, ""))
       .join("\n");
-    expect(rendered).toContain("→ main · #aaaaaaaa  updated 2026-07-29 ✓");
+    expect(rendered).toContain("→ main · #aaaaaaaa");
+    expect(rendered).toContain("updated 2026-07-29 ✓");
     expect(rendered).not.toContain("#bbbbbbbb");
     expect(rendered).not.toContain("2026-07-27");
   });
@@ -138,5 +135,42 @@ describe("SessionSelectorComponent", () => {
         line.replace(ANSI_PATTERN, "").includes("Resume a session")
       )
     ).toHaveLength(1);
+  });
+
+  it("aligns compact timestamps while truncating long titles", () => {
+    const selector = new SessionSelectorComponent({
+      currentSessionKey: "cwd:/work#long",
+      onCancel: vi.fn(),
+      onSelect: vi.fn(),
+      sessions: [
+        {
+          createdAt: "",
+          cwd: "/work",
+          key: "cwd:/work#long",
+          name: "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong",
+          updatedAt: "2026-07-29T18:05:14.540Z",
+        },
+        {
+          createdAt: "",
+          cwd: "/work",
+          key: "cwd:/work#short",
+          name: "short",
+          updatedAt: "2026-07-29T18:01:02.127Z",
+        },
+      ],
+    });
+    const rows = selector
+      .render(100)
+      .map((line) => line.replace(ANSI_PATTERN, ""))
+      .filter((line) => line.includes("updated"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.indexOf("updated")).toBe(rows[1]?.indexOf("updated"));
+    expect(rows.join("\n")).not.toContain(
+      "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong"
+    );
+
+    const narrowRows = selector.render(30);
+    expect(narrowRows.every((line) => visibleWidth(line) <= 30)).toBe(true);
+    expect(narrowRows.join("\n")).not.toContain("updated");
   });
 });

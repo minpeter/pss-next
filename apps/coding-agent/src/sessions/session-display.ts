@@ -1,12 +1,16 @@
 import type { SessionIndexEntry } from "./session-index";
 
-export const sessionDisplayLabel = (entry: SessionIndexEntry): string => {
-  const shortKey = sessionShortKey(entry.key);
-  return `${entry.name ?? "untitled"} · ${shortKey}`;
-};
+export const sessionDisplayLabel = (entry: SessionIndexEntry): string =>
+  `${sessionDisplayTitle(entry)} · ${sessionDisplayKey(entry)}`;
+
+export const sessionDisplayKey = (entry: SessionIndexEntry): string =>
+  sessionShortKey(entry.key);
+
+export const sessionDisplayTitle = (entry: SessionIndexEntry): string =>
+  entry.name ?? "untitled";
 
 export const sessionUpdatedLabel = (entry: SessionIndexEntry): string =>
-  `updated ${entry.updatedAt}`;
+  `updated ${entry.updatedAt.slice(0, 16).replace("T", " ")}`;
 
 const sessionShortKey = (key: string): string => {
   const separator = key.lastIndexOf("#");
