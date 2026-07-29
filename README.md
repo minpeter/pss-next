@@ -7,9 +7,11 @@
 > Just want the terminal agent? [`apps/coding-agent`](apps/coding-agent/README.md)
 > opens with the install steps for the `pss` TUI and the `pss exec` runner.
 
-Small agent runtime workspace.
+Small agent runtime workspace. Everything ships under the `pss` prefix, short
+for Plugsuits.
 
-- `@minpeter/pss-runtime`: runtime, threads, model loop, core hooks, and instrumentation.
+- `@minpeter/pss-runtime`: runtime, threads, model loop, core hooks, and
+  instrumentation.
 - `@minpeter/pss-coding-agent`: model wiring, workspace coding tools, the `pss`
   TUI, and the `pss exec` headless runner, with OpenSearch-backed `web_search`
   and `web_fetch` tools enabled by default.
@@ -60,6 +62,7 @@ events. Deltas are never persisted and bypass `AgentHooks` interception; live
 stream consumers and instrumentation can still observe them. The committed
 events remain the durable record. See the streaming deltas section of
 [`packages/runtime/README.md`](packages/runtime/README.md#streaming-deltas).
+
 Use `thread.send(input)` for a new user turn. If a turn is already active, the
 new turn is queued until the active turn finishes. Use `thread.steer(input)` when
 the input should steer the active turn; if no turn is active, it starts a normal
@@ -137,12 +140,8 @@ Run the TUI:
 pnpm dlx @minpeter/pss-coding-agent
 ```
 
-or install it:
-
-```sh
-pnpm add -g @minpeter/pss-coding-agent
-pss
-```
+See [`apps/coding-agent`](apps/coding-agent/README.md) for global installs,
+updates, and the `pss exec` runner.
 
 In the `pss` TUI, submitting while a run is active steers the current run.
 Submitting while idle starts a normal new turn.
