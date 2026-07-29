@@ -168,7 +168,7 @@ export class SessionSelectorComponent extends Container {
       ? fuzzyFilter(
           [...this.#sessions],
           query,
-          (entry) => `${entry.name ?? ""} ${entry.key}`
+          (entry) => `${entry.name ?? ""} ${sessionKeySuffix(entry.key)}`
         )
       : this.#sessions;
     this.#selectedIndex = Math.min(
@@ -223,3 +223,11 @@ export class SessionSelectorComponent extends Container {
     }
   }
 }
+
+const sessionKeySuffix = (key: string): string => {
+  const separator = key.lastIndexOf("#");
+  if (separator >= 0) {
+    return key.slice(separator + 1);
+  }
+  return key.startsWith("cwd:") ? "" : key;
+};

@@ -78,6 +78,43 @@ describe("SessionSelectorComponent", () => {
     expect(onSelect).toHaveBeenCalledWith("cwd:/work#spike");
   });
 
+  it("does not match queries against the shared cwd prefix", () => {
+    const selector = new SessionSelectorComponent({
+      currentSessionKey: "cwd:/home/minpeter/project#aaaaaaaa",
+      initialQuery: "m",
+      onCancel: vi.fn(),
+      onSelect: vi.fn(),
+      sessions: [
+        {
+          createdAt: "",
+          cwd: "/home/minpeter/project",
+          key: "cwd:/home/minpeter/project#aaaaaaaa",
+          name: "main",
+          updatedAt: "2026-07-29",
+        },
+        {
+          createdAt: "",
+          cwd: "/home/minpeter/project",
+          key: "cwd:/home/minpeter/project#bbbbbbbb",
+          updatedAt: "2026-07-28",
+        },
+        {
+          createdAt: "",
+          cwd: "/home/minpeter/project",
+          key: "cwd:/home/minpeter/project",
+          updatedAt: "2026-07-27",
+        },
+      ],
+    });
+    const rendered = selector
+      .render(80)
+      .map((line) => line.replace(ANSI_PATTERN, ""))
+      .join("\n");
+    expect(rendered).toContain("→ main ✓");
+    expect(rendered).not.toContain("#bbbbbbbb");
+    expect(rendered).not.toContain("2026-07-27");
+  });
+
   it("moves with arrows and cancels with escape", () => {
     const { onCancel, onSelect, selector } = createSelector();
     selector.handleInput(DOWN_ARROW);
