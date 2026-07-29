@@ -1,9 +1,30 @@
 # @minpeter/pss-coding-agent
 
-Model wiring and the `pss` TUI for pss-next. The TUI includes
+Model wiring and the `pss` TUI for pss-runtime. The TUI includes
 `@minpeter/opensearch`-backed `web_search` and `web_fetch` tools by default;
 OpenSearch picks its search/fetch providers from the environment and falls
 back to keyless engines when no provider API key is configured.
+
+## Install
+
+```sh
+pnpm add -g @minpeter/pss-coding-agent
+pss
+```
+
+Run it once without installing:
+
+```sh
+pnpm dlx @minpeter/pss-coding-agent
+```
+
+Set `AI_API_KEY`, `AI_BASE_URL`, and `AI_MODEL` before the first run (a `.env`
+next to the working directory is picked up automatically). The installed
+binaries are `pss` and `pss-coding-agent`; for one headless task use `pss exec
+--workspace . --prompt "..."`. See [CLI](#cli) for updates, `pss exec` flags,
+and thread inspection, and [Env](#env) for the full variable list.
+
+## Library use
 
 ```ts
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
@@ -361,17 +382,6 @@ metadata remain readable as a generic `Request failed` message without
 speculative guidance.
 
 ## CLI
-
-```sh
-pnpm dlx @minpeter/pss-coding-agent
-```
-
-```sh
-pnpm add -g @minpeter/pss-coding-agent
-pss
-```
-
-CLI commands: `pss`, `pss-coding-agent`.
 
 Update a global install, or preview what an update would do:
 
