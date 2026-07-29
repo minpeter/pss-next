@@ -209,7 +209,13 @@ describe("/resume", () => {
       context,
       "resume"
     ).getArgumentCompletions?.("sp");
-    expect(completions).toEqual([expect.objectContaining({ value: "spike" })]);
+    expect(completions).toEqual([
+      {
+        description: "updated 2026-01-01T00:00:00.000Z",
+        label: "spike · #2",
+        value: "spike",
+      },
+    ]);
   });
 
   it("defers no-argument selection to the TUI without mutating sessions", async () => {

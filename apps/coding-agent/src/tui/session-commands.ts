@@ -1,4 +1,8 @@
 import type { CodingAgentExtensionUi } from "../extensions/types";
+import {
+  sessionDisplayLabel,
+  sessionUpdatedLabel,
+} from "../sessions/session-display";
 import type { SessionChangeEvent } from "../sessions/session-guards";
 import type { SessionIndexEntry } from "../sessions/session-index";
 import {
@@ -112,8 +116,8 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
           continue;
         }
         completions.push({
-          description: `updated ${session.updatedAt}`,
-          label: describeSession(session),
+          description: sessionUpdatedLabel(session),
+          label: sessionDisplayLabel(session),
           value,
         });
       }

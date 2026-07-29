@@ -43,10 +43,16 @@ const createSelector = () => {
 };
 
 describe("SessionSelectorComponent", () => {
-  it("shows the current session first with name and key", () => {
+  it("shows each session as one compact line", () => {
     const { text } = createSelector();
-    expect(text()).toContain("→ main ✓");
-    expect(text()).toContain("cwd:/work#current");
+    const rendered = text();
+    expect(rendered).toContain(
+      "→ main · #current  updated 2026-01-03T00:00:00.000Z ✓"
+    );
+    expect(rendered).toContain(
+      "parser spike · #spike  updated 2026-01-02T00:00:00.000Z"
+    );
+    expect(rendered).not.toContain("cwd:/work");
   });
 
   it("filters by session name and selects with enter", () => {
@@ -110,7 +116,7 @@ describe("SessionSelectorComponent", () => {
       .render(80)
       .map((line) => line.replace(ANSI_PATTERN, ""))
       .join("\n");
-    expect(rendered).toContain("→ main ✓");
+    expect(rendered).toContain("→ main · #aaaaaaaa  updated 2026-07-29 ✓");
     expect(rendered).not.toContain("#bbbbbbbb");
     expect(rendered).not.toContain("2026-07-27");
   });

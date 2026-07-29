@@ -3,6 +3,10 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import {
+  sessionDisplayLabel,
+  sessionUpdatedLabel,
+} from "../sessions/session-display";
 import type { SessionIndexEntry } from "../sessions/session-index";
 import { sanitizeTerminalText } from "./terminal-safety";
 
@@ -55,25 +59,16 @@ export class SessionSelectorRow implements Component {
   render(width: number): string[] {
     const prefix = this.#selected ? "→ " : "  ";
     const suffix = this.#current ? " ✓" : "";
-    const title = sanitizeTerminalText(this.#entry.name ?? this.#entry.key);
-    const metadata =
-      this.#entry.name === undefined
-        ? this.#entry.updatedAt
-        : `${sanitizeTerminalText(this.#entry.key)} · ${this.#entry.updatedAt}`;
-    const titleWidth = Math.max(
+    const content = `${sanitizeTerminalText(sessionDisplayLabel(this.#entry))}  ${sessionUpdatedLabel(this.#entry)}`;
+    const contentWidth = Math.max(
       0,
       width - 1 - visibleWidth(prefix) - visibleWidth(suffix)
     );
-    const titleLine = `${prefix}${truncateToWidth(title, titleWidth)}${suffix}`;
-    const styledTitle = this.#selected
-      ? style(ANSI_CYAN, titleLine)
-      : `${prefix}${truncateToWidth(title, titleWidth)}${this.#current ? style(ANSI_GREEN, suffix) : ""}`;
+    const line = `${prefix}${truncateToWidth(content, contentWidth)}`;
     return [
-      truncateToWidth(` ${styledTitle}`, width),
-      style(
-        ANSI_DIM,
-        truncateToWidth(`   ${sanitizeTerminalText(metadata)}`, width)
-      ),
+      this.#selected
+        ? `${style(ANSI_CYAN, ` ${line}`)}${this.#current ? style(ANSI_GREEN, suffix) : ""}`
+        : ` ${line}${this.#current ? style(ANSI_GREEN, suffix) : ""}`,
     ];
   }
 }
