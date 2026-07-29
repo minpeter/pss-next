@@ -26,7 +26,7 @@ import {
   resolveCjkLocale,
 } from "./unicode-browser-renderer";
 
-const CACHE_VERSION = "latex-dvi-dvipng-lcd-v8";
+const CACHE_VERSION = "latex-dvi-dvipng-lcd-v10";
 const DEFAULT_COLOR = "#767676";
 const DEFAULT_DPI = 288;
 const DEFAULT_DISPLAY_DPI = 120;
@@ -83,6 +83,7 @@ interface MarkdownTextStyle {
 
 interface LatexMarkdownOptions {
   defaultTextStyle?: MarkdownTextStyle;
+  foregroundColor?: string;
   onMissingTool?: (executable: string) => void;
   requestRender?: () => void;
   signal?: AbortSignal;
@@ -348,10 +349,13 @@ const pngDimensions = (bytes: Buffer): PngDimensions | undefined => {
   return { heightPx, widthPx };
 };
 
-export const latexColor = (): string => {
+export const latexColor = (foregroundColor?: string): string => {
   const configured = process.env.PSS_LATEX_COLOR;
-  return configured && LATEX_COLOR_PATTERN.test(configured)
-    ? configured.toLowerCase()
+  if (configured && LATEX_COLOR_PATTERN.test(configured)) {
+    return configured.toLowerCase();
+  }
+  return foregroundColor && LATEX_COLOR_PATTERN.test(foregroundColor)
+    ? foregroundColor.toLowerCase()
     : DEFAULT_COLOR;
 };
 
@@ -384,8 +388,7 @@ const displayDimensions = (
   };
 };
 
-const dvipngColor = (): string => {
-  const color = latexColor();
+const dvipngColor = (color: string): string => {
   const channels = [1, 3, 5].map((offset) =>
     (Number.parseInt(color.slice(offset, offset + 2), 16) / 255).toFixed(4)
   );
@@ -399,11 +402,11 @@ const cacheDirectory = (): string =>
   process.env.PSS_LATEX_CACHE_DIR ??
   join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "pss", "latex");
 
-const formulaCacheKey = (formula: string): string =>
+const formulaCacheKey = (formula: string, color: string): string =>
   createHash("sha256")
     .update(CACHE_VERSION)
     .update("\0")
-    .update(latexColor())
+    .update(color)
     .update("\0")
     .update(containsUnicode(formula) ? resolveCjkLocale() : "ascii")
     .update("\0")
@@ -777,9 +780,10 @@ const dimensionsWithinLimits = (
 
 const renderLatex = async (
   formula: string,
+  color: string,
   signal?: AbortSignal
 ): Promise<RenderedLatex> => {
-  const key = formulaCacheKey(formula);
+  const key = formulaCacheKey(formula, color);
   const directory = cacheDirectory();
   const cachedPath = join(directory, `${key}.png`);
   const unicode = containsUnicode(formula);
@@ -809,7 +813,7 @@ const renderLatex = async (
     if (unicode) {
       const rendered = await renderUnicodeFormula(
         normalizedFormula,
-        latexColor(),
+        color,
         signal
       );
       await writeFile(join(workingDirectory, "formula-raw.png"), rendered.png, {
@@ -862,7 +866,7 @@ const renderLatex = async (
           "-bg",
           "Transparent",
           "-fg",
-          dvipngColor(),
+          dvipngColor(color),
           "-o",
           "formula-raw.png",
           "formula.dvi",
@@ -923,6 +927,7 @@ const startQueuedRenders = (): void => {
 
 const queueLatexRender = (
   formula: string,
+  color: string,
   signal?: AbortSignal
 ): Promise<RenderedLatex> =>
   new Promise((resolve, reject) => {
@@ -935,7 +940,7 @@ const queueLatexRender = (
     const start = (): void => {
       started = true;
       signal?.removeEventListener("abort", abort);
-      renderLatex(formula, signal).then(
+      renderLatex(formula, color, signal).then(
         (rendered) => {
           resolve(rendered);
           activeRenderCount -= 1;
@@ -974,19 +979,20 @@ const queueLatexRender = (
 
 const renderLatexCached = (
   formula: string,
+  color: string,
   signal?: AbortSignal
 ): Promise<RenderedLatex> => {
   if (signal === undefined) {
-    return queueLatexRender(formula);
+    return queueLatexRender(formula, color);
   }
-  const key = formulaCacheKey(formula);
+  const key = formulaCacheKey(formula, color);
   const pendingForSignal = renderPromises.get(signal) ?? new Map();
   renderPromises.set(signal, pendingForSignal);
   const existing = pendingForSignal.get(key);
   if (existing) {
     return existing;
   }
-  const pending = queueLatexRender(formula, signal);
+  const pending = queueLatexRender(formula, color, signal);
   pendingForSignal.set(key, pending);
   const evict = (): void => {
     if (pendingForSignal.get(key) === pending) {
@@ -1087,6 +1093,7 @@ export class LatexMarkdown implements Component {
   private cachedWidth: number | undefined;
   private readonly controller = new AbortController();
   private disposed = false;
+  private readonly formulaColor: string;
   private readonly options: LatexMarkdownOptions;
   private readonly paddingX: number;
   private readonly paddingY: number;
@@ -1107,6 +1114,7 @@ export class LatexMarkdown implements Component {
     this.paddingY = paddingY;
     this.theme = theme;
     this.options = options;
+    this.formulaColor = latexColor(options.foregroundColor);
     this.signal =
       options.signal === undefined
         ? this.controller.signal
@@ -1166,7 +1174,9 @@ export class LatexMarkdown implements Component {
     lines.push(...Array.from({ length: this.paddingY }, () => emptyLine));
     for (const part of parts) {
       const state = part.formula
-        ? this.renderStates.get(formulaCacheKey(part.formula))
+        ? this.renderStates.get(
+            formulaCacheKey(part.formula, this.formulaColor)
+          )
         : undefined;
       if (part.type === "math" && state?.status === "ready" && state.image) {
         ensureDisplayMargin(lines);
@@ -1215,13 +1225,13 @@ export class LatexMarkdown implements Component {
       if (!(part.type === "math" && part.formula)) {
         continue;
       }
-      const key = formulaCacheKey(part.formula);
+      const key = formulaCacheKey(part.formula, this.formulaColor);
       if (this.renderStates.has(key)) {
         continue;
       }
       const state: MathRenderState = { status: "pending" };
       this.renderStates.set(key, state);
-      renderLatexCached(part.formula, this.signal).then(
+      renderLatexCached(part.formula, this.formulaColor, this.signal).then(
         (image) => {
           if (this.signal.aborted) {
             return;

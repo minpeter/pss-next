@@ -72,7 +72,7 @@ const cacheFormulaPng = async (
   height: number
 ): Promise<void> => {
   const key = createHash("sha256")
-    .update("latex-dvi-dvipng-lcd-v8")
+    .update("latex-dvi-dvipng-lcd-v10")
     .update("\0")
     .update("#e8e8e8")
     .update("\0")
@@ -301,6 +301,40 @@ describe("highlightInlineMath", () => {
 });
 
 describe("render appearance", () => {
+  it("derives formula color from terminal theme foreground", () => {
+    delete process.env.PSS_LATEX_COLOR;
+
+    expect(latexColor("#e6edf3")).toBe("#e6edf3");
+
+    process.env.PSS_LATEX_COLOR = "#123456";
+    expect(latexColor("#e6edf3")).toBe("#123456");
+  });
+
+  it("meets contrast on common light and dark themes", () => {
+    delete process.env.PSS_LATEX_COLOR;
+    const themes = [
+      { backgrounds: ["#ffffff", "#f5f5f5"], foreground: "#202020" },
+      {
+        backgrounds: ["#0d1117", "#1e1e1e", "#282a36"],
+        foreground: "#e6edf3",
+      },
+    ] as const;
+
+    for (const theme of themes) {
+      const foreground = latexColor(theme.foreground);
+      const foregroundLuminance = relativeLuminance(foreground);
+      for (const background of theme.backgrounds) {
+        const backgroundLuminance = relativeLuminance(background);
+        const ratio =
+          (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+          (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+        expect(ratio, `${foreground} on ${background}`).toBeGreaterThanOrEqual(
+          4.5
+        );
+      }
+    }
+  });
+
   it("uses a default glyph color with readable light and dark contrast", () => {
     delete process.env.PSS_LATEX_COLOR;
 

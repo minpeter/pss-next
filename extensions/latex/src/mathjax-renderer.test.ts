@@ -14,6 +14,39 @@ describe("renderMathJaxChtml", () => {
     expect(result.css).toContain("@font-face");
   });
 
+  it("renders AMS negated-existence symbols without truncation", async () => {
+    const formula = String.raw`\boxed{\forall n > 2,\ \nexists x,y,z \in \mathbb{Z}_{>0} \text{ such that } x^n+y^n=z^n}
+\quad \text{(양의 정수해 없음)}`;
+    const result = await renderMathJaxChtml(formula);
+    const rendered = await renderUnicodeFormula(formula, "#e8e8e8");
+
+    expect(result.html).not.toContain("data-mjx-error");
+    expect(result.html).toContain('data-latex="\\nexists"');
+    expect(rendered.png.readUInt32BE(16)).toBeGreaterThan(500);
+  });
+
+  it("renders multiline boxed Unicode formulas without truncation", async () => {
+    const result = await renderUnicodeFormula(
+      String.raw`\boxed{
+\forall n>2,\quad
+x^n+y^n=z^n
+\text{은 양의 정수해를 갖지 않는다}
+}`,
+      "#e8e8e8"
+    );
+
+    expect(result.png.readUInt32BE(16)).toBeGreaterThan(500);
+    expect(result.probe.containerWidth).toBeGreaterThanOrEqual(
+      result.probe.runs[0]?.width ?? Number.POSITIVE_INFINITY
+    );
+    expect(result.probe.runs).toContainEqual(
+      expect.objectContaining({
+        text: "은 양의 정수해를 갖지 않는다",
+        visible: true,
+      })
+    );
+  });
+
   it("preserves RTL text order in Unicode runs", async () => {
     const result = await renderUnicodeFormula(
       String.raw`\text{שלום עולם}`,

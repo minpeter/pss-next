@@ -141,6 +141,11 @@ const modelSubtitleLabel = (
   return `${modelSession.currentModelId()}${modelSession.isFreeTier ? " (free tier)" : ""}`;
 };
 
+const foregroundThemeConfig = (): Pick<AgentTUIConfig, "theme"> => {
+  const foregroundColor = process.env.PSS_TUI_FOREGROUND;
+  return foregroundColor === undefined ? {} : { theme: { foregroundColor } };
+};
+
 export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
@@ -363,6 +368,7 @@ export async function startTui(
 
     const tuiConfig: AgentTUIConfig = {
       ...assistantRendererRuntime(extensionHost),
+      ...foregroundThemeConfig(),
       thread: {
         interrupt: () => thread.interrupt(),
         send: (input) => thread.send(input),

@@ -15,6 +15,7 @@ export interface AssistantTextView extends Component {
 }
 
 export interface AssistantRendererContext {
+  readonly foregroundColor?: string;
   readonly markdownTheme: MarkdownTheme;
   readonly notify: (message: string) => void;
   readonly notifyOnce: (key: string, message: string) => void;

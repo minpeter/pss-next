@@ -41,6 +41,31 @@ describe("AssistantStreamView terminal safety", () => {
     expect(view.render(120)).toContain("plugin:rendered by extension");
   });
 
+  it("passes resolved foreground to extension renderers", () => {
+    let foregroundColor: string | undefined;
+    const view = new AssistantStreamView(markdownTheme, {
+      assistantRenderer: (context) => {
+        foregroundColor = context.foregroundColor;
+        return {
+          invalidate() {
+            return;
+          },
+          render() {
+            return [];
+          },
+          setText() {
+            return;
+          },
+        };
+      },
+      foregroundColor: "#e6edf3",
+    });
+
+    view.appendText("theme");
+
+    expect(foregroundColor).toBe("#e6edf3");
+  });
+
   it("passes lifecycle context and disposes extension views", () => {
     const controller = new AbortController();
     let disposed = false;

@@ -25,8 +25,9 @@ export const createLatexExtension: ExtensionFactory = (pss) => {
   pss.provide(instructions(LATEX_OUTPUT_INSTRUCTIONS));
   pss.provide(
     assistantRenderer(
-      ({ markdownTheme, notifyOnce, requestRender, signal }) =>
+      ({ foregroundColor, markdownTheme, notifyOnce, requestRender, signal }) =>
         new LatexMarkdown("", 1, 0, markdownTheme, {
+          foregroundColor,
           onMissingTool(executable) {
             notifyOnce(
               "latex:missing-dependency",

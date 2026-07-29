@@ -1,8 +1,35 @@
-import MathJax from "mathjax";
+import { createRequire } from "node:module";
 
-let runtime: ReturnType<typeof MathJax.init> | undefined;
+interface MathJaxAdaptor {
+  serializeXML(node: unknown): string;
+  textContent(node: unknown): string;
+}
 
-const mathJaxRuntime = (): ReturnType<typeof MathJax.init> => {
+interface MathJaxRuntime {
+  readonly startup: {
+    readonly adaptor: MathJaxAdaptor;
+    readonly document: unknown;
+    readonly output: {
+      styleSheet(document: unknown): unknown;
+    };
+  };
+  tex2chtmlPromise(
+    formula: string,
+    options: { readonly display: boolean }
+  ): Promise<unknown>;
+}
+
+interface MathJaxModule {
+  init(options: {
+    readonly loader: { readonly load: readonly string[] };
+  }): Promise<MathJaxRuntime>;
+}
+
+const require = createRequire(import.meta.url);
+const MathJax = require("mathjax") as MathJaxModule;
+let runtime: ReturnType<MathJaxModule["init"]> | undefined;
+
+const mathJaxRuntime = (): ReturnType<MathJaxModule["init"]> => {
   runtime ??= MathJax.init({
     loader: { load: ["input/tex", "output/chtml"] },
   });

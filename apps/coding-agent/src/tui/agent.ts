@@ -479,6 +479,7 @@ const createStreamViewFactories = (options: {
   assistantViews: Set<AssistantStreamView>;
   chatContainer: Container;
   flags: PiTuiRenderFlags;
+  foregroundColor?: string;
   markdownTheme: MarkdownTheme;
   notifyAssistantRenderer: (message: string) => void;
   notifyAssistantRendererOnce: (key: string, message: string) => void;
@@ -503,6 +504,7 @@ const createStreamViewFactories = (options: {
     if (!assistantView) {
       assistantView = new AssistantStreamView(options.markdownTheme, {
         assistantRenderer: options.assistantRenderer,
+        foregroundColor: options.foregroundColor,
         notify: options.notifyAssistantRenderer,
         notifyOnce: options.notifyAssistantRendererOnce,
         requestRender: options.requestRender,
@@ -669,7 +671,11 @@ export interface AgentTUIConfig {
   ) => Promise<PreprocessResult | undefined>;
   setupMessages?: string[];
   showRawToolIo?: boolean;
-  theme?: { markdownTheme?: MarkdownTheme; editorTheme?: EditorTheme };
+  theme?: {
+    editorTheme?: EditorTheme;
+    foregroundColor?: string;
+    markdownTheme?: MarkdownTheme;
+  };
   thread: TuiThread;
   toolRenderers?: ToolRendererMap;
 }
@@ -953,6 +959,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       assistantViews,
       chatContainer,
       flags,
+      foregroundColor: config.theme?.foregroundColor,
       markdownTheme,
       notifyAssistantRenderer: assistantRendererNotifications.notify,
       notifyAssistantRendererOnce: assistantRendererNotifications.notifyOnce,

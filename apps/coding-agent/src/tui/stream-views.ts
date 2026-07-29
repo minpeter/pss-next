@@ -39,6 +39,7 @@ interface AssistantStreamSegment {
 
 interface AssistantStreamViewOptions {
   readonly assistantRenderer?: AssistantRenderer;
+  readonly foregroundColor?: string;
   readonly notify?: (message: string) => void;
   readonly notifyOnce?: (key: string, message: string) => void;
   readonly requestRender?: () => void;
@@ -49,6 +50,7 @@ export class AssistantStreamView extends Container {
   private readonly assistantRenderer: AssistantRenderer | undefined;
   private readonly controller = new AbortController();
   private disposed = false;
+  private readonly foregroundColor: string | undefined;
   private readonly markdownTheme: MarkdownTheme;
   private readonly notify: (message: string) => void;
   private readonly notifyOnce: (key: string, message: string) => void;
@@ -62,6 +64,7 @@ export class AssistantStreamView extends Container {
   ) {
     super();
     this.assistantRenderer = options.assistantRenderer;
+    this.foregroundColor = options.foregroundColor;
     this.markdownTheme = markdownTheme;
     this.signal =
       options.signal === undefined
@@ -112,6 +115,7 @@ export class AssistantStreamView extends Container {
       const view =
         type === "text"
           ? (this.assistantRenderer?.({
+              foregroundColor: this.foregroundColor,
               markdownTheme: this.markdownTheme,
               notify: this.notify,
               notifyOnce: this.notifyOnce,

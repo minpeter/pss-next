@@ -45,6 +45,7 @@
     "@modelcontextprotocol/server": "2.0.0-beta.5",
     "@t3-oss/env-core": "^0.13.11",
     "@types/node": "^26.1.2",
+    "@xterm/xterm": "6.0.0",
     "dotenv": "^17.4.2",
     "eslint": "10.7.0",
     "react": "19.2.7",

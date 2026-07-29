@@ -23,6 +23,7 @@ const CJK_LOCALES = ["ko", "ja", "zh-Hans", "zh-Hant"] as const;
 type CjkLocale = (typeof CJK_LOCALES)[number];
 
 interface BrowserProbe {
+  readonly containerWidth: number;
   readonly fontsReady: boolean;
   readonly runs: readonly {
     readonly clusterLefts: readonly number[];
@@ -31,6 +32,7 @@ interface BrowserProbe {
     readonly font: string;
     readonly text: string;
     readonly visible: boolean;
+    readonly width: number;
   }[];
 }
 
@@ -86,6 +88,32 @@ const mathFontRoot = (): string => {
     dirname(mathJaxPackage),
     "../@mathjax/mathjax-newcm-font/chtml/woff2"
   );
+};
+
+const assertBrowserProbe = (probe: BrowserProbe): void => {
+  if (
+    !probe.fontsReady ||
+    probe.runs.some((run) => !(run.fontAvailable && run.visible))
+  ) {
+    throw new UnicodeRenderUnsupportedError(
+      "Unicode browser text probe failed"
+    );
+  }
+  for (const run of probe.runs) {
+    if (!RTL_PATTERN.test(run.text)) {
+      continue;
+    }
+    const first = run.clusterLefts[0];
+    const last = run.clusterLefts.at(-1);
+    if (
+      run.direction !== "rtl" ||
+      first === undefined ||
+      last === undefined ||
+      first <= last
+    ) {
+      throw new UnicodeRenderUnsupportedError("RTL text order probe failed");
+    }
+  }
 };
 
 export const renderUnicodeFormula = async (
@@ -170,20 +198,43 @@ mjx-mtext bdi{font-style:normal;font-weight:400;white-space:pre}
           }
           return "DejaVu Sans";
         };
-        const runs = Array.from(document.querySelectorAll("mjx-mtext")).map(
+        const runs = Array.from(document.querySelectorAll("mjx-mtext")).flatMap(
           (element) => {
             const text = element.textContent ?? "";
+            if (!text.trim()) {
+              return [];
+            }
             const font = selectFont(text);
             const bdi = document.createElement("bdi");
             bdi.dir = "auto";
             bdi.style.fontFamily = `"${font}"`;
             bdi.textContent = text;
             element.replaceChildren(bdi);
-            return { bdi, font, text };
+            return [{ bdi, font, text }];
           }
         );
         await document.fonts.ready;
+        for (const { bdi } of runs) {
+          const runRect = bdi.getBoundingClientRect();
+          let ancestor = bdi.parentElement;
+          while (ancestor) {
+            const ancestorRect = ancestor.getBoundingClientRect();
+            if (runRect.right > ancestorRect.right) {
+              ancestor.style.minWidth = `${Math.ceil(
+                runRect.right - ancestorRect.left
+              )}px`;
+            }
+            if (ancestor.tagName === "MJX-CONTAINER") {
+              break;
+            }
+            ancestor = ancestor.parentElement;
+          }
+        }
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const container = document.querySelector("mjx-container");
         return {
+          containerWidth: container?.getBoundingClientRect().width ?? 0,
           fontsReady: true,
           runs: runs.map(({ bdi, font, text }) => {
             const rect = bdi.getBoundingClientRect();
@@ -208,36 +259,14 @@ mjx-mtext bdi{font-style:normal;font-weight:400;white-space:pre}
               fontAvailable: document.fonts.check(`48px "${font}"`, text),
               text,
               visible: rect.width > 0 && rect.height > 0,
+              width: rect.width,
             };
           }),
         };
       },
       { locale: resolveCjkLocale(), patterns: SCRIPT_PATTERNS }
     );
-    if (
-      !probe.fontsReady ||
-      probe.runs.some(
-        (run) => !(run.fontAvailable && run.visible && run.text.trim())
-      )
-    ) {
-      throw new UnicodeRenderUnsupportedError(
-        "Unicode browser text probe failed"
-      );
-    }
-    for (const run of probe.runs) {
-      const rtl = RTL_PATTERN.test(run.text);
-      const first = run.clusterLefts[0];
-      const last = run.clusterLefts.at(-1);
-      if (
-        rtl &&
-        (run.direction !== "rtl" ||
-          first === undefined ||
-          last === undefined ||
-          first <= last)
-      ) {
-        throw new UnicodeRenderUnsupportedError("RTL text order probe failed");
-      }
-    }
+    assertBrowserProbe(probe);
     signal?.throwIfAborted();
     const png = await page.locator("mjx-container").screenshot({
       animations: "disabled",
