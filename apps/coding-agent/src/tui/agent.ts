@@ -35,6 +35,7 @@ import {
   type TuiCommandResult,
 } from "./command";
 import { buildTuiCommandSet } from "./command-set";
+import { composerFlowLines } from "./composer-flow";
 import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
@@ -362,25 +363,6 @@ class ComposerLayer extends Container {
     this.clear();
     this.addChild(this.#content);
     this.addChild(this.#footer);
-  }
-}
-
-/** Reserves the overlay's footprint in chat flow so output is never hidden. */
-class ComposerReservation implements Component {
-  readonly #composer: Component;
-
-  constructor(composer: Component) {
-    this.#composer = composer;
-  }
-
-  invalidate(): void {
-    // The composer owns render caches; this reservation is computed fresh.
-  }
-
-  render(width: number): string[] {
-    return Array.from({ length: this.#composer.render(width).length }, () =>
-      " ".repeat(Math.max(0, width))
-    );
   }
 }
 
@@ -788,16 +770,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       editor.setAutocompleteProvider(autocompleteProvider);
     }
   });
-  const composerReservation = new ComposerReservation(composerLayer);
-
   tui.addChild(headerContainer);
   tui.addChild(chatContainer);
   tui.addChild(overlayContainer);
-  tui.addChild(composerReservation);
-  tui.showOverlay(composerLayer, {
-    anchor: "bottom-left",
-    width: "100%",
-  });
+  tui.addChild(composerLayer);
   tui.setFocus(composerLayer);
 
   const session = new TuiSessionMachine();
@@ -1687,13 +1663,17 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
+    const flowRows = composerFlowLines({
+      chat: chatContainer,
+      composer: composerLayer,
+      header: headerContainer,
+      terminalRows: terminal.rows,
+      width: terminal.columns,
+    }).length;
     const transcriptRows =
       headerContainer.render(terminal.columns).length +
       chatContainer.render(terminal.columns).length;
-    const renderedRows = Math.max(
-      terminal.rows,
-      transcriptRows + composerReservation.render(terminal.columns).length
-    );
+    const renderedRows = flowRows;
     extensionUiController.abort();
     disposeAssistantViews();
     clearStatus();
