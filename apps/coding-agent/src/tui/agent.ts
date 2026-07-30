@@ -35,6 +35,7 @@ import {
   type TuiCommandResult,
 } from "./command";
 import { buildTuiCommandSet } from "./command-set";
+import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
 import {
@@ -81,7 +82,6 @@ const ANSI_GRAY = "\x1b[90m";
 const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
 const CTRL_C_ETX = "\u0003";
-const CTRL_C_EXIT_WINDOW_MS = 500;
 const MODEL_SELECTOR_COMPACT_ROWS = 16;
 const MODEL_SELECTOR_COMPACT_CHROME_ROWS = 4;
 const MODEL_SELECTOR_STANDARD_CHROME_ROWS = 10;
@@ -859,7 +859,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const handleCtrlCPress = (): void => {
     const now = Date.now();
-    if (now - lastCtrlCPressAt < CTRL_C_EXIT_WINDOW_MS) {
+    if (ctrlCPressDecision(now, lastCtrlCPressAt) === "exit") {
       requestExit();
       return;
     }
