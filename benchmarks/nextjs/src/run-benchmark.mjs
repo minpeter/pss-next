@@ -16,6 +16,7 @@ import {
   NEXTJS_EVALS_SHA,
   SMOKE_EVALS,
 } from "./constants.mjs";
+import { agentsMdFiles, resolveExperimentName } from "./agents-md.mjs";
 import { resolveBenchmarkProfile } from "./profiles.mjs";
 import { createPssAgent } from "./pss-agent.mjs";
 
@@ -106,16 +107,7 @@ async function createSetup(nextVersion, agentsMd) {
   return async (sandbox) => {
     await sandbox.writeFiles({
       ".pss-coding-agent.tgz.b64": tarball,
-      ...(agentsMd
-        ? {
-            "AGENTS.md": `<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in \`node_modules/next/dist/docs/\` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
-`,
-          }
-        : {}),
+      ...agentsMdFiles(agentsMd),
     });
     const decode = await sandbox.runCommand("bash", [
       "-c",
@@ -230,7 +222,11 @@ const config = {
   webResearch: false,
 };
 const safeModel = model.replace(SAFE_MODEL_PATTERN, "-");
-const experimentName = `pss-${options.profile}${options.agentsMd ? "--agents-md" : ""}/${safeModel}`;
+const experimentName = resolveExperimentName({
+  agentsMd: options.agentsMd,
+  model: safeModel,
+  profile: options.profile,
+});
 const results = await runExperiment({
   config,
   fixtures: selectedFixtures,
