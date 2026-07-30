@@ -200,6 +200,20 @@ describe("createSessionManager", () => {
     ]);
   });
 
+  it("lists only sessions with stored messages as resumable", async () => {
+    const { manager: sessions, threads } = manager();
+    const empty = await sessions.resolveStartupSession();
+    const populated = await sessions.createSession("populated");
+    await sessions.createSession("missing");
+    threads.stored.set(empty.key, { history: [], schemaVersion: 1 });
+    threads.stored.set(populated.key, {
+      history: [{ content: "hello", role: "user" }],
+      schemaVersion: 1,
+    });
+
+    expect(await sessions.listResumableSessions()).toEqual([populated]);
+  });
+
   it("touches recency without failing for unknown keys", async () => {
     const { manager: sessions } = manager();
     const source = await sessions.resolveStartupSession();

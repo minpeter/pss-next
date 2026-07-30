@@ -102,7 +102,7 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
         return await resumeSession(context, entry);
       }),
     getArgumentCompletions: async (argumentPrefix) => {
-      const sessions = await context.manager.listSessions();
+      const sessions = await context.manager.listResumableSessions();
       const prefix = argumentPrefix.toLowerCase();
       const completions: TuiCommandArgumentCompletion[] = [];
       for (const session of sessions) {

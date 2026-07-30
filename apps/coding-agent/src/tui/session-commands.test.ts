@@ -82,6 +82,7 @@ function createContext(overrides?: Partial<SessionCommandContext>): {
     ),
     getSession: vi.fn(() => Promise.resolve(undefined)),
     listForkPoints: vi.fn(() => Promise.resolve([])),
+    listResumableSessions: vi.fn(() => Promise.resolve([])),
     listSessions: vi.fn(() => Promise.resolve([])),
     removeSession: vi.fn(() => Promise.resolve()),
     renameSession: vi.fn((key: string, name: string) =>
@@ -202,7 +203,9 @@ describe("/resume", () => {
 
   it("offers completions excluding the current session", async () => {
     const { context, manager } = createContext();
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (
+      manager.listResumableSessions as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([
       entry("cwd:/work"),
       entry("cwd:/work#2", { name: "spike" }),
     ]);
@@ -222,7 +225,9 @@ describe("/resume", () => {
 
   it("keeps the short id visible in long autocomplete labels", async () => {
     const { context, manager } = createContext();
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (
+      manager.listResumableSessions as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([
       entry("cwd:/work#deadbeef", {
         name: "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong",
       }),
@@ -238,7 +243,9 @@ describe("/resume", () => {
 
   it("aligns hashes across short and long autocomplete titles", async () => {
     const { context, manager } = createContext();
-    (manager.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (
+      manager.listResumableSessions as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([
       entry("cwd:/work#aaaaaaaa"),
       entry("cwd:/work#bbbbbbbb", {
         name: "ultralongtitlehanlding-test-ulralooooooooooooooooooooooooooong",

@@ -74,6 +74,7 @@ export interface SessionManager {
   getSession(key: string): Promise<SessionIndexEntry | undefined>;
   /** List the user messages of a stored thread a fork can branch before. */
   listForkPoints(fromKey: string): Promise<readonly SessionForkPoint[]>;
+  listResumableSessions(): Promise<readonly SessionIndexEntry[]>;
   listSessions(): Promise<readonly SessionIndexEntry[]>;
   /** Delete a session's metadata and its durable thread state. */
   removeSession(key: string): Promise<void>;
@@ -219,6 +220,27 @@ export function createSessionManager(
       }
       return points;
     },
+    listResumableSessions: () =>
+      enqueue(async (document) => {
+        if (threads === undefined) {
+          return { document, result: [] };
+        }
+        const sessions = listSessionsForCwd(document, cwd);
+        const stored = await Promise.all(
+          sessions.map(async (session) => ({
+            hasMessages:
+              decodeStoredThreadState(await threads.load(session.key)).history
+                .length > 0,
+            session,
+          }))
+        );
+        return {
+          document,
+          result: stored
+            .filter(({ hasMessages }) => hasMessages)
+            .map(({ session }) => session),
+        };
+      }),
     listSessions: () =>
       enqueue((document) =>
         Promise.resolve({
