@@ -26,7 +26,7 @@ describe("createAliasAwareAutocompleteProvider", () => {
     });
   });
 
-  it("clears an argument completion after its query is erased", async () => {
+  it("refreshes argument completions after its query is erased", async () => {
     const provider = createAliasAwareAutocompleteProvider({
       commands: [
         {
@@ -49,7 +49,44 @@ describe("createAliasAwareAutocompleteProvider", () => {
     });
     await expect(
       provider.getSuggestions(["/model "], 0, 7, options)
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({
+      items: [{ value: "mimo-v2.5-free" }],
+      prefix: "",
+    });
+  });
+
+  it("restores argument completions after erasing a query", async () => {
+    const sessions = [
+      { label: "untitled  #aaaaaaaa", value: "#aaaaaaaa" },
+      { label: "test-ek   #bbbbbbbb", value: "test-ek" },
+    ];
+    const provider = createAliasAwareAutocompleteProvider({
+      commands: [
+        {
+          description: "Resume a session",
+          execute: () => ({ success: true }),
+          getArgumentCompletions: async (query) =>
+            sessions.filter(({ label }) =>
+              label.toLowerCase().includes(query.toLowerCase())
+            ),
+          name: "resume",
+        },
+      ],
+    });
+    const options = { force: false, signal: new AbortController().signal };
+
+    await expect(
+      provider.getSuggestions(["/resume tes"], 0, 11, options)
+    ).resolves.toMatchObject({
+      items: [{ value: "test-ek" }],
+      prefix: "tes",
+    });
+    await expect(
+      provider.getSuggestions(["/resume "], 0, 8, options)
+    ).resolves.toMatchObject({
+      items: sessions,
+      prefix: "",
+    });
   });
 
   it("does not treat canonical command names as aliases", () => {

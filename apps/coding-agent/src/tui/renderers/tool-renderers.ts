@@ -5,11 +5,13 @@ import {
   renderReadFile,
   renderWriteFile,
 } from "./file";
+import { formatGrepMatches } from "./grep-format";
 import {
   isRecord,
   normalizedLines,
   renderToolError,
   stringField,
+  strippedLines,
 } from "./utils";
 
 const MAX_SINGLE_LINE = 200;
@@ -89,7 +91,8 @@ const renderGrepFiles = (
   }
 
   const lines = normalizedLines(output);
-  view.setPrettyBlock(header, lines.slice(1).join("\n"), {
+  view.setPrettyBlock(header, formatGrepMatches(lines.slice(1), pattern), {
+    allowAnsi: true,
     useBackground: false,
   });
 };
@@ -117,7 +120,7 @@ const renderShellExecute = (
     return;
   }
 
-  const lines = normalizedLines(output);
+  const lines = strippedLines(output);
   const isErrorOutput =
     output.startsWith("ERROR") ||
     lines[1]?.startsWith("exit_code: 0") === false;

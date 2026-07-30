@@ -18,7 +18,9 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
+import type { ModelMessage } from "ai";
 import type { CodingAgentExtensionUi } from "../extensions/types";
+import type { SessionIndexEntry } from "../sessions/session-index";
 import { agentEventStreamParts } from "./agent-event-stream";
 import {
   type AssistantRenderer,
@@ -33,6 +35,7 @@ import {
   type TuiCommandResult,
 } from "./command";
 import { buildTuiCommandSet } from "./command-set";
+import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
 import {
@@ -43,6 +46,12 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import {
+  resumeSessionReplayParts,
+  type SessionHistoryReplayPart,
+  sessionHistoryReplayParts,
+} from "./session-history-replay";
+import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
@@ -57,6 +66,7 @@ import {
   type TuiStreamPart,
 } from "./stream-handlers";
 import { AssistantStreamView } from "./stream-views";
+import { terminalExitCursorSequence } from "./terminal-exit";
 import { sanitizeTerminalText } from "./terminal-safety";
 import { BaseToolCallView, type ToolRendererMap } from "./tool-call-view";
 
@@ -72,7 +82,6 @@ const ANSI_GRAY = "\x1b[90m";
 const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
 const CTRL_C_ETX = "\u0003";
-const CTRL_C_EXIT_WINDOW_MS = 500;
 const MODEL_SELECTOR_COMPACT_ROWS = 16;
 const MODEL_SELECTOR_COMPACT_CHROME_ROWS = 4;
 const MODEL_SELECTOR_STANDARD_CHROME_ROWS = 10;
@@ -353,25 +362,6 @@ class ComposerLayer extends Container {
     this.clear();
     this.addChild(this.#content);
     this.addChild(this.#footer);
-  }
-}
-
-/** Reserves the overlay's footprint in chat flow so output is never hidden. */
-class ComposerReservation implements Component {
-  readonly #composer: Component;
-
-  constructor(composer: Component) {
-    this.#composer = composer;
-  }
-
-  invalidate(): void {
-    // The composer owns render caches; this reservation is computed fresh.
-  }
-
-  render(width: number): string[] {
-    return Array.from({ length: this.#composer.render(width).length }, () =>
-      " ".repeat(Math.max(0, width))
-    );
   }
 }
 
@@ -669,6 +659,13 @@ export interface AgentTUIConfig {
     input: string,
     hooks: PreprocessHooks
   ) => Promise<PreprocessResult | undefined>;
+  replayHistoryOnStartup?: boolean;
+  sessionSelector?: {
+    currentSessionKey(): string;
+    listSessions(): Promise<readonly SessionIndexEntry[]>;
+    loadCurrentHistory(): Promise<readonly ModelMessage[]>;
+    switchSession(sessionKey: string): Promise<void>;
+  };
   setupMessages?: string[];
   showRawToolIo?: boolean;
   theme?: {
@@ -773,22 +770,17 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       editor.setAutocompleteProvider(autocompleteProvider);
     }
   });
-  const composerReservation = new ComposerReservation(composerLayer);
-
   tui.addChild(headerContainer);
   tui.addChild(chatContainer);
   tui.addChild(overlayContainer);
-  tui.addChild(composerReservation);
-  tui.showOverlay(composerLayer, {
-    anchor: "bottom-left",
-    width: "100%",
-  });
+  tui.addChild(composerLayer);
   tui.setFocus(composerLayer);
 
   const session = new TuiSessionMachine();
   let lastCtrlCPressAt = 0;
   let foregroundStatusMessage: string | null = null;
   let activeModelSelector: ModelSelectorComponent | undefined;
+  let activeSessionSelector: SessionSelectorComponent | undefined;
   let commandInputListenerActive = false;
   const extensionUiController = new AbortController();
 
@@ -843,7 +835,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const handleCtrlCPress = (): void => {
     const now = Date.now();
-    if (now - lastCtrlCPressAt < CTRL_C_EXIT_WINDOW_MS) {
+    if (ctrlCPressDecision(now, lastCtrlCPressAt) === "exit") {
       requestExit();
       return;
     }
@@ -871,6 +863,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (selector !== undefined) {
       const layout = getModelSelectorLayout();
       selector.setLayout(layout.maxVisibleModels, layout.compact);
+    }
+    const sessionSelector = activeSessionSelector;
+    if (sessionSelector !== undefined) {
+      const layout = getModelSelectorLayout();
+      sessionSelector.setLayout(layout.maxVisibleModels, layout.compact);
     }
     tui.requestRender(true);
   };
@@ -1019,6 +1016,53 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     return { finishReason: tracker.finishReason };
+  };
+
+  const renderSessionHistory = async (
+    replay?: readonly SessionHistoryReplayPart[]
+  ): Promise<void> => {
+    const selectorConfig = config.sessionSelector;
+    if (selectorConfig === undefined) {
+      return;
+    }
+    const parts =
+      replay ??
+      sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
+    let streamParts: TuiStreamPart[] = [];
+    const flushStreamParts = async (): Promise<void> => {
+      if (streamParts.length === 0) {
+        return;
+      }
+      const pending = streamParts;
+      streamParts = [];
+      await renderAgentStream(
+        (async function* () {
+          yield* pending;
+        })(),
+        {
+          showReasoning: true,
+          showSteps: false,
+          showFinishReason: false,
+          showRawToolIo: config.showRawToolIo ?? false,
+          showToolResults: true,
+          showSources: false,
+          showFiles: false,
+        }
+      );
+    };
+    for (const part of parts) {
+      if (part.type === "stream") {
+        streamParts.push(part.part);
+        continue;
+      }
+      await flushStreamParts();
+      if (part.type === "clear") {
+        clearChat();
+      } else {
+        addUserMessage(chatContainer, markdownTheme, part.text);
+      }
+    }
+    await flushStreamParts();
   };
 
   const createStreamingLoaderClearer = (): (() => void) => {
@@ -1272,6 +1316,83 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
+  const showSessionSelector = async (initialQuery?: string): Promise<void> => {
+    const selectorConfig = config.sessionSelector;
+    if (selectorConfig === undefined) {
+      addSystemMessage(chatContainer, "Session selection is not available.");
+      tui.requestRender();
+      return;
+    }
+
+    showLoader("Loading sessions...");
+    let sessions: readonly SessionIndexEntry[];
+    try {
+      sessions = await selectorConfig.listSessions();
+    } catch (error) {
+      clearStatus();
+      addSystemMessage(
+        chatContainer,
+        `Could not list sessions: ${error instanceof Error ? error.message : String(error)}`
+      );
+      tui.requestRender();
+      return;
+    }
+    clearStatus();
+    if (sessions.length === 0) {
+      addSystemMessage(chatContainer, "No sessions recorded yet.");
+      tui.requestRender();
+      return;
+    }
+
+    const selection = await new Promise<string | undefined>((resolve) => {
+      commandInputListenerActive = true;
+      let selector: SessionSelectorComponent | undefined;
+      const settle = (sessionKey: string | undefined): void => {
+        commandInputListenerActive = false;
+        if (activeSessionSelector === selector) {
+          activeSessionSelector = undefined;
+        }
+        composerLayer.setContent(editor);
+        tui.setFocus(composerLayer);
+        tui.requestRender();
+        resolve(sessionKey);
+      };
+      const layout = getModelSelectorLayout();
+      selector = new SessionSelectorComponent({
+        compact: layout.compact,
+        currentSessionKey: selectorConfig.currentSessionKey(),
+        ...(initialQuery === undefined ? {} : { initialQuery }),
+        maxVisibleSessions: layout.maxVisibleModels,
+        onCancel: () => settle(undefined),
+        onSelect: (sessionKey) => settle(sessionKey),
+        sessions,
+      });
+      activeSessionSelector = selector;
+      composerLayer.setContent(selector);
+      tui.setFocus(composerLayer);
+      tui.requestRender();
+    });
+
+    if (
+      selection === undefined ||
+      selection === selectorConfig.currentSessionKey()
+    ) {
+      return;
+    }
+    try {
+      await renderSessionHistory(
+        await resumeSessionReplayParts(selectorConfig, selection)
+      );
+      updateHeader();
+    } catch (error) {
+      addSystemMessage(
+        chatContainer,
+        `Session switch failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    tui.requestRender();
+  };
+
   const showActionlessCommandResult = (
     commandResult: TuiCommandResult | null
   ): void => {
@@ -1306,6 +1427,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    if (commandResult.action.type === "select-session") {
+      await showSessionSelector(commandResult.action.query);
+      return;
+    }
+
     if (commandResult.action.type === "submit-prompt") {
       // Prompt-template commands expand into a normal user turn.
       await processUserInputMessage(commandResult.action.prompt);
@@ -1313,7 +1439,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "session") {
-      handleSessionAction(commandResult, commandResult.action.clear);
+      await handleSessionAction(commandResult, commandResult.action.clear);
       return;
     }
 
@@ -1328,16 +1454,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
-  const handleSessionAction = (
+  const handleSessionAction = async (
     commandResult: TuiCommandResult,
     clear: boolean
-  ): void => {
-    // Session commands already swapped the thread handle; the TUI only
-    // resets the transcript view and refreshes the header.
+  ): Promise<void> => {
     if (clear) {
       clearStatus();
-      clearChat();
-      addNewSessionMessage(chatContainer);
+      await renderSessionHistory();
     }
     updateHeader();
     if (commandResult.message) {
@@ -1526,6 +1649,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       addSystemMessage(chatContainer, message);
     }
     await config.onSetup?.();
+    if (config.replayHistoryOnStartup === true) {
+      await renderSessionHistory();
+    }
     updateHeader();
 
     while (!session.closed) {
@@ -1540,8 +1666,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
+    const composerRows = composerLayer.render(terminal.columns).length;
     extensionUiController.abort();
-    disposeAssistantViews();
     clearStatus();
     footerStatusBar.stop();
     session.close();
@@ -1553,7 +1679,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     try {
       await terminal.drainInput();
     } finally {
+      // Rendering must stop before the streamed assistant views are disposed:
+      // disposal empties their children, so a later render would blank the
+      // reply that is already on screen.
       tui.stop();
+      terminal.write(terminalExitCursorSequence(composerRows));
+      disposeAssistantViews();
     }
   }
 }

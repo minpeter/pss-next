@@ -6,7 +6,6 @@ import {
 } from "@minpeter/pss-runtime";
 import type { ModelMessage } from "ai";
 import {
-  activeSessionKey,
   listSessionsForCwd,
   readSessionIndex,
   removeSession,
@@ -75,16 +74,16 @@ export interface SessionManager {
   getSession(key: string): Promise<SessionIndexEntry | undefined>;
   /** List the user messages of a stored thread a fork can branch before. */
   listForkPoints(fromKey: string): Promise<readonly SessionForkPoint[]>;
+  listResumableSessions(): Promise<readonly SessionIndexEntry[]>;
   listSessions(): Promise<readonly SessionIndexEntry[]>;
+  loadSessionHistory(key: string): Promise<readonly ModelMessage[]>;
   /** Delete a session's metadata and its durable thread state. */
   removeSession(key: string): Promise<void>;
   renameSession(key: string, name: string): Promise<SessionIndexEntry>;
   /**
-   * Resolve which thread key this startup should use: an explicit override
-   * wins, then the recorded active session, then the legacy per-cwd key.
-   * The resolved session is registered; it is also marked active unless an
-   * override forced it (an env-forced run must not change what the next
-   * plain startup resumes).
+   * Resolve which thread key this startup should use. An explicit override
+   * reuses that key; otherwise every process gets a new per-cwd session.
+   * Existing sessions remain available through `/resume`.
    */
   resolveStartupSession(options?: {
     readonly name?: string;
@@ -205,6 +204,10 @@ export function createSessionManager(
           result: document.sessions.find((session) => session.key === key),
         })
       ),
+    loadSessionHistory: async (key) =>
+      threads === undefined
+        ? []
+        : decodeStoredThreadState(await threads.load(key)).history,
     listForkPoints: async (fromKey) => {
       if (threads === undefined) {
         return [];
@@ -222,6 +225,27 @@ export function createSessionManager(
       }
       return points;
     },
+    listResumableSessions: () =>
+      enqueue(async (document) => {
+        if (threads === undefined) {
+          return { document, result: [] };
+        }
+        const sessions = listSessionsForCwd(document, cwd);
+        const stored = await Promise.all(
+          sessions.map(async (session) => ({
+            hasMessages:
+              decodeStoredThreadState(await threads.load(session.key)).history
+                .length > 0,
+            session,
+          }))
+        );
+        return {
+          document,
+          result: stored
+            .filter(({ hasMessages }) => hasMessages)
+            .map(({ session }) => session),
+        };
+      }),
     listSessions: () =>
       enqueue((document) =>
         Promise.resolve({
@@ -257,8 +281,7 @@ export function createSessionManager(
       }),
     resolveStartupSession: ({ name, overrideKey } = {}) =>
       enqueue((document) => {
-        const key =
-          overrideKey ?? activeSessionKey(document, cwd) ?? `cwd:${cwd}`;
+        const key = overrideKey ?? newSessionKey(cwd);
         const existing = document.sessions.find(
           (session) => session.key === key
         );

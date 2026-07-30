@@ -327,7 +327,9 @@ describe("createToolRenderers — workspace tools", () => {
     expect(text).toContain("grep");
     expect(text).toContain("TODO");
     expect(text).toContain("include: *.ts");
-    expect(text).toContain("// TODO fix");
+    expect(text).toContain("src/a.ts");
+    expect(text).toContain("3");
+    expect(text).toContain("fix");
     expect(text).not.toContain(GRAY_BG);
   });
 
@@ -355,7 +357,7 @@ describe("createToolRenderers — workspace tools", () => {
     expect(failText).toContain(ERROR_BG);
   });
 
-  it("shell_execute renders terminal controls as visible text", () => {
+  it("shell_execute strips terminal control sequences from output", () => {
     const view = createView(
       "shell_execute",
       { command: "printf unsafe" },
@@ -363,7 +365,9 @@ describe("createToolRenderers — workspace tools", () => {
     );
 
     const text = renderText(view);
-    expect(text).toContain("^[]0;pwned^G");
+    expect(text).toContain("hello");
+    expect(text).not.toContain("pwned");
+    expect(text).not.toContain("^[]0;");
     expect(text).not.toContain("\u001b]");
     expect(text).not.toContain("\u0007");
   });

@@ -74,6 +74,32 @@ describe("automatic compaction summary contract", () => {
     });
   });
 
+  it("ends assistant-ended history with an explicit summary request", async () => {
+    let captured: MockLanguageModelV4CallOptions | undefined;
+    const model = createMockLanguageModelV4((options) => {
+      captured = options;
+      return Promise.resolve(mockLanguageModelV4Text("summary"));
+    });
+
+    await summarizeCompactionRange({
+      history: [
+        { content: "project context. ".repeat(200), role: "user" },
+        { content: "assistant response. ".repeat(100), role: "assistant" },
+      ],
+      model: { model },
+    });
+
+    expect(captured?.prompt.at(-1)).toMatchObject({
+      content: [
+        {
+          text: "Create the compaction summary now.",
+          type: "text",
+        },
+      ],
+      role: "user",
+    });
+  });
+
   it("carries raw tool evidence forward when the model omits it", async () => {
     const model = createMockLanguageModelV4(() =>
       Promise.resolve(mockLanguageModelV4Text("## Tool Evidence\nOmitted."))

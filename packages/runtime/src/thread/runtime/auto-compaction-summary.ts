@@ -160,9 +160,19 @@ export async function summarizeCompactionRange({
     },
     ...history,
   ];
-  const transformedHistory = transformModelContext
+  const transformedHistoryBase = transformModelContext
     ? await transformModelContext(summaryHistory, signal)
     : summaryHistory;
+  const transformedHistory =
+    transformedHistoryBase.at(-1)?.role === "assistant"
+      ? [
+          ...transformedHistoryBase,
+          {
+            content: "Create the compaction summary now.",
+            role: "user" as const,
+          },
+        ]
+      : transformedHistoryBase;
   const output = await generateModelStep({
     attachmentStore: model.attachmentStore,
     contextGate: false,

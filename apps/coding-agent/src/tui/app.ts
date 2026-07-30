@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -41,6 +42,7 @@ import {
   createSessionManager,
   type SessionLifecycleReason,
 } from "../sessions/session-manager";
+import { resolveSessionSelector } from "../sessions/session-resume";
 import { resolveCodingAgentThreadConfig } from "../thread-config";
 import { planAutoUpdate, runAutoUpdate } from "../update/auto-update";
 import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
@@ -48,7 +50,8 @@ import { cliVersion } from "../update/cli-version";
 import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
-import { createClearCommand, createReloadCommand } from "./command-set";
+import { createReloadCommand } from "./command-set";
+import { parseDirectStartArguments } from "./direct-start";
 import { createModelCommand } from "./model-command";
 import {
   boundedReloadOperation,
@@ -58,6 +61,8 @@ import {
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
 import { createSessionCommands } from "./session-commands";
+import { shouldReplayOnStartup } from "./session-startup-replay";
+import { formatSessionResumeHint } from "./terminal-exit";
 import { TokenUsageTracker } from "./usage-footer";
 
 export interface StartTuiOptions {
@@ -66,6 +71,7 @@ export interface StartTuiOptions {
   readonly model?: AgentOptions["model"];
   /** Re-runs extension discovery for `/reload`; absent means unavailable. */
   readonly reloadExtensions?: () => Promise<ReloadableExtensions>;
+  readonly sessionKey?: string;
   /** Display name recorded for the startup session (`--name`). */
   readonly sessionName?: string;
   /** Replaces the TUI's default optional OpenSearch tools. */
@@ -78,9 +84,22 @@ interface StartTuiDependencies {
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
 
+const selectedThreadConfig = async (
+  config: ReturnType<typeof resolveCodingAgentThreadConfig>,
+  sessions: ReturnType<typeof createSessionManager>,
+  sessionKey: string | undefined
+): Promise<ReturnType<typeof resolveCodingAgentThreadConfig>> =>
+  sessionKey === undefined
+    ? config
+    : {
+        ...config,
+        key: await resolveSessionSelector(sessions, sessionKey),
+        keyFromEnv: true,
+      };
+
 /**
  * Resolve (and record) the session this startup drives. The session index
- * must never block startup: on failure the legacy per-directory key is
+ * must never block startup: on failure a process-unique per-directory key is
  * used without recording metadata, and a notice is surfaced.
  */
 async function resolveStartupSessionEntry(
@@ -101,7 +120,9 @@ async function resolveStartupSessionEntry(
       entry: {
         createdAt: at,
         cwd: process.cwd(),
-        key: threadConfig.key,
+        key: threadConfig.keyFromEnv
+          ? threadConfig.key
+          : `cwd:${process.cwd()}#${randomUUID().slice(0, 8)}`,
         updatedAt: at,
       },
       notice: `Session index unavailable: ${
@@ -150,7 +171,7 @@ export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
 ): Promise<number> {
-  const threadConfig = resolveCodingAgentThreadConfig();
+  const resolvedThreadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
@@ -170,9 +191,9 @@ export async function startTui(
     });
     ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
-      autoCompaction: threadConfig.autoCompaction,
+      autoCompaction: resolvedThreadConfig.autoCompaction,
       extensionHost,
-      host: createFileHost({ directory: threadConfig.directory }),
+      host: createFileHost({ directory: resolvedThreadConfig.directory }),
       instructions: composeCodingAgentInstructions(
         contextResources.instructionFragments
       ),
@@ -192,10 +213,15 @@ export async function startTui(
   try {
     const sessionManager = createSessionManager({
       cwd: process.cwd(),
-      directory: threadConfig.directory,
-      threads: createFileHost({ directory: threadConfig.directory }).store
-        .threads,
+      directory: resolvedThreadConfig.directory,
+      threads: createFileHost({ directory: resolvedThreadConfig.directory })
+        .store.threads,
     });
+    const threadConfig = await selectedThreadConfig(
+      resolvedThreadConfig,
+      sessionManager,
+      options.sessionKey
+    );
     const startupSession = await resolveStartupSessionEntry(
       sessionManager,
       threadConfig,
@@ -225,7 +251,6 @@ export async function startTui(
     // opaque, so the selector is not offered then.
     const activeModelSession = modelSession;
     const builtInCommands = [
-      createClearCommand(),
       // Session commands close over helpers defined below; the wrappers
       // defer evaluation to call time.
       ...createSessionCommands({
@@ -393,6 +418,21 @@ export async function startTui(
         usageTracker.addUsage(usage);
         renderUsageFooter();
       },
+      sessionSelector: {
+        currentSessionKey: () => currentSession.key,
+        listSessions: () => sessionManager.listResumableSessions(),
+        loadCurrentHistory: () =>
+          sessionManager.loadSessionHistory(currentSession.key),
+        switchSession: async (sessionKey: string) => {
+          await ensureSessionChangeApproved("switch", {
+            fromKey: currentSession.key,
+            reason: "resume",
+            toKey: sessionKey,
+          });
+          const entry = await sessionManager.switchToSession(sessionKey);
+          await switchThread(entry, "resume");
+        },
+      },
       onOutputDelta: (text) => {
         usageTracker.addOutputDelta(text);
         renderUsageFooter();
@@ -425,6 +465,9 @@ export async function startTui(
           refresh().catch(() => undefined);
         }
       },
+      replayHistoryOnStartup: shouldReplayOnStartup({
+        resumedExplicitly: options.sessionKey !== undefined,
+      }),
       onCommandAction: async (action) => {
         if (action.type === "reload") {
           try {
@@ -718,6 +761,7 @@ export async function startTui(
     try {
       await dependencies.createTui(tuiConfig);
     } finally {
+      process.stdout.write(`${formatSessionResumeHint(currentSession.key)}\n`);
       emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
       await thread.dispose().catch(() => undefined);
@@ -813,7 +857,9 @@ function isMainModule(moduleUrl: string, argvPath = process.argv[1]): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
-  const exitCode = await startTui();
+  const exitCode = await startTui(
+    parseDirectStartArguments(process.argv.slice(2))
+  );
   if (exitCode !== 0) {
     process.exitCode = exitCode;
   }

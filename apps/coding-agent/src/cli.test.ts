@@ -20,7 +20,9 @@ describe("coding-agent CLI", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(output).toContain("Usage: pss [command] [-e <path>]\n");
+    expect(output).toContain(
+      "Usage: pss [command] [-e <path>] [--session <key>]\n"
+    );
     expect(output).toContain("exec");
     expect(output).toContain("inspect-thread");
     expect(output).toContain("extension");
@@ -119,6 +121,25 @@ describe("coding-agent CLI", () => {
     expect(started).toBe(1);
   });
 
+  it("accepts --session and starts the TUI", async () => {
+    let started = 0;
+    let sessionKey: string | undefined;
+
+    const exitCode = await runCodingAgentCli({
+      argv: ["--session", "cwd:/repo/demo#abc"],
+      loadExtensions: () => Promise.resolve({ extensions: [], notices: [] }),
+      start: (_extensions, selection) => {
+        started += 1;
+        sessionKey = selection.sessionKey;
+        return Promise.resolve(0);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(started).toBe(1);
+    expect(sessionKey).toBe("cwd:/repo/demo#abc");
+  });
+
   it("rejects --name without a value", async () => {
     let output = "";
 
@@ -197,7 +218,9 @@ describe("coding-agent CLI", () => {
 
     expect(exitCode).toBe(1);
     expect(output).toContain("Unknown pss command: wat\n\n");
-    expect(output).toContain("Usage: pss [command] [-e <path>]\n");
+    expect(output).toContain(
+      "Usage: pss [command] [-e <path>] [--session <key>]\n"
+    );
   });
 
   it("routes inspect-thread through the local inspection surface", async () => {

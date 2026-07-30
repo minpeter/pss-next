@@ -37,17 +37,6 @@ export function buildTuiCommandSet(
   };
 }
 
-const newSessionAction = (): TuiCommandResult => ({
-  success: true,
-  action: { type: "new-session" },
-});
-
-export const createClearCommand = (): TuiCommand => ({
-  name: "clear",
-  description: "Clear the current session history",
-  execute: () => newSessionAction(),
-});
-
 export const createReloadCommand = (): TuiCommand => ({
   name: "reload",
   description: "Reload extensions from disk",
