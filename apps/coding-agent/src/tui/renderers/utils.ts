@@ -1,4 +1,7 @@
-import { sanitizeTerminalText } from "../terminal-safety";
+import {
+  sanitizeTerminalText,
+  sanitizeTerminalTextPreservingColor,
+} from "../terminal-safety";
 import type { BaseToolCallView } from "../tool-call-view";
 
 export const ANSI_RESET = "\x1b[0m";
@@ -9,6 +12,10 @@ export const RESTORE_ON_GRAY_BG = "\x1b[39m\x1b[100m";
 
 export const normalizedLines = (text: string): string[] =>
   sanitizeTerminalText(text).split("\n");
+
+/** Like `normalizedLines`, but tool-provided SGR colors survive. */
+export const normalizedColorLines = (text: string): string[] =>
+  sanitizeTerminalTextPreservingColor(text).split("\n");
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
