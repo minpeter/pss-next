@@ -1,1 +1,0 @@
-{"stepStart":3,"deltaIndexes":[4,5],"committedOutput":7,"result":10}

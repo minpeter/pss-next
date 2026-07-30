@@ -13,6 +13,10 @@ AGENTS.md
 packages/*/.turbo
 .wrangler
 
-# Agent workspace: plans, drafts, and QA evidence are shared; per-session
-# runtime records are local.
-.omo/senpi-task/
+# Agent workspace. QA evidence and session state are local artifacts: they are
+# mandatory to produce (see CONTRIBUTING.md) but never committed. Only plans
+# are shared so reviewers can read the intended approach.
+.omo/*
+!.omo/plans/
+!.omo/plans/**
+.senpi/

@@ -1,8 +1,0 @@
-Usage: pss [command]
-
-Commands:
-  (no command)     Start the interactive TUI
-  exec             Run one headless coding task
-  inspect-thread   Print a report for the configured thread
-  update           Update pss (--check, --channel <tag>)
-  help             Show this help message

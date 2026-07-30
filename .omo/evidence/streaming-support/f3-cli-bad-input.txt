@@ -1,2 +1,0 @@
-Unknown pss exec option: --definitely-invalid
-BAD_INPUT_EXIT=1
