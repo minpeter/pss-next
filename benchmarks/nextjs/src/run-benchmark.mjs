@@ -33,6 +33,7 @@ loadDotenv({
 
 function parseArguments(argv) {
   const options = {
+    agentsMd: false,
     dryRun: false,
     filter: undefined,
     nextVersion: undefined,
@@ -42,7 +43,9 @@ function parseArguments(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
-    if (flag === "--dry-run") {
+    if (flag === "--agents-md") {
+      options.agentsMd = true;
+    } else if (flag === "--dry-run") {
       options.dryRun = true;
     } else if (flag === "--smoke") {
       options.smoke = true;
@@ -98,10 +101,22 @@ async function readArtifactManifest() {
   }
 }
 
-async function createSetup(nextVersion) {
+async function createSetup(nextVersion, agentsMd) {
   const tarball = (await readFile(tarballPath)).toString("base64");
   return async (sandbox) => {
-    await sandbox.writeFiles({ ".pss-coding-agent.tgz.b64": tarball });
+    await sandbox.writeFiles({
+      ".pss-coding-agent.tgz.b64": tarball,
+      ...(agentsMd
+        ? {
+            "AGENTS.md": `<!-- BEGIN:nextjs-agent-rules -->
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in \`node_modules/next/dist/docs/\` before writing any code. Heed deprecation notices.
+<!-- END:nextjs-agent-rules -->
+`,
+          }
+        : {}),
+    });
     const decode = await sandbox.runCommand("bash", [
       "-c",
       "base64 -d .pss-coding-agent.tgz.b64 > /tmp/pss-coding-agent.tgz && rm .pss-coding-agent.tgz.b64",
@@ -162,6 +177,7 @@ const earlyExit = profile.earlyExit;
 const artifactManifest = await readArtifactManifest();
 const manifest = {
   agent: "pss",
+  agentsMd: options.agentsMd,
   baseUrl,
   earlyExit,
   fixtureCount: selectedFixtures.length,
@@ -207,14 +223,14 @@ const config = {
   scripts: ["build"],
   validation: "vitest",
   timeout: 1200,
-  setup: await createSetup(nextVersion),
+  setup: await createSetup(nextVersion, options.agentsMd),
   sandbox: "auto",
   copyFiles: "changed",
   agentOptions: { baseUrl },
   webResearch: false,
 };
 const safeModel = model.replace(SAFE_MODEL_PATTERN, "-");
-const experimentName = `pss-${options.profile}/${safeModel}`;
+const experimentName = `pss-${options.profile}${options.agentsMd ? "--agents-md" : ""}/${safeModel}`;
 const results = await runExperiment({
   config,
   fixtures: selectedFixtures,
