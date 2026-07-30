@@ -165,27 +165,6 @@ export const getAliasArgumentSuggestions = async (
   };
 };
 
-const getCommandArgumentContext = (
-  textBeforeCursor: string,
-  aliasToCanonicalName: Map<string, string>,
-  commandSuggestionsByName: Map<string, SlashCommand>
-): { commandName: string; query: string } | undefined => {
-  const spaceIndex = textBeforeCursor.indexOf(" ");
-  if (spaceIndex < 0) {
-    return;
-  }
-  const rawName = textBeforeCursor.slice(1, spaceIndex).toLowerCase();
-  const commandName = aliasToCanonicalName.get(rawName) ?? rawName;
-  const command = commandSuggestionsByName.get(commandName);
-  if (command?.getArgumentCompletions === undefined) {
-    return;
-  }
-  return {
-    commandName,
-    query: textBeforeCursor.slice(spaceIndex + 1),
-  };
-};
-
 export const getAliasMatches = (
   query: string,
   aliasToCanonicalName: Map<string, string>,
@@ -243,9 +222,6 @@ export const createAliasAwareAutocompleteProvider = (options?: {
   );
   const commandSuggestionsByName = buildCommandSuggestionsByName(slashCommands);
   const aliasToCanonicalName = buildAliasToCanonicalNameMap(commands);
-  let previousArgumentCompletion:
-    | { commandName: string; query: string }
-    | undefined;
 
   return {
     getSuggestions: async (
@@ -272,31 +248,6 @@ export const createAliasAwareAutocompleteProvider = (options?: {
       const commandLines = [...lines];
       commandLines[cursorLine] = currentLine.slice(leadingWhitespaceLength);
       const commandCursorCol = cursorCol - leadingWhitespaceLength;
-      const argumentContext = getCommandArgumentContext(
-        commandTextBeforeCursor,
-        aliasToCanonicalName,
-        commandSuggestionsByName
-      );
-      if (
-        argumentContext !== undefined &&
-        argumentContext.query.trim().length === 0 &&
-        previousArgumentCompletion?.commandName ===
-          argumentContext.commandName &&
-        previousArgumentCompletion.query.trim().length > 0
-      ) {
-        // The user erased a query after navigating its list. Do not leave a
-        // stale autocomplete selection that Enter could apply to the prompt.
-        previousArgumentCompletion = undefined;
-        return null;
-      }
-      previousArgumentCompletion =
-        argumentContext === undefined
-          ? undefined
-          : {
-              commandName: argumentContext.commandName,
-              query: argumentContext.query,
-            };
-
       const aliasArgumentSuggestions = await getAliasArgumentSuggestions(
         commandTextBeforeCursor,
         aliasToCanonicalName,
