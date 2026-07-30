@@ -42,7 +42,10 @@ import {
   createSessionManager,
   type SessionLifecycleReason,
 } from "../sessions/session-manager";
-import { resolveCodingAgentThreadConfig } from "../thread-config";
+import {
+  type CodingAgentThreadConfig,
+  resolveCodingAgentThreadConfig,
+} from "../thread-config";
 import { planAutoUpdate, runAutoUpdate } from "../update/auto-update";
 import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
 import { cliVersion } from "../update/cli-version";
@@ -59,6 +62,7 @@ import {
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
 import { createSessionCommands } from "./session-commands";
+import { formatSessionResumeHint } from "./terminal-exit";
 import { TokenUsageTracker } from "./usage-footer";
 
 export interface StartTuiOptions {
@@ -67,6 +71,7 @@ export interface StartTuiOptions {
   readonly model?: AgentOptions["model"];
   /** Re-runs extension discovery for `/reload`; absent means unavailable. */
   readonly reloadExtensions?: () => Promise<ReloadableExtensions>;
+  readonly sessionKey?: string;
   /** Display name recorded for the startup session (`--name`). */
   readonly sessionName?: string;
   /** Replaces the TUI's default optional OpenSearch tools. */
@@ -149,11 +154,20 @@ const foregroundThemeConfig = (): Pick<AgentTUIConfig, "theme"> => {
   return foregroundColor === undefined ? {} : { theme: { foregroundColor } };
 };
 
+const selectedThreadConfig = (
+  sessionKey: string | undefined
+): CodingAgentThreadConfig => {
+  const config = resolveCodingAgentThreadConfig();
+  return sessionKey === undefined
+    ? config
+    : { ...config, key: sessionKey, keyFromEnv: true };
+};
+
 export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
 ): Promise<number> {
-  const threadConfig = resolveCodingAgentThreadConfig();
+  const threadConfig = selectedThreadConfig(options.sessionKey);
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
@@ -735,6 +749,7 @@ export async function startTui(
     try {
       await dependencies.createTui(tuiConfig);
     } finally {
+      process.stdout.write(`${formatSessionResumeHint(currentSession.key)}\n`);
       emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
       await thread.dispose().catch(() => undefined);

@@ -65,6 +65,7 @@ import {
   type TuiStreamPart,
 } from "./stream-handlers";
 import { AssistantStreamView } from "./stream-views";
+import { terminalExitCursorSequence } from "./terminal-exit";
 import { sanitizeTerminalText } from "./terminal-safety";
 import { BaseToolCallView, type ToolRendererMap } from "./tool-call-view";
 
@@ -1686,6 +1687,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
+    const transcriptRows =
+      headerContainer.render(terminal.columns).length +
+      chatContainer.render(terminal.columns).length;
+    const renderedRows = Math.max(
+      terminal.rows,
+      transcriptRows + composerReservation.render(terminal.columns).length
+    );
     extensionUiController.abort();
     disposeAssistantViews();
     clearStatus();
@@ -1700,6 +1708,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       await terminal.drainInput();
     } finally {
       tui.stop();
+      terminal.write(terminalExitCursorSequence(renderedRows, transcriptRows));
     }
   }
 }

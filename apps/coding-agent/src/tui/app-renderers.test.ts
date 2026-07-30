@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentOptions } from "@minpeter/pss-runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CodingAgentExtensionInput } from "../extensions";
 import { createCodingAgentExtensionHostWithDefaults } from "../extensions/defaults";
 import type { AgentTUIConfig } from "./agent";
@@ -58,6 +58,31 @@ const withIsolatedTuiEnvironment = async (
 };
 
 describe("TUI extension renderer merging", () => {
+  it("prints the command for resuming the exited session", async () => {
+    await withIsolatedTuiEnvironment(async () => {
+      const output: string[] = [];
+      const write = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation((chunk) => {
+          output.push(String(chunk));
+          return true;
+        });
+      try {
+        const exitCode = await startTui(
+          { model },
+          { createTui: () => Promise.resolve() }
+        );
+
+        expect(exitCode).toBe(0);
+        expect(output.join("")).toContain(
+          "To resume this session: pss --session app-renderers-test\n"
+        );
+      } finally {
+        write.mockRestore();
+      }
+    });
+  });
+
   it("updates the captured startTui config after a successful reload", async () => {
     const overrideRenderer = () => ({
       invalidate() {

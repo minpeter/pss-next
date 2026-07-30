@@ -44,7 +44,11 @@ interface RunCodingAgentCliOptions {
   readonly home?: string;
   readonly loadExtensions?: () => Promise<LoadedConfiguredExtensions>;
   readonly start?: (
-    extensions: readonly CodingAgentExtensionInput[]
+    extensions: readonly CodingAgentExtensionInput[],
+    selection: {
+      readonly sessionKey?: string;
+      readonly sessionName?: string;
+    }
   ) => Promise<number>;
   readonly stdout?: { write(text: string): void };
   readonly update?: (args: readonly string[]) => Promise<number>;
@@ -135,14 +139,21 @@ async function runTuiCommand({
   readonly home: string;
   readonly loadExtensions?: () => Promise<LoadedConfiguredExtensions>;
   readonly start?: (
-    extensions: readonly CodingAgentExtensionInput[]
+    extensions: readonly CodingAgentExtensionInput[],
+    selection: {
+      readonly sessionKey?: string;
+      readonly sessionName?: string;
+    }
   ) => Promise<number>;
   readonly stdout: { write(text: string): void };
 }): Promise<number> {
   let extensionPaths: readonly string[];
-  let sessionName: string | undefined;
+  let selection: {
+    readonly sessionKey?: string;
+    readonly sessionName?: string;
+  };
   try {
-    ({ extensionPaths, sessionName } = parseTuiArguments(argv));
+    ({ extensionPaths, ...selection } = parseTuiArguments(argv));
   } catch (error) {
     stdout.write(`${errorMessage(error)}\n\n${formatUsage()}\n`);
     return 1;
@@ -187,15 +198,14 @@ async function runTuiCommand({
     extensionPaths,
     home,
   });
-  return await (
-    start ??
-    ((loaded: readonly CodingAgentExtensionInput[]) =>
-      startTui({
-        extensions: loaded,
-        reloadExtensions,
-        ...(sessionName === undefined ? {} : { sessionName }),
-      }))
-  )(extensions);
+  if (start !== undefined) {
+    return await start(extensions, selection);
+  }
+  return await startTui({
+    extensions,
+    reloadExtensions,
+    ...selection,
+  });
 }
 
 /**
@@ -377,53 +387,82 @@ function isExtensionFlag(value: string): boolean {
 }
 
 function isTuiFlag(value: string): boolean {
-  return isExtensionFlag(value) || value === "--name";
+  return isExtensionFlag(value) || value === "--name" || value === "--session";
+}
+
+function requiredTuiFlagValue(
+  argv: readonly string[],
+  index: number,
+  flag: string,
+  missingMessage = `${flag} requires a value.`
+): string {
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    throw new Error(missingMessage);
+  }
+  return value;
+}
+
+function uniqueTuiFlagValue(
+  argv: readonly string[],
+  index: number,
+  flag: string,
+  current: string | undefined
+): string {
+  if (current !== undefined) {
+    throw new Error(`${flag} may only be provided once.`);
+  }
+  return requiredTuiFlagValue(argv, index, flag);
 }
 
 function parseTuiArguments(argv: readonly string[]): {
   readonly extensionPaths: readonly string[];
+  readonly sessionKey?: string;
   readonly sessionName?: string;
 } {
   const paths: string[] = [];
+  let sessionKey: string | undefined;
   let sessionName: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index] ?? "";
     if (flag === "--name") {
-      const value = argv[index + 1];
-      if (value === undefined || value.startsWith("-")) {
-        throw new Error("--name requires a value.");
-      }
-      if (sessionName !== undefined) {
-        throw new Error("--name may only be provided once.");
-      }
-      sessionName = value;
+      sessionName = uniqueTuiFlagValue(argv, index, flag, sessionName);
+      index += 1;
+      continue;
+    }
+    if (flag === "--session") {
+      sessionKey = uniqueTuiFlagValue(argv, index, flag, sessionKey);
       index += 1;
       continue;
     }
     if (!isExtensionFlag(flag)) {
       throw new Error(`Unknown pss option: ${flag}`);
     }
-    const value = argv[index + 1];
-    if (value === undefined || value.startsWith("-")) {
-      throw new Error(`${flag} requires a path value.`);
-    }
+    const value = requiredTuiFlagValue(
+      argv,
+      index,
+      flag,
+      `${flag} requires a path value.`
+    );
     paths.push(value);
     index += 1;
   }
   return {
     extensionPaths: paths,
+    ...(sessionKey === undefined ? {} : { sessionKey }),
     ...(sessionName === undefined ? {} : { sessionName }),
   };
 }
 
 function formatUsage(): string {
   return [
-    "Usage: pss [command] [-e <path>]",
+    "Usage: pss [command] [-e <path>] [--session <key>]",
     "",
     "Commands:",
     "  (no command)     Start the interactive TUI",
     "                   (-e/--extension <path> loads an extension for this run,",
-    "                    --name <name> names the startup session)",
+    "                    --name <name> names the startup session,",
+    "                    --session <key> resumes a specific session)",
     "  exec             Run one headless coding task",
     "  extension        Manage coding-agent extensions",
     "  inspect-thread   Print a report for the configured thread",
