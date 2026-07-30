@@ -11,6 +11,11 @@ export type SessionHistoryReplayPart =
   | { readonly text: string; readonly type: "user" }
   | { readonly part: TuiStreamPart; readonly type: "stream" };
 
+export interface ResumableSessionSource {
+  loadCurrentHistory(): Promise<readonly ModelMessage[]>;
+  switchSession(sessionKey: string): Promise<void>;
+}
+
 const stream = (part: TuiStreamPart): SessionHistoryReplayPart => ({
   part,
   type: "stream",
@@ -105,4 +110,12 @@ export const sessionHistoryReplayParts = (
     }
   }
   return replay;
+};
+
+export const resumeSessionReplayParts = async (
+  source: ResumableSessionSource,
+  sessionKey: string
+): Promise<readonly SessionHistoryReplayPart[]> => {
+  await source.switchSession(sessionKey);
+  return sessionHistoryReplayParts(await source.loadCurrentHistory());
 };

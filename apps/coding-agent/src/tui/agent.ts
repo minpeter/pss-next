@@ -45,7 +45,11 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
-import { sessionHistoryReplayParts } from "./session-history-replay";
+import {
+  resumeSessionReplayParts,
+  type SessionHistoryReplayPart,
+  sessionHistoryReplayParts,
+} from "./session-history-replay";
 import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
@@ -1037,14 +1041,16 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     return { finishReason: tracker.finishReason };
   };
 
-  const renderSessionHistory = async (): Promise<void> => {
+  const renderSessionHistory = async (
+    replay?: readonly SessionHistoryReplayPart[]
+  ): Promise<void> => {
     const selectorConfig = config.sessionSelector;
     if (selectorConfig === undefined) {
       return;
     }
-    const replay = sessionHistoryReplayParts(
-      await selectorConfig.loadCurrentHistory()
-    );
+    const parts =
+      replay ??
+      sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
     let streamParts: TuiStreamPart[] = [];
     const flushStreamParts = async (): Promise<void> => {
       if (streamParts.length === 0) {
@@ -1067,7 +1073,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         }
       );
     };
-    for (const part of replay) {
+    for (const part of parts) {
       if (part.type === "stream") {
         streamParts.push(part.part);
         continue;
@@ -1397,8 +1403,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     try {
-      await selectorConfig.switchSession(selection);
-      await renderSessionHistory();
+      await renderSessionHistory(
+        await resumeSessionReplayParts(selectorConfig, selection)
+      );
       updateHeader();
     } catch (error) {
       addSystemMessage(
