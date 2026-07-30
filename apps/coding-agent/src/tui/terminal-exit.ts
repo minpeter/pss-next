@@ -6,11 +6,7 @@ const shellWord = (value: string): string =>
 export const formatSessionResumeHint = (sessionKey: string): string =>
   `To resume this session: pss --session ${shellWord(sessionKey)}`;
 
-export const terminalExitCursorSequence = (
-  renderedRows: number,
-  transcriptRows: number
-): string => {
-  const rowsUp = Math.max(0, renderedRows - transcriptRows);
-  const cursor = rowsUp === 0 ? "\r" : `\x1b[${rowsUp}A\r`;
+export const terminalExitCursorSequence = (composerRows: number): string => {
+  const cursor = composerRows === 0 ? "\r" : `\x1b[${composerRows}A\r`;
   return `${cursor}\x1b[J`;
 };

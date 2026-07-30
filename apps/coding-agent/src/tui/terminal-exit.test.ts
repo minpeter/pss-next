@@ -5,12 +5,12 @@ import {
 } from "./terminal-exit";
 
 describe("terminal exit", () => {
-  it("moves from a padded viewport to the end of the transcript", () => {
-    expect(terminalExitCursorSequence(24, 7)).toBe("\x1b[17A\r\x1b[J");
+  it("erases the composer rows below the transcript", () => {
+    expect(terminalExitCursorSequence(4)).toBe("\x1b[4A\r\x1b[J");
   });
 
-  it("does not move above a transcript that fills the viewport", () => {
-    expect(terminalExitCursorSequence(24, 24)).toBe("\r\x1b[J");
+  it("only erases in place when no composer rows were rendered", () => {
+    expect(terminalExitCursorSequence(0)).toBe("\r\x1b[J");
   });
 
   it("prints a directly usable resume command", () => {

@@ -35,7 +35,6 @@ import {
   type TuiCommandResult,
 } from "./command";
 import { buildTuiCommandSet } from "./command-set";
-import { composerFlowLines } from "./composer-flow";
 import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
@@ -1663,17 +1662,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
-    const flowRows = composerFlowLines({
-      chat: chatContainer,
-      composer: composerLayer,
-      header: headerContainer,
-      terminalRows: terminal.rows,
-      width: terminal.columns,
-    }).length;
-    const transcriptRows =
-      headerContainer.render(terminal.columns).length +
-      chatContainer.render(terminal.columns).length;
-    const renderedRows = flowRows;
+    const composerRows = composerLayer.render(terminal.columns).length;
     extensionUiController.abort();
     disposeAssistantViews();
     clearStatus();
@@ -1688,7 +1677,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       await terminal.drainInput();
     } finally {
       tui.stop();
-      terminal.write(terminalExitCursorSequence(renderedRows, transcriptRows));
+      terminal.write(terminalExitCursorSequence(composerRows));
     }
   }
 }
