@@ -1664,7 +1664,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   } finally {
     const composerRows = composerLayer.render(terminal.columns).length;
     extensionUiController.abort();
-    disposeAssistantViews();
     clearStatus();
     footerStatusBar.stop();
     session.close();
@@ -1676,8 +1675,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     try {
       await terminal.drainInput();
     } finally {
+      // Rendering must stop before the streamed assistant views are disposed:
+      // disposal empties their children, so a later render would blank the
+      // reply that is already on screen.
       tui.stop();
       terminal.write(terminalExitCursorSequence(composerRows));
+      disposeAssistantViews();
     }
   }
 }
