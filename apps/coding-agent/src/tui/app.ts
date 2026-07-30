@@ -51,6 +51,7 @@ import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createReloadCommand } from "./command-set";
+import { parseDirectStartArguments } from "./direct-start";
 import { createModelCommand } from "./model-command";
 import {
   boundedReloadOperation,
@@ -856,7 +857,9 @@ function isMainModule(moduleUrl: string, argvPath = process.argv[1]): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
-  const exitCode = await startTui();
+  const exitCode = await startTui(
+    parseDirectStartArguments(process.argv.slice(2))
+  );
   if (exitCode !== 0) {
     process.exitCode = exitCode;
   }
