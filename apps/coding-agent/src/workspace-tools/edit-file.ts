@@ -72,6 +72,11 @@ function resolveEdit(
 ): ResolvedEdit {
   if (edit.op === "replace") {
     if (edit.first !== undefined || edit.last !== undefined) {
+      if (edit.target !== undefined) {
+        throw new Error(
+          "replace accepts either target for one line or first+last for a range, not both."
+        );
+      }
       if (edit.first === undefined) {
         throw new Error(
           `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`

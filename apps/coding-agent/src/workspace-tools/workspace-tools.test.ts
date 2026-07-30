@@ -621,6 +621,39 @@ describe("workspace coding tools", () => {
     ).rejects.toThrow(/new_content/u);
   });
 
+  it("rejects a replace that mixes target with a first/last range", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const first = initial.match(firstLineAnchorPattern)?.[0];
+    const second = initial.match(secondLineAnchorPattern)?.[0];
+    if (first === undefined || second === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    // Silently taking the range branch here would edit the range and ignore
+    // target, misediting whichever lines target did not name.
+    await expect(
+      edit(
+        {
+          edits: [
+            { first, last: first, new_content: ["x"], op: "replace", target: second },
+          ],
+          path: "src/example.ts",
+        },
+        executionOptions
+      )
+    ).rejects.toThrow(/target/u);
+
+    await expect(
+      readFile(join(workspace, "src", "example.ts"), "utf8")
+    ).resolves.toBe("export const first = 1;\nexport const second = 2;\n");
+  });
+
   it("reports files skipped during grep for size", async () => {
     await writeFile(
       join(workspace, "src", "large.txt"),
