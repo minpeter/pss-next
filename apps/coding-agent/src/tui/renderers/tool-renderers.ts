@@ -5,6 +5,7 @@ import {
   renderReadFile,
   renderWriteFile,
 } from "./file";
+import { formatGrepMatches } from "./grep-format";
 import {
   isRecord,
   normalizedLines,
@@ -89,7 +90,7 @@ const renderGrepFiles = (
   }
 
   const lines = normalizedLines(output);
-  view.setPrettyBlock(header, lines.slice(1).join("\n"), {
+  view.setPrettyBlock(header, formatGrepMatches(lines.slice(1)), {
     useBackground: false,
   });
 };
