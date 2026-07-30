@@ -134,7 +134,7 @@ describe("createToolRenderers — workspace tools", () => {
       "edit_file",
       {
         path: "src/app.ts",
-        edits: [{ op: "replace", pos: "121#AB", lines: "const a = 2;" }],
+        edits: [{ op: "replace", target: "121#AB", new_content: "const a = 2;" }],
       },
       "OK - edited file\npath: src/app.ts\nedits: 1\nfile_hash: abcd1234\ndiff:\n@@ edit 1\n-121#SW|const a = 1;\n+121#PV|const a = 2;"
     );
@@ -164,7 +164,7 @@ describe("createToolRenderers — workspace tools", () => {
   it("edit_file renders append-only diff lines in green without a red line", () => {
     const view = createView(
       "edit_file",
-      { path: "src/app.ts", edits: [{ op: "append", lines: "omega();" }] },
+      { path: "src/app.ts", edits: [{ op: "append", new_content: "omega();" }] },
       "OK - edited file\npath: src/app.ts\nedits: 1\nfile_hash: abcd1234\ndiff:\n@@ edit 1\n+3|omega();"
     );
 
@@ -184,8 +184,8 @@ describe("createToolRenderers — workspace tools", () => {
         edits: [
           {
             op: "replace",
-            pos: "4#SW",
-            lines: '  "description": "Code at the speed of thought.",',
+            target: "4#SW",
+            new_content: '  "description": "Code at the speed of thought.",',
           },
         ],
       },
@@ -207,7 +207,7 @@ describe("createToolRenderers — workspace tools", () => {
 
   it("ignores a trailing empty edit group from truncated streaming output", () => {
     const input = {
-      edits: [{ lines: "new", op: "replace", pos: "1#AA" }],
+      edits: [{ new_content: "new", op: "replace", target: "1#AA" }],
       path: "f.ts",
     };
     const base =
@@ -227,8 +227,8 @@ describe("createToolRenderers — workspace tools", () => {
       {
         path: "src/app.ts",
         edits: [
-          { op: "replace", pos: "1#AB", end: "2#CD", lines: "const a = 2;" },
-          { op: "append", lines: "console.log(a);" },
+          { op: "replace", first: "1#AB", last: "2#CD", new_content: "const a = 2;" },
+          { op: "append", new_content: "console.log(a);" },
         ],
       },
       "OK - edited file\npath: src/app.ts\nedits: 2\nfile_hash: abcd1234"
@@ -250,9 +250,9 @@ describe("createToolRenderers — workspace tools", () => {
       {
         edits: [
           {
-            lines: ["const a = 1;", "const b = 2;"],
+            new_content: ["const a = 1;", "const b = 2;"],
             op: "replace",
-            pos: "1#AA",
+            target: "1#AA",
           },
         ],
         path: "src/example.ts",
@@ -271,9 +271,9 @@ describe("createToolRenderers — workspace tools", () => {
       {
         edits: [
           {
-            lines: ["safe", "unsafe \u001b]52;c;cHduZWQ=\u0007\u009b31m"],
+            new_content: ["safe", "unsafe \u001b]52;c;cHduZWQ=\u0007\u009b31m"],
             op: "replace",
-            pos: "1#AA",
+            target: "1#AA",
           },
         ],
         path: "src/example.ts",
