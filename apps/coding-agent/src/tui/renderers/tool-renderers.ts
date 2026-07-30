@@ -11,6 +11,7 @@ import {
   normalizedLines,
   renderToolError,
   stringField,
+  strippedLines,
 } from "./utils";
 
 const MAX_SINGLE_LINE = 200;
@@ -119,7 +120,7 @@ const renderShellExecute = (
     return;
   }
 
-  const lines = normalizedLines(output);
+  const lines = strippedLines(output);
   const isErrorOutput =
     output.startsWith("ERROR") ||
     lines[1]?.startsWith("exit_code: 0") === false;
