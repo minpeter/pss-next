@@ -8,7 +8,6 @@ import {
 import { formatGrepMatches } from "./grep-format";
 import {
   isRecord,
-  normalizedColorLines,
   normalizedLines,
   renderToolError,
   stringField,
@@ -120,7 +119,7 @@ const renderShellExecute = (
     return;
   }
 
-  const lines = normalizedColorLines(output);
+  const lines = normalizedLines(output);
   const isErrorOutput =
     output.startsWith("ERROR") ||
     lines[1]?.startsWith("exit_code: 0") === false;
@@ -135,7 +134,6 @@ const renderShellExecute = (
   const body = lines.slice(4).join("\n");
 
   view.setPrettyBlock(`**bash** \`${displayCommand}\`${headerSuffix}`, body, {
-    allowAnsi: true,
     isError: isErrorOutput,
   });
 };
