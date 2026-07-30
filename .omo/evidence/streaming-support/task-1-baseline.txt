@@ -1,0 +1,25 @@
+ ✓ src/platform/memory/storage/memory-attachment-store.test.ts (2 tests) 173ms
+ ✓ src/thread/handle/public-api.test.ts (4 tests) 72ms
+ ✓ src/platform/file/host/scheduler-contract.test.ts (9 tests | 1 skipped) 73ms
+ ✓ src/platform/cloudflare/storage/execution/store-thread-event.test.ts (1 test) 32ms
+ ✓ src/thread/handle/persistence-compaction.test.ts (1 test) 84ms
+ ✓ src/execution/host/thread-execution-run-id.test.ts (1 test) 5ms
+ ✓ src/platform/cloudflare/host/scheduler-contract.test.ts (9 tests | 1 skipped) 22ms
+ ✓ src/execution/host/checkpoint-ids.test.ts (1 test) 7ms
+ ✓ src/thread/store/thread-store-contract.test.ts (1 test) 3ms
+ ✓ src/platform/memory/execution/scheduler-contract.test.ts (9 tests | 1 skipped) 46ms
+ ✓ src/thread/plugins/send-intercept.test.ts (2 tests) 123ms
+ ✓ src/execution/host/host.test.ts (1 test) 3ms
+ ✓ src/thread/handle/persistence-attachments.test.ts (1 test) 123ms
+ ✓ src/thread/handle/delete-failure.test.ts (1 test) 83ms
+ ✓ src/platform/memory/execution/store-contract.test.ts (19 tests) 52ms
+ ✓ src/thread/runtime/tool-loop.test.ts (1 test) 67ms
+ ✓ src/contracts/durable-turn-inspection-api.test.ts (2 tests) 675ms
+     ✓ keeps inspection on the existing execution subpath  668ms
+ ✓ src/platform/file/host/agent-context.test.ts (1 test) 5ms
+
+ Test Files  121 passed (121)
+      Tests  756 passed | 3 skipped (759)
+   Start at  22:28:34
+   Duration  12.09s (transform 36.59s, setup 0ms, import 106.49s, tests 34.30s, environment 19ms)
+

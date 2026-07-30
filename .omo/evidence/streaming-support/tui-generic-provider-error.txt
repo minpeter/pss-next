@@ -1,0 +1,47 @@
+Surface: built interactive TUI with isolated PSS_THREAD_DIR
+Command: PSS_THREAD_DIR=<temp> node apps/coding-agent/bin/pss.js
+Terminal: 120x40 rendered PTY screen
+Input: 안녕
+
+ × Request refused
+   The provider refused this request.
+   Check your provider account or model access.
+   cf-ray: a1fcb2d85bc1dfa1-KIX
+   x-infron-request-id: 20260723182021264579950HtcjxcEM
+
+Persisted turn-error:
+{
+  "error": {
+    "category": "permission",
+    "providerType": "infron_ai_error",
+    "correlationIds": [
+      {
+        "source": "cf-ray",
+        "value": "a1fcb2d85bc1dfa1-KIX"
+      },
+      {
+        "source": "x-infron-request-id",
+        "value": "20260723182021264579950HtcjxcEM"
+      }
+    ],
+    "observedRetryable": false,
+    "status": 403,
+    "version": 1
+  },
+  "type": "turn-error",
+  "message": "The provider refused this request."
+}
+
+Assertions:
+- PASS: category came from structured HTTP status 403, not provider prose.
+- PASS: untrusted provider prose was replaced by a category-owned safe summary.
+- PASS: correlation IDs came from response headers with source labels.
+- PASS: the TUI used the permission category for title and guidance.
+- PASS: no APICallError object, stack, response body, request body, URL, or
+  credentials appeared.
+- PASS: legacy provider regex and request-ID prose parsing are absent.
+
+Cleanup:
+- TUI received Ctrl+C twice and exited with code 0.
+- Isolated temp thread store removed after inspection.
+- No live coding-agent process remains.

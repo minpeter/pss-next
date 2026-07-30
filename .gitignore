@@ -12,3 +12,7 @@ AGENTS.md
 .turbo
 packages/*/.turbo
 .wrangler
+
+# Agent workspace: plans, drafts, and QA evidence are shared; per-session
+# runtime records are local.
+.omo/senpi-task/

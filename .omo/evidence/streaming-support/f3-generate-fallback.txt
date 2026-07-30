@@ -1,0 +1,1 @@
+{"source":"doGenerate-only","sequence":["reasoning-delta:reason one","text-delta:text one","tool-input-start","tool-input-delta:{\"city\":\"Seoul\"}","tool-input-end","text-delta:text two"]}

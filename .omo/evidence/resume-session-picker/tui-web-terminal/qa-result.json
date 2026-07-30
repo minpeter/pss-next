@@ -1,0 +1,23 @@
+{
+  "passed": false,
+  "results": [
+    {
+      "background": "#f5f5f5",
+      "foreground": "#202020",
+      "formulas": 0,
+      "images": 0,
+      "margins": false,
+      "name": "light",
+      "screenshot": "/home/minpeter/github.com/minpeter/pss-runtime/.omo/evidence/resume-session-picker/tui-web-terminal/light-xterm.png"
+    },
+    {
+      "background": "#0d1117",
+      "foreground": "#e6edf3",
+      "formulas": 0,
+      "images": 0,
+      "margins": false,
+      "name": "dark",
+      "screenshot": "/home/minpeter/github.com/minpeter/pss-runtime/.omo/evidence/resume-session-picker/tui-web-terminal/dark-xterm.png"
+    }
+  ]
+}

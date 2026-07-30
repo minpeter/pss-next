@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /home/minpeter/github.com/minpeter/pss-runtime-streaming/packages/runtime
+
+ ❯ src/contracts/root-api-events.test.ts (5 tests | 1 failed) 11ms
+     × exports event classifiers from the package root 7ms
+     ✓ types event classifier exports from the package root 1ms
+     ✓ types ephemeral stream event exports from the package root 0ms
+     ✓ types plugin-only tool.call.before interception results 1ms
+     ✓ types atomic model step transforms from the package root 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/contracts/root-api-events.test.ts > runtime root event API exports > exports event classifiers from the package root
+AssertionError: expected { …(43), …(1) } to have property "streamAgentEventTypes" with value undefined
+ ❯ src/contracts/root-api-events.test.ts:36:21
+     34|     expect(runtime).toHaveProperty("isControlAgentEvent", isControlAge…
+     35|     expect(runtime).toHaveProperty("isStreamAgentEvent", isStreamAgent…
+     36|     expect(runtime).toHaveProperty(
+       |                     ^
+     37|       "streamAgentEventTypes",
+     38|       streamAgentEventTypes
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  00:56:30
+   Duration  1.09s (transform 684ms, setup 0ms, import 928ms, tests 11ms, environment 0ms)
+

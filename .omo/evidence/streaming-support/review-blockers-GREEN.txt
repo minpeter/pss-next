@@ -1,0 +1,11 @@
+
+ RUN  v4.1.10 /home/minpeter/github.com/minpeter/pss-runtime-streaming/packages/runtime
+
+ ✓ src/llm/model-step-stream.test.ts (4 tests) 64ms
+ ✓ src/contracts/root-api-events.test.ts (5 tests) 7ms
+
+ Test Files  2 passed (2)
+      Tests  9 passed (9)
+   Start at  00:56:58
+   Duration  1.12s (transform 739ms, setup 0ms, import 1.13s, tests 71ms, environment 0ms)
+

@@ -1,0 +1,23 @@
+Surface: built interactive TUI
+Command: node apps/coding-agent/bin/pss.js
+Terminal: 120x40 rendered PTY screen
+Input: 안녕
+
+ × Request failed
+   User banned
+   Check AI_API_KEY, AI_BASE_URL, and AI_MODEL.
+   Request ID: 20260723165135666816174ONjj04mz
+
+Assertions:
+- PASS: no APICallError object or stack trace appeared.
+- PASS: the provider message remained visible.
+- PASS: the remediation names the three model configuration variables.
+- PASS: the provider request ID is separated from the message.
+- PASS: the content fits the terminal width without border drift.
+
+Cleanup:
+- TUI received Ctrl+C twice and exited with code 0.
+- Restored ~/.pss/threads/.current-generation to
+  transaction-2457795-d16adae1-b3e8-42e2-b3ef-7749befc7bb4.
+- Removed all three transaction-2462239-* generations created by this QA run.
+- No live coding-agent process remains.

@@ -1,0 +1,20 @@
+$ ultracite check .
+biome.jsonc:2:14 deserialize ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i The configuration schema version does not match the CLI version 2.5.4
+  
+    1 │ {
+  > 2 │   "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+      │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    3 │   "root": true,
+    4 │   "extends": ["ultracite/biome/core"],
+  
+  i   Expected:                     2.5.4
+      Found:                        2.5.1
+  
+  
+  i Run the command biome migrate to migrate the configuration file.
+  
+
+Checked 799 files in 3s. No fixes applied.
+Found 1 info.

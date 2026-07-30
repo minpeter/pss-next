@@ -1,0 +1,52 @@
+$ ultracite check .
+biome.jsonc:2:14 deserialize ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i The configuration schema version does not match the CLI version 2.5.4
+  
+    1 │ {
+  > 2 │   "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+      │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    3 │   "root": true,
+    4 │   "extends": ["ultracite/biome/core"],
+  
+  i   Expected:                     2.5.4
+      Found:                        2.5.1
+  
+  
+  i Run the command biome migrate to migrate the configuration file.
+  
+
+apps/coding-agent/src/exec.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+      9   9 │   type MockStreamResult = Extract<
+     10  10 │     Exclude<
+     11     │ - ····NonNullable<ConstructorParameters<typeof·MockLanguageModelV4>[0]>["doStream"],
+         11 │ + ····NonNullable<
+         12 │ + ······ConstructorParameters<typeof·MockLanguageModelV4>[0]
+         13 │ + ····>["doStream"],
+     12  14 │       (...args: never[]) => unknown
+     13  15 │     >,
+    ······· │ 
+    103 105 │       expect(resultLine).toBeDefined();
+    104 106 │       const resultPayload = resultLine?.result as { events: AgentEvent[] };
+    105     │ - ····expect(resultPayload.events.some((event)·=>·isStreamAgentEvent(event))).toBe(
+    106     │ - ······false
+    107     │ - ····);
+        107 │ + ····expect(
+        108 │ + ······resultPayload.events.some((event)·=>·isStreamAgentEvent(event))
+        109 │ + ····).toBe(false);
+    108 110 │   
+    109 111 │       expect(result.events.some((event) => isStreamAgentEvent(event))).toBe(
+  
+
+Checked 799 files in 7s. No fixes applied.
+Found 1 error.
+Found 1 info.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+[ELIFECYCLE] Command failed with exit code 1.

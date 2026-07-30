@@ -1,0 +1,139 @@
+RED: coding-agent TUI streaming adapter tests before implementation
+Command: pnpm --filter @minpeter/pss-coding-agent exec vitest run src/tui/agent-event-stream.test.ts
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/minpeter/github.com/minpeter/pss-runtime-streaming/apps/coding-agent[39m
+
+ [31m❯[39m src/tui/agent-event-stream.test.ts [2m([22m[2m16 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 23[2mms[22m[39m
+[31m     [31m×[31m streams assistant text deltas without replaying the committed text[39m[32m 14[2mms[22m[39m
+     [32m✓[39m falls back to one whole-text delta for committed-only output[32m 1[2mms[22m[39m
+     [32m✓[39m resets text-delta deduplication at each step[32m 0[2mms[22m[39m
+[31m     [31m×[31m streams reasoning deltas without replaying the committed reasoning[39m[32m 2[2mms[22m[39m
+     [32m✓[39m falls back to one whole-text delta for committed-only reasoning[32m 0[2mms[22m[39m
+[31m     [31m×[31m maps streamed tool-call input with toolCallId preserved[39m[32m 1[2mms[22m[39m
+     [32m✓[39m maps committed-only tool calls and results to their stream parts[32m 0[2mms[22m[39m
+     [32m✓[39m routes error-shaped tool outputs to tool-error parts[32m 0[2mms[22m[39m
+     [32m✓[39m unwraps text-typed tool outputs to the raw string[32m 0[2mms[22m[39m
+     [32m✓[39m unwraps json-typed tool outputs to the raw value[32m 0[2mms[22m[39m
+     [32m✓[39m maps execution-denied outputs to tool-output-denied parts[32m 0[2mms[22m[39m
+     [32m✓[39m forwards model-usage to the callback and tracks the last finish reason[32m 1[2mms[22m[39m
+     [32m✓[39m does not inherit a finish reason from an earlier model attempt[32m 0[2mms[22m[39m
+     [32m✓[39m defaults the finish reason to stop when no usage was reported[32m 0[2mms[22m[39m
+     [32m✓[39m maps turn lifecycle events to start/abort/error parts[32m 0[2mms[22m[39m
+     [32m✓[39m skips user-input and runtime-input echoes[32m 0[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/tui/agent-event-stream.test.ts[2m > [22magentEventStreamParts[2m > [22mstreams assistant text deltas without replaying the committed text
+[31m[1mAssertionError[22m: expected [ { type: 'start-step' }, …(4) ] to deeply equal [ { type: 'start-step' }, …(5) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -4,15 +4,11 @@[39m
+[2m    },[22m
+[2m    {[22m
+[2m      "type": "text-start",[22m
+[2m    },[22m
+[2m    {[22m
+[32m-     "text": "Hello",[39m
+[32m-     "type": "text-delta",[39m
+[32m-   },[39m
+[32m-   {[39m
+[32m-     "text": " world",[39m
+[31m+     "text": "Hello world",[39m
+[2m      "type": "text-delta",[22m
+[2m    },[22m
+[2m    {[22m
+[2m      "type": "text-end",[22m
+[2m    },[22m
+
+[36m [2m❯[22m src/tui/agent-event-stream.test.ts:[2m30:19[22m[39m
+    [90m 28|[39m     ])[33m;[39m
+    [90m 29|[39m
+    [90m 30|[39m     [34mexpect[39m(parts)[33m.[39m[34mtoEqual[39m([
+    [90m   |[39m                   [31m^[39m
+    [90m 31|[39m       { type[33m:[39m [32m"start-step"[39m }[33m,[39m
+    [90m 32|[39m       { type[33m:[39m [32m"text-start"[39m }[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/tui/agent-event-stream.test.ts[2m > [22magentEventStreamParts[2m > [22mstreams reasoning deltas without replaying the committed reasoning
+[31m[1mAssertionError[22m: expected [ { type: 'start-step' }, …(4) ] to deeply equal [ { type: 'start-step' }, …(5) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[33m@@ -4,15 +4,11 @@[39m
+[2m    },[22m
+[2m    {[22m
+[2m      "type": "reasoning-start",[22m
+[2m    },[22m
+[2m    {[22m
+[32m-     "text": "Think",[39m
+[32m-     "type": "reasoning-delta",[39m
+[32m-   },[39m
+[32m-   {[39m
+[32m-     "text": " more",[39m
+[31m+     "text": "Think more",[39m
+[2m      "type": "reasoning-delta",[22m
+[2m    },[22m
+[2m    {[22m
+[2m      "type": "reasoning-end",[22m
+[2m    },[22m
+
+[36m [2m❯[22m src/tui/agent-event-stream.test.ts:[2m84:19[22m[39m
+    [90m 82|[39m     ])[33m;[39m
+    [90m 83|[39m
+    [90m 84|[39m     [34mexpect[39m(parts)[33m.[39m[34mtoEqual[39m([
+    [90m   |[39m                   [31m^[39m
+    [90m 85|[39m       { type[33m:[39m [32m"start-step"[39m }[33m,[39m
+    [90m 86|[39m       { type[33m:[39m [32m"reasoning-start"[39m }[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/tui/agent-event-stream.test.ts[2m > [22magentEventStreamParts[2m > [22mmaps streamed tool-call input with toolCallId preserved
+[31m[1mAssertionError[22m: expected [] to deeply equal [ …(3) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- [[39m
+[32m-   {[39m
+[32m-     "toolCallId": "call_stream",[39m
+[32m-     "toolName": "shell_execute",[39m
+[32m-     "type": "tool-input-start",[39m
+[32m-   },[39m
+[32m-   {[39m
+[32m-     "inputTextDelta": "{\"command\":\"ls\"}",[39m
+[32m-     "toolCallId": "call_stream",[39m
+[32m-     "type": "tool-input-delta",[39m
+[32m-   },[39m
+[32m-   {[39m
+[32m-     "toolCallId": "call_stream",[39m
+[32m-     "type": "tool-input-end",[39m
+[32m-   },[39m
+[32m- ][39m
+[31m+ [][39m
+
+[36m [2m❯[22m src/tui/agent-event-stream.test.ts:[2m125:19[22m[39m
+    [90m123|[39m     ])[33m;[39m
+    [90m124|[39m
+    [90m125|[39m     [34mexpect[39m(parts)[33m.[39m[34mtoEqual[39m([
+    [90m   |[39m                   [31m^[39m
+    [90m126|[39m       {
+    [90m127|[39m         type[33m:[39m [32m"tool-input-start"[39m[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m13 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 23:38:44
+[2m   Duration [22m 259ms[2m (transform 61ms, setup 0ms, import 77ms, tests 23ms, environment 0ms)[22m
+
+undefined
+/home/minpeter/github.com/minpeter/pss-runtime-streaming/apps/coding-agent:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: vitest run src/tui/agent-event-stream.test.ts
+
+Exit status: 1

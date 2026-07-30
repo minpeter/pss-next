@@ -1,0 +1,69 @@
+TASK 8 GREEN — stream-event contract pins
+Date: 2026-07-23
+Branch: feat/streaming-support (worktree pss-runtime-streaming)
+
+Changed test files (test-only; zero production changes):
+- packages/runtime/src/contracts/channel-api.test.ts
+  + "never projects ephemeral stream deltas to channel delivery":
+    all five delta kinds project to undefined via
+    projectChannelAssistantDelivery.
+- packages/runtime/src/contracts/root-api.test.ts (extended in place)
+  + runtime root exports isStreamAgentEvent (surface membership alongside
+    existing checks); StreamAgentEvent["type"] pinned to the five-kind
+    union via expectTypeOf. Forbidden-surface rules unchanged and passing.
+- packages/runtime/src/thread/handle/stream-events-file-store.test.ts (new)
+  + "persists zero stream deltas while retaining committed events":
+    streaming turn through Agent backed by createFileHost in an
+    fs.mkdtemp temp dir (cleanup registered via afterEach rm -rf);
+    asserts live stream emitted all five delta kinds, then reads
+    generations/<id>/thread-events/<base64url(key)>.jsonl and asserts
+    ZERO stream kinds on disk while committed events
+    (user-input, turn-start, assistant-reasoning, assistant-output,
+    tool-call, tool-result, turn-end) are present and match the live
+    committed sequence exactly.
+
+========================================================================
+1) Scoped run:
+   cd packages/runtime && pnpm vitest run src/contracts \
+     src/thread/handle/stream-events.test.ts \
+     src/thread/handle/stream-events-file-store.test.ts
+
+   Test Files  8 passed (8)
+        Tests  37 passed (37)
+
+========================================================================
+2) Full suite:
+   pnpm --filter @minpeter/pss-runtime test
+
+   Test Files  126 passed (126)
+        Tests  775 passed | 3 skipped (778)
+   Duration  ~8.5-9.2s
+
+   Baseline 773 passed -> 775 passed (2 new tests: channel pin +
+   file-store pin; root-api assertions extend an existing test).
+
+========================================================================
+3) Typecheck:
+   cd packages/runtime && pnpm typecheck
+   (tsc -p tsconfig.json --noEmit) — clean, no output.
+
+========================================================================
+4) Lint/format on changed files:
+   pnpm ultracite check \
+     packages/runtime/src/contracts/channel-api.test.ts \
+     packages/runtime/src/contracts/root-api.test.ts \
+     packages/runtime/src/thread/handle/stream-events-file-store.test.ts
+   Checked 3 files. No fixes applied. (clean)
+
+========================================================================
+5) Temp dir cleanup verified:
+   File-store test registers every mkdtemp dir in tempDirectories and
+   removes them in afterEach via rm(..., {recursive, force, maxRetries}).
+   Verified empirically: count of $TMPDIR/pss-runtime-file-execution-store-*
+   before and after an isolated run of stream-events-file-store.test.ts
+   was 450 -> 450 (zero leaked by this test). The 450 pre-existing
+   leftovers come from other file-store suites that do not clean up —
+   pre-existing issue, out of scope for this test-only todo.
+
+Nothing committed. Production code untouched (mutation probes were
+temporary and reverted; see task-8-MUTATION.txt).

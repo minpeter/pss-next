@@ -1,0 +1,5 @@
+pnpm test: 807 pass (756 runtime + 51 scripts), 3 skipped
+pnpm typecheck: clean (exit 0)
+madge --circular: 0 cycles (432 files processed)
+PR: https://github.com/minpeter/pss-runtime/pull/233
+Commits: ddf827b, caa9b37

@@ -1,0 +1,80 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/home/minpeter/github.com/minpeter/pss-runtime-streaming/packages/runtime[39m
+
+ [31m❯[39m src/thread/handle/stream-events.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 81[2mms[22m[39m
+[31m     [31m×[31m emits deltas in source order before committed output without persisting them[39m[32m 76[2mms[22m[39m
+[31m     [31m×[31m rejects stream events at the durable recording boundary[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m bypasses observer capture and plugin observation for stream events[39m[32m 2[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/thread/handle/stream-events.test.ts[2m > [22mthread stream events[2m > [22memits deltas in source order before committed output without persisting them
+[31m[1mAssertionError[22m: expected [ 'user-input', 'turn-start', …(6) ] to deeply equal [ 'user-input', 'turn-start', …(16) ][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  [[22m
+[2m    "user-input",[22m
+[2m    "turn-start",[22m
+[2m    "step-start",[22m
+[32m-   "assistant-output-delta",[39m
+[32m-   "assistant-output-delta",[39m
+[32m-   "assistant-reasoning-delta",[39m
+[32m-   "tool-call-input-start",[39m
+[32m-   "tool-call-input-delta",[39m
+[32m-   "tool-call-input-end",[39m
+[2m    "model-usage",[22m
+[32m-   "assistant-output",[39m
+[2m    "assistant-reasoning",[22m
+[32m-   "tool-call",[39m
+[32m-   "step-end",[39m
+[32m-   "step-start",[39m
+[32m-   "model-usage",[39m
+[31m+   "assistant-output",[39m
+[2m    "step-end",[22m
+[2m    "turn-end",[22m
+[2m  ][22m
+
+[36m [2m❯[22m src/thread/handle/stream-events.test.ts:[2m142:45[22m[39m
+    [90m140|[39m     [35mconst[39m replayed [33m=[39m [35mawait[39m [34mcollectAsync[39m(streamThread[33m.[39m[34mevents[39m())[33m;[39m
+    [90m141|[39m
+    [90m142|[39m     [34mexpect[39m(live[33m.[39m[34mmap[39m((event) [33m=>[39m event[33m.[39mtype))[33m.[39m[34mtoEqual[39m(expectedLiveTypes)[33m;[39m
+    [90m   |[39m                                             [31m^[39m
+    [90m143|[39m     [34mexpect[39m(generatedCommittedTypes)[33m.[39m[34mtoEqual[39m(committedTypes)[33m;[39m
+    [90m144|[39m     expect(replayed.map(({ event }) => event.type)).toEqual(committedT…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/thread/handle/stream-events.test.ts[2m > [22mthread stream events[2m > [22mrejects stream events at the durable recording boundary
+[31m[1mAssertionError[22m: expected function to throw an error, but it didn't[39m
+[36m [2m❯[22m src/thread/handle/stream-events.test.ts:[2m161:7[22m[39m
+    [90m159|[39m         type[33m:[39m [32m"assistant-output-delta"[39m[33m,[39m
+    [90m160|[39m       })
+    [90m161|[39m     )[33m.[39m[34mtoThrow[39m([33mTypeError[39m)[33m;[39m
+    [90m   |[39m       [31m^[39m
+    [90m162|[39m   })[33m;[39m
+    [90m163|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/thread/handle/stream-events.test.ts[2m > [22mthread stream events[2m > [22mbypasses observer capture and plugin observation for stream events
+[31m[1mTypeError[22m: dispatcher.emitStreamEvent is not a function[39m
+[36m [2m❯[22m src/thread/handle/stream-events.test.ts:[2m185:18[22m[39m
+    [90m183|[39m         type[33m:[39m [32m"assistant-reasoning"[39m[33m,[39m
+    [90m184|[39m       })[33m;[39m
+    [90m185|[39m       dispatcher[33m.[39m[34memitStreamEvent[39m(run[33m,[39m {
+    [90m   |[39m                  [31m^[39m
+    [90m186|[39m         text[33m:[39m [32m"live delta"[39m[33m,[39m
+    [90m187|[39m         type[33m:[39m [32m"assistant-output-delta"[39m[33m,[39m
+[90m [2m❯[22m ThreadEventDispatcher.captureObserverEvents src/thread/runtime/thread-event-dispatcher.ts:[2m57:21[22m[39m
+[90m [2m❯[22m src/thread/handle/stream-events.test.ts:[2m180:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m   Start at [22m 23:22:56
+[2m   Duration [22m 1.13s[2m (transform 647ms, setup 0ms, import 894ms, tests 81ms, environment 0ms)[22m
+
