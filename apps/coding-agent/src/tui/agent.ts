@@ -659,6 +659,7 @@ export interface AgentTUIConfig {
     input: string,
     hooks: PreprocessHooks
   ) => Promise<PreprocessResult | undefined>;
+  replayHistoryOnStartup?: boolean;
   sessionSelector?: {
     currentSessionKey(): string;
     listSessions(): Promise<readonly SessionIndexEntry[]>;
@@ -1648,6 +1649,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       addSystemMessage(chatContainer, message);
     }
     await config.onSetup?.();
+    if (config.replayHistoryOnStartup === true) {
+      await renderSessionHistory();
+    }
     updateHeader();
 
     while (!session.closed) {

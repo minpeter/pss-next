@@ -60,6 +60,7 @@ import {
 } from "./reload";
 import { createToolRenderers } from "./renderers/tool-renderers";
 import { createSessionCommands } from "./session-commands";
+import { shouldReplayOnStartup } from "./session-startup-replay";
 import { formatSessionResumeHint } from "./terminal-exit";
 import { TokenUsageTracker } from "./usage-footer";
 
@@ -463,6 +464,9 @@ export async function startTui(
           refresh().catch(() => undefined);
         }
       },
+      replayHistoryOnStartup: shouldReplayOnStartup({
+        resumedExplicitly: options.sessionKey !== undefined,
+      }),
       onCommandAction: async (action) => {
         if (action.type === "reload") {
           try {
