@@ -90,7 +90,8 @@ const renderGrepFiles = (
   }
 
   const lines = normalizedLines(output);
-  view.setPrettyBlock(header, formatGrepMatches(lines.slice(1)), {
+  view.setPrettyBlock(header, formatGrepMatches(lines.slice(1), pattern), {
+    allowAnsi: true,
     useBackground: false,
   });
 };

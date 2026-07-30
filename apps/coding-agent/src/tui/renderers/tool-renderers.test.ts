@@ -327,7 +327,9 @@ describe("createToolRenderers — workspace tools", () => {
     expect(text).toContain("grep");
     expect(text).toContain("TODO");
     expect(text).toContain("include: *.ts");
-    expect(text).toContain("// TODO fix");
+    expect(text).toContain("src/a.ts");
+    expect(text).toContain("3");
+    expect(text).toContain("fix");
     expect(text).not.toContain(GRAY_BG);
   });
 
