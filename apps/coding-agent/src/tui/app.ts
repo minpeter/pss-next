@@ -42,10 +42,8 @@ import {
   createSessionManager,
   type SessionLifecycleReason,
 } from "../sessions/session-manager";
-import {
-  type CodingAgentThreadConfig,
-  resolveCodingAgentThreadConfig,
-} from "../thread-config";
+import { resolveSessionSelector } from "../sessions/session-resume";
+import { resolveCodingAgentThreadConfig } from "../thread-config";
 import { planAutoUpdate, runAutoUpdate } from "../update/auto-update";
 import { UPDATE_CHECK_CACHE_FILENAME } from "../update/check";
 import { cliVersion } from "../update/cli-version";
@@ -83,6 +81,19 @@ interface StartTuiDependencies {
 }
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
+
+const selectedThreadConfig = async (
+  config: ReturnType<typeof resolveCodingAgentThreadConfig>,
+  sessions: ReturnType<typeof createSessionManager>,
+  sessionKey: string | undefined
+): Promise<ReturnType<typeof resolveCodingAgentThreadConfig>> =>
+  sessionKey === undefined
+    ? config
+    : {
+        ...config,
+        key: await resolveSessionSelector(sessions, sessionKey),
+        keyFromEnv: true,
+      };
 
 /**
  * Resolve (and record) the session this startup drives. The session index
@@ -154,20 +165,11 @@ const foregroundThemeConfig = (): Pick<AgentTUIConfig, "theme"> => {
   return foregroundColor === undefined ? {} : { theme: { foregroundColor } };
 };
 
-const selectedThreadConfig = (
-  sessionKey: string | undefined
-): CodingAgentThreadConfig => {
-  const config = resolveCodingAgentThreadConfig();
-  return sessionKey === undefined
-    ? config
-    : { ...config, key: sessionKey, keyFromEnv: true };
-};
-
 export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
 ): Promise<number> {
-  const threadConfig = selectedThreadConfig(options.sessionKey);
+  const resolvedThreadConfig = resolveCodingAgentThreadConfig();
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
@@ -187,9 +189,9 @@ export async function startTui(
     });
     ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
-      autoCompaction: threadConfig.autoCompaction,
+      autoCompaction: resolvedThreadConfig.autoCompaction,
       extensionHost,
-      host: createFileHost({ directory: threadConfig.directory }),
+      host: createFileHost({ directory: resolvedThreadConfig.directory }),
       instructions: composeCodingAgentInstructions(
         contextResources.instructionFragments
       ),
@@ -209,10 +211,15 @@ export async function startTui(
   try {
     const sessionManager = createSessionManager({
       cwd: process.cwd(),
-      directory: threadConfig.directory,
-      threads: createFileHost({ directory: threadConfig.directory }).store
-        .threads,
+      directory: resolvedThreadConfig.directory,
+      threads: createFileHost({ directory: resolvedThreadConfig.directory })
+        .store.threads,
     });
+    const threadConfig = await selectedThreadConfig(
+      resolvedThreadConfig,
+      sessionManager,
+      options.sessionKey
+    );
     const startupSession = await resolveStartupSessionEntry(
       sessionManager,
       threadConfig,

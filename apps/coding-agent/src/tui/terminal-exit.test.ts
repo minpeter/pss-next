@@ -14,14 +14,14 @@ describe("terminal exit", () => {
   });
 
   it("prints a directly usable resume command", () => {
-    expect(formatSessionResumeHint("cwd:/repo/demo#abc")).toBe(
-      "To resume this session: pss --session cwd:/repo/demo#abc"
+    expect(formatSessionResumeHint("cwd:/repo/demo#a64fc845")).toBe(
+      "To resume this session: pss --session a64fc845"
     );
   });
 
-  it("shell-quotes unusual session keys", () => {
-    expect(formatSessionResumeHint("session 'with space'")).toBe(
-      `To resume this session: pss --session 'session '"'"'with space'"'"''`
+  it("falls back to the whole key when it has no short id", () => {
+    expect(formatSessionResumeHint("legacy-key")).toBe(
+      "To resume this session: pss --session legacy-key"
     );
   });
 });
