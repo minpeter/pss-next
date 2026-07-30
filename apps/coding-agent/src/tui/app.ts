@@ -398,6 +398,8 @@ export async function startTui(
       sessionSelector: {
         currentSessionKey: () => currentSession.key,
         listSessions: () => sessionManager.listResumableSessions(),
+        loadCurrentHistory: () =>
+          sessionManager.loadSessionHistory(currentSession.key),
         switchSession: async (sessionKey: string) => {
           await ensureSessionChangeApproved("switch", {
             fromKey: currentSession.key,

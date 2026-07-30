@@ -76,6 +76,7 @@ export interface SessionManager {
   listForkPoints(fromKey: string): Promise<readonly SessionForkPoint[]>;
   listResumableSessions(): Promise<readonly SessionIndexEntry[]>;
   listSessions(): Promise<readonly SessionIndexEntry[]>;
+  loadSessionHistory(key: string): Promise<readonly ModelMessage[]>;
   /** Delete a session's metadata and its durable thread state. */
   removeSession(key: string): Promise<void>;
   renameSession(key: string, name: string): Promise<SessionIndexEntry>;
@@ -203,6 +204,10 @@ export function createSessionManager(
           result: document.sessions.find((session) => session.key === key),
         })
       ),
+    loadSessionHistory: async (key) =>
+      threads === undefined
+        ? []
+        : decodeStoredThreadState(await threads.load(key)).history,
     listForkPoints: async (fromKey) => {
       if (threads === undefined) {
         return [];

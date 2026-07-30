@@ -18,6 +18,7 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
+import type { ModelMessage } from "ai";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import type { SessionIndexEntry } from "../sessions/session-index";
 import { agentEventStreamParts } from "./agent-event-stream";
@@ -44,6 +45,7 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import { sessionHistoryReplayParts } from "./session-history-replay";
 import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
@@ -674,6 +676,7 @@ export interface AgentTUIConfig {
   sessionSelector?: {
     currentSessionKey(): string;
     listSessions(): Promise<readonly SessionIndexEntry[]>;
+    loadCurrentHistory(): Promise<readonly ModelMessage[]>;
     switchSession(sessionKey: string): Promise<void>;
   };
   setupMessages?: string[];
@@ -1034,6 +1037,51 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     return { finishReason: tracker.finishReason };
   };
 
+  const renderSessionHistory = async (): Promise<void> => {
+    const selectorConfig = config.sessionSelector;
+    if (selectorConfig === undefined) {
+      return;
+    }
+    const replay = sessionHistoryReplayParts(
+      await selectorConfig.loadCurrentHistory()
+    );
+    let streamParts: TuiStreamPart[] = [];
+    const flushStreamParts = async (): Promise<void> => {
+      if (streamParts.length === 0) {
+        return;
+      }
+      const pending = streamParts;
+      streamParts = [];
+      await renderAgentStream(
+        (async function* () {
+          yield* pending;
+        })(),
+        {
+          showReasoning: true,
+          showSteps: false,
+          showFinishReason: false,
+          showRawToolIo: config.showRawToolIo ?? false,
+          showToolResults: true,
+          showSources: false,
+          showFiles: false,
+        }
+      );
+    };
+    for (const part of replay) {
+      if (part.type === "stream") {
+        streamParts.push(part.part);
+        continue;
+      }
+      await flushStreamParts();
+      if (part.type === "clear") {
+        clearChat();
+      } else {
+        addUserMessage(chatContainer, markdownTheme, part.text);
+      }
+    }
+    await flushStreamParts();
+  };
+
   const createStreamingLoaderClearer = (): (() => void) => {
     let hasClearedStreamingLoader = false;
 
@@ -1350,8 +1398,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     try {
       await selectorConfig.switchSession(selection);
-      clearChat();
-      addNewSessionMessage(chatContainer);
+      await renderSessionHistory();
       updateHeader();
     } catch (error) {
       addSystemMessage(
@@ -1408,7 +1455,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "session") {
-      handleSessionAction(commandResult, commandResult.action.clear);
+      await handleSessionAction(commandResult, commandResult.action.clear);
       return;
     }
 
@@ -1423,16 +1470,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
-  const handleSessionAction = (
+  const handleSessionAction = async (
     commandResult: TuiCommandResult,
     clear: boolean
-  ): void => {
-    // Session commands already swapped the thread handle; the TUI only
-    // resets the transcript view and refreshes the header.
+  ): Promise<void> => {
     if (clear) {
       clearStatus();
-      clearChat();
-      addNewSessionMessage(chatContainer);
+      await renderSessionHistory();
     }
     updateHeader();
     if (commandResult.message) {

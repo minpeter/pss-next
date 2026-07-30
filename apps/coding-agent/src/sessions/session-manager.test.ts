@@ -214,6 +214,18 @@ describe("createSessionManager", () => {
     expect(await sessions.listResumableSessions()).toEqual([populated]);
   });
 
+  it("loads the decoded message history for a recorded session", async () => {
+    const { manager: sessions, threads } = manager();
+    const session = await sessions.resolveStartupSession();
+    const history = [
+      { content: "hello", role: "user" as const },
+      { content: "welcome back", role: "assistant" as const },
+    ];
+    threads.stored.set(session.key, { history, schemaVersion: 1 });
+
+    expect(await sessions.loadSessionHistory(session.key)).toEqual(history);
+  });
+
   it("touches recency without failing for unknown keys", async () => {
     const { manager: sessions } = manager();
     const source = await sessions.resolveStartupSession();
