@@ -1,0 +1,4432 @@
+{
+ "corpus": {
+  "n": 200,
+  "langs": [
+   "py",
+   "js",
+   "ts",
+   "go",
+   "rs",
+   "java",
+   "c",
+   "cpp",
+   "kt",
+   "rb"
+  ],
+  "seed": 42,
+  "size_range": [
+   3,
+   200
+  ],
+  "edit_kinds": [
+   "delete",
+   "insert",
+   "multi-hunk",
+   "rename",
+   "replace-line",
+   "replace-range"
+  ]
+ },
+ "rows": [
+  {
+   "id": 0,
+   "lang": "py",
+   "lines": 44,
+   "raw": 152,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 162,
+    "sr": 52,
+    "udiff": 52,
+    "block": 187,
+    "omp": 39,
+    "pss": 99,
+    "grok": 80
+   },
+   "input": {
+    "raw": 152,
+    "pss": 464,
+    "omp": 288,
+    "grok": 639
+   }
+  },
+  {
+   "id": 1,
+   "lang": "py",
+   "lines": 3,
+   "raw": 27,
+   "kind": "insert",
+   "reply": {
+    "whole": 69,
+    "sr": 81,
+    "udiff": 83,
+    "block": 94,
+    "omp": 68,
+    "pss": 115,
+    "grok": 116
+   },
+   "input": {
+    "raw": 27,
+    "pss": 97,
+    "omp": 46,
+    "grok": 69
+   }
+  },
+  {
+   "id": 2,
+   "lang": "py",
+   "lines": 10,
+   "raw": 39,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 61,
+    "sr": 72,
+    "udiff": 77,
+    "block": 86,
+    "omp": 54,
+    "pss": 132,
+    "grok": 96
+   },
+   "input": {
+    "raw": 39,
+    "pss": 147,
+    "omp": 73,
+    "grok": 152
+   }
+  },
+  {
+   "id": 3,
+   "lang": "py",
+   "lines": 5,
+   "raw": 80,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 84,
+    "sr": 118,
+    "udiff": 123,
+    "block": 109,
+    "omp": 69,
+    "pss": 149,
+    "grok": 111
+   },
+   "input": {
+    "raw": 80,
+    "pss": 160,
+    "omp": 103,
+    "grok": 142
+   }
+  },
+  {
+   "id": 4,
+   "lang": "py",
+   "lines": 5,
+   "raw": 65,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 39,
+    "sr": 92,
+    "udiff": 94,
+    "block": 64,
+    "omp": 39,
+    "pss": 115,
+    "grok": 81
+   },
+   "input": {
+    "raw": 65,
+    "pss": 145,
+    "omp": 88,
+    "grok": 127
+   }
+  },
+  {
+   "id": 5,
+   "lang": "py",
+   "lines": 4,
+   "raw": 29,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 30,
+    "sr": 93,
+    "udiff": 98,
+    "block": 55,
+    "omp": 54,
+    "pss": 132,
+    "grok": 96
+   },
+   "input": {
+    "raw": 29,
+    "pss": 104,
+    "omp": 50,
+    "grok": 81
+   }
+  },
+  {
+   "id": 6,
+   "lang": "py",
+   "lines": 10,
+   "raw": 114,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 60,
+    "sr": 176,
+    "udiff": 185,
+    "block": 85,
+    "omp": 69,
+    "pss": 149,
+    "grok": 111
+   },
+   "input": {
+    "raw": 114,
+    "pss": 222,
+    "omp": 148,
+    "grok": 227
+   }
+  },
+  {
+   "id": 7,
+   "lang": "py",
+   "lines": 64,
+   "raw": 259,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 265,
+    "sr": 46,
+    "udiff": 46,
+    "block": 290,
+    "omp": 34,
+    "pss": 94,
+    "grok": 75
+   },
+   "input": {
+    "raw": 259,
+    "pss": 691,
+    "omp": 455,
+    "grok": 966
+   }
+  },
+  {
+   "id": 8,
+   "lang": "py",
+   "lines": 47,
+   "raw": 319,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 324,
+    "sr": 47,
+    "udiff": 47,
+    "block": 349,
+    "omp": 34,
+    "pss": 94,
+    "grok": 75
+   },
+   "input": {
+    "raw": 319,
+    "pss": 649,
+    "omp": 464,
+    "grok": 839
+   }
+  },
+  {
+   "id": 9,
+   "lang": "py",
+   "lines": 4,
+   "raw": 29,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 30,
+    "sr": 65,
+    "udiff": 63,
+    "block": 55,
+    "omp": 39,
+    "pss": 100,
+    "grok": 81
+   },
+   "input": {
+    "raw": 29,
+    "pss": 104,
+    "omp": 50,
+    "grok": 81
+   }
+  },
+  {
+   "id": 10,
+   "lang": "py",
+   "lines": 18,
+   "raw": 174,
+   "kind": "rename",
+   "reply": {
+    "whole": 177,
+    "sr": 65,
+    "udiff": 65,
+    "block": 202,
+    "omp": 41,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 174,
+    "pss": 331,
+    "omp": 233,
+    "grok": 376
+   }
+  },
+  {
+   "id": 11,
+   "lang": "py",
+   "lines": 52,
+   "raw": 127,
+   "kind": "delete",
+   "reply": {
+    "whole": 123,
+    "sr": 42,
+    "udiff": 48,
+    "block": 148,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 127,
+    "pss": 488,
+    "omp": 288,
+    "grok": 703
+   }
+  },
+  {
+   "id": 12,
+   "lang": "py",
+   "lines": 25,
+   "raw": 124,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 121,
+    "sr": 69,
+    "udiff": 71,
+    "block": 146,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 124,
+    "pss": 323,
+    "omp": 204,
+    "grok": 403
+   }
+  },
+  {
+   "id": 13,
+   "lang": "py",
+   "lines": 142,
+   "raw": 906,
+   "kind": "delete",
+   "reply": {
+    "whole": 868,
+    "sr": 76,
+    "udiff": 82,
+    "block": 893,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 906,
+    "pss": 1852,
+    "omp": 1380,
+    "grok": 2515
+   }
+  },
+  {
+   "id": 14,
+   "lang": "py",
+   "lines": 4,
+   "raw": 29,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 53,
+    "sr": 70,
+    "udiff": 76,
+    "block": 78,
+    "omp": 55,
+    "pss": 133,
+    "grok": 96
+   },
+   "input": {
+    "raw": 29,
+    "pss": 105,
+    "omp": 51,
+    "grok": 82
+   }
+  },
+  {
+   "id": 15,
+   "lang": "py",
+   "lines": 7,
+   "raw": 35,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 40,
+    "sr": 47,
+    "udiff": 47,
+    "block": 65,
+    "omp": 33,
+    "pss": 94,
+    "grok": 74
+   },
+   "input": {
+    "raw": 35,
+    "pss": 126,
+    "omp": 63,
+    "grok": 118
+   }
+  },
+  {
+   "id": 16,
+   "lang": "py",
+   "lines": 22,
+   "raw": 63,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 67,
+    "sr": 62,
+    "udiff": 70,
+    "block": 92,
+    "omp": 42,
+    "pss": 118,
+    "grok": 82
+   },
+   "input": {
+    "raw": 63,
+    "pss": 244,
+    "omp": 134,
+    "grok": 309
+   }
+  },
+  {
+   "id": 17,
+   "lang": "py",
+   "lines": 51,
+   "raw": 258,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 270,
+    "sr": 54,
+    "udiff": 54,
+    "block": 295,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 258,
+    "pss": 613,
+    "omp": 416,
+    "grok": 823
+   }
+  },
+  {
+   "id": 18,
+   "lang": "py",
+   "lines": 89,
+   "raw": 420,
+   "kind": "delete",
+   "reply": {
+    "whole": 407,
+    "sr": 90,
+    "udiff": 75,
+    "block": 432,
+    "omp": 36,
+    "pss": 180,
+    "grok": 127
+   },
+   "input": {
+    "raw": 420,
+    "pss": 1003,
+    "omp": 692,
+    "grok": 1403
+   }
+  },
+  {
+   "id": 19,
+   "lang": "py",
+   "lines": 6,
+   "raw": 33,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 38,
+    "sr": 47,
+    "udiff": 47,
+    "block": 63,
+    "omp": 33,
+    "pss": 94,
+    "grok": 74
+   },
+   "input": {
+    "raw": 33,
+    "pss": 119,
+    "omp": 59,
+    "grok": 106
+   }
+  },
+  {
+   "id": 20,
+   "lang": "js",
+   "lines": 69,
+   "raw": 280,
+   "kind": "insert",
+   "reply": {
+    "whole": 322,
+    "sr": 81,
+    "udiff": 87,
+    "block": 347,
+    "omp": 71,
+    "pss": 135,
+    "grok": 117
+   },
+   "input": {
+    "raw": 280,
+    "pss": 743,
+    "omp": 492,
+    "grok": 1043
+   }
+  },
+  {
+   "id": 21,
+   "lang": "js",
+   "lines": 8,
+   "raw": 108,
+   "kind": "insert",
+   "reply": {
+    "whole": 122,
+    "sr": 53,
+    "udiff": 53,
+    "block": 147,
+    "omp": 39,
+    "pss": 82,
+    "grok": 86
+   },
+   "input": {
+    "raw": 108,
+    "pss": 204,
+    "omp": 138,
+    "grok": 201
+   }
+  },
+  {
+   "id": 22,
+   "lang": "js",
+   "lines": 50,
+   "raw": 126,
+   "kind": "insert",
+   "reply": {
+    "whole": 140,
+    "sr": 53,
+    "udiff": 55,
+    "block": 165,
+    "omp": 41,
+    "pss": 101,
+    "grok": 87
+   },
+   "input": {
+    "raw": 126,
+    "pss": 475,
+    "omp": 281,
+    "grok": 680
+   }
+  },
+  {
+   "id": 23,
+   "lang": "js",
+   "lines": 3,
+   "raw": 32,
+   "kind": "insert",
+   "reply": {
+    "whole": 45,
+    "sr": 52,
+    "udiff": 52,
+    "block": 70,
+    "omp": 38,
+    "pss": 82,
+    "grok": 78
+   },
+   "input": {
+    "raw": 32,
+    "pss": 103,
+    "omp": 52,
+    "grok": 75
+   }
+  },
+  {
+   "id": 24,
+   "lang": "js",
+   "lines": 25,
+   "raw": 76,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 88,
+    "sr": 54,
+    "udiff": 54,
+    "block": 113,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 76,
+    "pss": 275,
+    "omp": 156,
+    "grok": 355
+   }
+  },
+  {
+   "id": 25,
+   "lang": "js",
+   "lines": 10,
+   "raw": 124,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 111,
+    "sr": 65,
+    "udiff": 65,
+    "block": 136,
+    "omp": 33,
+    "pss": 94,
+    "grok": 74
+   },
+   "input": {
+    "raw": 124,
+    "pss": 233,
+    "omp": 159,
+    "grok": 238
+   }
+  },
+  {
+   "id": 26,
+   "lang": "js",
+   "lines": 50,
+   "raw": 208,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 242,
+    "sr": 88,
+    "udiff": 99,
+    "block": 267,
+    "omp": 72,
+    "pss": 152,
+    "grok": 112
+   },
+   "input": {
+    "raw": 208,
+    "pss": 557,
+    "omp": 363,
+    "grok": 762
+   }
+  },
+  {
+   "id": 27,
+   "lang": "js",
+   "lines": 108,
+   "raw": 364,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 346,
+    "sr": 82,
+    "udiff": 90,
+    "block": 371,
+    "omp": 41,
+    "pss": 117,
+    "grok": 81
+   },
+   "input": {
+    "raw": 364,
+    "pss": 1072,
+    "omp": 702,
+    "grok": 1565
+   }
+  },
+  {
+   "id": 28,
+   "lang": "js",
+   "lines": 4,
+   "raw": 33,
+   "kind": "insert",
+   "reply": {
+    "whole": 47,
+    "sr": 53,
+    "udiff": 53,
+    "block": 72,
+    "omp": 40,
+    "pss": 100,
+    "grok": 86
+   },
+   "input": {
+    "raw": 33,
+    "pss": 109,
+    "omp": 55,
+    "grok": 86
+   }
+  },
+  {
+   "id": 29,
+   "lang": "js",
+   "lines": 18,
+   "raw": 62,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 58,
+    "sr": 70,
+    "udiff": 75,
+    "block": 83,
+    "omp": 40,
+    "pss": 116,
+    "grok": 81
+   },
+   "input": {
+    "raw": 62,
+    "pss": 219,
+    "omp": 121,
+    "grok": 264
+   }
+  },
+  {
+   "id": 30,
+   "lang": "js",
+   "lines": 49,
+   "raw": 285,
+   "kind": "delete",
+   "reply": {
+    "whole": 232,
+    "sr": 91,
+    "udiff": 99,
+    "block": 257,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 285,
+    "pss": 628,
+    "omp": 437,
+    "grok": 828
+   }
+  },
+  {
+   "id": 31,
+   "lang": "js",
+   "lines": 3,
+   "raw": 32,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 60,
+    "sr": 94,
+    "udiff": 101,
+    "block": 85,
+    "omp": 70,
+    "pss": 150,
+    "grok": 111
+   },
+   "input": {
+    "raw": 32,
+    "pss": 103,
+    "omp": 52,
+    "grok": 75
+   }
+  },
+  {
+   "id": 32,
+   "lang": "js",
+   "lines": 5,
+   "raw": 34,
+   "kind": "rename",
+   "reply": {
+    "whole": 38,
+    "sr": 78,
+    "udiff": 78,
+    "block": 63,
+    "omp": 48,
+    "pss": 109,
+    "grok": 89
+   },
+   "input": {
+    "raw": 34,
+    "pss": 115,
+    "omp": 58,
+    "grok": 97
+   }
+  },
+  {
+   "id": 33,
+   "lang": "js",
+   "lines": 13,
+   "raw": 50,
+   "kind": "delete",
+   "reply": {
+    "whole": 44,
+    "sr": 44,
+    "udiff": 49,
+    "block": 69,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 50,
+    "pss": 177,
+    "omp": 94,
+    "grok": 197
+   }
+  },
+  {
+   "id": 34,
+   "lang": "js",
+   "lines": 10,
+   "raw": 46,
+   "kind": "delete",
+   "reply": {
+    "whole": 38,
+    "sr": 46,
+    "udiff": 52,
+    "block": 63,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 46,
+    "pss": 155,
+    "omp": 81,
+    "grok": 160
+   }
+  },
+  {
+   "id": 35,
+   "lang": "js",
+   "lines": 52,
+   "raw": 128,
+   "kind": "insert",
+   "reply": {
+    "whole": 167,
+    "sr": 78,
+    "udiff": 84,
+    "block": 192,
+    "omp": 68,
+    "pss": 132,
+    "grok": 114
+   },
+   "input": {
+    "raw": 128,
+    "pss": 489,
+    "omp": 289,
+    "grok": 704
+   }
+  },
+  {
+   "id": 36,
+   "lang": "js",
+   "lines": 19,
+   "raw": 70,
+   "kind": "insert",
+   "reply": {
+    "whole": 112,
+    "sr": 81,
+    "udiff": 87,
+    "block": 137,
+    "omp": 71,
+    "pss": 135,
+    "grok": 117
+   },
+   "input": {
+    "raw": 70,
+    "pss": 233,
+    "omp": 132,
+    "grok": 283
+   }
+  },
+  {
+   "id": 37,
+   "lang": "js",
+   "lines": 7,
+   "raw": 40,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 76,
+    "sr": 86,
+    "udiff": 94,
+    "block": 101,
+    "omp": 70,
+    "pss": 150,
+    "grok": 111
+   },
+   "input": {
+    "raw": 40,
+    "pss": 131,
+    "omp": 68,
+    "grok": 123
+   }
+  },
+  {
+   "id": 38,
+   "lang": "js",
+   "lines": 66,
+   "raw": 371,
+   "kind": "delete",
+   "reply": {
+    "whole": 367,
+    "sr": 42,
+    "udiff": 48,
+    "block": 392,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 371,
+    "pss": 816,
+    "omp": 574,
+    "grok": 1101
+   }
+  },
+  {
+   "id": 39,
+   "lang": "js",
+   "lines": 18,
+   "raw": 152,
+   "kind": "insert",
+   "reply": {
+    "whole": 166,
+    "sr": 53,
+    "udiff": 53,
+    "block": 191,
+    "omp": 39,
+    "pss": 83,
+    "grok": 79
+   },
+   "input": {
+    "raw": 152,
+    "pss": 309,
+    "omp": 211,
+    "grok": 354
+   }
+  },
+  {
+   "id": 40,
+   "lang": "ts",
+   "lines": 18,
+   "raw": 260,
+   "kind": "insert",
+   "reply": {
+    "whole": 288,
+    "sr": 67,
+    "udiff": 70,
+    "block": 313,
+    "omp": 55,
+    "pss": 117,
+    "grok": 101
+   },
+   "input": {
+    "raw": 260,
+    "pss": 417,
+    "omp": 319,
+    "grok": 462
+   }
+  },
+  {
+   "id": 41,
+   "lang": "ts",
+   "lines": 26,
+   "raw": 90,
+   "kind": "rename",
+   "reply": {
+    "whole": 94,
+    "sr": 90,
+    "udiff": 90,
+    "block": 119,
+    "omp": 54,
+    "pss": 115,
+    "grok": 95
+   },
+   "input": {
+    "raw": 90,
+    "pss": 295,
+    "omp": 173,
+    "grok": 380
+   }
+  },
+  {
+   "id": 42,
+   "lang": "ts",
+   "lines": 8,
+   "raw": 48,
+   "kind": "rename",
+   "reply": {
+    "whole": 52,
+    "sr": 90,
+    "udiff": 90,
+    "block": 77,
+    "omp": 54,
+    "pss": 115,
+    "grok": 95
+   },
+   "input": {
+    "raw": 48,
+    "pss": 144,
+    "omp": 78,
+    "grok": 141
+   }
+  },
+  {
+   "id": 43,
+   "lang": "ts",
+   "lines": 3,
+   "raw": 38,
+   "kind": "insert",
+   "reply": {
+    "whole": 80,
+    "sr": 81,
+    "udiff": 85,
+    "block": 105,
+    "omp": 69,
+    "pss": 117,
+    "grok": 109
+   },
+   "input": {
+    "raw": 38,
+    "pss": 109,
+    "omp": 58,
+    "grok": 81
+   }
+  },
+  {
+   "id": 44,
+   "lang": "ts",
+   "lines": 34,
+   "raw": 230,
+   "kind": "rename",
+   "reply": {
+    "whole": 234,
+    "sr": 90,
+    "udiff": 90,
+    "block": 259,
+    "omp": 54,
+    "pss": 115,
+    "grok": 95
+   },
+   "input": {
+    "raw": 230,
+    "pss": 483,
+    "omp": 337,
+    "grok": 608
+   }
+  },
+  {
+   "id": 45,
+   "lang": "ts",
+   "lines": 76,
+   "raw": 370,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 382,
+    "sr": 54,
+    "udiff": 56,
+    "block": 407,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 370,
+    "pss": 875,
+    "omp": 603,
+    "grok": 1210
+   }
+  },
+  {
+   "id": 46,
+   "lang": "ts",
+   "lines": 5,
+   "raw": 104,
+   "kind": "insert",
+   "reply": {
+    "whole": 132,
+    "sr": 67,
+    "udiff": 70,
+    "block": 157,
+    "omp": 55,
+    "pss": 117,
+    "grok": 101
+   },
+   "input": {
+    "raw": 104,
+    "pss": 185,
+    "omp": 128,
+    "grok": 167
+   }
+  },
+  {
+   "id": 47,
+   "lang": "ts",
+   "lines": 39,
+   "raw": 306,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 318,
+    "sr": 54,
+    "udiff": 56,
+    "block": 343,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 306,
+    "pss": 589,
+    "omp": 428,
+    "grok": 739
+   }
+  },
+  {
+   "id": 48,
+   "lang": "ts",
+   "lines": 79,
+   "raw": 320,
+   "kind": "rename",
+   "reply": {
+    "whole": 323,
+    "sr": 89,
+    "udiff": 89,
+    "block": 348,
+    "omp": 53,
+    "pss": 114,
+    "grok": 94
+   },
+   "input": {
+    "raw": 320,
+    "pss": 843,
+    "omp": 562,
+    "grok": 1193
+   }
+  },
+  {
+   "id": 49,
+   "lang": "ts",
+   "lines": 5,
+   "raw": 42,
+   "kind": "delete",
+   "reply": {
+    "whole": 30,
+    "sr": 50,
+    "udiff": 51,
+    "block": 55,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 42,
+    "pss": 123,
+    "omp": 66,
+    "grok": 105
+   }
+  },
+  {
+   "id": 50,
+   "lang": "ts",
+   "lines": 17,
+   "raw": 66,
+   "kind": "insert",
+   "reply": {
+    "whole": 94,
+    "sr": 67,
+    "udiff": 70,
+    "block": 119,
+    "omp": 55,
+    "pss": 117,
+    "grok": 101
+   },
+   "input": {
+    "raw": 66,
+    "pss": 217,
+    "omp": 122,
+    "grok": 257
+   }
+  },
+  {
+   "id": 51,
+   "lang": "ts",
+   "lines": 134,
+   "raw": 748,
+   "kind": "delete",
+   "reply": {
+    "whole": 726,
+    "sr": 60,
+    "udiff": 68,
+    "block": 751,
+    "omp": 27,
+    "pss": 107,
+    "grok": 70
+   },
+   "input": {
+    "raw": 748,
+    "pss": 1638,
+    "omp": 1190,
+    "grok": 2261
+   }
+  },
+  {
+   "id": 52,
+   "lang": "ts",
+   "lines": 102,
+   "raw": 613,
+   "kind": "insert",
+   "reply": {
+    "whole": 641,
+    "sr": 67,
+    "udiff": 72,
+    "block": 666,
+    "omp": 56,
+    "pss": 118,
+    "grok": 102
+   },
+   "input": {
+    "raw": 613,
+    "pss": 1279,
+    "omp": 927,
+    "grok": 1742
+   }
+  },
+  {
+   "id": 53,
+   "lang": "ts",
+   "lines": 71,
+   "raw": 173,
+   "kind": "insert",
+   "reply": {
+    "whole": 187,
+    "sr": 53,
+    "udiff": 55,
+    "block": 212,
+    "omp": 41,
+    "pss": 101,
+    "grok": 87
+   },
+   "input": {
+    "raw": 173,
+    "pss": 648,
+    "omp": 391,
+    "grok": 958
+   }
+  },
+  {
+   "id": 54,
+   "lang": "ts",
+   "lines": 80,
+   "raw": 259,
+   "kind": "delete",
+   "reply": {
+    "whole": 255,
+    "sr": 42,
+    "udiff": 48,
+    "block": 280,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 259,
+    "pss": 788,
+    "omp": 504,
+    "grok": 1143
+   }
+  },
+  {
+   "id": 55,
+   "lang": "ts",
+   "lines": 21,
+   "raw": 74,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 112,
+    "sr": 84,
+    "udiff": 93,
+    "block": 137,
+    "omp": 72,
+    "pss": 152,
+    "grok": 112
+   },
+   "input": {
+    "raw": 74,
+    "pss": 249,
+    "omp": 142,
+    "grok": 309
+   }
+  },
+  {
+   "id": 56,
+   "lang": "ts",
+   "lines": 5,
+   "raw": 85,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 75,
+    "sr": 76,
+    "udiff": 76,
+    "block": 100,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 85,
+    "pss": 166,
+    "omp": 109,
+    "grok": 148
+   }
+  },
+  {
+   "id": 57,
+   "lang": "ts",
+   "lines": 34,
+   "raw": 286,
+   "kind": "insert",
+   "reply": {
+    "whole": 314,
+    "sr": 67,
+    "udiff": 72,
+    "block": 339,
+    "omp": 56,
+    "pss": 118,
+    "grok": 102
+   },
+   "input": {
+    "raw": 286,
+    "pss": 539,
+    "omp": 393,
+    "grok": 664
+   }
+  },
+  {
+   "id": 58,
+   "lang": "ts",
+   "lines": 107,
+   "raw": 497,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 502,
+    "sr": 47,
+    "udiff": 49,
+    "block": 527,
+    "omp": 35,
+    "pss": 95,
+    "grok": 75
+   },
+   "input": {
+    "raw": 497,
+    "pss": 1198,
+    "omp": 831,
+    "grok": 1686
+   }
+  },
+  {
+   "id": 59,
+   "lang": "ts",
+   "lines": 59,
+   "raw": 471,
+   "kind": "rename",
+   "reply": {
+    "whole": 475,
+    "sr": 90,
+    "udiff": 90,
+    "block": 500,
+    "omp": 54,
+    "pss": 115,
+    "grok": 95
+   },
+   "input": {
+    "raw": 471,
+    "pss": 874,
+    "omp": 653,
+    "grok": 1124
+   }
+  },
+  {
+   "id": 60,
+   "lang": "go",
+   "lines": 152,
+   "raw": 808,
+   "kind": "delete",
+   "reply": {
+    "whole": 806,
+    "sr": 40,
+    "udiff": 45,
+    "block": 831,
+    "omp": 27,
+    "pss": 107,
+    "grok": 70
+   },
+   "input": {
+    "raw": 808,
+    "pss": 1824,
+    "omp": 1322,
+    "grok": 2537
+   }
+  },
+  {
+   "id": 61,
+   "lang": "go",
+   "lines": 4,
+   "raw": 39,
+   "kind": "delete",
+   "reply": {
+    "whole": 14,
+    "sr": 63,
+    "udiff": 68,
+    "block": 39,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 39,
+    "pss": 115,
+    "omp": 61,
+    "grok": 92
+   }
+  },
+  {
+   "id": 62,
+   "lang": "go",
+   "lines": 22,
+   "raw": 163,
+   "kind": "delete",
+   "reply": {
+    "whole": 135,
+    "sr": 66,
+    "udiff": 71,
+    "block": 160,
+    "omp": 24,
+    "pss": 104,
+    "grok": 68
+   },
+   "input": {
+    "raw": 163,
+    "pss": 344,
+    "omp": 234,
+    "grok": 409
+   }
+  },
+  {
+   "id": 63,
+   "lang": "go",
+   "lines": 9,
+   "raw": 49,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 53,
+    "sr": 62,
+    "udiff": 62,
+    "block": 78,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 49,
+    "pss": 150,
+    "omp": 81,
+    "grok": 152
+   }
+  },
+  {
+   "id": 64,
+   "lang": "go",
+   "lines": 28,
+   "raw": 86,
+   "kind": "insert",
+   "reply": {
+    "whole": 128,
+    "sr": 81,
+    "udiff": 87,
+    "block": 153,
+    "omp": 71,
+    "pss": 135,
+    "grok": 117
+   },
+   "input": {
+    "raw": 86,
+    "pss": 303,
+    "omp": 175,
+    "grok": 398
+   }
+  },
+  {
+   "id": 65,
+   "lang": "go",
+   "lines": 37,
+   "raw": 186,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 197,
+    "sr": 53,
+    "udiff": 53,
+    "block": 222,
+    "omp": 39,
+    "pss": 100,
+    "grok": 80
+   },
+   "input": {
+    "raw": 186,
+    "pss": 457,
+    "omp": 302,
+    "grok": 597
+   }
+  },
+  {
+   "id": 66,
+   "lang": "go",
+   "lines": 31,
+   "raw": 261,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 265,
+    "sr": 62,
+    "udiff": 62,
+    "block": 290,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 261,
+    "pss": 496,
+    "omp": 359,
+    "grok": 606
+   }
+  },
+  {
+   "id": 67,
+   "lang": "go",
+   "lines": 156,
+   "raw": 753,
+   "kind": "delete",
+   "reply": {
+    "whole": 749,
+    "sr": 42,
+    "udiff": 48,
+    "block": 774,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 753,
+    "pss": 1797,
+    "omp": 1283,
+    "grok": 2530
+   }
+  },
+  {
+   "id": 68,
+   "lang": "go",
+   "lines": 6,
+   "raw": 43,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 43,
+    "sr": 64,
+    "udiff": 64,
+    "block": 68,
+    "omp": 39,
+    "pss": 100,
+    "grok": 80
+   },
+   "input": {
+    "raw": 43,
+    "pss": 129,
+    "omp": 69,
+    "grok": 116
+   }
+  },
+  {
+   "id": 69,
+   "lang": "go",
+   "lines": 36,
+   "raw": 162,
+   "kind": "delete",
+   "reply": {
+    "whole": 154,
+    "sr": 46,
+    "udiff": 54,
+    "block": 179,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 162,
+    "pss": 427,
+    "omp": 275,
+    "grok": 562
+   }
+  },
+  {
+   "id": 70,
+   "lang": "go",
+   "lines": 5,
+   "raw": 41,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 53,
+    "sr": 54,
+    "udiff": 54,
+    "block": 78,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 41,
+    "pss": 122,
+    "omp": 65,
+    "grok": 104
+   }
+  },
+  {
+   "id": 71,
+   "lang": "go",
+   "lines": 4,
+   "raw": 39,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 52,
+    "sr": 81,
+    "udiff": 87,
+    "block": 77,
+    "omp": 55,
+    "pss": 133,
+    "grok": 96
+   },
+   "input": {
+    "raw": 39,
+    "pss": 115,
+    "omp": 61,
+    "grok": 92
+   }
+  },
+  {
+   "id": 72,
+   "lang": "go",
+   "lines": 5,
+   "raw": 47,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 44,
+    "sr": 55,
+    "udiff": 55,
+    "block": 69,
+    "omp": 33,
+    "pss": 94,
+    "grok": 74
+   },
+   "input": {
+    "raw": 47,
+    "pss": 128,
+    "omp": 71,
+    "grok": 110
+   }
+  },
+  {
+   "id": 73,
+   "lang": "go",
+   "lines": 4,
+   "raw": 39,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 27,
+    "sr": 76,
+    "udiff": 80,
+    "block": 52,
+    "omp": 39,
+    "pss": 115,
+    "grok": 80
+   },
+   "input": {
+    "raw": 39,
+    "pss": 115,
+    "omp": 61,
+    "grok": 92
+   }
+  },
+  {
+   "id": 74,
+   "lang": "go",
+   "lines": 8,
+   "raw": 93,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 98,
+    "sr": 59,
+    "udiff": 59,
+    "block": 123,
+    "omp": 39,
+    "pss": 100,
+    "grok": 80
+   },
+   "input": {
+    "raw": 93,
+    "pss": 189,
+    "omp": 123,
+    "grok": 186
+   }
+  },
+  {
+   "id": 75,
+   "lang": "go",
+   "lines": 4,
+   "raw": 39,
+   "kind": "insert",
+   "reply": {
+    "whole": 53,
+    "sr": 53,
+    "udiff": 53,
+    "block": 78,
+    "omp": 40,
+    "pss": 100,
+    "grok": 86
+   },
+   "input": {
+    "raw": 39,
+    "pss": 115,
+    "omp": 61,
+    "grok": 92
+   }
+  },
+  {
+   "id": 76,
+   "lang": "go",
+   "lines": 197,
+   "raw": 896,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 908,
+    "sr": 54,
+    "udiff": 56,
+    "block": 933,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 896,
+    "pss": 2227,
+    "omp": 1590,
+    "grok": 3165
+   }
+  },
+  {
+   "id": 77,
+   "lang": "go",
+   "lines": 121,
+   "raw": 503,
+   "kind": "insert",
+   "reply": {
+    "whole": 531,
+    "sr": 67,
+    "udiff": 72,
+    "block": 556,
+    "omp": 56,
+    "pss": 118,
+    "grok": 102
+   },
+   "input": {
+    "raw": 503,
+    "pss": 1302,
+    "omp": 893,
+    "grok": 1860
+   }
+  },
+  {
+   "id": 78,
+   "lang": "go",
+   "lines": 7,
+   "raw": 86,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 86,
+    "sr": 66,
+    "udiff": 66,
+    "block": 111,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 86,
+    "pss": 177,
+    "omp": 114,
+    "grok": 169
+   }
+  },
+  {
+   "id": 79,
+   "lang": "go",
+   "lines": 77,
+   "raw": 381,
+   "kind": "rename",
+   "reply": {
+    "whole": 385,
+    "sr": 70,
+    "udiff": 70,
+    "block": 410,
+    "omp": 44,
+    "pss": 105,
+    "grok": 85
+   },
+   "input": {
+    "raw": 381,
+    "pss": 892,
+    "omp": 617,
+    "grok": 1232
+   }
+  },
+  {
+   "id": 80,
+   "lang": "rs",
+   "lines": 8,
+   "raw": 95,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 62,
+    "sr": 155,
+    "udiff": 165,
+    "block": 87,
+    "omp": 70,
+    "pss": 150,
+    "grok": 111
+   },
+   "input": {
+    "raw": 95,
+    "pss": 191,
+    "omp": 125,
+    "grok": 188
+   }
+  },
+  {
+   "id": 81,
+   "lang": "rs",
+   "lines": 185,
+   "raw": 1037,
+   "kind": "delete",
+   "reply": {
+    "whole": 1031,
+    "sr": 44,
+    "udiff": 51,
+    "block": 1056,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 1037,
+    "pss": 2284,
+    "omp": 1683,
+    "grok": 3162
+   }
+  },
+  {
+   "id": 82,
+   "lang": "rs",
+   "lines": 14,
+   "raw": 42,
+   "kind": "insert",
+   "reply": {
+    "whole": 56,
+    "sr": 53,
+    "udiff": 54,
+    "block": 81,
+    "omp": 41,
+    "pss": 100,
+    "grok": 86
+   },
+   "input": {
+    "raw": 42,
+    "pss": 175,
+    "omp": 89,
+    "grok": 200
+   }
+  },
+  {
+   "id": 83,
+   "lang": "rs",
+   "lines": 6,
+   "raw": 71,
+   "kind": "delete",
+   "reply": {
+    "whole": 34,
+    "sr": 75,
+    "udiff": 79,
+    "block": 59,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 71,
+    "pss": 157,
+    "omp": 97,
+    "grok": 144
+   }
+  },
+  {
+   "id": 84,
+   "lang": "rs",
+   "lines": 8,
+   "raw": 81,
+   "kind": "insert",
+   "reply": {
+    "whole": 95,
+    "sr": 53,
+    "udiff": 53,
+    "block": 120,
+    "omp": 40,
+    "pss": 100,
+    "grok": 86
+   },
+   "input": {
+    "raw": 81,
+    "pss": 177,
+    "omp": 111,
+    "grok": 174
+   }
+  },
+  {
+   "id": 85,
+   "lang": "rs",
+   "lines": 4,
+   "raw": 49,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 50,
+    "sr": 51,
+    "udiff": 51,
+    "block": 75,
+    "omp": 33,
+    "pss": 94,
+    "grok": 74
+   },
+   "input": {
+    "raw": 49,
+    "pss": 125,
+    "omp": 71,
+    "grok": 102
+   }
+  },
+  {
+   "id": 86,
+   "lang": "rs",
+   "lines": 54,
+   "raw": 277,
+   "kind": "delete",
+   "reply": {
+    "whole": 226,
+    "sr": 89,
+    "udiff": 95,
+    "block": 251,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 277,
+    "pss": 650,
+    "omp": 444,
+    "grok": 875
+   }
+  },
+  {
+   "id": 87,
+   "lang": "rs",
+   "lines": 10,
+   "raw": 85,
+   "kind": "insert",
+   "reply": {
+    "whole": 99,
+    "sr": 53,
+    "udiff": 53,
+    "block": 124,
+    "omp": 40,
+    "pss": 100,
+    "grok": 86
+   },
+   "input": {
+    "raw": 85,
+    "pss": 194,
+    "omp": 120,
+    "grok": 199
+   }
+  },
+  {
+   "id": 88,
+   "lang": "rs",
+   "lines": 38,
+   "raw": 293,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 329,
+    "sr": 86,
+    "udiff": 96,
+    "block": 354,
+    "omp": 72,
+    "pss": 152,
+    "grok": 112
+   },
+   "input": {
+    "raw": 293,
+    "pss": 570,
+    "omp": 412,
+    "grok": 715
+   }
+  },
+  {
+   "id": 89,
+   "lang": "rs",
+   "lines": 119,
+   "raw": 579,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 556,
+    "sr": 117,
+    "udiff": 129,
+    "block": 581,
+    "omp": 57,
+    "pss": 135,
+    "grok": 97
+   },
+   "input": {
+    "raw": 579,
+    "pss": 1364,
+    "omp": 961,
+    "grok": 1912
+   }
+  },
+  {
+   "id": 90,
+   "lang": "rs",
+   "lines": 51,
+   "raw": 199,
+   "kind": "rename",
+   "reply": {
+    "whole": 203,
+    "sr": 66,
+    "udiff": 66,
+    "block": 228,
+    "omp": 42,
+    "pss": 103,
+    "grok": 83
+   },
+   "input": {
+    "raw": 199,
+    "pss": 554,
+    "omp": 357,
+    "grok": 764
+   }
+  },
+  {
+   "id": 91,
+   "lang": "rs",
+   "lines": 12,
+   "raw": 107,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 108,
+    "sr": 63,
+    "udiff": 63,
+    "block": 133,
+    "omp": 39,
+    "pss": 100,
+    "grok": 80
+   },
+   "input": {
+    "raw": 107,
+    "pss": 228,
+    "omp": 148,
+    "grok": 243
+   }
+  },
+  {
+   "id": 92,
+   "lang": "rs",
+   "lines": 197,
+   "raw": 1057,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 1006,
+    "sr": 167,
+    "udiff": 180,
+    "block": 1031,
+    "omp": 69,
+    "pss": 149,
+    "grok": 109
+   },
+   "input": {
+    "raw": 1057,
+    "pss": 2388,
+    "omp": 1751,
+    "grok": 3326
+   }
+  },
+  {
+   "id": 93,
+   "lang": "rs",
+   "lines": 7,
+   "raw": 28,
+   "kind": "rename",
+   "reply": {
+    "whole": 32,
+    "sr": 66,
+    "udiff": 66,
+    "block": 57,
+    "omp": 42,
+    "pss": 103,
+    "grok": 83
+   },
+   "input": {
+    "raw": 28,
+    "pss": 119,
+    "omp": 56,
+    "grok": 111
+   }
+  },
+  {
+   "id": 94,
+   "lang": "rs",
+   "lines": 78,
+   "raw": 401,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 433,
+    "sr": 90,
+    "udiff": 102,
+    "block": 458,
+    "omp": 72,
+    "pss": 152,
+    "grok": 112
+   },
+   "input": {
+    "raw": 401,
+    "pss": 918,
+    "omp": 640,
+    "grok": 1263
+   }
+  },
+  {
+   "id": 95,
+   "lang": "rs",
+   "lines": 4,
+   "raw": 49,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 32,
+    "sr": 83,
+    "udiff": 86,
+    "block": 57,
+    "omp": 40,
+    "pss": 116,
+    "grok": 81
+   },
+   "input": {
+    "raw": 49,
+    "pss": 125,
+    "omp": 71,
+    "grok": 102
+   }
+  },
+  {
+   "id": 96,
+   "lang": "rs",
+   "lines": 159,
+   "raw": 797,
+   "kind": "delete",
+   "reply": {
+    "whole": 780,
+    "sr": 55,
+    "udiff": 63,
+    "block": 805,
+    "omp": 27,
+    "pss": 107,
+    "grok": 70
+   },
+   "input": {
+    "raw": 797,
+    "pss": 1862,
+    "omp": 1339,
+    "grok": 2610
+   }
+  },
+  {
+   "id": 97,
+   "lang": "rs",
+   "lines": 18,
+   "raw": 132,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 121,
+    "sr": 133,
+    "udiff": 142,
+    "block": 146,
+    "omp": 71,
+    "pss": 151,
+    "grok": 111
+   },
+   "input": {
+    "raw": 132,
+    "pss": 289,
+    "omp": 191,
+    "grok": 334
+   }
+  },
+  {
+   "id": 98,
+   "lang": "rs",
+   "lines": 145,
+   "raw": 610,
+   "kind": "rename",
+   "reply": {
+    "whole": 614,
+    "sr": 66,
+    "udiff": 66,
+    "block": 639,
+    "omp": 42,
+    "pss": 103,
+    "grok": 83
+   },
+   "input": {
+    "raw": 610,
+    "pss": 1577,
+    "omp": 1096,
+    "grok": 2255
+   }
+  },
+  {
+   "id": 99,
+   "lang": "rs",
+   "lines": 5,
+   "raw": 24,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 36,
+    "sr": 54,
+    "udiff": 54,
+    "block": 61,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 24,
+    "pss": 105,
+    "omp": 48,
+    "grok": 87
+   }
+  },
+  {
+   "id": 100,
+   "lang": "java",
+   "lines": 180,
+   "raw": 682,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 694,
+    "sr": 54,
+    "udiff": 62,
+    "block": 719,
+    "omp": 45,
+    "pss": 105,
+    "grok": 82
+   },
+   "input": {
+    "raw": 682,
+    "pss": 1897,
+    "omp": 1311,
+    "grok": 2750
+   }
+  },
+  {
+   "id": 101,
+   "lang": "java",
+   "lines": 40,
+   "raw": 211,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 155,
+    "sr": 178,
+    "udiff": 197,
+    "block": 180,
+    "omp": 75,
+    "pss": 155,
+    "grok": 112
+   },
+   "input": {
+    "raw": 211,
+    "pss": 503,
+    "omp": 339,
+    "grok": 658
+   }
+  },
+  {
+   "id": 102,
+   "lang": "java",
+   "lines": 11,
+   "raw": 62,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 55,
+    "sr": 59,
+    "udiff": 65,
+    "block": 80,
+    "omp": 36,
+    "pss": 97,
+    "grok": 74
+   },
+   "input": {
+    "raw": 62,
+    "pss": 180,
+    "omp": 103,
+    "grok": 190
+   }
+  },
+  {
+   "id": 103,
+   "lang": "java",
+   "lines": 7,
+   "raw": 92,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 86,
+    "sr": 72,
+    "udiff": 78,
+    "block": 111,
+    "omp": 43,
+    "pss": 104,
+    "grok": 81
+   },
+   "input": {
+    "raw": 92,
+    "pss": 186,
+    "omp": 123,
+    "grok": 178
+   }
+  },
+  {
+   "id": 104,
+   "lang": "java",
+   "lines": 18,
+   "raw": 76,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 88,
+    "sr": 54,
+    "udiff": 62,
+    "block": 113,
+    "omp": 45,
+    "pss": 105,
+    "grok": 82
+   },
+   "input": {
+    "raw": 76,
+    "pss": 236,
+    "omp": 138,
+    "grok": 281
+   }
+  },
+  {
+   "id": 105,
+   "lang": "java",
+   "lines": 89,
+   "raw": 382,
+   "kind": "rename",
+   "reply": {
+    "whole": 386,
+    "sr": 70,
+    "udiff": 76,
+    "block": 411,
+    "omp": 47,
+    "pss": 108,
+    "grok": 85
+   },
+   "input": {
+    "raw": 382,
+    "pss": 968,
+    "omp": 657,
+    "grok": 1368
+   }
+  },
+  {
+   "id": 106,
+   "lang": "java",
+   "lines": 21,
+   "raw": 168,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 96,
+    "sr": 194,
+    "udiff": 210,
+    "block": 121,
+    "omp": 73,
+    "pss": 153,
+    "grok": 111
+   },
+   "input": {
+    "raw": 168,
+    "pss": 346,
+    "omp": 239,
+    "grok": 406
+   }
+  },
+  {
+   "id": 107,
+   "lang": "java",
+   "lines": 12,
+   "raw": 64,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 75,
+    "sr": 53,
+    "udiff": 59,
+    "block": 100,
+    "omp": 42,
+    "pss": 103,
+    "grok": 80
+   },
+   "input": {
+    "raw": 64,
+    "pss": 188,
+    "omp": 108,
+    "grok": 203
+   }
+  },
+  {
+   "id": 108,
+   "lang": "java",
+   "lines": 5,
+   "raw": 90,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 84,
+    "sr": 100,
+    "udiff": 113,
+    "block": 109,
+    "omp": 58,
+    "pss": 136,
+    "grok": 96
+   },
+   "input": {
+    "raw": 90,
+    "pss": 174,
+    "omp": 117,
+    "grok": 156
+   }
+  },
+  {
+   "id": 109,
+   "lang": "java",
+   "lines": 7,
+   "raw": 65,
+   "kind": "delete",
+   "reply": {
+    "whole": 28,
+    "sr": 75,
+    "udiff": 87,
+    "block": 53,
+    "omp": 26,
+    "pss": 106,
+    "grok": 68
+   },
+   "input": {
+    "raw": 65,
+    "pss": 159,
+    "omp": 96,
+    "grok": 151
+   }
+  },
+  {
+   "id": 110,
+   "lang": "java",
+   "lines": 71,
+   "raw": 358,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 368,
+    "sr": 52,
+    "udiff": 60,
+    "block": 393,
+    "omp": 43,
+    "pss": 103,
+    "grok": 80
+   },
+   "input": {
+    "raw": 358,
+    "pss": 836,
+    "omp": 579,
+    "grok": 1146
+   }
+  },
+  {
+   "id": 111,
+   "lang": "java",
+   "lines": 11,
+   "raw": 102,
+   "kind": "rename",
+   "reply": {
+    "whole": 105,
+    "sr": 69,
+    "udiff": 75,
+    "block": 130,
+    "omp": 46,
+    "pss": 107,
+    "grok": 84
+   },
+   "input": {
+    "raw": 102,
+    "pss": 220,
+    "omp": 143,
+    "grok": 230
+   }
+  },
+  {
+   "id": 112,
+   "lang": "java",
+   "lines": 45,
+   "raw": 417,
+   "kind": "insert",
+   "reply": {
+    "whole": 443,
+    "sr": 65,
+    "udiff": 76,
+    "block": 468,
+    "omp": 57,
+    "pss": 119,
+    "grok": 100
+   },
+   "input": {
+    "raw": 417,
+    "pss": 739,
+    "omp": 560,
+    "grok": 919
+   }
+  },
+  {
+   "id": 113,
+   "lang": "java",
+   "lines": 5,
+   "raw": 49,
+   "kind": "delete",
+   "reply": {
+    "whole": 37,
+    "sr": 50,
+    "udiff": 57,
+    "block": 62,
+    "omp": 26,
+    "pss": 106,
+    "grok": 68
+   },
+   "input": {
+    "raw": 49,
+    "pss": 133,
+    "omp": 76,
+    "grok": 115
+   }
+  },
+  {
+   "id": 114,
+   "lang": "java",
+   "lines": 8,
+   "raw": 176,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 56,
+    "sr": 214,
+    "udiff": 229,
+    "block": 81,
+    "omp": 58,
+    "pss": 136,
+    "grok": 96
+   },
+   "input": {
+    "raw": 176,
+    "pss": 275,
+    "omp": 209,
+    "grok": 272
+   }
+  },
+  {
+   "id": 115,
+   "lang": "java",
+   "lines": 52,
+   "raw": 230,
+   "kind": "rename",
+   "reply": {
+    "whole": 234,
+    "sr": 70,
+    "udiff": 76,
+    "block": 259,
+    "omp": 47,
+    "pss": 108,
+    "grok": 85
+   },
+   "input": {
+    "raw": 230,
+    "pss": 594,
+    "omp": 394,
+    "grok": 809
+   }
+  },
+  {
+   "id": 116,
+   "lang": "java",
+   "lines": 135,
+   "raw": 835,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 847,
+    "sr": 54,
+    "udiff": 62,
+    "block": 872,
+    "omp": 45,
+    "pss": 105,
+    "grok": 82
+   },
+   "input": {
+    "raw": 835,
+    "pss": 1735,
+    "omp": 1284,
+    "grok": 2363
+   }
+  },
+  {
+   "id": 117,
+   "lang": "java",
+   "lines": 76,
+   "raw": 226,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 232,
+    "sr": 60,
+    "udiff": 73,
+    "block": 257,
+    "omp": 45,
+    "pss": 121,
+    "grok": 82
+   },
+   "input": {
+    "raw": 226,
+    "pss": 734,
+    "omp": 462,
+    "grok": 1069
+   }
+  },
+  {
+   "id": 118,
+   "lang": "java",
+   "lines": 176,
+   "raw": 908,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 914,
+    "sr": 46,
+    "udiff": 54,
+    "block": 939,
+    "omp": 38,
+    "pss": 98,
+    "grok": 75
+   },
+   "input": {
+    "raw": 908,
+    "pss": 2095,
+    "omp": 1521,
+    "grok": 2928
+   }
+  },
+  {
+   "id": 119,
+   "lang": "java",
+   "lines": 149,
+   "raw": 680,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 691,
+    "sr": 53,
+    "udiff": 63,
+    "block": 716,
+    "omp": 46,
+    "pss": 105,
+    "grok": 82
+   },
+   "input": {
+    "raw": 680,
+    "pss": 1678,
+    "omp": 1185,
+    "grok": 2376
+   }
+  },
+  {
+   "id": 120,
+   "lang": "c",
+   "lines": 5,
+   "raw": 49,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 63,
+    "sr": 108,
+    "udiff": 116,
+    "block": 88,
+    "omp": 70,
+    "pss": 150,
+    "grok": 111
+   },
+   "input": {
+    "raw": 49,
+    "pss": 130,
+    "omp": 73,
+    "grok": 112
+   }
+  },
+  {
+   "id": 121,
+   "lang": "c",
+   "lines": 20,
+   "raw": 159,
+   "kind": "insert",
+   "reply": {
+    "whole": 187,
+    "sr": 67,
+    "udiff": 70,
+    "block": 212,
+    "omp": 55,
+    "pss": 117,
+    "grok": 101
+   },
+   "input": {
+    "raw": 159,
+    "pss": 328,
+    "omp": 224,
+    "grok": 383
+   }
+  },
+  {
+   "id": 122,
+   "lang": "c",
+   "lines": 18,
+   "raw": 84,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 60,
+    "sr": 90,
+    "udiff": 97,
+    "block": 85,
+    "omp": 40,
+    "pss": 116,
+    "grok": 81
+   },
+   "input": {
+    "raw": 84,
+    "pss": 241,
+    "omp": 143,
+    "grok": 286
+   }
+  },
+  {
+   "id": 123,
+   "lang": "c",
+   "lines": 164,
+   "raw": 823,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 834,
+    "sr": 53,
+    "udiff": 55,
+    "block": 859,
+    "omp": 41,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 823,
+    "pss": 1923,
+    "omp": 1385,
+    "grok": 2696
+   }
+  },
+  {
+   "id": 124,
+   "lang": "c",
+   "lines": 11,
+   "raw": 61,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 94,
+    "sr": 83,
+    "udiff": 91,
+    "block": 119,
+    "omp": 68,
+    "pss": 148,
+    "grok": 108
+   },
+   "input": {
+    "raw": 61,
+    "pss": 176,
+    "omp": 99,
+    "grok": 186
+   }
+  },
+  {
+   "id": 125,
+   "lang": "c",
+   "lines": 7,
+   "raw": 91,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 103,
+    "sr": 54,
+    "udiff": 54,
+    "block": 128,
+    "omp": 40,
+    "pss": 101,
+    "grok": 81
+   },
+   "input": {
+    "raw": 91,
+    "pss": 182,
+    "omp": 119,
+    "grok": 174
+   }
+  },
+  {
+   "id": 126,
+   "lang": "c",
+   "lines": 126,
+   "raw": 880,
+   "kind": "insert",
+   "reply": {
+    "whole": 922,
+    "sr": 81,
+    "udiff": 87,
+    "block": 947,
+    "omp": 71,
+    "pss": 135,
+    "grok": 117
+   },
+   "input": {
+    "raw": 880,
+    "pss": 1714,
+    "omp": 1290,
+    "grok": 2297
+   }
+  },
+  {
+   "id": 127,
+   "lang": "c",
+   "lines": 6,
+   "raw": 51,
+   "kind": "rename",
+   "reply": {
+    "whole": 55,
+    "sr": 70,
+    "udiff": 70,
+    "block": 80,
+    "omp": 44,
+    "pss": 105,
+    "grok": 85
+   },
+   "input": {
+    "raw": 51,
+    "pss": 137,
+    "omp": 77,
+    "grok": 124
+   }
+  },
+  {
+   "id": 128,
+   "lang": "c",
+   "lines": 80,
+   "raw": 640,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 520,
+    "sr": 214,
+    "udiff": 225,
+    "block": 545,
+    "omp": 57,
+    "pss": 135,
+    "grok": 97
+   },
+   "input": {
+    "raw": 640,
+    "pss": 1169,
+    "omp": 885,
+    "grok": 1524
+   }
+  },
+  {
+   "id": 129,
+   "lang": "c",
+   "lines": 55,
+   "raw": 189,
+   "kind": "delete",
+   "reply": {
+    "whole": 183,
+    "sr": 44,
+    "udiff": 49,
+    "block": 208,
+    "omp": 23,
+    "pss": 103,
+    "grok": 68
+   },
+   "input": {
+    "raw": 189,
+    "pss": 568,
+    "omp": 359,
+    "grok": 798
+   }
+  },
+  {
+   "id": 130,
+   "lang": "c",
+   "lines": 50,
+   "raw": 206,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 216,
+    "sr": 56,
+    "udiff": 61,
+    "block": 241,
+    "omp": 42,
+    "pss": 118,
+    "grok": 82
+   },
+   "input": {
+    "raw": 206,
+    "pss": 555,
+    "omp": 361,
+    "grok": 760
+   }
+  },
+  {
+   "id": 131,
+   "lang": "c",
+   "lines": 83,
+   "raw": 521,
+   "kind": "rename",
+   "reply": {
+    "whole": 525,
+    "sr": 70,
+    "udiff": 70,
+    "block": 550,
+    "omp": 44,
+    "pss": 105,
+    "grok": 85
+   },
+   "input": {
+    "raw": 521,
+    "pss": 1068,
+    "omp": 775,
+    "grok": 1438
+   }
+  },
+  {
+   "id": 132,
+   "lang": "c",
+   "lines": 30,
+   "raw": 216,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 228,
+    "sr": 54,
+    "udiff": 56,
+    "block": 253,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 216,
+    "pss": 445,
+    "omp": 311,
+    "grok": 550
+   }
+  },
+  {
+   "id": 133,
+   "lang": "c",
+   "lines": 8,
+   "raw": 135,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 128,
+    "sr": 69,
+    "udiff": 69,
+    "block": 153,
+    "omp": 38,
+    "pss": 99,
+    "grok": 79
+   },
+   "input": {
+    "raw": 135,
+    "pss": 231,
+    "omp": 165,
+    "grok": 228
+   }
+  },
+  {
+   "id": 134,
+   "lang": "c",
+   "lines": 167,
+   "raw": 713,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 725,
+    "sr": 54,
+    "udiff": 58,
+    "block": 750,
+    "omp": 44,
+    "pss": 103,
+    "grok": 83
+   },
+   "input": {
+    "raw": 713,
+    "pss": 1834,
+    "omp": 1287,
+    "grok": 2622
+   }
+  },
+  {
+   "id": 135,
+   "lang": "c",
+   "lines": 20,
+   "raw": 128,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 139,
+    "sr": 83,
+    "udiff": 91,
+    "block": 164,
+    "omp": 55,
+    "pss": 133,
+    "grok": 96
+   },
+   "input": {
+    "raw": 128,
+    "pss": 297,
+    "omp": 193,
+    "grok": 352
+   }
+  },
+  {
+   "id": 136,
+   "lang": "c",
+   "lines": 65,
+   "raw": 328,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 300,
+    "sr": 94,
+    "udiff": 96,
+    "block": 325,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 328,
+    "pss": 767,
+    "omp": 528,
+    "grok": 1047
+   }
+  },
+  {
+   "id": 137,
+   "lang": "c",
+   "lines": 113,
+   "raw": 733,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 745,
+    "sr": 54,
+    "udiff": 56,
+    "block": 770,
+    "omp": 42,
+    "pss": 102,
+    "grok": 82
+   },
+   "input": {
+    "raw": 733,
+    "pss": 1476,
+    "omp": 1091,
+    "grok": 1994
+   }
+  },
+  {
+   "id": 138,
+   "lang": "c",
+   "lines": 5,
+   "raw": 49,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 41,
+    "sr": 72,
+    "udiff": 75,
+    "block": 66,
+    "omp": 39,
+    "pss": 115,
+    "grok": 80
+   },
+   "input": {
+    "raw": 49,
+    "pss": 130,
+    "omp": 73,
+    "grok": 112
+   }
+  },
+  {
+   "id": 139,
+   "lang": "c",
+   "lines": 33,
+   "raw": 145,
+   "kind": "delete",
+   "reply": {
+    "whole": 143,
+    "sr": 40,
+    "udiff": 43,
+    "block": 168,
+    "omp": 25,
+    "pss": 105,
+    "grok": 69
+   },
+   "input": {
+    "raw": 145,
+    "pss": 392,
+    "omp": 249,
+    "grok": 512
+   }
+  },
+  {
+   "id": 140,
+   "lang": "cpp",
+   "lines": 5,
+   "raw": 49,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 40,
+    "sr": 75,
+    "udiff": 83,
+    "block": 65,
+    "omp": 42,
+    "pss": 118,
+    "grok": 81
+   },
+   "input": {
+    "raw": 49,
+    "pss": 132,
+    "omp": 75,
+    "grok": 114
+   }
+  },
+  {
+   "id": 141,
+   "lang": "cpp",
+   "lines": 7,
+   "raw": 135,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 147,
+    "sr": 54,
+    "udiff": 58,
+    "block": 172,
+    "omp": 42,
+    "pss": 103,
+    "grok": 81
+   },
+   "input": {
+    "raw": 135,
+    "pss": 228,
+    "omp": 165,
+    "grok": 220
+   }
+  },
+  {
+   "id": 142,
+   "lang": "cpp",
+   "lines": 27,
+   "raw": 92,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 97,
+    "sr": 47,
+    "udiff": 51,
+    "block": 122,
+    "omp": 35,
+    "pss": 96,
+    "grok": 74
+   },
+   "input": {
+    "raw": 92,
+    "pss": 305,
+    "omp": 180,
+    "grok": 395
+   }
+  },
+  {
+   "id": 143,
+   "lang": "cpp",
+   "lines": 16,
+   "raw": 322,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 322,
+    "sr": 122,
+    "udiff": 136,
+    "block": 347,
+    "omp": 72,
+    "pss": 152,
+    "grok": 111
+   },
+   "input": {
+    "raw": 322,
+    "pss": 469,
+    "omp": 377,
+    "grok": 504
+   }
+  },
+  {
+   "id": 144,
+   "lang": "cpp",
+   "lines": 117,
+   "raw": 718,
+   "kind": "insert",
+   "reply": {
+    "whole": 760,
+    "sr": 81,
+    "udiff": 91,
+    "block": 785,
+    "omp": 73,
+    "pss": 137,
+    "grok": 117
+   },
+   "input": {
+    "raw": 718,
+    "pss": 1491,
+    "omp": 1094,
+    "grok": 2029
+   }
+  },
+  {
+   "id": 145,
+   "lang": "cpp",
+   "lines": 4,
+   "raw": 47,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 59,
+    "sr": 54,
+    "udiff": 58,
+    "block": 84,
+    "omp": 42,
+    "pss": 103,
+    "grok": 81
+   },
+   "input": {
+    "raw": 47,
+    "pss": 125,
+    "omp": 71,
+    "grok": 102
+   }
+  },
+  {
+   "id": 146,
+   "lang": "cpp",
+   "lines": 22,
+   "raw": 298,
+   "kind": "insert",
+   "reply": {
+    "whole": 326,
+    "sr": 67,
+    "udiff": 74,
+    "block": 351,
+    "omp": 57,
+    "pss": 119,
+    "grok": 101
+   },
+   "input": {
+    "raw": 298,
+    "pss": 481,
+    "omp": 371,
+    "grok": 546
+   }
+  },
+  {
+   "id": 147,
+   "lang": "cpp",
+   "lines": 8,
+   "raw": 96,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 46,
+    "sr": 144,
+    "udiff": 157,
+    "block": 71,
+    "omp": 57,
+    "pss": 135,
+    "grok": 96
+   },
+   "input": {
+    "raw": 96,
+    "pss": 194,
+    "omp": 128,
+    "grok": 191
+   }
+  },
+  {
+   "id": 148,
+   "lang": "cpp",
+   "lines": 32,
+   "raw": 272,
+   "kind": "delete",
+   "reply": {
+    "whole": 219,
+    "sr": 91,
+    "udiff": 100,
+    "block": 244,
+    "omp": 25,
+    "pss": 105,
+    "grok": 68
+   },
+   "input": {
+    "raw": 272,
+    "pss": 515,
+    "omp": 375,
+    "grok": 630
+   }
+  },
+  {
+   "id": 149,
+   "lang": "cpp",
+   "lines": 4,
+   "raw": 47,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 42,
+    "sr": 71,
+    "udiff": 75,
+    "block": 67,
+    "omp": 42,
+    "pss": 103,
+    "grok": 81
+   },
+   "input": {
+    "raw": 47,
+    "pss": 125,
+    "omp": 71,
+    "grok": 102
+   }
+  },
+  {
+   "id": 150,
+   "lang": "cpp",
+   "lines": 9,
+   "raw": 98,
+   "kind": "insert",
+   "reply": {
+    "whole": 112,
+    "sr": 53,
+    "udiff": 57,
+    "block": 137,
+    "omp": 42,
+    "pss": 102,
+    "grok": 86
+   },
+   "input": {
+    "raw": 98,
+    "pss": 201,
+    "omp": 132,
+    "grok": 203
+   }
+  },
+  {
+   "id": 151,
+   "lang": "cpp",
+   "lines": 5,
+   "raw": 55,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 61,
+    "sr": 60,
+    "udiff": 64,
+    "block": 86,
+    "omp": 42,
+    "pss": 103,
+    "grok": 81
+   },
+   "input": {
+    "raw": 55,
+    "pss": 138,
+    "omp": 81,
+    "grok": 120
+   }
+  },
+  {
+   "id": 152,
+   "lang": "cpp",
+   "lines": 44,
+   "raw": 173,
+   "kind": "insert",
+   "reply": {
+    "whole": 201,
+    "sr": 67,
+    "udiff": 76,
+    "block": 226,
+    "omp": 58,
+    "pss": 120,
+    "grok": 102
+   },
+   "input": {
+    "raw": 173,
+    "pss": 488,
+    "omp": 312,
+    "grok": 663
+   }
+  },
+  {
+   "id": 153,
+   "lang": "cpp",
+   "lines": 22,
+   "raw": 124,
+   "kind": "insert",
+   "reply": {
+    "whole": 138,
+    "sr": 53,
+    "udiff": 57,
+    "block": 163,
+    "omp": 42,
+    "pss": 102,
+    "grok": 86
+   },
+   "input": {
+    "raw": 124,
+    "pss": 307,
+    "omp": 197,
+    "grok": 372
+   }
+  },
+  {
+   "id": 154,
+   "lang": "cpp",
+   "lines": 28,
+   "raw": 182,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 187,
+    "sr": 47,
+    "udiff": 53,
+    "block": 212,
+    "omp": 37,
+    "pss": 97,
+    "grok": 75
+   },
+   "input": {
+    "raw": 182,
+    "pss": 401,
+    "omp": 273,
+    "grok": 496
+   }
+  },
+  {
+   "id": 155,
+   "lang": "cpp",
+   "lines": 82,
+   "raw": 255,
+   "kind": "insert",
+   "reply": {
+    "whole": 283,
+    "sr": 67,
+    "udiff": 76,
+    "block": 308,
+    "omp": 56,
+    "pss": 101,
+    "grok": 102
+   },
+   "input": {
+    "raw": 255,
+    "pss": 798,
+    "omp": 508,
+    "grok": 1163
+   }
+  },
+  {
+   "id": 156,
+   "lang": "cpp",
+   "lines": 126,
+   "raw": 450,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 472,
+    "sr": 72,
+    "udiff": 85,
+    "block": 497,
+    "omp": 59,
+    "pss": 137,
+    "grok": 97
+   },
+   "input": {
+    "raw": 450,
+    "pss": 1286,
+    "omp": 862,
+    "grok": 1869
+   }
+  },
+  {
+   "id": 157,
+   "lang": "cpp",
+   "lines": 153,
+   "raw": 1242,
+   "kind": "rename",
+   "reply": {
+    "whole": 1246,
+    "sr": 70,
+    "udiff": 74,
+    "block": 1271,
+    "omp": 46,
+    "pss": 107,
+    "grok": 85
+   },
+   "input": {
+    "raw": 1242,
+    "pss": 2267,
+    "omp": 1762,
+    "grok": 2985
+   }
+  },
+  {
+   "id": 158,
+   "lang": "cpp",
+   "lines": 25,
+   "raw": 130,
+   "kind": "insert",
+   "reply": {
+    "whole": 172,
+    "sr": 81,
+    "udiff": 89,
+    "block": 197,
+    "omp": 72,
+    "pss": 136,
+    "grok": 116
+   },
+   "input": {
+    "raw": 130,
+    "pss": 331,
+    "omp": 212,
+    "grok": 411
+   }
+  },
+  {
+   "id": 159,
+   "lang": "cpp",
+   "lines": 35,
+   "raw": 272,
+   "kind": "insert",
+   "reply": {
+    "whole": 298,
+    "sr": 65,
+    "udiff": 74,
+    "block": 323,
+    "omp": 56,
+    "pss": 118,
+    "grok": 100
+   },
+   "input": {
+    "raw": 272,
+    "pss": 533,
+    "omp": 384,
+    "grok": 663
+   }
+  },
+  {
+   "id": 160,
+   "lang": "kt",
+   "lines": 9,
+   "raw": 56,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 57,
+    "sr": 61,
+    "udiff": 63,
+    "block": 82,
+    "omp": 39,
+    "pss": 100,
+    "grok": 79
+   },
+   "input": {
+    "raw": 56,
+    "pss": 158,
+    "omp": 89,
+    "grok": 160
+   }
+  },
+  {
+   "id": 161,
+   "lang": "kt",
+   "lines": 18,
+   "raw": 125,
+   "kind": "rename",
+   "reply": {
+    "whole": 129,
+    "sr": 68,
+    "udiff": 70,
+    "block": 154,
+    "omp": 44,
+    "pss": 105,
+    "grok": 84
+   },
+   "input": {
+    "raw": 125,
+    "pss": 283,
+    "omp": 185,
+    "grok": 328
+   }
+  },
+  {
+   "id": 162,
+   "lang": "kt",
+   "lines": 22,
+   "raw": 82,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 94,
+    "sr": 54,
+    "udiff": 58,
+    "block": 119,
+    "omp": 43,
+    "pss": 103,
+    "grok": 82
+   },
+   "input": {
+    "raw": 82,
+    "pss": 264,
+    "omp": 154,
+    "grok": 329
+   }
+  },
+  {
+   "id": 163,
+   "lang": "kt",
+   "lines": 45,
+   "raw": 512,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 514,
+    "sr": 62,
+    "udiff": 64,
+    "block": 539,
+    "omp": 40,
+    "pss": 101,
+    "grok": 80
+   },
+   "input": {
+    "raw": 512,
+    "pss": 832,
+    "omp": 653,
+    "grok": 1012
+   }
+  },
+  {
+   "id": 164,
+   "lang": "kt",
+   "lines": 21,
+   "raw": 221,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 214,
+    "sr": 71,
+    "udiff": 73,
+    "block": 239,
+    "omp": 40,
+    "pss": 101,
+    "grok": 80
+   },
+   "input": {
+    "raw": 221,
+    "pss": 397,
+    "omp": 290,
+    "grok": 457
+   }
+  },
+  {
+   "id": 165,
+   "lang": "kt",
+   "lines": 90,
+   "raw": 363,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 375,
+    "sr": 54,
+    "udiff": 56,
+    "block": 400,
+    "omp": 41,
+    "pss": 102,
+    "grok": 81
+   },
+   "input": {
+    "raw": 363,
+    "pss": 953,
+    "omp": 639,
+    "grok": 1358
+   }
+  },
+  {
+   "id": 166,
+   "lang": "kt",
+   "lines": 25,
+   "raw": 93,
+   "kind": "insert",
+   "reply": {
+    "whole": 107,
+    "sr": 53,
+    "udiff": 57,
+    "block": 132,
+    "omp": 42,
+    "pss": 102,
+    "grok": 87
+   },
+   "input": {
+    "raw": 93,
+    "pss": 293,
+    "omp": 174,
+    "grok": 373
+   }
+  },
+  {
+   "id": 167,
+   "lang": "kt",
+   "lines": 11,
+   "raw": 60,
+   "kind": "delete",
+   "reply": {
+    "whole": 34,
+    "sr": 64,
+    "udiff": 72,
+    "block": 59,
+    "omp": 24,
+    "pss": 104,
+    "grok": 68
+   },
+   "input": {
+    "raw": 60,
+    "pss": 176,
+    "omp": 99,
+    "grok": 186
+   }
+  },
+  {
+   "id": 168,
+   "lang": "kt",
+   "lines": 11,
+   "raw": 60,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 56,
+    "sr": 56,
+    "udiff": 58,
+    "block": 81,
+    "omp": 34,
+    "pss": 95,
+    "grok": 74
+   },
+   "input": {
+    "raw": 60,
+    "pss": 176,
+    "omp": 99,
+    "grok": 186
+   }
+  },
+  {
+   "id": 169,
+   "lang": "kt",
+   "lines": 31,
+   "raw": 106,
+   "kind": "insert",
+   "reply": {
+    "whole": 134,
+    "sr": 67,
+    "udiff": 74,
+    "block": 159,
+    "omp": 57,
+    "pss": 119,
+    "grok": 102
+   },
+   "input": {
+    "raw": 106,
+    "pss": 342,
+    "omp": 205,
+    "grok": 452
+   }
+  },
+  {
+   "id": 170,
+   "lang": "kt",
+   "lines": 15,
+   "raw": 111,
+   "kind": "delete",
+   "reply": {
+    "whole": 105,
+    "sr": 44,
+    "udiff": 53,
+    "block": 130,
+    "omp": 26,
+    "pss": 106,
+    "grok": 69
+   },
+   "input": {
+    "raw": 111,
+    "pss": 251,
+    "omp": 162,
+    "grok": 281
+   }
+  },
+  {
+   "id": 171,
+   "lang": "kt",
+   "lines": 140,
+   "raw": 668,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 673,
+    "sr": 47,
+    "udiff": 51,
+    "block": 698,
+    "omp": 36,
+    "pss": 96,
+    "grok": 75
+   },
+   "input": {
+    "raw": 668,
+    "pss": 1601,
+    "omp": 1135,
+    "grok": 2254
+   }
+  },
+  {
+   "id": 172,
+   "lang": "kt",
+   "lines": 140,
+   "raw": 524,
+   "kind": "insert",
+   "reply": {
+    "whole": 538,
+    "sr": 53,
+    "udiff": 59,
+    "block": 563,
+    "omp": 43,
+    "pss": 103,
+    "grok": 88
+   },
+   "input": {
+    "raw": 524,
+    "pss": 1457,
+    "omp": 991,
+    "grok": 2110
+   }
+  },
+  {
+   "id": 173,
+   "lang": "kt",
+   "lines": 12,
+   "raw": 163,
+   "kind": "rename",
+   "reply": {
+    "whole": 167,
+    "sr": 68,
+    "udiff": 70,
+    "block": 192,
+    "omp": 44,
+    "pss": 105,
+    "grok": 84
+   },
+   "input": {
+    "raw": 163,
+    "pss": 285,
+    "omp": 205,
+    "grok": 300
+   }
+  },
+  {
+   "id": 174,
+   "lang": "kt",
+   "lines": 63,
+   "raw": 443,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 455,
+    "sr": 54,
+    "udiff": 56,
+    "block": 480,
+    "omp": 41,
+    "pss": 102,
+    "grok": 81
+   },
+   "input": {
+    "raw": 443,
+    "pss": 871,
+    "omp": 638,
+    "grok": 1141
+   }
+  },
+  {
+   "id": 175,
+   "lang": "kt",
+   "lines": 8,
+   "raw": 60,
+   "kind": "insert",
+   "reply": {
+    "whole": 99,
+    "sr": 78,
+    "udiff": 84,
+    "block": 124,
+    "omp": 68,
+    "pss": 132,
+    "grok": 113
+   },
+   "input": {
+    "raw": 60,
+    "pss": 157,
+    "omp": 91,
+    "grok": 154
+   }
+  },
+  {
+   "id": 176,
+   "lang": "kt",
+   "lines": 49,
+   "raw": 322,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 316,
+    "sr": 58,
+    "udiff": 60,
+    "block": 341,
+    "omp": 34,
+    "pss": 95,
+    "grok": 74
+   },
+   "input": {
+    "raw": 322,
+    "pss": 666,
+    "omp": 475,
+    "grok": 866
+   }
+  },
+  {
+   "id": 177,
+   "lang": "kt",
+   "lines": 91,
+   "raw": 546,
+   "kind": "delete",
+   "reply": {
+    "whole": 544,
+    "sr": 40,
+    "udiff": 45,
+    "block": 569,
+    "omp": 26,
+    "pss": 106,
+    "grok": 69
+   },
+   "input": {
+    "raw": 546,
+    "pss": 1142,
+    "omp": 825,
+    "grok": 1552
+   }
+  },
+  {
+   "id": 178,
+   "lang": "kt",
+   "lines": 4,
+   "raw": 46,
+   "kind": "insert",
+   "reply": {
+    "whole": 85,
+    "sr": 78,
+    "udiff": 84,
+    "block": 110,
+    "omp": 67,
+    "pss": 115,
+    "grok": 106
+   },
+   "input": {
+    "raw": 46,
+    "pss": 123,
+    "omp": 69,
+    "grok": 100
+   }
+  },
+  {
+   "id": 179,
+   "lang": "kt",
+   "lines": 6,
+   "raw": 140,
+   "kind": "insert",
+   "reply": {
+    "whole": 182,
+    "sr": 81,
+    "udiff": 87,
+    "block": 207,
+    "omp": 70,
+    "pss": 117,
+    "grok": 116
+   },
+   "input": {
+    "raw": 140,
+    "pss": 227,
+    "omp": 167,
+    "grok": 214
+   }
+  },
+  {
+   "id": 180,
+   "lang": "rb",
+   "lines": 142,
+   "raw": 574,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 585,
+    "sr": 53,
+    "udiff": 57,
+    "block": 610,
+    "omp": 42,
+    "pss": 102,
+    "grok": 81
+   },
+   "input": {
+    "raw": 574,
+    "pss": 1521,
+    "omp": 1049,
+    "grok": 2184
+   }
+  },
+  {
+   "id": 181,
+   "lang": "rb",
+   "lines": 13,
+   "raw": 87,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 94,
+    "sr": 115,
+    "udiff": 127,
+    "block": 119,
+    "omp": 72,
+    "pss": 152,
+    "grok": 111
+   },
+   "input": {
+    "raw": 87,
+    "pss": 215,
+    "omp": 132,
+    "grok": 235
+   }
+  },
+  {
+   "id": 182,
+   "lang": "rb",
+   "lines": 156,
+   "raw": 555,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 559,
+    "sr": 62,
+    "udiff": 72,
+    "block": 584,
+    "omp": 43,
+    "pss": 119,
+    "grok": 82
+   },
+   "input": {
+    "raw": 555,
+    "pss": 1600,
+    "omp": 1086,
+    "grok": 2333
+   }
+  },
+  {
+   "id": 183,
+   "lang": "rb",
+   "lines": 63,
+   "raw": 220,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 219,
+    "sr": 91,
+    "udiff": 104,
+    "block": 244,
+    "omp": 56,
+    "pss": 134,
+    "grok": 95
+   },
+   "input": {
+    "raw": 220,
+    "pss": 648,
+    "omp": 415,
+    "grok": 918
+   }
+  },
+  {
+   "id": 184,
+   "lang": "rb",
+   "lines": 9,
+   "raw": 29,
+   "kind": "insert",
+   "reply": {
+    "whole": 57,
+    "sr": 67,
+    "udiff": 73,
+    "block": 82,
+    "omp": 55,
+    "pss": 100,
+    "grok": 101
+   },
+   "input": {
+    "raw": 29,
+    "pss": 131,
+    "omp": 62,
+    "grok": 133
+   }
+  },
+  {
+   "id": 185,
+   "lang": "rb",
+   "lines": 5,
+   "raw": 21,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 24,
+    "sr": 49,
+    "udiff": 51,
+    "block": 49,
+    "omp": 34,
+    "pss": 95,
+    "grok": 74
+   },
+   "input": {
+    "raw": 21,
+    "pss": 103,
+    "omp": 46,
+    "grok": 85
+   }
+  },
+  {
+   "id": 186,
+   "lang": "rb",
+   "lines": 88,
+   "raw": 322,
+   "kind": "insert",
+   "reply": {
+    "whole": 350,
+    "sr": 67,
+    "udiff": 74,
+    "block": 375,
+    "omp": 57,
+    "pss": 119,
+    "grok": 102
+   },
+   "input": {
+    "raw": 322,
+    "pss": 900,
+    "omp": 592,
+    "grok": 1295
+   }
+  },
+  {
+   "id": 187,
+   "lang": "rb",
+   "lines": 93,
+   "raw": 594,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 599,
+    "sr": 47,
+    "udiff": 51,
+    "block": 624,
+    "omp": 36,
+    "pss": 96,
+    "grok": 75
+   },
+   "input": {
+    "raw": 594,
+    "pss": 1202,
+    "omp": 879,
+    "grok": 1622
+   }
+  },
+  {
+   "id": 188,
+   "lang": "rb",
+   "lines": 29,
+   "raw": 159,
+   "kind": "multi-hunk",
+   "reply": {
+    "whole": 162,
+    "sr": 49,
+    "udiff": 53,
+    "block": 187,
+    "omp": 36,
+    "pss": 96,
+    "grok": 75
+   },
+   "input": {
+    "raw": 159,
+    "pss": 383,
+    "omp": 252,
+    "grok": 483
+   }
+  },
+  {
+   "id": 189,
+   "lang": "rb",
+   "lines": 16,
+   "raw": 94,
+   "kind": "replace-range",
+   "reply": {
+    "whole": 112,
+    "sr": 104,
+    "udiff": 117,
+    "block": 137,
+    "omp": 72,
+    "pss": 152,
+    "grok": 111
+   },
+   "input": {
+    "raw": 94,
+    "pss": 240,
+    "omp": 148,
+    "grok": 275
+   }
+  },
+  {
+   "id": 190,
+   "lang": "rb",
+   "lines": 34,
+   "raw": 182,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 194,
+    "sr": 54,
+    "udiff": 58,
+    "block": 219,
+    "omp": 43,
+    "pss": 103,
+    "grok": 82
+   },
+   "input": {
+    "raw": 182,
+    "pss": 436,
+    "omp": 290,
+    "grok": 561
+   }
+  },
+  {
+   "id": 191,
+   "lang": "rb",
+   "lines": 5,
+   "raw": 45,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 55,
+    "sr": 56,
+    "udiff": 58,
+    "block": 80,
+    "omp": 41,
+    "pss": 102,
+    "grok": 81
+   },
+   "input": {
+    "raw": 45,
+    "pss": 127,
+    "omp": 70,
+    "grok": 109
+   }
+  },
+  {
+   "id": 192,
+   "lang": "rb",
+   "lines": 20,
+   "raw": 127,
+   "kind": "delete",
+   "reply": {
+    "whole": 125,
+    "sr": 40,
+    "udiff": 45,
+    "block": 150,
+    "omp": 26,
+    "pss": 106,
+    "grok": 69
+   },
+   "input": {
+    "raw": 127,
+    "pss": 297,
+    "omp": 193,
+    "grok": 352
+   }
+  },
+  {
+   "id": 193,
+   "lang": "rb",
+   "lines": 11,
+   "raw": 32,
+   "kind": "rename",
+   "reply": {
+    "whole": 36,
+    "sr": 60,
+    "udiff": 62,
+    "block": 61,
+    "omp": 40,
+    "pss": 101,
+    "grok": 80
+   },
+   "input": {
+    "raw": 32,
+    "pss": 148,
+    "omp": 71,
+    "grok": 158
+   }
+  },
+  {
+   "id": 194,
+   "lang": "rb",
+   "lines": 5,
+   "raw": 34,
+   "kind": "delete",
+   "reply": {
+    "whole": 26,
+    "sr": 46,
+    "udiff": 52,
+    "block": 51,
+    "omp": 24,
+    "pss": 104,
+    "grok": 68
+   },
+   "input": {
+    "raw": 34,
+    "pss": 116,
+    "omp": 59,
+    "grok": 98
+   }
+  },
+  {
+   "id": 195,
+   "lang": "rb",
+   "lines": 12,
+   "raw": 91,
+   "kind": "delete",
+   "reply": {
+    "whole": 75,
+    "sr": 54,
+    "udiff": 57,
+    "block": 100,
+    "omp": 24,
+    "pss": 104,
+    "grok": 68
+   },
+   "input": {
+    "raw": 91,
+    "pss": 213,
+    "omp": 133,
+    "grok": 228
+   }
+  },
+  {
+   "id": 196,
+   "lang": "rb",
+   "lines": 66,
+   "raw": 275,
+   "kind": "delete",
+   "reply": {
+    "whole": 269,
+    "sr": 44,
+    "udiff": 53,
+    "block": 294,
+    "omp": 26,
+    "pss": 106,
+    "grok": 69
+   },
+   "input": {
+    "raw": 275,
+    "pss": 721,
+    "omp": 479,
+    "grok": 1006
+   }
+  },
+  {
+   "id": 197,
+   "lang": "rb",
+   "lines": 37,
+   "raw": 129,
+   "kind": "replace-line",
+   "reply": {
+    "whole": 141,
+    "sr": 54,
+    "udiff": 56,
+    "block": 166,
+    "omp": 41,
+    "pss": 102,
+    "grok": 81
+   },
+   "input": {
+    "raw": 129,
+    "pss": 401,
+    "omp": 246,
+    "grok": 541
+   }
+  },
+  {
+   "id": 198,
+   "lang": "rb",
+   "lines": 11,
+   "raw": 33,
+   "kind": "delete",
+   "reply": {
+    "whole": 27,
+    "sr": 44,
+    "udiff": 51,
+    "block": 52,
+    "omp": 25,
+    "pss": 105,
+    "grok": 68
+   },
+   "input": {
+    "raw": 33,
+    "pss": 149,
+    "omp": 72,
+    "grok": 159
+   }
+  },
+  {
+   "id": 199,
+   "lang": "rb",
+   "lines": 17,
+   "raw": 71,
+   "kind": "insert",
+   "reply": {
+    "whole": 99,
+    "sr": 67,
+    "udiff": 72,
+    "block": 124,
+    "omp": 56,
+    "pss": 118,
+    "grok": 101
+   },
+   "input": {
+    "raw": 71,
+    "pss": 223,
+    "omp": 128,
+    "grok": 263
+   }
+  }
+ ]
+}

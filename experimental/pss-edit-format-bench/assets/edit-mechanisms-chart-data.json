@@ -1,0 +1,58 @@
+[
+  {
+    "mechanism": "whole-file",
+    "burden": 1,
+    "total_chars": 2709,
+    "output_chars": 1354,
+    "input_overhead": 0,
+    "family": "content"
+  },
+  {
+    "mechanism": "search-replace",
+    "burden": 2,
+    "total_chars": 1446,
+    "output_chars": 91,
+    "input_overhead": 0,
+    "family": "content"
+  },
+  {
+    "mechanism": "ast-block",
+    "burden": 3,
+    "total_chars": 1455,
+    "output_chars": 100,
+    "input_overhead": 0,
+    "family": "structure"
+  },
+  {
+    "mechanism": "udiff",
+    "burden": 4,
+    "total_chars": 1427,
+    "output_chars": 72,
+    "input_overhead": 0,
+    "family": "structure"
+  },
+  {
+    "mechanism": "line-number",
+    "burden": 5,
+    "total_chars": 1568,
+    "output_chars": 56,
+    "input_overhead": 0.12,
+    "family": "coord"
+  },
+  {
+    "mechanism": "hash-anchor-pss",
+    "burden": 6,
+    "total_chars": 1846,
+    "output_chars": 140,
+    "input_overhead": 0.26,
+    "family": "coord"
+  },
+  {
+    "mechanism": "hash-anchor-grok",
+    "burden": 6,
+    "total_chars": 1999,
+    "output_chars": 88,
+    "input_overhead": 0.41,
+    "family": "coord"
+  }
+]
