@@ -518,7 +518,7 @@ Both the TUI and `pss exec` share the same workspace tools through
 tools are confined to the workspace (path and symlink escapes are rejected).
 `shell_execute` is not a sandbox — commands run with the user's permissions,
 but AI provider API keys are withheld from the child environment. Untrusted
-workloads belong in a container (see `benchmarks/nextjs`, which runs the agent
+workloads belong in a container (see `experimental/nextjs-bench`, which runs the agent
 in Docker).
 
 Pass `tools` to `startTui` (or `createCodingAgent`) from a custom entrypoint to
