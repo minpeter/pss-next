@@ -157,127 +157,21 @@ reported field with zero input can contribute to field coverage without being
 silently included in a ratio denominator. No cost is derived and
 provider-normalized fields are not assumed comparable across models.
 
-## Local and live verification
+## Status: archived record
 
-`scripts/cache-stable-tools-wire.test.mjs` runs PSS through the
-OpenAI-compatible adapter with a synthetic fetch. It proves canonical wire
-order across registry insertion orders, inactive-tool removal from the
-executable registry, actual tools-array hashes, and semantic diagnostics. The
-runtime suite covers callback isolation, fail-closed selection/model/toolChoice
-validation, retry indices, and AI SDK execution behavior.
-
-`scripts/cache-stable-tools-evidence.test.mjs` is a source-coupled regression
-check, not an independent verifier. It imports the producer's campaign preset,
-source manifest, topology, and request-artifact helpers, binds them to the
-checked-in snapshot, and also invokes the independent verifier. That makes it
-useful for catching producer/verifier drift while preserving an explicit
-producer-oracle check.
-
-`scripts/cache-stable-tools-independent-verifier.mjs` is the authoritative
-evidence verifier. It uses only Node.js standard-library imports and does not
-import the benchmark producer. From the serialized evidence and current source
-bytes, it independently reconstructs the 480-request topology, AB/BA order,
-request-body/tool-array/isolation hashes, chronology, response and usage
-eligibility, warmup linkage, audits, summaries, comparisons, membership parity,
-and the final README report. It also rejects unexpected request fields, raw
-content/provider payloads, bearer strings, and key-like values. Schema v3, the
-campaign ID, source-freeze commit, exact source hashes, and full topology must
-all match, so an older or interrupted output fails closed. The source manifest
-covers the runtime source tree, benchmark/verifier support files, and the root
-and runtime TypeScript, build, task-runner, and formatter configurations.
-
-`scripts/cache-stable-tools-independent-verifier.adversarial.mjs` exercises that
-independent path against a complete synthetic schema-v3 campaign and targeted
-topology, chronology, source, usage, warmup, audit, summary, order-sensitivity,
-and README tampering. `pnpm test` runs this synthetic adversarial suite in CI;
-the suite itself does not read the checked-in live snapshot. The normal Vitest
-glob also runs the source-coupled regression check, which intentionally rejects
-stale evidence once these sources change. The authoritative live-snapshot
-verifier remains an explicit command and must not run against the obsolete
-pre-campaign schema-v2 artifact.
-
-## Reproduce
-
-Use a disposable credential, enter it without shell echo, and first freeze the
-campaign sources in a Git commit. The evidence campaign reads `HEAD` and the
-full porcelain status, refuses a dirty worktree, then byte- and hash-compares
-the current runner and every manifested source with `git show HEAD:<path>`
-before the authenticated `/models` preflight. This catches ignored,
-`assume-unchanged`, and `skip-worktree` drift that porcelain status can omit.
-It records the source-freeze SHA and `sourceWorktreeCleanAtStart: true`, rechecks
-HEAD and cleanliness after the tree binding and before writing, and checks HEAD
-again before atomic rename. `--evidence-campaign` also fixes the output to the
-checked-in default and rejects a custom `--output`. Keep every manifested
-source unchanged until source-hash verification completes:
-
-```sh
-read -rsp 'API key: ' CACHE_BENCH_API_KEY
-printf '\n'
-export CACHE_BENCH_API_KEY
-trap 'unset CACHE_BENCH_API_KEY' EXIT
-pnpm benchmark:cache-stable-tools -- --evidence-campaign
-unset CACHE_BENCH_API_KEY
-trap - EXIT
-```
-
-Before spending the live credential, run the independent verifier's synthetic
-adversarial suite:
-
-```sh
-pnpm test:cache-stable-tools-verifier
-```
-
-After the campaign has atomically written fresh schema-v3 evidence, run both
-verification paths. Generate the canonical report block without checking the
-still-placeholder README, replace the marked block below with that exact
-output, and then run the authoritative verifier with README parity enabled:
-
-```sh
-pnpm test:cache-stable-tools-evidence
-pnpm verify:cache-stable-tools --no-readme --print-readme
-pnpm verify:cache-stable-tools
-```
-
-The verifier treats the serialized JSON bytes as the sole authority and uses
-the same bytes for parsing, credential scanning, and SHA-256 reporting. Its CLI
-rejects symlinks, non-regular inputs, evidence over 10 MB, and README input over
-1 MB before reading them.
-
-Live JSON parsing is bounded separately from artifact verification. Chat
-Completions bodies are limited to 1 MB and the `/models` catalog to 5 MB. A
-declared or streamed oversize response is rejected and its body reader is
-cancelled, so an unbounded provider payload is never buffered for parsing.
-
-The default endpoint is
-`https://freerouter.minpeter.workers.dev/v1`. The run performs an authenticated
-`/models` preflight, rejects redirects so the bearer token cannot be forwarded,
-and writes by mode-`0600` temporary file plus atomic rename. The pinned preset
-uses 5 models × 8 trials × 3 scenarios × 2 arms × warmup/measurement = 480
-Chat Completions requests, plus one `/models` preflight request: 481 HTTP
-requests total. The runner performs no client-side retries; any router or
-upstream retries remain opaque. The runner checks the 480-request topology and
-requires its on-disk runner/source snapshots after module initialization to
-equal a second snapshot before atomic rename. The independent verifier hashes
-both current files and `git show <sourceFreezeCommitSha>:<path>` for every
-manifest entry. A mismatch fails, but this is not continuous file monitoring:
-transient edit-and-restore between checkpoints is not detectable. Run the
-campaign from a quiescent worktree. Methodology-changing flags cannot be combined with
-`--evidence-campaign`; `--help` lists the bounded exploratory options.
+The benchmark runner, its independent and adversarial verifiers, and the
+`pnpm benchmark:cache-stable-tools` / `test:cache-stable-tools-*` /
+`verify:cache-stable-tools` scripts were removed in `ddfc72b`. This directory is
+kept only as the dated record of the campaign that was run: the design and
+evidence rules above, and the snapshot below. Nothing here is reproducible from
+the current tree, and no verifier can re-check the snapshot.
 
 ## Artifacts and interpretation
 
-[`latest-freerouter.json`](./latest-freerouter.json) is authoritative only
-when its independent verifier and current runner-source hash pass. Snapshot
-results and SHA-256 are recorded below after the final run.
-
-[`mistral-response-shape-probe.json`](./mistral-response-shape-probe.json) is a
-diagnostic-only, unversioned-source discovery artifact. It records no response
-text or credential and showed that the router returned `tool_calls: null` for a
-valid no-tool Mistral response. Its SHA-256 is
-`d43b238a53dd686445fff02c86c57cfedf7e0e1987780290be3122501addb214`.
-It motivated the parser regression test but is not used for an effect estimate;
-the final source-manifest-bound campaign is the authoritative parser/effect
-evidence within the snapshot limits above.
+[`latest-freerouter.json`](./latest-freerouter.json) is the campaign's
+serialized evidence. It was authoritative only while its independent verifier
+and runner-source hash could be re-run; both are gone, so read it as a dated
+record. Snapshot results and SHA-256 are recorded below.
 
 The router's upstream provider, retry behavior, backend affinity, cache policy,
 load, and usage normalization remain opaque. Sanitized
@@ -337,8 +231,8 @@ generic benchmark uses neither value and does not encode either disputed limit.
 
 ## Final checked-in snapshot
 
-This section is populated from the source-manifest-bound 480-request campaign
-before the pull request is finalized.
+Output of the source-manifest-bound 480-request campaign, as recorded when it
+ran on 2026-07-17.
 
 <!-- cache-stable-tools-independent-verifier:start -->
 ```json
