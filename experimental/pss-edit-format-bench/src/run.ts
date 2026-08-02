@@ -3,6 +3,7 @@ import { generateText } from "ai";
 import { config as loadDotenv } from "dotenv";
 import { EDIT_FORMATS, type EditFormat } from "./formats";
 import { buildReport, type Attempt } from "./report";
+import { runWithRecovery, type RecoveryModelCaller } from "./recovery";
 import { EDIT_TASKS, type EditTask } from "./tasks";
 import { extractFingerprint } from "./stats";
 
@@ -12,6 +13,7 @@ const DEFAULT_MODELS = ["deepseek-ai/deepseek-v4-flash", "minimaxai/minimax-m3"]
 const DEFAULT_RUNS = 3;
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_REQUEST_ATTEMPTS = 4;
+const DEFAULT_RECOVERY_ATTEMPTS = 0;
 const RETRY_BASE_DELAY_MS = 1500;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
@@ -47,6 +49,7 @@ function parseArguments(argv: readonly string[]) {
     concurrency: DEFAULT_CONCURRENCY,
     disableThinking: false,
     models: DEFAULT_MODELS,
+    recoveryAttempts: DEFAULT_RECOVERY_ATTEMPTS,
     requestAttempts: DEFAULT_REQUEST_ATTEMPTS,
     requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
     runs: DEFAULT_RUNS,
@@ -69,6 +72,9 @@ function parseArguments(argv: readonly string[]) {
       index += 1;
     } else if (flag === "--request-timeout-ms" && value) {
       options.requestTimeoutMs = Number.parseInt(value, 10);
+      index += 1;
+    } else if (flag === "--recovery" && value) {
+      options.recoveryAttempts = Number.parseInt(value, 10);
       index += 1;
     } else if (flag === "--tasks" && value) {
       options.tasks = value.split(",").map((entry) => entry.trim());
@@ -96,6 +102,12 @@ function parseArguments(argv: readonly string[]) {
     options.requestTimeoutMs < 1000
   ) {
     throw new Error("--request-timeout-ms must be at least 1000");
+  }
+  if (
+    !Number.isInteger(options.recoveryAttempts) ||
+    options.recoveryAttempts < 0
+  ) {
+    throw new Error("--recovery must be a non-negative integer");
   }
   return options;
 }
@@ -125,6 +137,7 @@ async function runAttempt({
   format,
   model,
   provider,
+  recoveryAttempts,
   requestAttempts,
   requestTimeoutMs,
   run,
@@ -140,6 +153,7 @@ async function runAttempt({
   readonly format: EditFormat;
   readonly model: string;
   readonly provider: ReturnType<typeof createOpenAICompatible>;
+  readonly recoveryAttempts: number;
   readonly requestAttempts: number;
   readonly requestTimeoutMs: number;
   readonly run: number;
@@ -149,6 +163,24 @@ async function runAttempt({
   const startedAt = Date.now();
   let lastError = "";
   let fixedTemperature = false;
+  const userPrompt = `${rendered.user}\n\nTask: ${task.instruction}`;
+  const callModel: RecoveryModelCaller = async (messages) => {
+    const result = await generateText({
+      abortSignal: AbortSignal.timeout(requestTimeoutMs),
+      instructions: rendered.system,
+      messages: messages.map(({ content, role }) => ({ content, role })),
+      model: provider(model),
+      ...(disableThinking
+        ? {
+            providerOptions: {
+              bench: { chat_template_kwargs: { enable_thinking: false } },
+            },
+          }
+        : {}),
+      ...(fixedTemperature ? {} : { temperature: 0 }),
+    });
+    return { text: result.text };
+  };
   for (let tries = 0; tries < requestAttempts; tries += 1) {
     if (tries > 0) {
       await new Promise((resolve) => {
@@ -156,12 +188,45 @@ async function runAttempt({
       });
     }
     try {
+      if (recoveryAttempts > 1) {
+        const recovery = await runWithRecovery({
+          apply: (reply, initial) => format.apply(reply, initial),
+          callModel,
+          expected: task.expected,
+          initial: task.initial,
+          maxAttempts: recoveryAttempts,
+          userPrompt,
+        });
+        const benchMetadata = null;
+        return {
+          durationMs: Date.now() - startedAt,
+          fingerprint: benchMetadata,
+          format: format.name,
+          model,
+          outputTokens: 0,
+          passed: recovery.recovered,
+          recovery: {
+            attemptsUsed: recovery.attemptsUsed,
+            firstAttemptFailed: recovery.firstAttemptFailed,
+            recovered: recovery.recovered,
+            repeatedFailure: recovery.repeatedFailure,
+          },
+          replyChars: 0,
+          retries: tries,
+          run,
+          task: task.id,
+          tolerances: [],
+          ...(recovery.recovered
+            ? {}
+            : { failure: recovery.errorSequence[0] ?? "unrecovered" }),
+        };
+      }
       const result = await generateText({
         abortSignal: AbortSignal.timeout(requestTimeoutMs),
         instructions: rendered.system,
         messages: [
           {
-            content: `${rendered.user}\n\nTask: ${task.instruction}`,
+            content: userPrompt,
             role: "user",
           },
         ],
@@ -270,6 +335,7 @@ for (const model of options.models) {
             format,
             model,
             provider,
+            recoveryAttempts: options.recoveryAttempts,
             requestAttempts: options.requestAttempts,
             requestTimeoutMs: options.requestTimeoutMs,
             run,
@@ -281,7 +347,7 @@ for (const model of options.models) {
   }
 }
 process.stdout.write(
-  `Running ${pending.length} attempts: ${options.models.length} models x ${EDIT_FORMATS.length} formats x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, timeout ${options.requestTimeoutMs}ms, up to ${options.requestAttempts} tries)\n`
+  `Running ${pending.length} attempts: ${options.models.length} models x ${EDIT_FORMATS.length} formats x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, timeout ${options.requestTimeoutMs}ms, up to ${options.requestAttempts} tries${options.recoveryAttempts > 1 ? `, up to ${options.recoveryAttempts} recovery attempts` : ""})\n`
 );
 const attempts = await pooled(pending, options.concurrency);
 process.stdout.write(buildReport(attempts, options.models));

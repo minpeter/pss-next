@@ -21,6 +21,14 @@ export interface Attempt {
   readonly retries: number;
   readonly tolerances: readonly string[];
   readonly fingerprint: string | null;
+  readonly recovery?: RecoveryRecord;
+}
+
+export interface RecoveryRecord {
+  readonly attemptsUsed: number;
+  readonly recovered: boolean;
+  readonly firstAttemptFailed: boolean;
+  readonly repeatedFailure: boolean;
 }
 
 const percent = (part: number, total: number): string =>
@@ -185,8 +193,7 @@ export const buildReport = (
     }
   }
 
-  line("\n## Fingerprints");
-  line("");
+  line("\n## Fingerprints");  line("");
   let anyMixed = false;
   for (const model of models) {
     for (const format of formats) {
@@ -223,6 +230,56 @@ export const buildReport = (
         ? "No provider fingerprints observed."
         : `Single fingerprint across the run: ${singles.join(", ")}`
     );
+  }
+
+  const recoveryRows = attempts.filter(
+    (attempt) => attempt.recovery !== undefined
+  );
+  if (recoveryRows.length > 0) {
+    line("\n## Recovery by model and format");
+    line("");
+    line(
+      "| model | format | first-shot | recovered | recovery rate | repeated-failure | avg attempts |"
+    );
+    line("|---|---|---|---|---|---|---|");
+    for (const model of models) {
+      for (const format of formats) {
+        const rows = recoveryRows.filter(
+          (attempt) =>
+            attempt.model === model && attempt.format === format
+        );
+        if (rows.length === 0) {
+          continue;
+        }
+        const firstShot = rows.filter(
+          (attempt) =>
+            attempt.recovery?.recovered === true &&
+            attempt.recovery?.firstAttemptFailed === false
+        ).length;
+        const recovered = rows.filter(
+          (attempt) => attempt.recovery?.recovered === true
+        ).length;
+        const failedFirst = rows.filter(
+          (attempt) => attempt.recovery?.firstAttemptFailed === true
+        ).length;
+        const recoveredFromFailure = rows.filter(
+          (attempt) =>
+            attempt.recovery?.firstAttemptFailed === true &&
+            attempt.recovery?.recovered === true
+        ).length;
+        const repeated = rows.filter(
+          (attempt) => attempt.recovery?.repeatedFailure === true
+        ).length;
+        const avgAttempts =
+          rows.reduce(
+            (sum, attempt) => sum + (attempt.recovery?.attemptsUsed ?? 0),
+            0
+          ) / rows.length;
+        line(
+          `| ${model} | ${format} | ${firstShot}/${rows.length} | ${recovered}/${rows.length} | ${percent(recoveredFromFailure, failedFirst)} | ${repeated}/${rows.length} | ${avgAttempts.toFixed(1)} |`
+        );
+      }
+    }
   }
 
   line("\n## Per-task pass counts");

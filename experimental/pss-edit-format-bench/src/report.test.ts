@@ -54,4 +54,45 @@ describe("buildReport", () => {
     expect(report).toMatch(/3\/4/u);
     expect(report).toMatch(/75\.0%/u);
   });
+
+  it("renders a recovery section with first-shot, recovered, and repeated-failure columns", () => {
+    const withRecovery: readonly Attempt[] = [
+      attempt({
+        model: "m1",
+        format: "a",
+        task: "t1",
+        run: 1,
+        passed: true,
+        recovery: { attemptsUsed: 1, recovered: true, firstAttemptFailed: false, repeatedFailure: false },
+      }),
+      attempt({
+        model: "m1",
+        format: "a",
+        task: "t2",
+        run: 1,
+        passed: true,
+        recovery: { attemptsUsed: 2, recovered: true, firstAttemptFailed: true, repeatedFailure: false },
+      }),
+      attempt({
+        model: "m1",
+        format: "b",
+        task: "t1",
+        run: 1,
+        passed: false,
+        failure: "unparsable: x",
+        recovery: { attemptsUsed: 3, recovered: false, firstAttemptFailed: true, repeatedFailure: true },
+      }),
+    ];
+    const out = buildReport(withRecovery, ["m1"]);
+    expect(out).toContain("## Recovery by model and format");
+    expect(out).toMatch(/first-shot/iu);
+    expect(out).toMatch(/repeated-failure/iu);
+    expect(out).toMatch(/m1 \| a/u);
+    expect(out).toMatch(/2\/2/u); // recovered 2 of 2 for m1/a
+    expect(out).toMatch(/1\/1/u); // repeated failure 1 of 1 for m1/b
+  });
+
+  it("omits the recovery section when no attempt carries recovery data", () => {
+    expect(report).not.toContain("## Recovery by model and format");
+  });
 });
