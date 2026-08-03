@@ -1,8 +1,9 @@
 import { ContextBudgetExceededError } from "../../llm/context-gate";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
-import type { ThreadCompactionInput, ThreadState } from "../state/thread-state";
+import type { ThreadState } from "../state/thread-state";
 import { compactThreadBlocking } from "./auto-compaction-runner";
 import type {
+  ThreadCompactionHandler,
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
@@ -15,14 +16,18 @@ export async function runAgentLoopWithOverflowCompaction({
   model,
   runLoop,
   state,
+  signal,
+  threadKey,
   transformModelContext,
 }: {
-  readonly compact?: (input: ThreadCompactionInput) => Promise<boolean>;
+  readonly compact?: ThreadCompactionHandler;
   readonly execution: ThreadExecutionOptions;
   readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly runLoop: () => Promise<"aborted" | "completed">;
   readonly state: ThreadState;
+  readonly signal?: AbortSignal;
+  readonly threadKey: string;
   readonly transformModelContext?: ThreadModelContextTransform;
 }): Promise<"aborted" | "completed"> {
   try {
@@ -41,10 +46,12 @@ export async function runAgentLoopWithOverflowCompaction({
     try {
       compacted = await compactThreadBlocking({
         compact,
+        compaction: execution.compaction,
         latestContextTransform,
         model,
-        policy: execution.autoCompaction,
+        signal,
         state,
+        threadKey,
         transformModelContext,
       });
     } catch {

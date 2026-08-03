@@ -9,7 +9,7 @@ import type { CodingAgentThreadConfig } from "./thread-config";
 export type ThreadInspectionCompaction = FileThreadInspectionCompaction;
 
 export interface ThreadInspectionReport extends FileThreadInspection {
-  readonly autoCompaction: CodingAgentThreadConfig["autoCompaction"];
+  readonly compactionMaxInputTokens: number;
   readonly compactions: readonly ThreadInspectionCompaction[];
 }
 
@@ -22,7 +22,7 @@ export async function inspectCodingAgentThread(
   });
 
   return {
-    autoCompaction: config.autoCompaction,
+    compactionMaxInputTokens: config.compactionMaxInputTokens,
     ...inspection,
   };
 }
@@ -48,18 +48,10 @@ export function formatThreadInspectionReport(
     `compactionCount: ${report.compactionCount}`,
     compactions,
     `summaryBytes: ${report.summaryBytes}`,
-    `autoCompaction: ${formatAutoCompaction(report.autoCompaction)}`,
+    `compaction: enabled max=${report.compactionMaxInputTokens}`,
   ].join("\n");
 }
 
 export function storageFileForThread(directory: string, key: string): string {
   return fileThreadStoragePath({ directory, key });
-}
-
-function formatAutoCompaction(
-  autoCompaction: CodingAgentThreadConfig["autoCompaction"]
-): string {
-  return autoCompaction?.maxInputTokens === undefined
-    ? "auto"
-    : `auto max=${autoCompaction.maxInputTokens}`;
 }

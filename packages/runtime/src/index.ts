@@ -1,6 +1,5 @@
 export {
   type Agent,
-  type AgentAutoCompactionOptions,
   type AgentInstrumentation,
   type AgentInstrumentationContext,
   type AgentInstrumentationOperation,
@@ -36,11 +35,7 @@ export type {
   AgentTransformDecision,
   AgentTurnStartEvent,
 } from "./agent/core/hooks";
-export {
-  DEFAULT_AGENT_MAX_INPUT_TOKENS,
-  type NormalizedAgentAutoCompactionOptions,
-  normalizeAgentAutoCompactionOptions,
-} from "./agent/core/options";
+export { DEFAULT_AGENT_MAX_INPUT_TOKENS } from "./agent/core/options";
 export { threadStoreKey } from "./agent/core/thread-entry";
 export {
   type ModelToolCacheFingerprintMetadata,
@@ -164,6 +159,15 @@ export {
   summarizeCompactionRange,
   summaryHistoryForRange,
 } from "./thread/runtime/auto-compaction-summary";
+export type {
+  AgentCompaction,
+  AgentCompactionContext,
+  AgentCompactionReason,
+} from "./thread/runtime/auto-compaction-types";
+export {
+  type SpeculativeCompactionOptions,
+  speculativeCompaction,
+} from "./thread/runtime/speculative-compaction";
 export { ThreadEventReplayUnsupportedError } from "./thread/runtime/thread-event-replay";
 export type {
   CompactionContextMessage,

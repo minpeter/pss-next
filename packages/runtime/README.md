@@ -1152,24 +1152,16 @@ There is a single host contract: `AgentHost` (`HostStore` + `HostScheduler` + op
 `createCloudflareHost` is the Cloudflare Agents SDK path (fibers + schedule).
 For store/alarm-only DO tooling use `createCloudflareStorageHost`.
 
-Automatic compaction can also enforce a pre-provider context budget:
+Speculative compaction prepares a summary in the background before promoting it:
 
 ```ts
 const agent = await createAgent({
-  autoCompaction: {
-    contextGate: {
-      maxInputTokens: 120_000,
-      onOverflow: "compact",
-    },
-    maxInputTokens: 128_000,
-    retainTokens: 51_200,
-    triggerTokens: 102_400,
-  },
+  compaction: speculativeCompaction({ maxInputTokens: 128_000 }),
   model,
 });
 ```
 
-`contextGate` estimates the prompt immediately before `generateText`. With
+The context gate estimates the prompt immediately before `generateText`. With
 `onOverflow: "error"`, the turn fails before the provider is called. With
 `onOverflow: "compact"` (the default), the runtime runs blocking compaction and
 retries once. Provider-thrown context-window errors still use the same blocking

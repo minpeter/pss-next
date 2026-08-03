@@ -166,7 +166,8 @@ export class ThreadEventDispatcher {
 
   async compact(
     state: ThreadState,
-    input: ThreadCompactionInput
+    input: ThreadCompactionInput,
+    freshnessGuard?: (input: ThreadCompactionInput) => boolean
   ): Promise<boolean> {
     const decision = await this.#hookRuntime.beforeCompaction(
       this.#threadKey,
@@ -179,6 +180,9 @@ export class ThreadEventDispatcher {
     }
     const compactedInput =
       decision?.action === "transform" ? decision.input : input;
+    if (freshnessGuard && !freshnessGuard(compactedInput)) {
+      return false;
+    }
     await state.compact(compactedInput);
     return true;
   }

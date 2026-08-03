@@ -51,7 +51,8 @@ describe("thread inspection", () => {
       );
 
       const report = await inspectCodingAgentThread({
-        autoCompaction: { maxInputTokens: 64_000 },
+        compaction: () => undefined,
+        compactionMaxInputTokens: 64_000,
         directory,
         key,
         keyFromEnv: false,
@@ -65,7 +66,7 @@ compactionCount: 1
 compactions:
   - startSeq=0 endSeqExclusive=2 summaryBytes=${summaryBytes}
 summaryBytes: ${summaryBytes}
-autoCompaction: auto max=64000`);
+compaction: enabled max=64000`);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
@@ -77,7 +78,8 @@ autoCompaction: auto max=64000`);
 
     try {
       const report = await inspectCodingAgentThread({
-        autoCompaction: undefined,
+        compaction: () => undefined,
+        compactionMaxInputTokens: 128_000,
         directory,
         key,
         keyFromEnv: false,
@@ -90,7 +92,7 @@ messageCount: 0
 compactionCount: 0
 compactions: none
 summaryBytes: 0
-autoCompaction: auto`);
+compaction: enabled max=128000`);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

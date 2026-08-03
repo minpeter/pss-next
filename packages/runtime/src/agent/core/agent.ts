@@ -1,9 +1,10 @@
 import type { AgentHost, NotificationRecord } from "../../execution/host/types";
-import type { ModelContextTokenEstimateInput } from "../../llm/context-gate";
 import { createInMemoryHost } from "../../platform/memory";
 import { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentInput } from "../../thread/input/input";
 import type { AgentTurn } from "../../thread/protocol/turn";
+import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
+import { contextGateForCompaction } from "../../thread/runtime/speculative-compaction";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -24,8 +25,7 @@ import {
   type AgentOptions,
   assertAgentOptions,
   type CreateAgentOptions,
-  type NormalizedAgentAutoCompactionOptions,
-  normalizeAgentAutoCompactionOptions,
+  DEFAULT_AGENT_MAX_INPUT_TOKENS,
 } from "./options";
 import {
   type AgentThreadEntry,
@@ -43,10 +43,8 @@ export type {
   AgentInstrumentationOperation,
 } from "./instrumentation";
 export type {
-  AgentAutoCompactionOptions,
   AgentOptions,
   CreateAgentOptions,
-  NormalizedAgentAutoCompactionOptions,
 } from "./options";
 export type {
   ThreadAddress,
@@ -67,7 +65,7 @@ export class Agent {
   readonly #hookRuntime: AgentHookRuntime;
   readonly #notificationOverlays?: AgentOptions["notificationOverlays"];
   readonly #threadMigrations: readonly ThreadStateMigration[];
-  readonly #autoCompaction: NormalizedAgentAutoCompactionOptions;
+  readonly #compaction?: AgentCompaction;
   readonly host: AgentHost;
   readonly namespace?: string;
   constructor(options: AgentConstructorOptions) {
@@ -89,16 +87,19 @@ export class Agent {
     );
     this.#hookRuntime = new AgentHookRuntime(options.hooks);
     this.#notificationOverlays = options.notificationOverlays;
-    this.#autoCompaction = normalizeAgentAutoCompactionOptions(
-      options.autoCompaction
-    );
+    this.#compaction = options.compaction;
     this.#modelOptions = {
       alwaysActiveTools: options.alwaysActiveTools,
       attachmentStore:
         providedHost?.attachmentStore ??
         options.attachmentStore ??
         this.#host.attachmentStore,
-      contextGate: derivedContextGate(this.#autoCompaction),
+      contextGate: options.compaction
+        ? (contextGateForCompaction(options.compaction) ?? {
+            maxInputTokens: DEFAULT_AGENT_MAX_INPUT_TOKENS,
+            onOverflow: "compact",
+          })
+        : false,
       diagnostics: this.#host.diagnostics,
       instructions: options.instructions,
       model: options.model,
@@ -173,7 +174,7 @@ export class Agent {
       this.#modelOptions,
       { key, migrations: this.#threadMigrations, store: this.#store },
       {
-        autoCompaction: this.#autoCompaction,
+        compaction: this.#compaction,
         executionHost: this.#host,
         hookRuntime: this.#hookRuntime,
       }
@@ -231,34 +232,4 @@ export class Agent {
 export async function createAgent(options: CreateAgentOptions): Promise<Agent> {
   assertAgentOptions(options);
   return await new Agent(options);
-}
-
-function derivedContextGate(
-  autoCompaction: NormalizedAgentAutoCompactionOptions
-): AgentModelOptions["contextGate"] {
-  if (autoCompaction.contextGate !== undefined) {
-    return autoCompaction.contextGate;
-  }
-
-  const estimate = autoCompaction.estimateTokens;
-  return {
-    ...(estimate === undefined
-      ? {}
-      : {
-          estimateTokens: ({
-            instructions,
-            messages,
-          }: ModelContextTokenEstimateInput): number => {
-            if (!instructions) {
-              return estimate(messages);
-            }
-            return estimate([
-              { content: instructions, role: "system" },
-              ...messages,
-            ]);
-          },
-        }),
-    maxInputTokens: autoCompaction.maxInputTokens,
-    onOverflow: "compact" as const,
-  };
 }

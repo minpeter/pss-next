@@ -586,7 +586,7 @@ Automatic compaction is always on: once the estimated context approaches the
 model window, older messages are summarized in the background and the summary
 replaces them in future prompts. The full history stays on disk.
 
-- `PSS_MODEL_CONTEXT_WINDOW` overrides the assumed context window in tokens.
+  `PSS_MODEL_CONTEXT_WINDOW` overrides the assumed context window in tokens.
   Default: 128000. Compaction triggers at 80% of the window and keeps a
   recent tail of about 40%.
 

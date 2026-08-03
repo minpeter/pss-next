@@ -16,7 +16,7 @@ import type {
 } from "../execution";
 import type {
   Agent,
-  AgentAutoCompactionOptions,
+  AgentCompaction,
   AgentEvent,
   AgentHooks,
   AgentInput,
@@ -154,15 +154,7 @@ describe("runtime public exports", () => {
   });
 
   it("types public thread compaction options from the package root", () => {
-    const autoCompaction = {
-      contextGate: {
-        maxInputTokens: 120_000,
-        onOverflow: "compact",
-      },
-      maxInputTokens: 128_000,
-      retainTokens: 40_000,
-      triggerTokens: 100_000,
-    } satisfies AgentAutoCompactionOptions;
+    const compaction = (() => undefined) satisfies AgentCompaction;
     const model = {} as AgentOptions["model"];
     const attachmentStore = {} as HostAttachmentStore;
     const instrumentation = {
@@ -176,12 +168,12 @@ describe("runtime public exports", () => {
     } satisfies AgentInstrumentation;
     const enabledOptions = {
       attachmentStore,
-      autoCompaction,
+      compaction,
       instrumentations: [instrumentation],
       model,
       notificationOverlays: ["runtime context"],
     } satisfies AgentOptions;
-    const compaction = {
+    const compactionInput = {
       endSeqExclusive: 8,
       startSeq: 0,
       summary: "Earlier turns established the durable context.",
@@ -220,11 +212,11 @@ describe("runtime public exports", () => {
     expectTypeOf<
       ReturnType<typeof runtimeThreadStoreKey>
     >().toEqualTypeOf<string>();
-    expect(enabledOptions.autoCompaction).toEqual(autoCompaction);
+    expect(enabledOptions.compaction).toBe(compaction);
     expect(enabledOptions.attachmentStore).toBe(attachmentStore);
     expect(enabledOptions.instrumentations).toEqual([instrumentation]);
     expect(enabledOptions.notificationOverlays).toEqual(["runtime context"]);
-    expect(compaction.startSeq).toBe(0);
+    expect(compactionInput.startSeq).toBe(0);
     expect(contextCompaction.role).toBe("compaction");
   });
 

@@ -8,8 +8,14 @@ import {
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import type {
   AutoCompactionRange,
-  ThreadAutoCompactionOptions,
+  ThreadTokenEstimator,
 } from "./auto-compaction-types";
+
+export interface CompactionRangePolicy {
+  readonly estimateTokens?: ThreadTokenEstimator;
+  readonly retainTokens: number;
+  readonly triggerTokens: number;
+}
 
 /**
  * A compaction summary always pays the model-facing wrapper overhead, so a
@@ -27,7 +33,7 @@ export function selectAutoCompactionRange({
   readonly compactions: readonly ThreadCompactionRecord[];
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens?: number;
-  readonly policy: ThreadAutoCompactionOptions;
+  readonly policy: CompactionRangePolicy;
 }): AutoCompactionRange | undefined {
   const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
   const covered = latestPrefixCompaction(compactions);

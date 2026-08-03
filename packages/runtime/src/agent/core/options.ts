@@ -7,7 +7,7 @@ import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
-import type { ThreadTokenEstimator } from "../../thread/runtime/auto-compaction-types";
+import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -18,22 +18,6 @@ import {
   normalizeAgentInstrumentations,
 } from "./instrumentation";
 
-export interface AgentAutoCompactionOptions {
-  readonly contextGate?: false | AgentContextGateOptions;
-  readonly estimateTokens?: ThreadTokenEstimator;
-  readonly maxInputTokens?: number;
-  readonly retainTokens?: number;
-  readonly triggerTokens?: number;
-}
-
-export interface NormalizedAgentAutoCompactionOptions {
-  readonly contextGate?: false | AgentContextGateOptions;
-  readonly estimateTokens?: ThreadTokenEstimator;
-  readonly maxInputTokens: number;
-  readonly retainTokens: number;
-  readonly triggerTokens: number;
-}
-
 export const DEFAULT_AGENT_MAX_INPUT_TOKENS = 128_000;
 
 export type AgentContextGateOptions = ModelContextGateOptions;
@@ -41,7 +25,7 @@ export type AgentContextGateOptions = ModelContextGateOptions;
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
-  readonly autoCompaction?: AgentAutoCompactionOptions;
+  readonly compaction?: AgentCompaction;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
   readonly instructions?: string;
@@ -92,7 +76,7 @@ export function assertAgentOptions(
 
   const candidate = options as {
     readonly alwaysActiveTools?: AgentOptions["alwaysActiveTools"];
-    readonly autoCompaction?: AgentOptions["autoCompaction"];
+    readonly compaction?: AgentOptions["compaction"];
     readonly instrumentations?: AgentOptions["instrumentations"];
     readonly prepareModelStep?: AgentOptions["prepareModelStep"];
     readonly threadMigrations?: AgentOptions["threadMigrations"];
@@ -108,7 +92,12 @@ export function assertAgentOptions(
   ) {
     throw new TypeError("Agent: options.prepareModelStep must be a function.");
   }
-  normalizeAgentAutoCompactionOptions(candidate.autoCompaction);
+  if (
+    candidate.compaction !== undefined &&
+    typeof candidate.compaction !== "function"
+  ) {
+    throw new TypeError("Agent: options.compaction must be a function.");
+  }
   normalizeAgentInstrumentations(candidate.instrumentations);
   normalizeThreadStateMigrations(candidate.threadMigrations);
 }
@@ -154,188 +143,3 @@ function assertToolNameList(
     seen.add(name);
   }
 }
-
-export function normalizeAgentAutoCompactionOptions(
-  value: AgentOptions["autoCompaction"]
-): NormalizedAgentAutoCompactionOptions {
-  if ((value as unknown) === false) {
-    throw new TypeError(
-      "Agent: options.autoCompaction no longer accepts false; automatic compaction is always enabled."
-    );
-  }
-
-  if (value === null || (value !== undefined && typeof value !== "object")) {
-    throw new TypeError("Agent: invalid options.autoCompaction.");
-  }
-
-  const options = value ?? {};
-  const contextGate = normalizeContextGateOptions(options.contextGate);
-  const maxInputTokens =
-    options.maxInputTokens ?? DEFAULT_AGENT_MAX_INPUT_TOKENS;
-  const gateBudget =
-    contextGate !== undefined && contextGate !== false
-      ? contextGate.maxInputTokens
-      : undefined;
-  const thresholdBudget = gateBudget ?? maxInputTokens;
-  const triggerTokens =
-    options.triggerTokens ?? Math.floor(thresholdBudget * 0.8);
-  const retainTokens = options.retainTokens ?? Math.floor(triggerTokens / 2);
-
-  assertAutoCompactionBudgets({
-    contextGate,
-    gateBudget,
-    maxInputTokens,
-    retainTokens,
-    triggerTokens,
-  });
-
-  if (
-    options.estimateTokens !== undefined &&
-    typeof options.estimateTokens !== "function"
-  ) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.estimateTokens must be a function."
-    );
-  }
-
-  return {
-    ...(contextGate === undefined ? {} : { contextGate }),
-    ...(options.estimateTokens === undefined
-      ? {}
-      : { estimateTokens: options.estimateTokens }),
-    maxInputTokens,
-    retainTokens,
-    triggerTokens,
-  };
-}
-
-function assertAutoCompactionBudgets(budgets: {
-  contextGate: AgentAutoCompactionOptions["contextGate"] | undefined;
-  gateBudget: number | undefined;
-  maxInputTokens: number;
-  retainTokens: number;
-  triggerTokens: number;
-}): void {
-  const {
-    contextGate,
-    gateBudget,
-    maxInputTokens,
-    retainTokens,
-    triggerTokens,
-  } = budgets;
-
-  if (!isPositiveInteger(maxInputTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.maxInputTokens must be a positive integer."
-    );
-  }
-
-  if (!isPositiveInteger(triggerTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.triggerTokens must be a positive integer."
-    );
-  }
-
-  if (triggerTokens > maxInputTokens) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.triggerTokens must not exceed maxInputTokens."
-    );
-  }
-
-  if (
-    gateBudget !== undefined &&
-    contextGate !== false &&
-    contextGate !== undefined &&
-    contextGate.onOverflow !== "error" &&
-    triggerTokens > gateBudget
-  ) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.triggerTokens must not exceed the contextGate maxInputTokens budget."
-    );
-  }
-
-  if (!isPositiveInteger(retainTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.retainTokens must be a positive integer."
-    );
-  }
-
-  if (retainTokens >= triggerTokens) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.retainTokens must be smaller than triggerTokens."
-    );
-  }
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
-}
-
-function normalizeContextGateOptions(
-  value: AgentAutoCompactionOptions["contextGate"]
-): AgentAutoCompactionOptions["contextGate"] | undefined {
-  if (value === undefined) {
-    return;
-  }
-
-  if (value === false) {
-    return false;
-  }
-
-  if (!isObjectRecord(value)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.contextGate must be an object or false."
-    );
-  }
-
-  const maxInputTokens = value.maxInputTokens;
-  const bufferTokens = value.bufferTokens;
-  const estimateTokens = value.estimateTokens;
-  const onOverflow = value.onOverflow;
-  if (!isPositiveInteger(maxInputTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.contextGate.maxInputTokens must be a positive integer."
-    );
-  }
-
-  if (bufferTokens !== undefined && !isNonNegativeInteger(bufferTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.contextGate.bufferTokens must be a non-negative integer."
-    );
-  }
-
-  if (estimateTokens !== undefined && !isTokenEstimator(estimateTokens)) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.contextGate.estimateTokens must be a function."
-    );
-  }
-
-  if (
-    onOverflow !== undefined &&
-    onOverflow !== "compact" &&
-    onOverflow !== "error"
-  ) {
-    throw new TypeError(
-      "Agent: options.autoCompaction.contextGate.onOverflow must be 'compact' or 'error'."
-    );
-  }
-
-  return {
-    ...(bufferTokens === undefined ? {} : { bufferTokens }),
-    ...(estimateTokens === undefined ? {} : { estimateTokens }),
-    maxInputTokens,
-    ...(onOverflow === undefined ? {} : { onOverflow }),
-  };
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-function isTokenEstimator(
-  value: unknown
-): value is NonNullable<ModelContextGateOptions["estimateTokens"]> {
-  return typeof value === "function";
-}
-
-import { isRecord as isObjectRecord } from "../../internal/guards";

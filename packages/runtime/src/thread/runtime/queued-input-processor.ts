@@ -10,7 +10,7 @@ import {
   emitCommittedRuntimeInputs,
 } from "../input/runtime-input-emit";
 import type { AgentEvent } from "../protocol/events";
-import { scheduleThreadAutoCompaction } from "./auto-compaction-runner";
+import { scheduleThreadCompaction } from "./auto-compaction-runner";
 import { drainRuntimeInput } from "./drain";
 import { commitAndAckDurableThreadInput } from "./durable-input-acknowledgement";
 import { releaseDurableThreadInputClaim } from "./durable-input-claims";
@@ -154,8 +154,9 @@ export async function processQueuedInput({
     });
 
     const result = await runAgentLoopWithOverflowCompaction({
-      compact: (input) => events.compact(state, input),
+      compact: (input, guard) => events.compact(state, input, guard),
       execution,
+      latestContextTransform,
       model,
       runLoop: () =>
         runAgentLoop({
@@ -184,8 +185,9 @@ export async function processQueuedInput({
           transformModelContext,
           transformModelStep,
         }),
-      latestContextTransform,
       state,
+      signal: activeAbort.signal,
+      threadKey,
       transformModelContext,
     });
 
@@ -204,12 +206,14 @@ export async function processQueuedInput({
       threadKey,
     });
     if (result === "completed" && input) {
-      scheduleThreadAutoCompaction({
-        compact: (compactionInput) => events.compact(state, compactionInput),
+      scheduleThreadCompaction({
+        compact: (compactionInput, guard) =>
+          events.compact(state, compactionInput, guard),
+        compaction: execution.compaction,
         latestContextTransform,
         model,
-        policy: execution.autoCompaction,
         state,
+        threadKey,
         transformModelContext,
       });
     }

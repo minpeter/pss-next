@@ -13,7 +13,7 @@ import {
 } from "../../testing/test-fixtures";
 import { userTextToModelMessage } from "../protocol/mapping";
 import {
-  agentWithAutoCompaction,
+  agentWithCompaction,
   storedAssistantOutput,
   tokenCompactionPolicy,
   waitForModelCalls,
@@ -36,9 +36,9 @@ describe("Agent thread automatic compaction resilience", () => {
       [assistantMessage("tool turn summarized")],
       [assistantMessage("after summary complete")],
     ]);
-    const agent = agentWithAutoCompaction({
+    const agent = agentWithCompaction({
       ...model,
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
     });
     const thread = agent.thread("tool-tail");
@@ -75,8 +75,8 @@ describe("Agent thread automatic compaction resilience", () => {
   it("does not surface summary failures as turn errors or corrupt stored history", async () => {
     const store = new SpyStore();
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;
@@ -112,8 +112,8 @@ describe("Agent thread automatic compaction resilience", () => {
     store.conflictOnCommit = 5;
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -162,8 +162,8 @@ describe("Agent thread automatic compaction resilience", () => {
     const store = new RejectOnCompactionCommitStore();
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -204,13 +204,13 @@ describe("Agent thread automatic compaction resilience", () => {
     });
   });
 
-  it("does not let stale background summaries override a newer compactable range", async () => {
+  it("re-evaluates a broader range after an append-only background compaction", async () => {
     const store = new SpyStore();
     const staleSummaryStarted = createDeferred();
     const staleSummaryRelease = createDeferred();
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(async () => {
         calls += 1;
@@ -243,6 +243,15 @@ describe("Agent thread automatic compaction resilience", () => {
     expect(store.threads.get("stale-background-summary")?.state).toMatchObject({
       compactions: [
         {
+          endSeqExclusive: 2,
+          schemaVersion: 1,
+          startSeq: 0,
+          summary: {
+            content: "STALE SUMMARY",
+            role: "system",
+          },
+        },
+        {
           endSeqExclusive: 4,
           schemaVersion: 1,
           startSeq: 0,
@@ -254,8 +263,5 @@ describe("Agent thread automatic compaction resilience", () => {
       ],
       schemaVersion: 2,
     });
-    expect(
-      JSON.stringify(store.threads.get("stale-background-summary")?.state)
-    ).not.toContain("STALE SUMMARY");
   });
 });

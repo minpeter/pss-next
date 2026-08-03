@@ -199,7 +199,7 @@ export async function startTui(
     });
     ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
-      autoCompaction: resolvedThreadConfig.autoCompaction,
+      compaction: resolvedThreadConfig.compaction,
       extensionHost,
       host: createFileHost({ directory: resolvedThreadConfig.directory }),
       instructions: composeCodingAgentInstructions(
@@ -566,7 +566,7 @@ export async function startTui(
 
     const createReplacementAgent = (host: CodingAgentExtensionHost) =>
       createCodingAgent({
-        autoCompaction: threadConfig.autoCompaction,
+        compaction: threadConfig.compaction,
         extensionHost: host,
         host: createFileHost({ directory: threadConfig.directory }),
         instructions: composeCodingAgentInstructions(

@@ -1,9 +1,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentOptions } from "@minpeter/pss-runtime";
+import {
+  type AgentOptions,
+  speculativeCompaction,
+} from "@minpeter/pss-runtime";
 
 export interface CodingAgentThreadConfig {
-  readonly autoCompaction: AgentOptions["autoCompaction"];
+  readonly compaction: AgentOptions["compaction"];
+  readonly compactionMaxInputTokens: number;
   readonly directory: string;
   readonly key: string;
   /** True when PSS_THREAD_KEY forced the key (session index is bypassed). */
@@ -16,28 +20,28 @@ export function resolveCodingAgentThreadConfig(
   home = homedir()
 ): CodingAgentThreadConfig {
   const envKey = nonEmpty(env.PSS_THREAD_KEY);
+  const compactionMaxInputTokens = resolveModelContextWindow(env);
   return {
-    autoCompaction: resolveAutoCompaction(env),
+    compaction: speculativeCompaction({
+      maxInputTokens: compactionMaxInputTokens,
+    }),
+    compactionMaxInputTokens,
     directory: nonEmpty(env.PSS_THREAD_DIR) ?? join(home, ".pss", "threads"),
     key: envKey ?? `cwd:${cwd}`,
     keyFromEnv: envKey !== undefined,
   };
 }
 
-function resolveAutoCompaction(
-  env: NodeJS.ProcessEnv
-): AgentOptions["autoCompaction"] {
-  const contextWindow = nonEmpty(env.PSS_MODEL_CONTEXT_WINDOW);
-  if (contextWindow === undefined) {
-    return;
+function resolveModelContextWindow(env: NodeJS.ProcessEnv): number {
+  const configured = nonEmpty(env.PSS_MODEL_CONTEXT_WINDOW);
+  if (configured === undefined) {
+    return 128_000;
   }
-
-  const maxInputTokens = Number(contextWindow);
-  if (!(Number.isInteger(maxInputTokens) && maxInputTokens > 0)) {
+  const value = Number(configured);
+  if (!(Number.isInteger(value) && value > 0)) {
     throw new Error("PSS_MODEL_CONTEXT_WINDOW must be a positive integer.");
   }
-
-  return { maxInputTokens };
+  return value;
 }
 
 function nonEmpty(value: string | undefined): string | undefined {
