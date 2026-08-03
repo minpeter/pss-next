@@ -70,10 +70,11 @@ const fileHashOf = (readOutput: string): string => {
 };
 
 interface EditInput {
-  end?: string;
-  lines: string[];
+  first?: string;
+  last?: string;
+  new_content: string[];
   op: "append" | "prepend" | "replace";
-  pos?: string;
+  target?: string;
 }
 
 interface Scenario {
@@ -94,7 +95,11 @@ const scenarios: Scenario[] = [
     name: "single-line replace highlights only the changed token",
     initial: "export const first = 1;\nexport const second = 2;\n",
     buildEdits: (anchor) => [
-      { lines: ["export const second = 3;"], op: "replace", pos: anchor(2) },
+      {
+        new_content: ["export const second = 3;"],
+        op: "replace",
+        target: anchor(2),
+      },
     ],
     expectedFile: "export const first = 1;\nexport const second = 3;\n",
     useExpectedFileHash: true,
@@ -114,10 +119,10 @@ const scenarios: Scenario[] = [
     initial: "line one\nline two\nline three\n",
     buildEdits: (anchor) => [
       {
-        end: anchor(2),
-        lines: ["line uno", "line dos"],
+        last: anchor(2),
+        new_content: ["line uno", "line dos"],
         op: "replace",
-        pos: anchor(1),
+        first: anchor(1),
       },
     ],
     expectedFile: "line uno\nline dos\nline three\n",
@@ -134,7 +139,7 @@ const scenarios: Scenario[] = [
   {
     name: "bare append lands at the end of the file and renders green-only",
     initial: "alpha\nbeta\n",
-    buildEdits: () => [{ lines: ["gamma"], op: "append" }],
+    buildEdits: () => [{ new_content: ["gamma"], op: "append" }],
     expectedFile: "alpha\nbeta\ngamma\n",
     expectRender: {
       contains: [`${ADD_FG}+3 `, "gamma"],
@@ -145,7 +150,7 @@ const scenarios: Scenario[] = [
     name: "prepend with pos inserts before the anchored line",
     initial: "beta\ngamma\n",
     buildEdits: (anchor) => [
-      { lines: ["middle"], op: "prepend", pos: anchor(2) },
+      { new_content: ["middle"], op: "prepend", target: anchor(2) },
     ],
     expectedFile: "beta\nmiddle\ngamma\n",
     expectRender: {
@@ -157,7 +162,11 @@ const scenarios: Scenario[] = [
     name: "partial token change tints the shared region and marks the delta",
     initial: 'const name = "alpha";\n',
     buildEdits: (anchor) => [
-      { lines: ['const name = "alpine";'], op: "replace", pos: anchor(1) },
+      {
+        new_content: ['const name = "alpine";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
     expectedFile: 'const name = "alpine";\n',
     expectRender: {
@@ -188,16 +197,16 @@ const scenarios: Scenario[] = [
     ].join("\n"),
     buildEdits: (anchor) => [
       {
-        lines: ["export const MAX_RETRIES = 5;"],
+        new_content: ["export const MAX_RETRIES = 5;"],
         op: "replace",
-        pos: anchor(3),
+        target: anchor(3),
       },
       {
-        lines: ["// greet returns a warm message"],
+        new_content: ["// greet returns a warm message"],
         op: "replace",
-        pos: anchor(5),
+        target: anchor(5),
       },
-      { lines: ["export default greet;"], op: "append" },
+      { new_content: ["export default greet;"], op: "append" },
     ],
     expectedFile: [
       'import { join } from "node:path";',
@@ -214,7 +223,6 @@ const scenarios: Scenario[] = [
     ].join("\n"),
     expectRender: {
       contains: [
-        // three hunks: two replacements and the trailing append
         `${REMOVE_FG}-3 `,
         `${ADD_FG}+3 `,
         `${REMOVE_FG}-5 `,
@@ -240,7 +248,7 @@ const scenarios: Scenario[] = [
     name: "indented additions tint whitespace instead of glowing it",
     initial: "export function main(): void {\n}\n",
     buildEdits: (anchor) => [
-      { lines: ["  doThing();", "}"], op: "replace", pos: anchor(2) },
+      { new_content: ["  doThing();", "}"], op: "replace", target: anchor(2) },
     ],
     expectedFile: "export function main(): void {\n  doThing();\n}\n",
     expectRender: {
@@ -284,8 +292,8 @@ const scenarios: Scenario[] = [
     ].join("\n"),
     buildEdits: (anchor) => [
       {
-        end: anchor(9),
-        lines: [
+        last: anchor(9),
+        new_content: [
           "  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {",
           "    const response = await fetch(url);",
           "    if (response.ok) {",
@@ -294,7 +302,7 @@ const scenarios: Scenario[] = [
           "  }",
         ],
         op: "replace",
-        pos: anchor(2),
+        first: anchor(2),
       },
     ],
     expectedFile: [
@@ -351,8 +359,8 @@ const scenarios: Scenario[] = [
     name: "hunks render sorted by line number, not by edits array order",
     initial: "one\ntwo\nthree\nfour\nfive\n",
     buildEdits: (anchor) => [
-      { lines: ["FOUR"], op: "replace", pos: anchor(4) },
-      { lines: ["TWO"], op: "replace", pos: anchor(2) },
+      { new_content: ["FOUR"], op: "replace", target: anchor(4) },
+      { new_content: ["TWO"], op: "replace", target: anchor(2) },
     ],
     expectedFile: "one\nTWO\nthree\nFOUR\nfive\n",
     expectRender: {
@@ -376,7 +384,11 @@ const scenarios: Scenario[] = [
     name: "control characters in content are sanitized before rendering",
     initial: 'const x = "a\u0007b";\n',
     buildEdits: (anchor) => [
-      { lines: ['const x = "a\u0007c";'], op: "replace", pos: anchor(1) },
+      {
+        new_content: ['const x = "a\u0007c";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
     expectedFile: 'const x = "a\u0007c";\n',
     expectRender: {
@@ -405,10 +417,10 @@ const scenarios: Scenario[] = [
     ].join("\n"),
     buildEdits: (anchor) => [
       {
-        end: anchor(4),
-        lines: ["  return a + b;"],
+        last: anchor(4),
+        new_content: ["  return a + b;"],
         op: "replace",
-        pos: anchor(2),
+        first: anchor(2),
       },
     ],
     expectedFile: [

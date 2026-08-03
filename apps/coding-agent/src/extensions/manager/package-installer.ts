@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CommandResult, RunExtensionCommand } from "./types";
 
@@ -8,32 +17,176 @@ export interface InstalledExtensionPackage {
   readonly previousSpec?: string;
 }
 
+const DEFAULT_NPM_TIMEOUT_MS = 120_000;
+const MAX_COMMAND_OUTPUT = 2_000_000;
+const TERMINATION_GRACE_MS = 1000;
+const TERMINATION_POLL_MS = 10;
+
 export const defaultRunExtensionCommand: RunExtensionCommand = (
   command,
   args
 ) =>
   new Promise((resolvePromise) => {
+    const configuredTimeout = Number.parseInt(
+      process.env.PSS_EXTENSION_NPM_TIMEOUT_MS ?? "",
+      10
+    );
+    const timeoutMs =
+      Number.isSafeInteger(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_NPM_TIMEOUT_MS;
     const child = spawn(command, [...args], {
+      detached: process.platform !== "win32",
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let childClosed = false;
+    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    let terminationPoll: ReturnType<typeof setInterval> | undefined;
+    const append = (current: string, chunk: string): string =>
+      (current + chunk).slice(-MAX_COMMAND_OUTPUT);
+    const timedOutResult = (): CommandResult => ({
+      code: 1,
+      stderr: stderr || `npm command timed out after ${timeoutMs}ms`,
+      stdout,
+    });
+    const processGroupIsAlive = (): boolean => {
+      if (process.platform === "win32" || child.pid === undefined) {
+        return !childClosed;
+      }
+      try {
+        process.kill(-child.pid, 0);
+        return true;
+      } catch (error) {
+        return !hasErrorCode(error, "ESRCH");
+      }
+    };
+    const kill = (signal: NodeJS.Signals): void => {
+      if (child.pid === undefined) {
+        return;
+      }
+      if (process.platform === "win32") {
+        child.kill(signal);
+        return;
+      }
+      try {
+        process.kill(-child.pid, signal);
+      } catch (error) {
+        if (hasErrorCode(error, "ESRCH")) {
+          return;
+        }
+        child.kill(signal);
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill("SIGTERM");
+      forceTimer = setTimeout(() => {
+        if (processGroupIsAlive()) {
+          kill("SIGKILL");
+        }
+        if (terminationPoll === undefined) {
+          terminationPoll = setInterval(() => {
+            if (childClosed && !processGroupIsAlive()) {
+              settle(timedOutResult());
+            }
+          }, TERMINATION_POLL_MS);
+        }
+        if (childClosed && !processGroupIsAlive()) {
+          settle(timedOutResult());
+        }
+      }, TERMINATION_GRACE_MS);
+    }, timeoutMs);
+    const settle = (result: CommandResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (forceTimer !== undefined) {
+        clearTimeout(forceTimer);
+      }
+      if (terminationPoll !== undefined) {
+        clearInterval(terminationPoll);
+      }
+      resolvePromise(result);
+    };
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
+      stdout = append(stdout, chunk);
     });
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      stderr = append(stderr, chunk);
     });
     child.on("error", (error) => {
-      resolvePromise({ code: 1, stderr: error.message, stdout });
+      settle({ code: 1, stderr: error.message, stdout });
     });
     child.on("close", (code) => {
-      resolvePromise({ code: code ?? 1, stderr, stdout });
+      childClosed = true;
+      if (timedOut) {
+        if (!processGroupIsAlive()) {
+          settle(timedOutResult());
+        }
+        return;
+      }
+      settle({
+        code: code ?? 1,
+        stderr,
+        stdout,
+      });
     });
   });
+
+export interface InstallRootSnapshot {
+  readonly existed: boolean;
+  readonly parent: string;
+  readonly root: string;
+}
+
+export async function snapshotInstallRoot(
+  installRoot: string
+): Promise<InstallRootSnapshot> {
+  const parent = await mkdtemp(join(tmpdir(), "pss-extension-backup-"));
+  const root = join(parent, "managed");
+  try {
+    try {
+      await lstat(installRoot);
+    } catch (error) {
+      if (!hasErrorCode(error, "ENOENT")) {
+        throw error;
+      }
+      return { existed: false, parent, root };
+    }
+    await cp(installRoot, root, { recursive: true });
+    return { existed: true, parent, root };
+  } catch (error) {
+    await rm(parent, { force: true, recursive: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function restoreInstallRoot(
+  installRoot: string,
+  snapshot: InstallRootSnapshot
+): Promise<void> {
+  await rm(installRoot, { force: true, recursive: true });
+  if (snapshot.existed) {
+    await cp(snapshot.root, installRoot, { recursive: true });
+  }
+}
+
+export async function discardInstallRootSnapshot(
+  snapshot: InstallRootSnapshot
+): Promise<void> {
+  await rm(snapshot.parent, { force: true, recursive: true }).catch(
+    () => undefined
+  );
+}
 
 export async function installExtensionPackage({
   installRoot,

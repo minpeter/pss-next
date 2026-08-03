@@ -44,8 +44,13 @@ export function createCodingAgent({
   workspace = process.cwd(),
 }: CreateCodingAgentOptions = {}) {
   extensionHost?.bindRuntimeServices({ model, workspace });
-  const selectedTools = tools ?? createCodingAgentTools(webTools);
   const extensionTools = extensionHost?.tools ?? {};
+  const extensionProvidesWebTools =
+    Object.hasOwn(extensionTools, "web_search") ||
+    Object.hasOwn(extensionTools, "web_fetch");
+  const selectedTools =
+    tools ??
+    (extensionProvidesWebTools ? {} : createCodingAgentTools(webTools));
   const workspaceTools = createWorkspaceTools({ workspace });
   assertNoToolCollisions(
     selectedTools,

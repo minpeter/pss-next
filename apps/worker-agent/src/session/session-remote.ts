@@ -12,43 +12,117 @@ interface RemoteSessionEventStreamConfig {
   readonly channel: SubmitTurnRequest["channel"];
   readonly endpoint: string;
   readonly fetch?: (request: Request) => Promise<Response>;
+  /** Overrides used to make reconnect pacing deterministic in tests. */
+  readonly reconnect?: {
+    readonly initialDelayMs?: number;
+    readonly maxDelayMs?: number;
+    readonly random?: () => number;
+    readonly delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  };
   readonly sessionScopeKey?: string;
   readonly signal?: AbortSignal;
   readonly token?: string;
 }
+
+const DEFAULT_RECONNECT_INITIAL_DELAY_MS = 250;
+const DEFAULT_RECONNECT_MAX_DELAY_MS = 10_000;
 
 export async function* streamRemoteSessionEvents(
   config: RemoteSessionEventStreamConfig
 ): AsyncIterable<StoredThreadEvent> {
   const fetchSessionEvents = config.fetch ?? ((request) => fetch(request));
   let cursor = config.after;
+  let reconnectAttempt = 0;
 
   while (!config.signal?.aborted) {
-    const url = new URL(config.endpoint);
-    url.searchParams.set("channel", serializeSessionChannel(config.channel));
-    if (cursor) {
-      url.searchParams.set("after", serializeThreadEventCursor(cursor));
-    }
-    if (config.sessionScopeKey) {
-      url.searchParams.set("sessionScopeKey", config.sessionScopeKey);
-    }
-    const request = new Request(url, {
-      headers: {
-        accept: "text/event-stream",
-        ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
-      },
-      ...(config.signal ? { signal: config.signal } : {}),
-    });
+    const request = createSessionEventRequest(config, cursor);
     const response = await fetchSessionEvents(request);
     if (!response.ok) {
       throw new RemoteSessionEventStreamError(response.status);
     }
 
+    let madeProgress = false;
     for await (const event of decodeSessionEventStream(response)) {
+      madeProgress = true;
       cursor = event.cursor;
       yield event;
     }
+
+    // A successful response alone is not evidence that the connection was
+    // healthy: an intermediary can repeatedly return an immediately closed
+    // 200 response. Only an event resets the reconnect pacing.
+    if (madeProgress) {
+      reconnectAttempt = 0;
+    }
+    if (!(await waitForReconnect(config, reconnectAttempt))) {
+      return;
+    }
+    reconnectAttempt += 1;
   }
+}
+
+function createSessionEventRequest(
+  config: RemoteSessionEventStreamConfig,
+  cursor: ThreadEventCursor | undefined
+): Request {
+  const url = new URL(config.endpoint);
+  url.searchParams.set("channel", serializeSessionChannel(config.channel));
+  if (cursor) {
+    url.searchParams.set("after", serializeThreadEventCursor(cursor));
+  }
+  if (config.sessionScopeKey) {
+    url.searchParams.set("sessionScopeKey", config.sessionScopeKey);
+  }
+  return new Request(url, {
+    headers: {
+      accept: "text/event-stream",
+      ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
+    },
+    ...(config.signal ? { signal: config.signal } : {}),
+  });
+}
+
+async function waitForReconnect(
+  config: RemoteSessionEventStreamConfig,
+  attempt: number
+): Promise<boolean> {
+  const initialDelayMs =
+    config.reconnect?.initialDelayMs ?? DEFAULT_RECONNECT_INITIAL_DELAY_MS;
+  const maxDelayMs =
+    config.reconnect?.maxDelayMs ?? DEFAULT_RECONNECT_MAX_DELAY_MS;
+  const exponentialDelay = Math.min(maxDelayMs, initialDelayMs * 2 ** attempt);
+  const random = config.reconnect?.random ?? Math.random;
+  const delayMs = Math.floor(exponentialDelay * (0.5 + random() * 0.5));
+  try {
+    await (config.reconnect?.delay ?? abortableDelay)(delayMs, config.signal);
+    return true;
+  } catch (error) {
+    if (config.signal?.aborted) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(
+      signal.reason ?? new DOMException("Aborted", "AbortError")
+    );
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(finish, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+
+    function finish() {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }
+    function abort() {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    }
+  });
 }
 
 async function* decodeSessionEventStream(

@@ -16,8 +16,8 @@ describe("Tegami release configuration", () => {
     expect(script.match(/distTag: "next"/g)).toHaveLength(4);
     expect(script).toContain('"@minpeter/pss-runtime"');
     expect(script).toContain('"@minpeter/pss-coding-agent"');
-    expect(script).toContain('"@minpeter/pss-extension-api"');
     expect(script).toContain('"@minpeter/pss-extension-latex"');
+    expect(script).toContain('"@minpeter/pss-extension-web"');
   });
 
   it("excludes every private workspace from release planning", () => {
@@ -36,9 +36,9 @@ describe("Tegami release configuration", () => {
   it("publishes package metadata from the current repository", () => {
     for (const path of [
       "packages/runtime/package.json",
-      "packages/extension-api/package.json",
       "apps/coding-agent/package.json",
       "extensions/latex/package.json",
+      "extensions/web/package.json",
     ]) {
       const manifest = JSON.parse(readFileSync(path, "utf8"));
 

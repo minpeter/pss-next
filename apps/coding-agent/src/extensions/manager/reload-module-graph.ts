@@ -77,34 +77,24 @@ export function ensureReloadModuleGraphHooks(): void {
 }
 
 export interface CommonJsReloadTransaction {
-  /** Restore the pre-reload cache so a failed reload cannot hand the live
-   * runtime freshly re-executed CommonJS helper instances. */
+  /** Kept for the reload transaction API; CommonJS cache is never mutated. */
   rollback(): void;
 }
 
 /**
- * Evict extension-owned CommonJS modules cached under the given roots so
- * cache-busted ESM imports re-execute `.cjs` helpers, snapshotting the
- * evicted entries first. The ESM resolve hook cannot reach the CommonJS
- * cache because Node keys it by filesystem path rather than URL.
+ * Refuse a live reload when extension-owned CommonJS modules are cached.
+ * Evicting process-wide `require.cache` entries can contaminate the still
+ * active runtime, so CommonJS changes require a process restart. ESM reload
+ * remains supported by the graph-propagation hook above.
  *
  * Pass loose-module directories and managed package roots explicitly;
  * `node_modules` trees nested below a root (real dependencies) are left
  * untouched for the same reasons the ESM hook skips them.
  *
- * Known limitation: the CommonJS cache is process-wide, so between eviction
- * and a failed reload's rollback the still-active previous runtime could
- * observe a freshly re-executed helper through a *lazy* `require()` issued
- * during that window. Modules loaded during activation keep their original
- * references and are unaffected. The staging pass in `reload-staging.ts`
- * narrows the window to commit-time failures: candidates are first imported
- * in an isolated worker module context, so a candidate that cannot even
- * load never triggers eviction here at all. Remaining commit-time failures
- * (for example an activation error after a clean import) still rely on the
- * snapshot/rollback below.
  */
 export function beginCommonJsReloadTransaction(
-  roots: readonly string[]
+  roots: readonly string[],
+  candidateCommonJsPaths: readonly string[] = []
 ): CommonJsReloadTransaction {
   const require = createRequire(import.meta.url);
   const prefixes = roots.map((root) =>
@@ -117,27 +107,17 @@ export function beginCommonJsReloadTransaction(
         !key.slice(prefix.length).includes(`${sep}node_modules${sep}`) &&
         !key.slice(prefix.length).startsWith(`node_modules${sep}`)
     );
-  const snapshot = new Map<string, NodeJS.Module>();
-  for (const key of Object.keys(require.cache)) {
-    if (!owned(key)) {
-      continue;
+  for (const key of [
+    ...Object.keys(require.cache),
+    ...candidateCommonJsPaths,
+  ]) {
+    if (owned(key)) {
+      throw new Error(
+        `Extension reload requires a restart because CommonJS module "${key}" is loaded`
+      );
     }
-    const entry = require.cache[key];
-    if (entry !== undefined) {
-      snapshot.set(key, entry);
-    }
-    delete require.cache[key];
   }
   return {
-    rollback: () => {
-      for (const key of Object.keys(require.cache)) {
-        if (owned(key)) {
-          delete require.cache[key];
-        }
-      }
-      for (const [key, entry] of snapshot) {
-        require.cache[key] = entry;
-      }
-    },
+    rollback: () => undefined,
   };
 }

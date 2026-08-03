@@ -1,11 +1,11 @@
 import { isAbsolute } from "node:path";
-import { extensionCapabilityBrand } from "@minpeter/pss-extension-api";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
 import type { AssistantRenderer } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
+import { extensionCapabilityBrand } from "./capabilities";
 import {
   assertKeys,
   requiredString,

@@ -1,15 +1,6 @@
-/**
- * Visual preview of the edit_file hashline diff renderer.
- * allow: SIZE_OK — self-contained dev showcase script; most of its size is
- * the inline example fixture table, and it is never imported by src/.
- *
- * Runs real edit_file calls against fixture files in a temp workspace, then
- * prints both the raw tool output (diff section) and the TUI-rendered pretty
- * block with true ANSI colors, so the highlighting can be eyeballed in a
- * real terminal:
- *
- *   pnpm --filter @minpeter/pss-coding-agent preview:edit
- */
+// allow: SIZE_OK — self-contained dev showcase script; most of its size is the
+// inline example fixture table, and it is never imported by src/.
+// Visual preview of the edit_file hashline diff renderer: `pnpm preview:edit`.
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,10 +27,11 @@ const plainTheme: MarkdownTheme = {
 };
 
 interface EditInput {
-  end?: string;
-  lines: string[];
+  first?: string;
+  last?: string;
+  new_content: string[];
   op: "append" | "prepend" | "replace";
-  pos?: string;
+  target?: string;
 }
 
 interface Example {
@@ -86,7 +78,11 @@ const examples: Example[] = [
     fileName: "counters.ts",
     initial: "export const first = 1;\nexport const second = 2;\n",
     buildEdits: (anchor) => [
-      { lines: ["export const second = 3;"], op: "replace", pos: anchor(2) },
+      {
+        new_content: ["export const second = 3;"],
+        op: "replace",
+        target: anchor(2),
+      },
     ],
   },
   {
@@ -95,10 +91,10 @@ const examples: Example[] = [
     initial: "line one\nline two\nline three\n",
     buildEdits: (anchor) => [
       {
-        end: anchor(2),
-        lines: ["line uno", "line dos"],
+        last: anchor(2),
+        new_content: ["line uno", "line dos"],
         op: "replace",
-        pos: anchor(1),
+        first: anchor(1),
       },
     ],
   },
@@ -106,14 +102,14 @@ const examples: Example[] = [
     name: "bare append at end of file",
     fileName: "list.txt",
     initial: "alpha\nbeta\n",
-    buildEdits: () => [{ lines: ["gamma"], op: "append" }],
+    buildEdits: () => [{ new_content: ["gamma"], op: "append" }],
   },
   {
     name: "prepend before an anchored line",
     fileName: "stack.txt",
     initial: "beta\ngamma\n",
     buildEdits: (anchor) => [
-      { lines: ["middle"], op: "prepend", pos: anchor(2) },
+      { new_content: ["middle"], op: "prepend", target: anchor(2) },
     ],
   },
   {
@@ -121,7 +117,11 @@ const examples: Example[] = [
     fileName: "names.ts",
     initial: 'const name = "alpha";\n',
     buildEdits: (anchor) => [
-      { lines: ['const name = "alpine";'], op: "replace", pos: anchor(1) },
+      {
+        new_content: ['const name = "alpine";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
   },
   {
@@ -129,7 +129,7 @@ const examples: Example[] = [
     fileName: "main.ts",
     initial: "export function main(): void {\n}\n",
     buildEdits: (anchor) => [
-      { lines: ["  doThing();", "}"], op: "replace", pos: anchor(2) },
+      { new_content: ["  doThing();", "}"], op: "replace", target: anchor(2) },
     ],
   },
   {
@@ -145,10 +145,10 @@ const examples: Example[] = [
     ].join("\n"),
     buildEdits: (anchor) => [
       {
-        end: anchor(4),
-        lines: ["  return a + b;"],
+        last: anchor(4),
+        new_content: ["  return a + b;"],
         op: "replace",
-        pos: anchor(2),
+        first: anchor(2),
       },
     ],
   },
@@ -169,16 +169,16 @@ const examples: Example[] = [
     ].join("\n"),
     buildEdits: (anchor) => [
       {
-        lines: ["export const MAX_RETRIES = 5;"],
+        new_content: ["export const MAX_RETRIES = 5;"],
         op: "replace",
-        pos: anchor(3),
+        target: anchor(3),
       },
       {
-        lines: ["// greet returns a warm message"],
+        new_content: ["// greet returns a warm message"],
         op: "replace",
-        pos: anchor(5),
+        target: anchor(5),
       },
-      { lines: ["export default greet;"], op: "append" },
+      { new_content: ["export default greet;"], op: "append" },
     ],
   },
   {
@@ -187,8 +187,8 @@ const examples: Example[] = [
     initial: WHILE_LOOP_CLIENT,
     buildEdits: (anchor) => [
       {
-        end: anchor(21),
-        lines: [
+        last: anchor(21),
+        new_content: [
           "  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {",
           "    const response = await fetch(url);",
           "    if (response.ok) {",
@@ -200,15 +200,17 @@ const examples: Example[] = [
           "  }",
         ],
         op: "replace",
-        pos: anchor(14),
+        first: anchor(14),
       },
       {
-        lines: ['export const DEFAULT_BASE_URL = "https://api.example.com";'],
+        new_content: [
+          'export const DEFAULT_BASE_URL = "https://api.example.com";',
+        ],
         op: "replace",
-        pos: anchor(5),
+        target: anchor(5),
       },
       {
-        lines: ["export default fetchWithRetry;"],
+        new_content: ["export default fetchWithRetry;"],
         op: "append",
       },
     ],

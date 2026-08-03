@@ -1,4 +1,3 @@
-import type { ExtensionAPI as SharedExtensionAPI } from "@minpeter/pss-extension-api";
 import type {
   Agent,
   AgentEvent,
@@ -190,13 +189,13 @@ export interface CodingAgentExtensionRegistry {
   use(hooks: AgentHooks): void;
 }
 
-export interface CodingAgentExtensionApi
-  extends SharedExtensionAPI<ExtensionCapability> {
+export interface CodingAgentExtensionApi {
   on<Type extends AgentEvent["type"]>(
     type: Type,
     handler: CodingAgentExtensionEventHandler<Type>
   ): void;
   on(type: "activate", handler: CodingAgentExtensionActivationHandler): void;
+  provide(capability: ExtensionCapability): void;
   use(hooks: AgentHooks): void;
 }
 

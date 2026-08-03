@@ -262,10 +262,11 @@ export function createTuiExtensionReloader({
     } finally {
       await staging.dispose();
     }
-    // Evict extension-owned CommonJS modules so cache-busted imports
-    // re-execute helpers; the snapshot restores them if the reload fails.
+    // Refuse to disturb extension-owned process-wide CommonJS cache entries;
+    // those extensions require a restart. ESM graphs remain reloadable.
     const transaction = beginCommonJsReloadTransaction(
-      await reloadCacheRoots({ cwd, home, targets })
+      await reloadCacheRoots({ cwd, home, targets }),
+      staging.commonJsPaths()
     );
     // Bound imports so an edited extension with a never-settling top-level
     // await fails the reload instead of freezing the session; the abort

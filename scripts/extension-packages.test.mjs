@@ -3,10 +3,6 @@ import { describe, expect, it } from "vitest";
 
 const packageCases = [
   {
-    directory: "packages/extension-api",
-    name: "@minpeter/pss-extension-api",
-  },
-  {
     directory: "extensions/latex",
     name: "@minpeter/pss-extension-latex",
   },

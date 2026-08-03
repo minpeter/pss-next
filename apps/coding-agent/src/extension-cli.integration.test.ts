@@ -191,13 +191,9 @@ describe("extension management CLI", () => {
       // Then
       expect(result.code).toBe(1);
       expect(result.output).toContain("default export must be a function");
-      const managed = JSON.parse(
-        await readFile(
-          join(fixture.home, ".pss", "extensions", "package.json"),
-          "utf8"
-        )
-      );
-      expect(managed.dependencies ?? {}).not.toHaveProperty("invalid-package");
+      await expect(
+        access(join(fixture.home, ".pss", "extensions"))
+      ).rejects.toThrow();
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }

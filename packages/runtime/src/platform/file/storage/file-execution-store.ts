@@ -24,6 +24,11 @@ import {
 } from "./file-execution-store/lock";
 import { createFileExecutionStorePorts } from "./file-execution-store/ports";
 
+/**
+ * A file-backed store for processes on one host using a local filesystem.
+ * Its locking relies on host PIDs and local atomic filesystem operations; do
+ * not share the directory between hosts or over a network filesystem.
+ */
 export class FileExecutionStore implements HostStore {
   readonly checkpoints: CheckpointStore;
   readonly events: EventStore;

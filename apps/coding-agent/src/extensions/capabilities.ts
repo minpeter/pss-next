@@ -1,19 +1,32 @@
-import type {
-  AssistantRendererCapability,
-  InstructionsCapability,
-} from "@minpeter/pss-extension-api";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
+import type {
+  AssistantRenderer,
+  AssistantRendererRegistrationOptions,
+} from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import type { CodingAgentExtensionModelProvider } from "./types";
 
-declare const capabilityBrand: unique symbol;
+export const extensionCapabilityBrand: unique symbol = Symbol.for(
+  "@minpeter/pss-coding-agent/extension/capability"
+);
 
 interface Capability<Kind extends string> {
   readonly kind: Kind;
-  readonly [capabilityBrand]: true;
+  readonly [extensionCapabilityBrand]: true;
+}
+
+export interface AssistantRendererCapability
+  extends Capability<"assistant-renderer"> {
+  readonly fallback: boolean;
+  readonly override: boolean;
+  readonly renderer: AssistantRenderer;
+}
+
+export interface InstructionsCapability extends Capability<"instructions"> {
+  readonly fragments: readonly string[];
 }
 
 export interface ToolsCapability extends Capability<"tools"> {
@@ -59,6 +72,27 @@ export type ExtensionCapability =
   | ThreadMigrationCapability
   | ToolRendererCapability
   | ToolsCapability;
+
+export function assistantRenderer(
+  renderer: AssistantRenderer,
+  options: AssistantRendererRegistrationOptions = {}
+): AssistantRendererCapability {
+  return Object.freeze({
+    [extensionCapabilityBrand]: true as const,
+    fallback: options.fallback === true,
+    kind: "assistant-renderer",
+    override: options.override === true,
+    renderer,
+  });
+}
+
+export function instructions(...fragments: string[]): InstructionsCapability {
+  return Object.freeze({
+    [extensionCapabilityBrand]: true as const,
+    fragments: Object.freeze([...fragments]),
+    kind: "instructions",
+  });
+}
 
 export function tools(definitions: ToolSet): ToolsCapability {
   return Object.freeze({

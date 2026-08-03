@@ -1,4 +1,11 @@
-import { chmod, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -65,6 +72,105 @@ describe("managed extension removal", () => {
     }
 
     // Then
+    expect(invocations).toEqual([]);
+    const persisted = JSON.parse(await readFile(paths.settingsPath, "utf8"));
+    expect(persisted.extensions).toEqual([
+      expect.objectContaining({ id: "demo" }),
+    ]);
+  });
+
+  it("restores package bytes before settings after a partial uninstall failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-remove-partial-"));
+    cleanupRoots.push(root);
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    const paths = await extensionScopePaths({ cwd, home, scope: "global" });
+    const packageRoot = join(paths.installRoot, "node_modules", "demo");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "index.js"), "original\n");
+    await writeFile(
+      join(paths.installRoot, "package.json"),
+      JSON.stringify({ dependencies: { demo: "1.0.0" } })
+    );
+    await writeExtensionSettings(paths.settingsPath, {
+      extensions: [
+        {
+          enabled: true,
+          id: "demo",
+          installedAt: "2026-08-03T00:00:00.000Z",
+          source: "demo@1.0.0",
+          sourceKind: "npm",
+          target: { kind: "package", packageName: "demo" },
+        },
+      ],
+      values: {},
+    });
+    const runCommand: RunExtensionCommand = async () => {
+      await rm(packageRoot, { force: true, recursive: true });
+      return { code: 1, stderr: "partial failure", stdout: "" };
+    };
+
+    await expect(
+      removeExtension({
+        cwd,
+        home,
+        id: "demo",
+        runCommand,
+        scope: "global",
+      })
+    ).rejects.toThrow("partial failure");
+
+    await expect(readFile(join(packageRoot, "index.js"), "utf8")).resolves.toBe(
+      "original\n"
+    );
+    const persisted = JSON.parse(await readFile(paths.settingsPath, "utf8"));
+    expect(persisted.extensions).toEqual([
+      expect.objectContaining({ id: "demo" }),
+    ]);
+  });
+
+  it("does not change settings when package snapshot preparation fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-remove-prepare-"));
+    cleanupRoots.push(root);
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    const paths = await extensionScopePaths({ cwd, home, scope: "global" });
+    await mkdir(paths.installRoot, { recursive: true });
+    await writeFile(join(paths.installRoot, "unreadable"), "content\n");
+    await writeExtensionSettings(paths.settingsPath, {
+      extensions: [
+        {
+          enabled: true,
+          id: "demo",
+          installedAt: "2026-08-03T00:00:00.000Z",
+          source: "demo@1.0.0",
+          sourceKind: "npm",
+          target: { kind: "package", packageName: "demo" },
+        },
+      ],
+      values: {},
+    });
+    const invocations: string[][] = [];
+    await chmod(paths.installRoot, 0o000);
+    try {
+      await expect(
+        removeExtension({
+          cwd,
+          home,
+          id: "demo",
+          runCommand: (_command, args) => {
+            invocations.push([...args]);
+            return Promise.resolve({ code: 0, stderr: "", stdout: "" });
+          },
+          scope: "global",
+        })
+      ).rejects.toThrow();
+    } finally {
+      await chmod(paths.installRoot, 0o700);
+    }
+
     expect(invocations).toEqual([]);
     const persisted = JSON.parse(await readFile(paths.settingsPath, "utf8"));
     expect(persisted.extensions).toEqual([

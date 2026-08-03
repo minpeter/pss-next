@@ -19,6 +19,8 @@ import type { ImportExtensionModule } from "./types";
  * execution for keeping the live module graph untouched on failure.
  */
 export interface ExtensionStagingSession {
+  /** CommonJS modules loaded while evaluating candidate graphs. */
+  commonJsPaths(): readonly string[];
   /** Terminates the staging worker. Safe to call multiple times. */
   dispose(): Promise<void>;
   /** Imports a specifier in the staging worker and returns a stub. */
@@ -26,6 +28,7 @@ export interface ExtensionStagingSession {
 }
 
 interface StagingResponse {
+  readonly commonJsPaths?: readonly string[];
   readonly id?: string;
   readonly message?: string;
   readonly ok: boolean;
@@ -35,14 +38,18 @@ interface StagingResponse {
 
 const STAGING_WORKER_SOURCE = `
 const { parentPort } = require("node:worker_threads");
+const baselineCommonJs = new Set(Object.keys(require.cache));
 parentPort.on("message", ({ requestId, specifier }) => {
   import(specifier).then((namespace) => {
+    const commonJsPaths = Object.keys(require.cache).filter(
+      (path) => !baselineCommonJs.has(path)
+    );
     const candidate =
       namespace !== null && typeof namespace === "object" && "default" in namespace
         ? namespace.default
         : namespace;
     if (typeof candidate === "function") {
-      parentPort.postMessage({ ok: true, requestId, shape: "factory" });
+      parentPort.postMessage({ commonJsPaths, ok: true, requestId, shape: "factory" });
       return;
     }
     if (
@@ -53,13 +60,14 @@ parentPort.on("message", ({ requestId, specifier }) => {
     ) {
       parentPort.postMessage({
         id: candidate.id,
+        commonJsPaths,
         ok: true,
         requestId,
         shape: "extension",
       });
       return;
     }
-    parentPort.postMessage({ ok: true, requestId, shape: "invalid" });
+    parentPort.postMessage({ commonJsPaths, ok: true, requestId, shape: "invalid" });
   }, (error) => {
     parentPort.postMessage({
       message:
@@ -86,6 +94,7 @@ export function beginExtensionStagingSession(): ExtensionStagingSession {
   >();
   let nextRequestId = 0;
   let terminated = false;
+  const commonJsPaths = new Set<string>();
 
   const syncRef = (): void => {
     if (terminated) {
@@ -145,10 +154,14 @@ export function beginExtensionStagingSession(): ExtensionStagingSession {
         `Staged extension import failed for ${specifier}: ${response.message ?? "unknown error"}`
       );
     }
+    for (const path of response.commonJsPaths ?? []) {
+      commonJsPaths.add(path);
+    }
     return stubNamespace(response);
   };
 
   return {
+    commonJsPaths: () => [...commonJsPaths],
     dispose: async () => {
       terminated = true;
       failAllPending(new Error("Extension staging session is disposed"));
