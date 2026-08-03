@@ -1,3 +1,11 @@
+## @minpeter/pss-runtime@0.3.0-next.6 (next)
+
+### Add speculative background compaction
+
+Replace the legacy auto-compaction options with a callable compaction policy
+and add a speculative strategy that prepares summaries before promotion.
+Preserve overflow recovery, hook interception, and stale-commit protection.
+
 ## @minpeter/pss-runtime@0.3.0-next.5 (next)
 
 ### Manage named, resumable, forkable sessions with lifecycle events

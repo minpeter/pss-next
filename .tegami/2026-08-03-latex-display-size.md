@@ -1,6 +1,8 @@
 ---
 packages:
-  npm:@minpeter/pss-extension-latex: patch
+  npm:@minpeter/pss-extension-latex:
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-extension-latex)
 ---
 
 ## Increase the default LaTeX display size

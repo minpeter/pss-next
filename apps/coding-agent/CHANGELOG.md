@@ -1,3 +1,11 @@
+## @minpeter/pss-coding-agent@0.0.14-next.8 (next)
+
+### Add speculative background compaction
+
+Replace the legacy auto-compaction options with a callable compaction policy
+and add a speculative strategy that prepares summaries before promotion.
+Preserve overflow recovery, hook interception, and stale-commit protection.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.7 (next)
 
 ### Stabilize package timeout testing
