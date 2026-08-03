@@ -80,6 +80,11 @@ export interface SessionManager {
   /** Delete a session's metadata and its durable thread state. */
   removeSession(key: string): Promise<void>;
   renameSession(key: string, name: string): Promise<SessionIndexEntry>;
+  /** Set an automatic name without overwriting a concurrent manual rename. */
+  renameSessionIfUnnamed(
+    key: string,
+    name: string
+  ): Promise<SessionIndexEntry | undefined>;
   /**
    * Resolve which thread key this startup should use. An explicit override
    * reuses that key; otherwise every process gets a new per-cwd session.
@@ -291,6 +296,23 @@ export function createSessionManager(
           return Promise.reject(
             new Error(`Unknown session ${JSON.stringify(key)}`)
           );
+        }
+        const at = timestamp();
+        const next = renameSession(document, key, name, at);
+        return Promise.resolve({
+          document: next,
+          result: { ...existing, name, updatedAt: at },
+        });
+      });
+    },
+    renameSessionIfUnnamed: (key, name) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
+        const existing = document.sessions.find(
+          (session) => session.key === key
+        );
+        if (existing === undefined || existing.name !== undefined) {
+          return Promise.resolve({ document, result: undefined });
         }
         const at = timestamp();
         const next = renameSession(document, key, name, at);

@@ -277,6 +277,25 @@ describe("createSessionManager", () => {
     );
   });
 
+  it("sets an automatic name only while a session is unnamed", async () => {
+    const { manager: sessions } = manager();
+    const entry = await sessions.resolveStartupSession();
+    const generated = await sessions.renameSessionIfUnnamed(
+      entry.key,
+      "generated"
+    );
+    expect(generated?.name).toBe("generated");
+
+    await sessions.renameSession(entry.key, "manual");
+    expect(
+      await sessions.renameSessionIfUnnamed(entry.key, "late generation")
+    ).toBeUndefined();
+    expect((await sessions.getSession(entry.key))?.name).toBe("manual");
+    expect(
+      await sessions.renameSessionIfUnnamed("ghost", "generated")
+    ).toBeUndefined();
+  });
+
   it("removes sessions along with their durable thread state", async () => {
     const { manager: sessions, threads } = manager();
     const entry = await sessions.resolveStartupSession();

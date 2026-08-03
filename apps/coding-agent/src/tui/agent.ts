@@ -1151,9 +1151,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           sawModelUsage ? { ...turnUsage } : undefined,
           finishReason
         )
-      ).catch((error) => {
-        console.error("onTurnComplete callback failed in TUI:", error);
-      });
+      )
+        .then(() => {
+          updateHeader();
+        })
+        .catch((error) => {
+          console.error("onTurnComplete callback failed in TUI:", error);
+        });
 
       if (finishReason !== undefined) {
         addAbnormalFinishReasonMessage(finishReason);
