@@ -33,6 +33,7 @@ import {
   createProviderObservationFetch,
   type ProviderObservationEmitter,
 } from "../provider-observation";
+import { generateSessionTitle } from "../sessions/session-auto-title";
 import {
   approveSessionChange,
   type SessionChangeEvent,
@@ -327,6 +328,7 @@ export async function startTui(
 
     const footer: { text?: string } = {};
     const usageTracker = new TokenUsageTracker();
+    const titleGenerationInFlight = new Set<string>();
 
     const renderUsageFooter = (): void => {
       footer.text = usageTracker.footerText();
@@ -344,6 +346,44 @@ export async function startTui(
         : `${base}\nsession: ${currentSession.name}`;
     };
     const header = { title: "pss", subtitle: buildSubtitle() };
+
+    const currentInstructions = (): string =>
+      [
+        composeCodingAgentInstructions(contextResources.instructionFragments),
+        ...extensionHost.instructionFragments,
+      ].join("\n\n");
+
+    const generateTitleForSession = async (
+      session: SessionIndexEntry
+    ): Promise<void> => {
+      if (
+        session.name !== undefined ||
+        titleGenerationInFlight.has(session.key)
+      ) {
+        return;
+      }
+      titleGenerationInFlight.add(session.key);
+      try {
+        const title = await generateSessionTitle({
+          history: await sessionManager.loadSessionHistory(session.key),
+          instructions: currentInstructions(),
+          model,
+        });
+        if (title === undefined) {
+          return;
+        }
+        const renamed = await sessionManager.renameSessionIfUnnamed(
+          session.key,
+          title
+        );
+        if (renamed !== undefined && currentSession.key === renamed.key) {
+          currentSession = renamed;
+          header.subtitle = buildSubtitle();
+        }
+      } finally {
+        titleGenerationInFlight.delete(session.key);
+      }
+    };
 
     const emitSessionEvent = (
       type: string,
@@ -450,9 +490,15 @@ export async function startTui(
         renderUsageFooter();
       },
       onTurnComplete: () => {
+        const completedSession = currentSession;
         // Keep /resume recency meaningful: every completed turn bumps the
         // session's updatedAt (best-effort; never surfaces to the user).
-        sessionManager.touchSession(currentSession.key).catch(() => undefined);
+        return Promise.all([
+          sessionManager
+            .touchSession(completedSession.key)
+            .catch(() => undefined),
+          generateTitleForSession(completedSession).catch(() => undefined),
+        ]).then(() => undefined);
       },
       onExtensionUiReady: async (createUi) => {
         createExtensionUiForHost = createUi;
