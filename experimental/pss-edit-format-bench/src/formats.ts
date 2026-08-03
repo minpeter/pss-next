@@ -2,12 +2,29 @@ import { createHash } from "node:crypto";
 import { applyEdits } from "@oh-my-pi/hashline/apply";
 import { resolveBlockEdits } from "@oh-my-pi/hashline/block";
 import { parsePatch } from "@oh-my-pi/hashline/parser";
+import { z } from "zod";
+
+const INDENT = /^(\s*)/u;
+
+/** Index of the last non-blank line, or -1 when every line is blank. */
+const lastContentLineIndex = (lines: readonly string[]): number => {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if ((lines[index] as string).trim().length > 0) {
+      return index;
+    }
+  }
+  return -1;
+};
+const OPEN_BRACES = /\{/gu;
+const CLOSE_BRACES = /\}/gu;
+const JSON_FENCE = /```(?:json)?\s*([\s\S]*?)```/u;
+const PATCH_FENCE = /```(?:\w+)?\s*([\s\S]*?)```/u;
+const HASHLINE_ANCHOR = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2})$/;
+const TEXT_ENCODER = new TextEncoder();
 
 /**
- * Structural block resolver standing in for a tree-sitter BlockResolver.
- * Brace languages resolve by brace depth from the opening line; Python
- * resolves by indentation. On the bench fixtures it resolves the same spans
- * tree-sitter would; a real host injects a proper resolver.
+ * Resolves fixture blocks by indentation for Python and brace depth for other
+ * languages. A real host supplies its tree-sitter resolver.
  */
 const resolveBenchBlock = ({
   path,
@@ -24,41 +41,32 @@ const resolveBenchBlock = ({
     return null;
   }
   if (path.endsWith(".py")) {
-    const indent = (/^(\s*)/u.exec(opener)?.[1] ?? "").length;
-    let end = line;
-    for (let index = line; index < lines.length; index += 1) {
-      const current = lines[index] as string;
-      if (current.trim().length === 0) {
-        continue;
-      }
-      const currentIndent = (/^(\s*)/u.exec(current)?.[1] ?? "").length;
-      if (currentIndent > indent) {
-        end = index + 1;
-      } else {
-        break;
-      }
-    }
-    return end > line ? { start: line, end } : null;
+    const indent = (INDENT.exec(opener)?.[1] ?? "").length;
+    const body = lines.slice(line);
+    const boundary = body.findIndex(
+      (current) =>
+        current.trim().length > 0 &&
+        (INDENT.exec(current)?.[1] ?? "").length <= indent
+    );
+    const block = boundary === -1 ? body : body.slice(0, boundary);
+    const lastLine = lastContentLineIndex(block);
+    return lastLine === -1 ? null : { start: line, end: line + lastLine + 1 };
   }
   if (!opener.includes("{")) {
     return null;
   }
   let depth = 0;
   for (let index = line - 1; index < lines.length; index += 1) {
-    for (const char of lines[index] as string) {
-      if (char === "{") {
-        depth += 1;
-      } else if (char === "}") {
-        depth -= 1;
-      }
-    }
+    const current = lines[index] as string;
+    depth +=
+      (current.match(OPEN_BRACES)?.length ?? 0) -
+      (current.match(CLOSE_BRACES)?.length ?? 0);
     if (depth === 0) {
       return index + 1 > line ? { start: line, end: index + 1 } : null;
     }
   }
   return null;
 };
-import { z } from "zod";
 
 export interface RenderedTask {
   readonly system: string;
@@ -66,8 +74,8 @@ export interface RenderedTask {
 }
 
 export interface ApplyOutcome {
-  readonly text?: string;
   readonly error?: string;
+  readonly text?: string;
   /**
    * Names of the recovery paths a format had to fire to accept the reply.
    * grok-build ships tolerances the strict pss/omp parsers do not, so a pass
@@ -85,9 +93,9 @@ export interface ApplyOutcome {
 }
 
 export interface EditFormat {
+  apply(reply: string, initial: string, path?: string): ApplyOutcome;
   readonly name: string;
   render(path: string, initial: string): RenderedTask;
-  apply(reply: string, initial: string, path?: string): ApplyOutcome;
 }
 
 const LINE_SEPARATOR = /\r?\n/u;
@@ -186,10 +194,6 @@ const buildToolOutput = (
   return lines.join("\n");
 };
 
-// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// Hashline helpers, matching apps/coding-agent/src/workspace-tools/hashline.ts
-// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-
 const NIBBLES = "ZPMQVRWSNKTXJBYH";
 
 const HASHLINE_DICTIONARY = Array.from({ length: 256 }, (_, value) => {
@@ -222,10 +226,6 @@ function formatLineAnchor(lineNumber: number, content: string): string {
   return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
 }
 
-// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// PSS JSON schema – 100% matching apps/coding-agent/src/workspace-tools/edit-file.ts
-// –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-
 const pssEditSchema = z
   .object({
     op: z.enum(["replace", "append", "prepend"]),
@@ -236,10 +236,7 @@ const pssEditSchema = z
     /** Inclusive range end for replace. Pair with `first`. */
     last: z.string().optional(),
     /** Replacement or inserted lines. Never empty. */
-    new_content: z.union([
-      z.string().min(1),
-      z.array(z.string()).min(1),
-    ]),
+    new_content: z.union([z.string().min(1), z.array(z.string()).min(1)]),
   })
   .strict();
 
@@ -252,7 +249,7 @@ const pssCallSchema = z
   .strict();
 
 const extractJson = (reply: string): string => {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/u.exec(reply);
+  const fenced = JSON_FENCE.exec(reply);
   const body = (fenced?.[1] ?? reply).trim();
   // Providers may wrap the payload in tool-call XML (e.g. minimax's
   // <minimax:tool_call><invoke><parameter name="payload">…) that repeats
@@ -268,13 +265,10 @@ const extractJson = (reply: string): string => {
   for (let index = start; index < body.length; index += 1) {
     const char = body[index] as string;
     if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
+      if (char === '"' && !escaped) {
         inString = false;
       }
+      escaped = char === "\\" && !escaped;
       continue;
     }
     if (char === '"') {
@@ -299,7 +293,7 @@ const resolveLineAnchor = (
   anchor: string,
   lines: readonly string[]
 ): number => {
-  const match = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2})$/.exec(anchor);
+  const match = HASHLINE_ANCHOR.exec(anchor);
   if (match === null) {
     throw new Error(
       `Invalid hashline anchor: ${anchor}. Re-read the file and use LINE#ID.`
@@ -344,62 +338,62 @@ function resolvePssEdit(
   lines: readonly string[],
   order: number
 ): ResolvedPssEdit {
-  if (edit.op === "replace") {
-    if (edit.first !== undefined || edit.last !== undefined) {
-      if (edit.target !== undefined) {
-        throw new Error(
-          "replace accepts either target for one line or first+last for a range, not both."
-        );
-      }
-      if (edit.first === undefined) {
-        throw new Error(
-          `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`
-        );
-      }
-      if (edit.last === undefined) {
-        throw new Error(
-          `replace range requires last; received only first=${edit.first}. Use target for one line, or first+last for an inclusive range.`
-        );
-      }
-      const index = resolveLineAnchor(edit.first, lines);
-      const end = resolveLineAnchor(edit.last, lines);
-      if (end < index) {
-        throw new Error(
-          `replace last precedes first: ${edit.first}..${edit.last}`
-        );
-      }
-      return {
-        end,
-        index,
-        lines: pssReplacementLines(edit.new_content),
-        op: edit.op,
-        order,
-      };
-    }
-    if (edit.target === undefined) {
-      throw new Error(
-        "replace requires target: LINE#ID for one line, or first+last for an inclusive range."
-      );
-    }
-    const index = resolveLineAnchor(edit.target, lines);
+  if (edit.op !== "replace") {
+    const anchorIndex =
+      edit.target === undefined
+        ? undefined
+        : resolveLineAnchor(edit.target, lines);
+    const index =
+      edit.op === "append"
+        ? (anchorIndex ?? lines.length - 1) + 1
+        : (anchorIndex ?? 0);
     return {
-      end: index,
+      end: index - 1,
       index,
       lines: pssReplacementLines(edit.new_content),
       op: edit.op,
       order,
     };
   }
-  const anchorIndex =
-    edit.target === undefined
-      ? undefined
-      : resolveLineAnchor(edit.target, lines);
-  const index =
-    edit.op === "append"
-      ? (anchorIndex ?? lines.length - 1) + 1
-      : (anchorIndex ?? 0);
+  if (edit.first !== undefined || edit.last !== undefined) {
+    if (edit.target !== undefined) {
+      throw new Error(
+        "replace accepts either target for one line or first+last for a range, not both."
+      );
+    }
+    if (edit.first === undefined) {
+      throw new Error(
+        `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    if (edit.last === undefined) {
+      throw new Error(
+        `replace range requires last; received only first=${edit.first}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    const index = resolveLineAnchor(edit.first, lines);
+    const end = resolveLineAnchor(edit.last, lines);
+    if (end < index) {
+      throw new Error(
+        `replace last precedes first: ${edit.first}..${edit.last}`
+      );
+    }
+    return {
+      end,
+      index,
+      lines: pssReplacementLines(edit.new_content),
+      op: edit.op,
+      order,
+    };
+  }
+  if (edit.target === undefined) {
+    throw new Error(
+      "replace requires target: LINE#ID for one line, or first+last for an inclusive range."
+    );
+  }
+  const index = resolveLineAnchor(edit.target, lines);
   return {
-    end: index - 1,
+    end: index,
     index,
     lines: pssReplacementLines(edit.new_content),
     op: edit.op,
@@ -490,8 +484,11 @@ export const pssFormat: EditFormat = {
       const applied = joinBody(output);
       return {
         text: applied,
-        toolOutput: buildToolOutput(path ?? "", initial, applied, (lines, index) =>
-          formatLineAnchor(index + 1, lines[index] ?? "")
+        toolOutput: buildToolOutput(
+          path ?? "",
+          initial,
+          applied,
+          (lines, index) => formatLineAnchor(index + 1, lines[index] ?? "")
         ),
       };
     } catch (error) {
@@ -552,7 +549,7 @@ const FILE_TAG = "A1B2";
 export const ompFormat: EditFormat = {
   apply(reply, initial, path) {
     try {
-      const fenced = /```(?:\w+)?\s*([\s\S]*?)```/u.exec(reply);
+      const fenced = PATCH_FENCE.exec(reply);
       const patch = (fenced?.[1] ?? reply).trim();
       const parsed = parsePatch(patch);
       if (parsed.edits.length === 0) {
@@ -561,8 +558,11 @@ export const ompFormat: EditFormat = {
       const applied = applyEdits(initial, parsed.edits).text;
       return {
         text: applied,
-        toolOutput: buildToolOutput(path ?? "", initial, applied, (_lines, index) =>
-          String(index + 1)
+        toolOutput: buildToolOutput(
+          path ?? "",
+          initial,
+          applied,
+          (_lines, index) => String(index + 1)
         ),
       };
     } catch (error) {
@@ -663,7 +663,9 @@ const validateOmpJsonHunk = (hunk: OmpJsonHunk): void => {
   const bodyRequired = (): void => {
     need("content");
     if (hunk.content === "") {
-      throw new Error(`${hunk.op} requires non-empty content; use delete instead`);
+      throw new Error(
+        `${hunk.op} requires non-empty content; use delete instead`
+      );
     }
   };
   switch (hunk.op) {
@@ -726,6 +728,8 @@ const validateOmpJsonHunk = (hunk: OmpJsonHunk): void => {
       forbid("last");
       forbid("content");
       break;
+    default:
+      break;
   }
 };
 
@@ -747,13 +751,22 @@ const ompJsonToDsl = (call: z.infer<typeof ompJsonCallSchema>): string => {
         );
         break;
       case "swap_block":
-        rows.push(`SWAP.BLK ${hunk.line as number}:`, ...body(hunk.content as string));
+        rows.push(
+          `SWAP.BLK ${hunk.line as number}:`,
+          ...body(hunk.content as string)
+        );
         break;
       case "insert_pre":
-        rows.push(`INS.PRE ${hunk.line as number}:`, ...body(hunk.content as string));
+        rows.push(
+          `INS.PRE ${hunk.line as number}:`,
+          ...body(hunk.content as string)
+        );
         break;
       case "insert_post":
-        rows.push(`INS.POST ${hunk.line as number}:`, ...body(hunk.content as string));
+        rows.push(
+          `INS.POST ${hunk.line as number}:`,
+          ...body(hunk.content as string)
+        );
         break;
       case "insert_head":
         rows.push("INS.HEAD:", ...body(hunk.content as string));
@@ -762,7 +775,10 @@ const ompJsonToDsl = (call: z.infer<typeof ompJsonCallSchema>): string => {
         rows.push("INS.TAIL:", ...body(hunk.content as string));
         break;
       case "insert_block_after":
-        rows.push(`INS.BLK.POST ${hunk.line as number}:`, ...body(hunk.content as string));
+        rows.push(
+          `INS.BLK.POST ${hunk.line as number}:`,
+          ...body(hunk.content as string)
+        );
         break;
       case "delete":
         rows.push(`DEL ${hunk.first as number}.=${hunk.last as number}`);
@@ -775,6 +791,8 @@ const ompJsonToDsl = (call: z.infer<typeof ompJsonCallSchema>): string => {
         break;
       case "move":
         rows.push(`MV ${hunk.dest as string}`);
+        break;
+      default:
         break;
     }
   }
@@ -801,8 +819,11 @@ export const ompJsonFormat: EditFormat = {
       const applied = applyEdits(initial, edits).text;
       return {
         text: applied,
-        toolOutput: buildToolOutput(path ?? "", initial, applied, (_lines, index) =>
-          String(index + 1)
+        toolOutput: buildToolOutput(
+          path ?? "",
+          initial,
+          applied,
+          (_lines, index) => String(index + 1)
         ),
       };
     } catch (error) {
@@ -853,8 +874,24 @@ const GROK_HASH_LEN = 3;
 const GROK_CHUNK_SIZE = 16;
 const GROK_ARROW = "\u2192";
 
-const grokStep = (hash: number, byte: number): number =>
-  Math.imul(hash ^ byte, GROK_FNV_PRIME) >>> 0;
+const grokStep = (hash: number, byte: number): number => {
+  const lowByte = hash % 256;
+  let xor = 0;
+  let place = 1;
+  let left = lowByte;
+  let right = byte;
+  for (let bit = 0; bit < 8; bit += 1) {
+    if (left % 2 !== right % 2) {
+      xor += place;
+    }
+    left = Math.floor(left / 2);
+    right = Math.floor(right / 2);
+    place *= 2;
+  }
+  return Uint32Array.of(
+    Math.imul(hash - lowByte + xor, GROK_FNV_PRIME)
+  )[0] as number;
+};
 
 /**
  * Whitespace-normalized FNV-1a 32-bit line fingerprint: trim, then collapse
@@ -865,7 +902,7 @@ const grokStep = (hash: number, byte: number): number =>
 const grokLineHash = (line: string): number => {
   let hash = GROK_FNV_OFFSET;
   let previousWasSpace = false;
-  for (const byte of new TextEncoder().encode(line.trim())) {
+  for (const byte of TEXT_ENCODER.encode(line.trim())) {
     const isSpace = byte === 0x20 || (byte >= 0x09 && byte <= 0x0d);
     if (isSpace) {
       if (!previousWasSpace) {
@@ -884,7 +921,8 @@ const grokLineHash = (line: string): number => {
 const grokEncode = (hash: number, length: number): string => {
   let out = "";
   for (let index = 0; index < length; index += 1) {
-    out += String.fromCodePoint(((hash >>> (index * 8)) % 26) + 0x61);
+    const byte = Math.floor(hash / 256 ** (index % 4));
+    out += String.fromCodePoint((byte % 26) + 0x61);
   }
   return out;
 };
@@ -899,11 +937,10 @@ const grokAnchor = (lines: readonly string[], lineIndex: number): string => {
     grokLineHash(lines[lineIndex] as string),
     GROK_HASH_LEN
   );
-  const chunkStart =
-    Math.floor(lineIndex / GROK_CHUNK_SIZE) * GROK_CHUNK_SIZE;
+  const chunkStart = Math.floor(lineIndex / GROK_CHUNK_SIZE) * GROK_CHUNK_SIZE;
   let chunk = GROK_FNV_OFFSET;
   for (const line of lines.slice(chunkStart, chunkStart + GROK_CHUNK_SIZE)) {
-    for (const byte of new TextEncoder().encode(line.trim())) {
+    for (const byte of TEXT_ENCODER.encode(line.trim())) {
       chunk = grokStep(chunk, byte);
     }
     chunk = grokStep(chunk, 0x0a);
@@ -914,8 +951,8 @@ const grokAnchor = (lines: readonly string[], lineIndex: number): string => {
 const GROK_ANCHOR_PATTERN = /^(\d+):([a-z]+)(?::([a-z]+))?$/u;
 
 interface GrokResolved {
-  readonly index: number;
   readonly end: number;
+  readonly index: number;
   readonly payload: readonly string[];
 }
 
@@ -940,7 +977,11 @@ export const grokFormat: EditFormat = {
         rawEdits = JSON.parse(rawEdits);
         tolerances.push("string-wrapped-edits");
       }
-      if (rawEdits !== null && !Array.isArray(rawEdits) && typeof rawEdits === "object") {
+      if (
+        rawEdits !== null &&
+        !Array.isArray(rawEdits) &&
+        typeof rawEdits === "object"
+      ) {
         rawEdits = [rawEdits];
         tolerances.push("bare-edits-object");
       }
@@ -982,60 +1023,82 @@ export const grokFormat: EditFormat = {
         return lineNumber - 1;
       };
 
-      const resolved = edits.map((edit): GrokResolved => {
-        if (edit.op === "write") {
-          if (edits.length > 1) {
-            throw new Error("Write op must be the only operation in a batch.");
-          }
-          return {
-            end: lines.length - 1,
-            index: 0,
-            payload: splitBody(edit.content),
-          };
+      const resolveWrite = (
+        edit: z.infer<typeof grokEditSchema>
+      ): GrokResolved => {
+        if (edits.length > 1) {
+          throw new Error("Write op must be the only operation in a batch.");
         }
+        return {
+          end: lines.length - 1,
+          index: 0,
+          payload: splitBody(edit.content),
+        };
+      };
+      const resolveInsertAfter = (
+        edit: z.infer<typeof grokEditSchema>
+      ): GrokResolved => {
         if (edit.anchor === undefined) {
-          throw new Error(`${edit.op} requires an anchor.`);
+          throw new Error("insert_after requires an anchor.");
         }
-        if (edit.op === "insert_after") {
-          if (edit.end_anchor !== undefined) {
-            throw new Error("insert_after does not take end_anchor.");
-          }
-          const at =
-            edit.anchor === "0:"
-              ? 0
-              : edit.anchor === "EOF"
-                ? lines.length
-                : resolveAnchor(edit.anchor) + 1;
-          return {
-            end: at - 1,
-            index: at,
-            payload: edit.content === "" ? [""] : splitBody(edit.content),
-          };
+        if (edit.end_anchor !== undefined) {
+          throw new Error("insert_after does not take end_anchor.");
+        }
+        let at = lines.length;
+        if (edit.anchor !== "EOF") {
+          at = edit.anchor === "0:" ? 0 : resolveAnchor(edit.anchor) + 1;
+        }
+        return {
+          end: at - 1,
+          index: at,
+          payload: edit.content === "" ? [""] : splitBody(edit.content),
+        };
+      };
+      const resolveReplace = (
+        edit: z.infer<typeof grokEditSchema>
+      ): GrokResolved => {
+        if (edit.anchor === undefined) {
+          throw new Error("replace requires an anchor.");
         }
         const index = resolveAnchor(edit.anchor);
         const end =
-          edit.end_anchor === undefined ? index : resolveAnchor(edit.end_anchor);
+          edit.end_anchor === undefined
+            ? index
+            : resolveAnchor(edit.end_anchor);
         if (end < index) {
           throw new Error(
             `end_anchor line ${end + 1} is before start anchor line ${index + 1}.`
           );
         }
-        // Empty content deletes the addressed lines.
         return {
           end,
           index,
           payload: edit.content === "" ? [] : splitBody(edit.content),
         };
+      };
+      const resolved = edits.map((edit): GrokResolved => {
+        switch (edit.op) {
+          case "write":
+            return resolveWrite(edit);
+          case "insert_after":
+            return resolveInsertAfter(edit);
+          case "replace":
+            return resolveReplace(edit);
+          default:
+            throw new Error(`Unknown operation: ${edit.op as string}`);
+        }
       });
 
       const spans = resolved
         .filter((edit) => edit.end >= edit.index)
         .map((edit) => [edit.index, edit.end] as const)
         .sort((a, b) => a[0] - b[0]);
-      for (const [current, next] of spans.slice(0, -1).map((span, i) => [
-        span,
-        spans[i + 1] as readonly [number, number],
-      ] as const)) {
+      for (const [current, next] of spans
+        .slice(0, -1)
+        .map(
+          (span, i) =>
+            [span, spans[i + 1] as readonly [number, number]] as const
+        )) {
         if (current[1] >= next[0]) {
           throw new Error(
             `Overlapping edits: lines ${current[0] + 1}-${current[1] + 1} and ${next[0] + 1}-${next[1] + 1}.`
@@ -1055,8 +1118,11 @@ export const grokFormat: EditFormat = {
       return {
         text: applied,
         tolerances,
-        toolOutput: buildToolOutput(path ?? "", initial, applied, (lines, index) =>
-          grokAnchor(lines, index)
+        toolOutput: buildToolOutput(
+          path ?? "",
+          initial,
+          applied,
+          (lines, index) => grokAnchor(lines, index)
         ),
       };
     } catch (error) {
@@ -1085,7 +1151,7 @@ export const grokFormat: EditFormat = {
         'op is one of "replace", "insert_after", "write".',
         '- replace: replaces the anchored line. Add "end_anchor" to replace an inclusive range. Empty content deletes the line(s).',
         '- insert_after: inserts content after the anchored line. Use "0:" for beginning of file and "EOF" for end of file.',
-        '- write: replaces the entire file with content; it must be the only operation.',
+        "- write: replaces the entire file with content; it must be the only operation.",
         "content is one string; embed newlines to write multiple lines.",
         "Never fabricate or modify anchors, and never include the arrow or the line content in an anchor.",
         "Overlapping ranges are rejected, so keep every edit disjoint.",

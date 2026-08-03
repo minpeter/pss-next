@@ -5,29 +5,29 @@
  * run.ts prints the result.
  */
 import { EDIT_FORMATS } from "./formats";
-import { EDIT_TASKS } from "./tasks";
 import { bootstrapCell, pairedDelta } from "./stats";
+import { EDIT_TASKS } from "./tasks";
 
 export interface Attempt {
+  readonly durationMs: number;
+  readonly failure?: string;
+  readonly fingerprint: string | null;
   readonly format: string;
   readonly model: string;
-  readonly task: string;
-  readonly run: number;
-  readonly passed: boolean;
-  readonly failure?: string;
-  readonly durationMs: number;
   readonly outputTokens: number;
+  readonly passed: boolean;
+  readonly recovery?: RecoveryRecord;
   readonly replyChars: number;
   readonly retries: number;
+  readonly run: number;
+  readonly task: string;
   readonly tolerances: readonly string[];
-  readonly fingerprint: string | null;
-  readonly recovery?: RecoveryRecord;
 }
 
 export interface RecoveryRecord {
   readonly attemptsUsed: number;
-  readonly recovered: boolean;
   readonly firstAttemptFailed: boolean;
+  readonly recovered: boolean;
   readonly repeatedFailure: boolean;
 }
 
@@ -137,7 +137,9 @@ export const buildReport = (
           counts.set(tolerance, (counts.get(tolerance) ?? 0) + 1);
         }
       }
-      for (const [tolerance, count] of [...counts].sort((a, b) => b[1] - a[1])) {
+      for (const [tolerance, count] of [...counts].sort(
+        (a, b) => b[1] - a[1]
+      )) {
         line(`| ${model} | ${format} | ${tolerance} | ${count} |`);
       }
     }
@@ -193,7 +195,8 @@ export const buildReport = (
     }
   }
 
-  line("\n## Fingerprints");  line("");
+  line("\n## Fingerprints");
+  line("");
   let anyMixed = false;
   for (const model of models) {
     for (const format of formats) {
@@ -245,8 +248,7 @@ export const buildReport = (
     for (const model of models) {
       for (const format of formats) {
         const rows = recoveryRows.filter(
-          (attempt) =>
-            attempt.model === model && attempt.format === format
+          (attempt) => attempt.model === model && attempt.format === format
         );
         if (rows.length === 0) {
           continue;
@@ -287,9 +289,7 @@ export const buildReport = (
       "| model | format | scored | " +
         [
           ...new Set(
-            recoveryRows.map(
-              (attempt) => attempt.recovery?.attemptsUsed ?? 1
-            )
+            recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
           ),
         ]
           .sort((a, b) => a - b)
@@ -298,7 +298,9 @@ export const buildReport = (
         " |"
     );
     const attemptSteps = [
-      ...new Set(recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)),
+      ...new Set(
+        recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
+      ),
     ].sort((a, b) => a - b);
     line(
       `|---|${"---|".repeat(models.length > 0 ? 3 + attemptSteps.length - 1 : 0)}`
@@ -306,8 +308,7 @@ export const buildReport = (
     for (const model of models) {
       for (const format of formats) {
         const rows = recoveryRows.filter(
-          (attempt) =>
-            attempt.model === model && attempt.format === format
+          (attempt) => attempt.model === model && attempt.format === format
         );
         if (rows.length === 0) {
           continue;
@@ -320,7 +321,9 @@ export const buildReport = (
           ).length;
           return `${solved}/${rows.length} ${percent(solved, rows.length)}`;
         });
-        line(`| ${model} | ${format} | ${rows.length} | ${cumulative.join(" | ")} |`);
+        line(
+          `| ${model} | ${format} | ${rows.length} | ${cumulative.join(" | ")} |`
+        );
       }
     }
   }

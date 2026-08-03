@@ -69,7 +69,7 @@ const readWorkspaceFiles = async (root: string): Promise<WorkspaceFileSet> => {
       if (!entry.isFile()) {
         continue;
       }
-      const path = relative(root, absolutePath).split(sep).join("/");
+      const path = relative(root, absolutePath).replaceAll(sep, "/");
       files[path] = await readFile(absolutePath, "utf8");
     }
   }

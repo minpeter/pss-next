@@ -1,3 +1,6 @@
+// biome-ignore-all lint/performance/useTopLevelRegex: Test-local regexes execute once and keep each assertion self-contained.
+// biome-ignore-all lint/suspicious/noBitwiseOperators: The Grok fixture must reproduce the source algorithm's fixed-width hash operations.
+// biome-ignore-all lint/style/useTemplate: Array joins make the constructed line fixtures explicit before their trailing newline.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { grokFormat, ompFormat, ompJsonFormat, pssFormat } from "./formats";
@@ -27,7 +30,10 @@ describe("pss-json adapter", () => {
       path: task.path,
       edits: [
         {
-          new_content: ['    greeting = "Hi"', '    msg = f"{greeting}, {name}"'],
+          new_content: [
+            '    greeting = "Hi"',
+            '    msg = f"{greeting}, {name}"',
+          ],
           op: "replace",
           target: anchor,
         },
@@ -40,7 +46,6 @@ describe("pss-json adapter", () => {
   it("applies an inclusive range replace addressed by first and last", () => {
     const task = taskById("delete-middle-line");
     const rendered = pssFormat.render(task.path, task.initial).user;
-    // Lines 2-3 collapse to just the print, dropping the msg assignment.
     const reply = JSON.stringify({
       path: task.path,
       edits: [
@@ -63,7 +68,13 @@ describe("pss-json adapter", () => {
     for (const edit of [
       { last: anchor, new_content: ["x"], op: "replace" },
       { first: anchor, new_content: ["x"], op: "replace" },
-      { first: anchor, last: anchor, new_content: ["x"], op: "replace", target: anchor },
+      {
+        first: anchor,
+        last: anchor,
+        new_content: ["x"],
+        op: "replace",
+        target: anchor,
+      },
       { new_content: [], op: "replace", target: anchor },
       { new_content: ["x"], op: "replace" },
     ]) {
@@ -96,7 +107,10 @@ describe("pss-json adapter", () => {
       path: task.path,
       edits: [
         {
-          new_content: ['    greeting = "Hi"', '    msg = f"{greeting}, {name}"'],
+          new_content: [
+            '    greeting = "Hi"',
+            '    msg = f"{greeting}, {name}"',
+          ],
           op: "replace",
           target: anchor,
         },
@@ -137,12 +151,18 @@ describe("omp-dsl adapter", () => {
   it("applies INS.HEAD and INS.TAIL", () => {
     const prepend = taskById("prepend-header");
     expect(
-      ompFormat.apply("[greet.py#A1B2]\nINS.HEAD:\n+# generated header\n", prepend.initial).text
+      ompFormat.apply(
+        "[greet.py#A1B2]\nINS.HEAD:\n+# generated header\n",
+        prepend.initial
+      ).text
     ).toBe(prepend.expected);
 
     const append = taskById("append-call");
     expect(
-      ompFormat.apply('[greet.py#A1B2]\nINS.TAIL:\n+greet("everyone")\n', append.initial).text
+      ompFormat.apply(
+        '[greet.py#A1B2]\nINS.TAIL:\n+greet("everyone")\n',
+        append.initial
+      ).text
     ).toBe(append.expected);
   });
 
@@ -160,7 +180,9 @@ describe("task fixtures", () => {
     for (const task of EDIT_TASKS) {
       expect(task.expected).not.toBe(task.initial);
       expect(pssFormat.render(task.path, task.initial).user).toContain("#");
-      expect(ompFormat.render(task.path, task.initial).user).toContain(`[${task.path}#`);
+      expect(ompFormat.render(task.path, task.initial).user).toContain(
+        `[${task.path}#`
+      );
     }
   });
 });
@@ -168,7 +190,10 @@ describe("task fixtures", () => {
 describe("pss-json mirrors the real edit_file tool", () => {
   const fixture = () => taskById("single-line-to-two");
   const anchorAt = (lineNumber: number): string =>
-    anchorOf(pssFormat.render(fixture().path, fixture().initial).user, lineNumber);
+    anchorOf(
+      pssFormat.render(fixture().path, fixture().initial).user,
+      lineNumber
+    );
 
   it("renders the read_file surface with file_hash and lines range", () => {
     const task = fixture();
@@ -225,7 +250,10 @@ describe("pss-json mirrors the real edit_file tool", () => {
         {
           op: "replace",
           target: anchor,
-          new_content: ['    greeting = "Hi"', '    msg = f"{greeting}, {name}"'],
+          new_content: [
+            '    greeting = "Hi"',
+            '    msg = f"{greeting}, {name}"',
+          ],
         },
       ],
     };
@@ -374,7 +402,7 @@ const expectedGrokAnchor = (
   const encode = (hash: number, length: number): string => {
     let out = "";
     for (let index = 0; index < length; index += 1) {
-      out += String.fromCodePoint((((hash >>> (index * 8)) % 26) + 0x61));
+      out += String.fromCodePoint(((hash >>> (index * 8)) % 26) + 0x61);
     }
     return out;
   };
@@ -444,7 +472,9 @@ describe("grok-json adapter", () => {
     const task = taskById("delete-middle-line");
     const rendered = grokFormat.render(task.path, task.initial).user;
     const reply = JSON.stringify({
-      edits: [{ anchor: grokAnchorOf(rendered, 2), content: "", op: "replace" }],
+      edits: [
+        { anchor: grokAnchorOf(rendered, 2), content: "", op: "replace" },
+      ],
     });
 
     expect(grokFormat.apply(reply, task.initial).text).toBe(task.expected);
@@ -643,14 +673,21 @@ describe("omp-json adapter", () => {
     // The while block spans lines 5-11; line 4 (`let attempt`) is outside the
     // block and must survive.
     const lines = task.initial.replace(/\n$/u, "").split("\n");
-    const expected = [...lines.slice(0, 4), ...reply.includes("for") ? [
-      "  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {",
-      "    const response = await fetch(url);",
-      "    if (response.ok) {",
-      "      return response;",
-      "    }",
-      "  }",
-    ] : [], ...lines.slice(11)].join("\n") + "\n";
+    const expected =
+      [
+        ...lines.slice(0, 4),
+        ...(reply.includes("for")
+          ? [
+              "  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {",
+              "    const response = await fetch(url);",
+              "    if (response.ok) {",
+              "      return response;",
+              "    }",
+              "  }",
+            ]
+          : []),
+        ...lines.slice(11),
+      ].join("\n") + "\n";
 
     expect(ompJsonFormat.apply(reply, task.initial).text).toBe(expected);
   });
@@ -707,11 +744,9 @@ describe("omp-json adapter", () => {
     // delete_block removes the while block (5-11); the insert lands after
     // original line 4.
     const lines = task.initial.replace(/\n$/u, "").split("\n");
-    const expected = [
-      ...lines.slice(0, 4),
-      "  // setup",
-      ...lines.slice(11),
-    ].join("\n") + "\n";
+    const expected =
+      [...lines.slice(0, 4), "  // setup", ...lines.slice(11)].join("\n") +
+      "\n";
 
     expect(ompJsonFormat.apply(reply, task.initial).text).toBe(expected);
   });

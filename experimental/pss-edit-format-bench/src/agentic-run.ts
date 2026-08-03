@@ -31,7 +31,7 @@ interface OptionState {
   tasks: readonly string[] | undefined;
 }
 
-interface Options extends Readonly<OptionState> {}
+type Options = Readonly<OptionState>;
 
 const valueAfter = (argv: readonly string[], index: number): string => {
   const value = argv[index + 1];
@@ -173,7 +173,7 @@ const main = async (): Promise<void> => {
     dirname(import.meta.filename),
     options.evidenceDir
   );
-  const transcriptPath = joinPath(evidenceDir, "agentic-m3-pss-runs10.jsonl");
+  const transcriptPath = resolve(evidenceDir, "agentic-m3-pss-runs10.jsonl");
   await mkdir(evidenceDir, { recursive: true });
   await writeFile(transcriptPath, "", "utf8");
   const writeTrace = createAgenticTraceWriter(transcriptPath);
@@ -217,15 +217,13 @@ const main = async (): Promise<void> => {
       );
     }
   );
+  const report = buildAgenticReport(attempts);
   await writeFile(
-    joinPath(evidenceDir, "agentic-m3-pss-runs10.md"),
-    `${buildAgenticReport(attempts)}\n`,
+    resolve(evidenceDir, "agentic-m3-pss-runs10.md"),
+    `${report}\n`,
     "utf8"
   );
-  process.stdout.write(`\n${buildAgenticReport(attempts)}\n`);
+  process.stdout.write(`\n${report}\n`);
 };
-
-const joinPath = (directory: string, filename: string): string =>
-  resolve(directory, filename);
 
 await main();

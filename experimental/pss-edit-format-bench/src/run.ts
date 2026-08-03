@@ -2,20 +2,24 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import { config as loadDotenv } from "dotenv";
 import { EDIT_FORMATS, type EditFormat } from "./formats";
-import { buildReport, type Attempt } from "./report";
-import { runWithRecovery, type RecoveryModelCaller } from "./recovery";
-import { EDIT_TASKS, type EditTask } from "./tasks";
+import { type RecoveryModelCaller, runWithRecovery } from "./recovery";
+import { type Attempt, buildReport } from "./report";
 import { extractFingerprint } from "./stats";
+import { EDIT_TASKS, type EditTask } from "./tasks";
 
 loadDotenv({ override: false, quiet: true });
 
-const DEFAULT_MODELS = ["deepseek-ai/deepseek-v4-flash", "minimaxai/minimax-m3"];
+const DEFAULT_MODELS = [
+  "deepseek-ai/deepseek-v4-flash",
+  "minimaxai/minimax-m3",
+];
 const DEFAULT_RUNS = 3;
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_REQUEST_ATTEMPTS = 4;
 const DEFAULT_RECOVERY_ATTEMPTS = 0;
 const RETRY_BASE_DELAY_MS = 1500;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const UNSUPPORTED_TEMPERATURE_PATTERN = /only supports temperature/iu;
 
 /**
  * Runs thunks through a bounded pool. Free-tier endpoints reject or stall when
@@ -59,44 +63,52 @@ function parseArguments(argv: readonly string[]) {
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (flag === "--models" && value) {
-      options.models = value.split(",").map((entry) => entry.trim());
-      index += 1;
-    } else if (flag === "--formats" && value) {
-      const names = value.split(",").map((entry) => entry.trim());
-      const unknown = names.filter(
-        (name) => !EDIT_FORMATS.some((format) => format.name === name)
-      );
-      if (unknown.length > 0) {
-        throw new Error(`Unknown format(s): ${unknown.join(", ")}`);
-      }
-      options.formats = EDIT_FORMATS.filter((format) =>
-        names.includes(format.name)
-      );
-      index += 1;
-    } else if (flag === "--runs" && value) {
-      options.runs = Number.parseInt(value, 10);
-      index += 1;
-    } else if (flag === "--concurrency" && value) {
-      options.concurrency = Number.parseInt(value, 10);
-      index += 1;
-    } else if (flag === "--request-attempts" && value) {
-      options.requestAttempts = Number.parseInt(value, 10);
-      index += 1;
-    } else if (flag === "--request-timeout-ms" && value) {
-      options.requestTimeoutMs = Number.parseInt(value, 10);
-      index += 1;
-    } else if (flag === "--recovery" && value) {
-      options.recoveryAttempts = Number.parseInt(value, 10);
-      index += 1;
-    } else if (flag === "--tasks" && value) {
-      options.tasks = value.split(",").map((entry) => entry.trim());
-      index += 1;
-    } else if (flag === "--disable-thinking") {
+    if (flag === "--disable-thinking") {
       options.disableThinking = true;
-    } else {
+      continue;
+    }
+    if (!value) {
       throw new Error(`Unknown option: ${flag}`);
     }
+    switch (flag) {
+      case "--models":
+        options.models = value.split(",").map((entry) => entry.trim());
+        break;
+      case "--formats": {
+        const names = value.split(",").map((entry) => entry.trim());
+        const unknown = names.filter(
+          (name) => !EDIT_FORMATS.some((format) => format.name === name)
+        );
+        if (unknown.length > 0) {
+          throw new Error(`Unknown format(s): ${unknown.join(", ")}`);
+        }
+        options.formats = EDIT_FORMATS.filter((format) =>
+          names.includes(format.name)
+        );
+        break;
+      }
+      case "--runs":
+        options.runs = Number.parseInt(value, 10);
+        break;
+      case "--concurrency":
+        options.concurrency = Number.parseInt(value, 10);
+        break;
+      case "--request-attempts":
+        options.requestAttempts = Number.parseInt(value, 10);
+        break;
+      case "--request-timeout-ms":
+        options.requestTimeoutMs = Number.parseInt(value, 10);
+        break;
+      case "--recovery":
+        options.recoveryAttempts = Number.parseInt(value, 10);
+        break;
+      case "--tasks":
+        options.tasks = value.split(",").map((entry) => entry.trim());
+        break;
+      default:
+        throw new Error(`Unknown option: ${flag}`);
+    }
+    index += 1;
   }
   if (!Number.isInteger(options.runs) || options.runs < 1) {
     throw new Error("--runs must be a positive integer");
@@ -136,7 +148,10 @@ const classifyFailure = (
   if (produced === undefined) {
     return "unparsable: no output";
   }
-  if (produced.replaceAll(/[ \t]+$/gmu, "") === expected.replaceAll(/[ \t]+$/gmu, "")) {
+  if (
+    produced.replaceAll(/[ \t]+$/gmu, "") ===
+    expected.replaceAll(/[ \t]+$/gmu, "")
+  ) {
     return "trailing-whitespace";
   }
   if (produced.replaceAll(/\s+/gu, "") === expected.replaceAll(/\s+/gu, "")) {
@@ -175,51 +190,60 @@ async function runAttempt({
   const rendered = format.render(task.path, task.initial);
   const startedAt = Date.now();
   let lastError = "";
-  let fixedTemperature = false;
+  let temperatureOptions: { readonly temperature?: number } = {
+    temperature: 0,
+  };
+  let unsupportedTemperaturePattern: RegExp | undefined =
+    UNSUPPORTED_TEMPERATURE_PATTERN;
+  const thinkingOptions = (
+    [
+      {},
+      {
+        providerOptions: {
+          bench: { chat_template_kwargs: { enable_thinking: false } },
+        },
+      },
+    ] as const
+  )[Number(disableThinking)];
   const userPrompt = `${rendered.user}\n\nTask: ${task.instruction}`;
   const callModel: RecoveryModelCaller = async (messages) => {
     const result = await generateText({
       abortSignal: AbortSignal.timeout(requestTimeoutMs),
       instructions: rendered.system,
       messages: messages.map((message) => {
-        if (message.role === "assistant" && "toolCallId" in message) {
-          return {
-            role: "assistant",
-            content: [
-              { type: "text", text: message.content },
-              {
-                type: "tool-call",
-                toolCallId: message.toolCallId,
-                toolName: message.toolName,
-                input: { payload: message.content },
-              },
-            ],
-          };
+        switch (message.role) {
+          case "assistant":
+            return {
+              role: "assistant",
+              content: [
+                { type: "text", text: message.content },
+                {
+                  type: "tool-call",
+                  toolCallId: message.toolCallId,
+                  toolName: message.toolName,
+                  input: { payload: message.content },
+                },
+              ],
+            };
+          case "tool":
+            return {
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: message.toolCallId,
+                  toolName: message.toolName,
+                  output: { type: "text", value: message.output },
+                },
+              ],
+            };
+          default:
+            return { content: message.content, role: message.role };
         }
-        if (message.role === "tool") {
-          return {
-            role: "tool",
-            content: [
-              {
-                type: "tool-result",
-                toolCallId: message.toolCallId,
-                toolName: message.toolName,
-                output: { type: "text", value: message.output },
-              },
-            ],
-          };
-        }
-        return { content: message.content, role: message.role };
       }),
       model: provider(model),
-      ...(disableThinking
-        ? {
-            providerOptions: {
-              bench: { chat_template_kwargs: { enable_thinking: false } },
-            },
-          }
-        : {}),
-      ...(fixedTemperature ? {} : { temperature: 0 }),
+      ...thinkingOptions,
+      ...temperatureOptions,
     });
     return { text: result.text };
   };
@@ -242,10 +266,13 @@ async function runAttempt({
           toolName: format.name,
           userPrompt,
         });
-        const benchMetadata = null;
+        const [failure = "unrecovered"] = recovery.errorSequence;
+        const recoveryFailure = ([{ failure }, {}] as const)[
+          Number(recovery.recovered)
+        ];
         return {
           durationMs: Date.now() - startedAt,
-          fingerprint: benchMetadata,
+          fingerprint: null,
           format: format.name,
           model,
           outputTokens: 0,
@@ -261,9 +288,7 @@ async function runAttempt({
           run,
           task: task.id,
           tolerances: [],
-          ...(recovery.recovered
-            ? {}
-            : { failure: recovery.errorSequence[0] ?? "unrecovered" }),
+          ...recoveryFailure,
         };
       }
       const result = await generateText({
@@ -276,17 +301,11 @@ async function runAttempt({
           },
         ],
         model: provider(model),
-        ...(disableThinking
-          ? {
-              providerOptions: {
-                bench: { chat_template_kwargs: { enable_thinking: false } },
-              },
-            }
-          : {}),
+        ...thinkingOptions,
         // Prefer temperature 0 for reproducibility, but some models reject any
         // value but their default; those are measured at that default instead
         // of being dropped from the matrix.
-        ...(fixedTemperature ? {} : { temperature: 0 }),
+        ...temperatureOptions,
       });
       const outcome = format.apply(result.text, task.initial, task.path);
       const passed = outcome.text === task.expected;
@@ -317,8 +336,9 @@ async function runAttempt({
       };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      if (!fixedTemperature && /only supports temperature/iu.test(lastError)) {
-        fixedTemperature = true;
+      if (unsupportedTemperaturePattern?.test(lastError)) {
+        temperatureOptions = {};
+        unsupportedTemperaturePattern = undefined;
         tries -= 1;
       }
     }
@@ -342,7 +362,7 @@ async function runAttempt({
 const options = parseArguments(process.argv.slice(2));
 const apiKey = process.env.AI_API_KEY;
 const baseURL = process.env.AI_BASE_URL;
-if (!apiKey || !baseURL) {
+if (!(apiKey && baseURL)) {
   throw new Error("AI_API_KEY and AI_BASE_URL are required");
 }
 const provider = createOpenAICompatible({

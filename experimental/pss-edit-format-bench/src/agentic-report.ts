@@ -34,8 +34,8 @@ export const buildAgenticReport = (
     `| transport failures | ${transportFailures} |`,
     `| tool failures | ${toolFailures} |`,
     `| verification failures | ${verificationFailures} |`,
-    `| input tokens | ${sum(attempts.map((attempt) => attempt.inputTokens))} |`,
-    `| output tokens | ${sum(attempts.map((attempt) => attempt.outputTokens))} |`,
+    `| input tokens | ${attempts.reduce((total, attempt) => total + (attempt.inputTokens ?? 0), 0)} |`,
+    `| output tokens | ${attempts.reduce((total, attempt) => total + (attempt.outputTokens ?? 0), 0)} |`,
     "",
     renderSlice("language", attempts, (task) => task.metadata.language),
     "",
@@ -82,6 +82,3 @@ const renderSlice = (
     ...rows,
   ].join("\n");
 };
-
-const sum = (values: readonly (number | undefined)[]): number =>
-  values.reduce<number>((total, value) => total + (value ?? 0), 0);

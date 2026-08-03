@@ -6,28 +6,33 @@
  */
 export interface CellStats {
   readonly attempts: number;
+  readonly ciHigh: number;
+  readonly ciLow: number;
   readonly passed: number;
   readonly rate: number;
   readonly se: number;
-  readonly ciLow: number;
-  readonly ciHigh: number;
 }
 
 export interface DeltaStats {
-  readonly pairs: number;
-  readonly delta: number;
-  readonly se: number;
-  readonly ciLow: number;
   readonly ciHigh: number;
+  readonly ciLow: number;
+  readonly delta: number;
+  readonly pairs: number;
+  readonly se: number;
 }
 
 const mulberry32 = (seed: number): (() => number) => {
+  // biome-ignore lint/suspicious/noBitwiseOperators: Mulberry32 requires unsigned 32-bit coercion.
   let state = seed >>> 0;
   return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
+    // biome-ignore lint/suspicious/noBitwiseOperators: Mulberry32 requires unsigned 32-bit coercion.
+    state = (state + 0x6d_2b_79_f5) >>> 0;
     let t = state;
+    // biome-ignore lint/suspicious/noBitwiseOperators: These shifts and masks define Mulberry32.
     t = Math.imul(t ^ (t >>> 15), t | 1);
+    // biome-ignore lint/suspicious/noBitwiseOperators: These shifts and masks define Mulberry32.
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    // biome-ignore lint/suspicious/noBitwiseOperators: Mulberry32 returns an unsigned 32-bit fraction.
     return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
   };
 };
@@ -57,8 +62,10 @@ const bootstrapMeans = (
   const means: number[] = [];
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     let sum = 0;
-    for (let index = 0; index < values.length; index += 1) {
+    let sample = 0;
+    while (sample < values.length) {
       sum += values[Math.floor(random() * values.length)] as number;
+      sample += 1;
     }
     means.push(sum / values.length);
   }
@@ -105,7 +112,12 @@ export const pairedDelta = (
   for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
     const left = a[index];
     const right = b[index];
-    if (left !== null && left !== undefined && right !== null && right !== undefined) {
+    if (
+      left !== null &&
+      left !== undefined &&
+      right !== null &&
+      right !== undefined
+    ) {
       diffs.push(Number(left) - Number(right));
     }
   }

@@ -107,13 +107,11 @@ export const runWithRecovery = async ({
       toolCallId,
       toolName,
     });
+    let currentFile = "";
     if (outcome.error === undefined && outcome.text !== undefined) {
       current = outcome.text;
+      currentFile = `\n\n${renderFile(path, outcome.text)}`;
     }
-    const currentFile =
-      outcome.error === undefined && outcome.text !== undefined
-        ? `\n\n${renderFile(path, outcome.text)}`
-        : "";
     messages.push({
       output: `${outcome.error ?? outcome.toolOutput ?? ""}${currentFile}`,
       role: "tool",

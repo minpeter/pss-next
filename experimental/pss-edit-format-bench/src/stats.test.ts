@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  bootstrapCell,
-  extractFingerprint,
-  pairedDelta,
-} from "./stats";
+import { bootstrapCell, extractFingerprint, pairedDelta } from "./stats";
 
 describe("extractFingerprint", () => {
   it("reads system_fingerprint from a response body", () => {
@@ -69,20 +65,14 @@ describe("pairedDelta", () => {
   });
 
   it("reports a perfect delta when one side always wins", () => {
-    const stats = pairedDelta(
-      [true, true, true],
-      [false, false, false]
-    );
+    const stats = pairedDelta([true, true, true], [false, false, false]);
     expect(stats.delta).toBe(1);
     expect(stats.ciLow).toBe(1);
     expect(stats.ciHigh).toBe(1);
   });
 
   it("drops pairs where either side is unscored", () => {
-    const stats = pairedDelta(
-      [true, null, true],
-      [false, false, null]
-    );
+    const stats = pairedDelta([true, null, true], [false, false, null]);
     expect(stats.pairs).toBe(1);
     expect(stats.delta).toBe(1);
   });

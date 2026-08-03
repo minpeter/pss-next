@@ -27,11 +27,11 @@ const outputText = async (
   if (typeof output === "string") {
     return output;
   }
-  let text = "";
+  const chunks: string[] = [];
   for await (const chunk of output) {
-    text += chunk;
+    chunks.push(chunk);
   }
-  return text;
+  return chunks.join("");
 };
 
 export const createAgenticTools = (options: AgenticToolsOptions) => {

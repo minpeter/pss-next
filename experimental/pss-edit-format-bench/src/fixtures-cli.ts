@@ -20,8 +20,7 @@ const optionValue = (
   if (index < 0) {
     return fallback;
   }
-  const raw = args[index + 1];
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = Number(args[index + 1]);
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new Error(`${name} must be a positive safe integer`);
   }

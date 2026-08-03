@@ -89,7 +89,7 @@ const errorDetailsJson = (error: unknown): string => {
   const details = Object.fromEntries(
     Object.getOwnPropertyNames(error).map((key) => [
       key,
-      (error as unknown as Record<string, unknown>)[key],
+      Reflect.get(error, key),
     ])
   );
   return stringify(details);

@@ -62,11 +62,6 @@ const pssReply = (
   return JSON.stringify({ path: task.path, edits: resolved });
 };
 
-/**
- * Canonical correct edits per new task, expressed once in pss-json (anchors
- * resolved from the render) and once in omp-dsl (line numbers). Keys are line
- * numbers so the table stays readable.
- */
 const CANONICAL: Record<
   string,
   { pss?: readonly Record<string, unknown>[]; omp: string }
@@ -75,7 +70,11 @@ const CANONICAL: Record<
     pss: [
       { op: "replace", target: 1, new_content: ["function tokenize(input) {"] },
       { op: "replace", target: 4, new_content: ["const out = tokenize(raw);"] },
-      { op: "replace", target: 5, new_content: ["console.log(tokenize(out));"] },
+      {
+        op: "replace",
+        target: 5,
+        new_content: ["console.log(tokenize(out));"],
+      },
     ],
     omp: "SWAP 1.=5:\n+function tokenize(input) {\n+  return input.trim();\n+}\n+const out = tokenize(raw);\n+console.log(tokenize(out));",
   },
@@ -126,9 +125,7 @@ const CANONICAL: Record<
     omp: "SWAP 30.=38:\n+export const condensed = 1;",
   },
   "json-key-rename": {
-    pss: [
-      { op: "replace", target: 3, new_content: ['  "release": "1.0.0",'] },
-    ],
+    pss: [{ op: "replace", target: 3, new_content: ['  "release": "1.0.0",'] }],
     omp: 'SWAP 3.=3:\n+  "release": "1.0.0",',
   },
   "py-dedent-block": {
@@ -169,7 +166,11 @@ const CANONICAL: Record<
   },
   "rust-fn-rename": {
     pss: [
-      { op: "replace", target: 1, new_content: ["fn compute(x: i32) -> i32 {"] },
+      {
+        op: "replace",
+        target: 1,
+        new_content: ["fn compute(x: i32) -> i32 {"],
+      },
       { op: "replace", target: 6, new_content: ["    compute(21)"] },
     ],
     omp: "SWAP 1.=1:\n+fn compute(x: i32) -> i32 {\nSWAP 6.=6:\n+    compute(21)",
