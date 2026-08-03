@@ -19,11 +19,7 @@ const editSchema = z
     first: z.string().optional(),
     /** Inclusive range end for replace. Pair with `first`. */
     last: z.string().optional(),
-    /** Replacement or inserted lines. Never empty. */
-    new_content: z.union([
-      z.string().min(1),
-      z.array(z.string()).min(1),
-    ]),
+    new_content: z.union([z.string().min(1), z.array(z.string()).min(1)]),
   })
   .strict();
 const END_OF_LINE_PATTERN = /\r?\n/u;
@@ -48,18 +44,13 @@ interface ResolvedEdit {
 function replacementLines(
   value: string | readonly string[]
 ): readonly string[] {
-  if (typeof value !== "string") {
-    if (value.length === 0) {
-      throw new Error(
-        "new_content must not be empty; provide at least one line."
-      );
-    }
-    return value;
-  }
-  if (value === "") {
+  if (value.length === 0) {
     throw new Error(
       "new_content must not be empty; provide at least one line."
     );
+  }
+  if (typeof value !== "string") {
+    return value;
   }
   const lines = value.split(END_OF_LINE_PATTERN);
   return value.endsWith("\n") ? lines.slice(0, -1) : lines;
@@ -70,62 +61,62 @@ function resolveEdit(
   lines: readonly string[],
   order: number
 ): ResolvedEdit {
-  if (edit.op === "replace") {
-    if (edit.first !== undefined || edit.last !== undefined) {
-      if (edit.target !== undefined) {
-        throw new Error(
-          "replace accepts either target for one line or first+last for a range, not both."
-        );
-      }
-      if (edit.first === undefined) {
-        throw new Error(
-          `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`
-        );
-      }
-      if (edit.last === undefined) {
-        throw new Error(
-          `replace range requires last; received only first=${edit.first}. Use target for one line, or first+last for an inclusive range.`
-        );
-      }
-      const index = resolveLineAnchor(edit.first, lines);
-      const end = resolveLineAnchor(edit.last, lines);
-      if (end < index) {
-        throw new Error(
-          `replace last precedes first: ${edit.first}..${edit.last}`
-        );
-      }
-      return {
-        end,
-        index,
-        lines: replacementLines(edit.new_content),
-        op: edit.op,
-        order,
-      };
-    }
-    if (edit.target === undefined) {
-      throw new Error(
-        "replace requires target: LINE#ID for one line, or first+last for an inclusive range."
-      );
-    }
-    const index = resolveLineAnchor(edit.target, lines);
+  if (edit.op !== "replace") {
+    const anchorIndex =
+      edit.target === undefined
+        ? undefined
+        : resolveLineAnchor(edit.target, lines);
+    const index =
+      edit.op === "append"
+        ? (anchorIndex ?? lines.length - 1) + 1
+        : (anchorIndex ?? 0);
     return {
-      end: index,
+      end: index - 1,
       index,
       lines: replacementLines(edit.new_content),
       op: edit.op,
       order,
     };
   }
-  const anchorIndex =
-    edit.target === undefined
-      ? undefined
-      : resolveLineAnchor(edit.target, lines);
-  const index =
-    edit.op === "append"
-      ? (anchorIndex ?? lines.length - 1) + 1
-      : (anchorIndex ?? 0);
+  if (edit.first !== undefined || edit.last !== undefined) {
+    if (edit.target !== undefined) {
+      throw new Error(
+        "replace accepts either target for one line or first+last for a range, not both."
+      );
+    }
+    if (edit.first === undefined) {
+      throw new Error(
+        `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    if (edit.last === undefined) {
+      throw new Error(
+        `replace range requires last; received only first=${edit.first}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    const index = resolveLineAnchor(edit.first, lines);
+    const end = resolveLineAnchor(edit.last, lines);
+    if (end < index) {
+      throw new Error(
+        `replace last precedes first: ${edit.first}..${edit.last}`
+      );
+    }
+    return {
+      end,
+      index,
+      lines: replacementLines(edit.new_content),
+      op: edit.op,
+      order,
+    };
+  }
+  if (edit.target === undefined) {
+    throw new Error(
+      "replace requires target: LINE#ID for one line, or first+last for an inclusive range."
+    );
+  }
+  const index = resolveLineAnchor(edit.target, lines);
   return {
-    end: index - 1,
+    end: index,
     index,
     lines: replacementLines(edit.new_content),
     op: edit.op,
@@ -236,10 +227,10 @@ export function createEditFileTool(
     inputSchema,
     execute: async ({ path, expected_file_hash: expectedHash, edits }) => {
       for (const edit of edits) {
-        if (edit.op === "replace") {
-          continue;
-        }
-        if (edit.first !== undefined || edit.last !== undefined) {
+        if (
+          edit.op !== "replace" &&
+          (edit.first !== undefined || edit.last !== undefined)
+        ) {
           throw new Error(
             `${edit.op} does not support first/last; it inserts at an optional target anchor.`
           );

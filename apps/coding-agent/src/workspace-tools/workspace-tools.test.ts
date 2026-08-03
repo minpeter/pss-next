@@ -25,15 +25,18 @@ const addedThirdLinePattern = /\+3#[A-Z]+\|export const third = 3;/u;
 const freshAnchorPattern = /2#[A-Z]+/u;
 const directoryTruncationPattern = /truncated|showing 1000 of 1005/iu;
 const fileHashPattern = /file_hash: ([0-9a-f]{8})/u;
+const firstPattern = /first/u;
 const firstLineAnchorPattern = /1#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
 const grepResultPattern = /src\/new\.ts:1#[ZPMQVRWSNKTXJBYH]{2}\|needle/u;
 const intersectPattern = /intersect|overlap/iu;
+const newContentPattern = /new_content/u;
 const outsideWorkspacePattern = /outside the workspace/u;
 const phantomLinePattern = /3#[ZPMQVRWSNKTXJBYH]{2}/u;
 const secondLineAnchorPattern = /2#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
 const skippedPattern = /skipped/u;
 const staleFileHashPattern = /Stale file hash/u;
 const symlinkPattern = /symlink/u;
+const targetPattern = /target/u;
 const truncatedMarkerPattern = /\n\.\.\. truncated (\d+) bytes \.\.\.\n/u;
 const truncatedPattern = /truncated|\+/u;
 const unsupportedEndPattern = /end/u;
@@ -262,7 +265,9 @@ describe("workspace coding tools", () => {
     await expect(
       edit(
         {
-          edits: [{ new_content: ["replacement"], op: "replace", target: anchor }],
+          edits: [
+            { new_content: ["replacement"], op: "replace", target: anchor },
+          ],
           expected_file_hash: fileHash,
           path: "src/example.ts",
         },
@@ -407,7 +412,10 @@ describe("workspace coding tools", () => {
     const tools = createWorkspaceTools({ workspace });
     const edit = executableTool(tools, "edit_file");
     await edit(
-      { edits: [{ new_content: ["first"], op: "append" }], path: "src/empty.ts" },
+      {
+        edits: [{ new_content: ["first"], op: "append" }],
+        path: "src/empty.ts",
+      },
       executionOptions
     );
     await expect(
@@ -502,7 +510,11 @@ describe("workspace coding tools", () => {
     await edit(
       {
         edits: [
-          { new_content: ["export const second = 3;"], op: "replace", target: anchor },
+          {
+            new_content: ["export const second = 3;"],
+            op: "replace",
+            target: anchor,
+          },
         ],
         path: "src/example.ts",
       },
@@ -563,7 +575,7 @@ describe("workspace coding tools", () => {
         },
         executionOptions
       )
-    ).rejects.toThrow(/first/u);
+    ).rejects.toThrow(firstPattern);
 
     await expect(
       edit(
@@ -573,7 +585,7 @@ describe("workspace coding tools", () => {
         },
         executionOptions
       )
-    ).rejects.toThrow(/target/u);
+    ).rejects.toThrow(targetPattern);
   });
 
   it("names new_content as the payload field and rejects empty content", async () => {
@@ -592,7 +604,11 @@ describe("workspace coding tools", () => {
     await edit(
       {
         edits: [
-          { new_content: ["export const second = 3;"], op: "replace", target: anchor },
+          {
+            new_content: ["export const second = 3;"],
+            op: "replace",
+            target: anchor,
+          },
         ],
         path: "src/example.ts",
       },
@@ -618,7 +634,7 @@ describe("workspace coding tools", () => {
         },
         executionOptions
       )
-    ).rejects.toThrow(/new_content/u);
+    ).rejects.toThrow(newContentPattern);
   });
 
   it("rejects a replace that mixes target with a first/last range", async () => {
@@ -641,13 +657,19 @@ describe("workspace coding tools", () => {
       edit(
         {
           edits: [
-            { first, last: first, new_content: ["x"], op: "replace", target: second },
+            {
+              first,
+              last: first,
+              new_content: ["x"],
+              op: "replace",
+              target: second,
+            },
           ],
           path: "src/example.ts",
         },
         executionOptions
       )
-    ).rejects.toThrow(/target/u);
+    ).rejects.toThrow(targetPattern);
 
     await expect(
       readFile(join(workspace, "src", "example.ts"), "utf8")

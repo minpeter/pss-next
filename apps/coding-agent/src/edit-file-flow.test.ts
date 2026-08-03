@@ -95,7 +95,11 @@ const scenarios: Scenario[] = [
     name: "single-line replace highlights only the changed token",
     initial: "export const first = 1;\nexport const second = 2;\n",
     buildEdits: (anchor) => [
-      { new_content: ["export const second = 3;"], op: "replace", target: anchor(2) },
+      {
+        new_content: ["export const second = 3;"],
+        op: "replace",
+        target: anchor(2),
+      },
     ],
     expectedFile: "export const first = 1;\nexport const second = 3;\n",
     useExpectedFileHash: true,
@@ -158,7 +162,11 @@ const scenarios: Scenario[] = [
     name: "partial token change tints the shared region and marks the delta",
     initial: 'const name = "alpha";\n',
     buildEdits: (anchor) => [
-      { new_content: ['const name = "alpine";'], op: "replace", target: anchor(1) },
+      {
+        new_content: ['const name = "alpine";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
     expectedFile: 'const name = "alpine";\n',
     expectRender: {
@@ -215,7 +223,6 @@ const scenarios: Scenario[] = [
     ].join("\n"),
     expectRender: {
       contains: [
-        // three hunks: two replacements and the trailing append
         `${REMOVE_FG}-3 `,
         `${ADD_FG}+3 `,
         `${REMOVE_FG}-5 `,
@@ -377,7 +384,11 @@ const scenarios: Scenario[] = [
     name: "control characters in content are sanitized before rendering",
     initial: 'const x = "a\u0007b";\n',
     buildEdits: (anchor) => [
-      { new_content: ['const x = "a\u0007c";'], op: "replace", target: anchor(1) },
+      {
+        new_content: ['const x = "a\u0007c";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
     expectedFile: 'const x = "a\u0007c";\n',
     expectRender: {

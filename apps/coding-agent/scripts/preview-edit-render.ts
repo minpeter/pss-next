@@ -1,15 +1,6 @@
-/**
- * Visual preview of the edit_file hashline diff renderer.
- * allow: SIZE_OK — self-contained dev showcase script; most of its size is
- * the inline example fixture table, and it is never imported by src/.
- *
- * Runs real edit_file calls against fixture files in a temp workspace, then
- * prints both the raw tool output (diff section) and the TUI-rendered pretty
- * block with true ANSI colors, so the highlighting can be eyeballed in a
- * real terminal:
- *
- *   pnpm --filter @minpeter/pss-coding-agent preview:edit
- */
+// allow: SIZE_OK — self-contained dev showcase script; most of its size is the
+// inline example fixture table, and it is never imported by src/.
+// Visual preview of the edit_file hashline diff renderer: `pnpm preview:edit`.
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,7 +78,11 @@ const examples: Example[] = [
     fileName: "counters.ts",
     initial: "export const first = 1;\nexport const second = 2;\n",
     buildEdits: (anchor) => [
-      { new_content: ["export const second = 3;"], op: "replace", target: anchor(2) },
+      {
+        new_content: ["export const second = 3;"],
+        op: "replace",
+        target: anchor(2),
+      },
     ],
   },
   {
@@ -122,7 +117,11 @@ const examples: Example[] = [
     fileName: "names.ts",
     initial: 'const name = "alpha";\n',
     buildEdits: (anchor) => [
-      { new_content: ['const name = "alpine";'], op: "replace", target: anchor(1) },
+      {
+        new_content: ['const name = "alpine";'],
+        op: "replace",
+        target: anchor(1),
+      },
     ],
   },
   {
@@ -204,7 +203,9 @@ const examples: Example[] = [
         first: anchor(14),
       },
       {
-        new_content: ['export const DEFAULT_BASE_URL = "https://api.example.com";'],
+        new_content: [
+          'export const DEFAULT_BASE_URL = "https://api.example.com";',
+        ],
         op: "replace",
         target: anchor(5),
       },

@@ -55,38 +55,6 @@ const formatEditHunk = (edit: EditOp): string =>
 const summarizeEdits = (edits: EditOp[]): string =>
   edits.map(formatEditHunk).join("\n\n");
 
-const looksLikeHeaderLine = (line: string): boolean => {
-  const trimmed = line.trim();
-  return (
-    trimmed.startsWith("====") &&
-    (trimmed.endsWith("====") || trimmed.includes("===="))
-  );
-};
-
-const buildDisplayContent = (params: {
-  content: string;
-  stripHeaders: boolean;
-}): string => {
-  const lines = normalizedLines(params.content);
-  if (!params.stripHeaders) {
-    return lines.join("\n");
-  }
-  const filtered: string[] = [];
-  let headerRun = 0;
-  for (const line of lines) {
-    if (looksLikeHeaderLine(line)) {
-      headerRun += 1;
-      continue;
-    }
-    if (headerRun > 0 && line.trim().length === 0) {
-      continue;
-    }
-    headerRun = 0;
-    filtered.push(line);
-  }
-  return filtered.join("\n");
-};
-
 const getReadHeaderSuffix = (input: Record<string, unknown>): string => {
   const parts: string[] = [];
   if (numberField(input, "offset") !== undefined) {
@@ -159,7 +127,7 @@ export const renderWriteFile = (
   view.setPrettyBlock(
     `**write** \`${path}\``,
     typeof output === "string" && output.startsWith("OK - wrote")
-      ? buildDisplayContent({ content, stripHeaders: false })
+      ? normalizedLines(content).join("\n")
       : ""
   );
 };
@@ -197,7 +165,7 @@ export const renderEditFile = (
 
   const editsValue = input.edits;
   const edits = Array.isArray(editsValue) ? editsValue.filter(isEditOp) : [];
-  const body = edits.length > 0 ? summarizeEdits(edits) : "";
+  const body = summarizeEdits(edits);
 
   view.setPrettyBlock(`**edit** \`${path}\``, body, {
     allowAnsi: true,
