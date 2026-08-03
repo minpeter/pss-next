@@ -1,6 +1,6 @@
 # PSS benchmark shared harness utilities
 
-Benchmark-agnostic machinery shared by the packages under `benchmarks/`. A
+Benchmark-agnostic machinery shared by the packages under `experimental/` (or `benchmarks/` for graduated benchmarks). A
 benchmark package should only own its harness adapter, fixture pins, and
 profile definitions — everything reusable lives here.
 

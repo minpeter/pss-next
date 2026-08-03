@@ -9,6 +9,7 @@ import {
   StartRateLimiter,
 } from "@vercel/agent-eval";
 import { config as loadDotenv } from "dotenv";
+import { agentsMdFiles, resolveExperimentName } from "./agents-md.mjs";
 import { resolveNextVersion, resolveStartsPerMinute } from "./config.mjs";
 import {
   DEFAULT_BASE_URL,
@@ -33,6 +34,7 @@ loadDotenv({
 
 function parseArguments(argv) {
   const options = {
+    agentsMd: false,
     dryRun: false,
     filter: undefined,
     nextVersion: undefined,
@@ -42,7 +44,9 @@ function parseArguments(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
-    if (flag === "--dry-run") {
+    if (flag === "--agents-md") {
+      options.agentsMd = true;
+    } else if (flag === "--dry-run") {
       options.dryRun = true;
     } else if (flag === "--smoke") {
       options.smoke = true;
@@ -93,15 +97,24 @@ async function readArtifactManifest() {
     return JSON.parse(
       await readFile(resolve(artifactsDirectory, "manifest.json"), "utf8")
     );
-  } catch {
-    return;
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
+      return;
+    }
+    throw error;
   }
 }
 
-async function createSetup(nextVersion) {
+async function createSetup(nextVersion, agentsMd) {
   const tarball = (await readFile(tarballPath)).toString("base64");
   return async (sandbox) => {
-    await sandbox.writeFiles({ ".pss-coding-agent.tgz.b64": tarball });
+    await sandbox.writeFiles({
+      ".pss-coding-agent.tgz.b64": tarball,
+      ...agentsMdFiles(agentsMd),
+    });
     const decode = await sandbox.runCommand("bash", [
       "-c",
       "base64 -d .pss-coding-agent.tgz.b64 > /tmp/pss-coding-agent.tgz && rm .pss-coding-agent.tgz.b64",
@@ -141,7 +154,10 @@ function selectFixtures(fixtures, options) {
 }
 
 const options = parseArguments(process.argv.slice(2));
-const evalsDirectory = resolve(benchmarkRoot, "evals");
+// Tests point PSS_BENCH_EVALS_DIR at a hermetic fixture; runners use the synced checkout.
+const evalsDirectory = process.env.PSS_BENCH_EVALS_DIR
+  ? resolve(process.env.PSS_BENCH_EVALS_DIR)
+  : resolve(benchmarkRoot, "evals");
 const { fixtures, errors } = loadAllFixtures(evalsDirectory, {
   validation: "vitest",
 });
@@ -162,6 +178,7 @@ const earlyExit = profile.earlyExit;
 const artifactManifest = await readArtifactManifest();
 const manifest = {
   agent: "pss",
+  agentsMd: options.agentsMd,
   baseUrl,
   earlyExit,
   fixtureCount: selectedFixtures.length,
@@ -207,14 +224,18 @@ const config = {
   scripts: ["build"],
   validation: "vitest",
   timeout: 1200,
-  setup: await createSetup(nextVersion),
+  setup: await createSetup(nextVersion, options.agentsMd),
   sandbox: "auto",
   copyFiles: "changed",
   agentOptions: { baseUrl },
   webResearch: false,
 };
 const safeModel = model.replace(SAFE_MODEL_PATTERN, "-");
-const experimentName = `pss-${options.profile}/${safeModel}`;
+const experimentName = resolveExperimentName({
+  agentsMd: options.agentsMd,
+  model: safeModel,
+  profile: options.profile,
+});
 const results = await runExperiment({
   config,
   fixtures: selectedFixtures,

@@ -25,15 +25,18 @@ const addedThirdLinePattern = /\+3#[A-Z]+\|export const third = 3;/u;
 const freshAnchorPattern = /2#[A-Z]+/u;
 const directoryTruncationPattern = /truncated|showing 1000 of 1005/iu;
 const fileHashPattern = /file_hash: ([0-9a-f]{8})/u;
+const firstPattern = /first/u;
 const firstLineAnchorPattern = /1#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
 const grepResultPattern = /src\/new\.ts:1#[ZPMQVRWSNKTXJBYH]{2}\|needle/u;
 const intersectPattern = /intersect|overlap/iu;
+const newContentPattern = /new_content/u;
 const outsideWorkspacePattern = /outside the workspace/u;
 const phantomLinePattern = /3#[ZPMQVRWSNKTXJBYH]{2}/u;
 const secondLineAnchorPattern = /2#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
 const skippedPattern = /skipped/u;
 const staleFileHashPattern = /Stale file hash/u;
 const symlinkPattern = /symlink/u;
+const targetPattern = /target/u;
 const truncatedMarkerPattern = /\n\.\.\. truncated (\d+) bytes \.\.\.\n/u;
 const truncatedPattern = /truncated|\+/u;
 const unsupportedEndPattern = /end/u;
@@ -98,9 +101,9 @@ describe("workspace coding tools", () => {
       {
         edits: [
           {
-            lines: ["export const second = 3;"],
+            new_content: ["export const second = 3;"],
             op: "replace",
-            pos: anchor,
+            target: anchor,
           },
         ],
         expected_file_hash: fileHash,
@@ -129,10 +132,10 @@ describe("workspace coding tools", () => {
           edits: [
             {
               op: "replace",
-              pos: anchor,
-              lines: "export const second = 3;",
+              target: anchor,
+              new_content: "export const second = 3;",
             },
-            { op: "append", lines: "export const third = 3;" },
+            { op: "append", new_content: "export const third = 3;" },
           ],
         },
         executionOptions
@@ -181,14 +184,14 @@ describe("workspace coding tools", () => {
         {
           edits: [
             {
-              lines: ["ONE", "INSERTED"],
+              new_content: ["ONE", "INSERTED"],
               op: "replace",
-              pos: firstAnchor,
+              target: firstAnchor,
             },
             {
-              lines: "FOUR",
+              new_content: "FOUR",
               op: "replace",
-              pos: fourthAnchor,
+              target: fourthAnchor,
             },
           ],
           path: "src/shifted.ts",
@@ -230,9 +233,9 @@ describe("workspace coding tools", () => {
         {
           edits: [
             {
-              lines: "x".repeat(70_000),
+              new_content: "x".repeat(70_000),
               op: "replace",
-              pos: anchor,
+              target: anchor,
             },
           ],
           path: "src/large-edit.ts",
@@ -262,7 +265,9 @@ describe("workspace coding tools", () => {
     await expect(
       edit(
         {
-          edits: [{ lines: ["replacement"], op: "replace", pos: anchor }],
+          edits: [
+            { new_content: ["replacement"], op: "replace", target: anchor },
+          ],
           expected_file_hash: fileHash,
           path: "src/example.ts",
         },
@@ -407,7 +412,10 @@ describe("workspace coding tools", () => {
     const tools = createWorkspaceTools({ workspace });
     const edit = executableTool(tools, "edit_file");
     await edit(
-      { edits: [{ lines: ["first"], op: "append" }], path: "src/empty.ts" },
+      {
+        edits: [{ new_content: ["first"], op: "append" }],
+        path: "src/empty.ts",
+      },
       executionOptions
     );
     await expect(
@@ -430,7 +438,7 @@ describe("workspace coding tools", () => {
     await expect(
       edit(
         {
-          edits: [{ end: anchor, lines: ["x"], op: "append" }],
+          edits: [{ last: anchor, new_content: ["x"], op: "append" }],
           path: "src/example.ts",
         },
         executionOptions
@@ -441,8 +449,8 @@ describe("workspace coding tools", () => {
       edit(
         {
           edits: [
-            { lines: ["replaced"], op: "replace", pos: anchor },
-            { lines: ["inserted"], op: "prepend", pos: anchor },
+            { new_content: ["replaced"], op: "replace", target: anchor },
+            { new_content: ["inserted"], op: "prepend", target: anchor },
           ],
           path: "src/example.ts",
         },
@@ -484,6 +492,188 @@ describe("workspace coding tools", () => {
       )
     );
     expect(output).toMatch(truncatedPattern);
+  });
+
+  it("replaces a single line addressed by target", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const anchor = initial.match(secondLineAnchorPattern)?.[0];
+    if (anchor === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    await edit(
+      {
+        edits: [
+          {
+            new_content: ["export const second = 3;"],
+            op: "replace",
+            target: anchor,
+          },
+        ],
+        path: "src/example.ts",
+      },
+      executionOptions
+    );
+
+    await expect(
+      readFile(join(workspace, "src", "example.ts"), "utf8")
+    ).resolves.toBe("export const first = 1;\nexport const second = 3;\n");
+  });
+
+  it("replaces an inclusive range addressed by first and last", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const first = initial.match(firstLineAnchorPattern)?.[0];
+    const last = initial.match(secondLineAnchorPattern)?.[0];
+    if (first === undefined || last === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    await edit(
+      {
+        edits: [{ first, last, new_content: ["only"], op: "replace" }],
+        path: "src/example.ts",
+      },
+      executionOptions
+    );
+
+    await expect(
+      readFile(join(workspace, "src", "example.ts"), "utf8")
+    ).resolves.toBe("only\n");
+  });
+
+  it("names the expected variant when a replace omits its anchors", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const anchor = initial.match(secondLineAnchorPattern)?.[0];
+    if (anchor === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    // The exact shape claude-opus-5 emitted: a range end without its start.
+    await expect(
+      edit(
+        {
+          edits: [{ last: anchor, new_content: ["x"], op: "replace" }],
+          path: "src/example.ts",
+        },
+        executionOptions
+      )
+    ).rejects.toThrow(firstPattern);
+
+    await expect(
+      edit(
+        {
+          edits: [{ new_content: ["x"], op: "replace" }],
+          path: "src/example.ts",
+        },
+        executionOptions
+      )
+    ).rejects.toThrow(targetPattern);
+  });
+
+  it("names new_content as the payload field and rejects empty content", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const anchor = initial.match(secondLineAnchorPattern)?.[0];
+    if (anchor === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    await edit(
+      {
+        edits: [
+          {
+            new_content: ["export const second = 3;"],
+            op: "replace",
+            target: anchor,
+          },
+        ],
+        path: "src/example.ts",
+      },
+      executionOptions
+    );
+    await expect(
+      readFile(join(workspace, "src", "example.ts"), "utf8")
+    ).resolves.toBe("export const first = 1;\nexport const second = 3;\n");
+
+    const refreshed = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const freshAnchor = refreshed.match(secondLineAnchorPattern)?.[0];
+    if (freshAnchor === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    await expect(
+      edit(
+        {
+          edits: [{ new_content: [], op: "replace", target: freshAnchor }],
+          path: "src/example.ts",
+        },
+        executionOptions
+      )
+    ).rejects.toThrow(newContentPattern);
+  });
+
+  it("rejects a replace that mixes target with a first/last range", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const read = executableTool(tools, "read_file");
+    const edit = executableTool(tools, "edit_file");
+
+    const initial = String(
+      await read({ path: "src/example.ts" }, executionOptions)
+    );
+    const first = initial.match(firstLineAnchorPattern)?.[0];
+    const second = initial.match(secondLineAnchorPattern)?.[0];
+    if (first === undefined || second === undefined) {
+      throw new Error("Expected hashline metadata.");
+    }
+
+    // Silently taking the range branch here would edit the range and ignore
+    // target, misediting whichever lines target did not name.
+    await expect(
+      edit(
+        {
+          edits: [
+            {
+              first,
+              last: first,
+              new_content: ["x"],
+              op: "replace",
+              target: second,
+            },
+          ],
+          path: "src/example.ts",
+        },
+        executionOptions
+      )
+    ).rejects.toThrow(targetPattern);
+
+    await expect(
+      readFile(join(workspace, "src", "example.ts"), "utf8")
+    ).resolves.toBe("export const first = 1;\nexport const second = 2;\n");
   });
 
   it("reports files skipped during grep for size", async () => {

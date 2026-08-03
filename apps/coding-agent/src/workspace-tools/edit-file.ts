@@ -13,9 +13,13 @@ import { atomicWrite } from "./write-file";
 const editSchema = z
   .object({
     op: z.enum(["replace", "append", "prepend"]),
-    pos: z.string().optional(),
-    end: z.string().optional(),
-    lines: z.union([z.string(), z.array(z.string())]),
+    /** Single-line replace anchor, and the insertion point for append/prepend. */
+    target: z.string().optional(),
+    /** Inclusive range start for replace. Pair with `last`. */
+    first: z.string().optional(),
+    /** Inclusive range end for replace. Pair with `first`. */
+    last: z.string().optional(),
+    new_content: z.union([z.string().min(1), z.array(z.string()).min(1)]),
   })
   .strict();
 const END_OF_LINE_PATTERN = /\r?\n/u;
@@ -40,6 +44,11 @@ interface ResolvedEdit {
 function replacementLines(
   value: string | readonly string[]
 ): readonly string[] {
+  if (value.length === 0) {
+    throw new Error(
+      "new_content must not be empty; provide at least one line."
+    );
+  }
   if (typeof value !== "string") {
     return value;
   }
@@ -52,34 +61,64 @@ function resolveEdit(
   lines: readonly string[],
   order: number
 ): ResolvedEdit {
-  if (edit.op === "replace") {
-    if (edit.pos === undefined) {
-      throw new Error("replace requires pos: LINE#ID");
-    }
-    const index = resolveLineAnchor(edit.pos, lines);
-    const end =
-      edit.end === undefined ? index : resolveLineAnchor(edit.end, lines);
-    if (end < index) {
-      throw new Error(`replace end precedes pos: ${edit.pos}..${edit.end}`);
-    }
+  if (edit.op !== "replace") {
+    const anchorIndex =
+      edit.target === undefined
+        ? undefined
+        : resolveLineAnchor(edit.target, lines);
+    const index =
+      edit.op === "append"
+        ? (anchorIndex ?? lines.length - 1) + 1
+        : (anchorIndex ?? 0);
     return {
-      end,
+      end: index - 1,
       index,
-      lines: replacementLines(edit.lines),
+      lines: replacementLines(edit.new_content),
       op: edit.op,
       order,
     };
   }
-  const anchorIndex =
-    edit.pos === undefined ? undefined : resolveLineAnchor(edit.pos, lines);
-  const index =
-    edit.op === "append"
-      ? (anchorIndex ?? lines.length - 1) + 1
-      : (anchorIndex ?? 0);
+  if (edit.first !== undefined || edit.last !== undefined) {
+    if (edit.target !== undefined) {
+      throw new Error(
+        "replace accepts either target for one line or first+last for a range, not both."
+      );
+    }
+    if (edit.first === undefined) {
+      throw new Error(
+        `replace range requires first; received only last=${edit.last}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    if (edit.last === undefined) {
+      throw new Error(
+        `replace range requires last; received only first=${edit.first}. Use target for one line, or first+last for an inclusive range.`
+      );
+    }
+    const index = resolveLineAnchor(edit.first, lines);
+    const end = resolveLineAnchor(edit.last, lines);
+    if (end < index) {
+      throw new Error(
+        `replace last precedes first: ${edit.first}..${edit.last}`
+      );
+    }
+    return {
+      end,
+      index,
+      lines: replacementLines(edit.new_content),
+      op: edit.op,
+      order,
+    };
+  }
+  if (edit.target === undefined) {
+    throw new Error(
+      "replace requires target: LINE#ID for one line, or first+last for an inclusive range."
+    );
+  }
+  const index = resolveLineAnchor(edit.target, lines);
   return {
-    end: index - 1,
+    end: index,
     index,
-    lines: replacementLines(edit.lines),
+    lines: replacementLines(edit.new_content),
     op: edit.op,
     order,
   };
@@ -184,13 +223,16 @@ export function createEditFileTool(
 ): Tool<z.infer<typeof inputSchema>, string> {
   return tool({
     description:
-      "Apply deterministic plugsuits-style hashline edits. Re-read the file, then use LINE#ID anchors. replace supports optional end; append/prepend support optional pos.",
+      "Apply deterministic plugsuits-style hashline edits. Re-read the file, then use LINE#ID anchors. replace addresses one line with target, or an inclusive range with first+last; append/prepend insert relative to an optional target.",
     inputSchema,
     execute: async ({ path, expected_file_hash: expectedHash, edits }) => {
       for (const edit of edits) {
-        if (edit.op !== "replace" && edit.end !== undefined) {
+        if (
+          edit.op !== "replace" &&
+          (edit.first !== undefined || edit.last !== undefined)
+        ) {
           throw new Error(
-            `${edit.op} does not support end; only replace accepts an end anchor.`
+            `${edit.op} does not support first/last; it inserts at an optional target anchor.`
           );
         }
       }

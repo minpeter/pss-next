@@ -10,6 +10,7 @@
     "preflight": "pnpm sync-evals && pnpm pack:pss && node src/run-benchmark.mjs --profile official --smoke --dry-run",
     "eval:smoke": "pnpm sync-evals && pnpm pack:pss && node src/run-benchmark.mjs --profile official --smoke",
     "eval:official": "pnpm sync-evals && pnpm pack:pss && node src/run-benchmark.mjs --profile official",
+    "eval:official:agents-md": "pnpm sync-evals && pnpm pack:pss && node src/run-benchmark.mjs --profile official --agents-md",
     "eval:internal": "pnpm sync-evals && pnpm pack:pss && node src/run-benchmark.mjs --profile internal",
     "score": "node scripts/score.mjs",
     "test": "node --test test/*.test.mjs",

@@ -37,12 +37,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "packages/*/src/index.ts",
-        "packages/*/src/plugins/index.ts",
-        "packages/*/src/session/index.ts",
-        "packages/*/src/session/store/index.ts"
-      ],
+      "includes": ["packages/*/src/index.ts"],
       "linter": {
         "rules": {
           "performance": {
