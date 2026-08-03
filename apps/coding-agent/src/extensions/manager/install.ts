@@ -10,6 +10,7 @@ import {
   type ExtensionSettingsDocument,
   readExtensionSettings,
   updateExtensionSettings,
+  withExtensionOperationLock,
   writeExtensionSettings,
 } from "./settings";
 import { type ParsedExtensionSource, parseExtensionSource } from "./source";
@@ -34,6 +35,15 @@ export async function installExtension(
   context: InstallExtensionContext
 ): Promise<ExtensionSettingsEntry> {
   const paths = await extensionScopePaths(context);
+  return await withExtensionOperationLock(paths.installRoot, async () =>
+    installExtensionOwned(context, paths)
+  );
+}
+
+async function installExtensionOwned(
+  context: InstallExtensionContext,
+  paths: Awaited<ReturnType<typeof extensionScopePaths>>
+): Promise<ExtensionSettingsEntry> {
   const document = await readExtensionSettings(paths.settingsPath);
   const parsedSource = await parseExtensionSource(context.source, context.cwd);
   const knownId =

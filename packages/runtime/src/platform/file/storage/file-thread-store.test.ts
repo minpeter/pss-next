@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -116,13 +116,14 @@ describe("FileThreadStore", () => {
     ]);
   });
 
-  it("clears stale lock directories before committing", async () => {
+  it("reclaims a lock only when its owning PID is dead", async () => {
     const dir = await tempDir();
     const key = "stale";
     const lockDirectory = join(dir, `${threadFileName(key)}.lock`);
-    await mkdir(lockDirectory);
-    const staleTime = new Date(Date.now() - 60_000);
-    await utimes(lockDirectory, staleTime, staleTime);
+    await writeFile(
+      lockDirectory,
+      JSON.stringify({ pid: 2_147_483_647, token: "dead-owner" })
+    );
 
     await expect(
       new FileThreadStore(dir).commit(

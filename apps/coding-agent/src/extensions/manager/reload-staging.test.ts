@@ -83,6 +83,18 @@ describe("beginExtensionStagingSession", () => {
     expect(Reflect.get(globalThis, marker)).toBeUndefined();
   });
 
+  it("reports CommonJS modules introduced by a candidate graph", async () => {
+    await writeModule("helper.cjs", "module.exports = {};\n");
+    const specifier = await writeModule(
+      "uses-commonjs.mjs",
+      'import "./helper.cjs"; export default () => {};'
+    );
+
+    await session.importer(specifier);
+
+    expect(session.commonJsPaths()).toContain(join(root, "helper.cjs"));
+  });
+
   it("rejects imports after disposal", async () => {
     const specifier = await writeModule("late.mjs", "export default () => {};");
     await session.dispose();

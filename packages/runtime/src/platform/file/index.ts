@@ -30,6 +30,7 @@ export type {
 } from "./host/scheduled-work-types";
 export { FileAttachmentStore } from "./storage/file-attachment-store";
 export { FileExecutionStore } from "./storage/file-execution-store";
+export { withProcessFileLock } from "./storage/file-lock";
 export {
   type FileThreadInspection,
   type FileThreadInspectionCompaction,

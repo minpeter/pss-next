@@ -62,6 +62,7 @@ describe("session SSE event stream", () => {
           })
         );
       },
+      reconnect: { delay: () => Promise.resolve(), random: () => 1 },
       token: "secret",
     });
     const iterator = stream[Symbol.asyncIterator]();
@@ -82,6 +83,112 @@ describe("session SSE event stream", () => {
     ).toBeNull();
     expect(new URL(requests[1]?.url ?? "").searchParams.get("after")).toBe("0");
     await iterator.return?.();
+  });
+
+  it("paces repeated empty reconnects with capped exponential backoff", async () => {
+    const delays: number[] = [];
+    let requests = 0;
+    const iterator = streamRemoteSessionEvents({
+      channel: { id: "local", kind: "tui" },
+      endpoint: "https://worker.example/session/events",
+      fetch: () => {
+        requests += 1;
+        return Promise.resolve(
+          new Response(requests === 4 ? formatSseEvent(firstEvent) : "")
+        );
+      },
+      reconnect: {
+        delay: (ms) => {
+          delays.push(ms);
+          return Promise.resolve();
+        },
+        initialDelayMs: 100,
+        maxDelayMs: 400,
+        random: () => 1,
+      },
+    })[Symbol.asyncIterator]();
+
+    await expect(withTimeout(iterator.next())).resolves.toEqual({
+      done: false,
+      value: firstEvent,
+    });
+    expect(delays).toEqual([100, 200, 400]);
+    await iterator.return?.();
+  });
+
+  it("preserves the cursor across empty reconnects", async () => {
+    const after: (string | null)[] = [];
+    const bodies = [
+      formatSseEvent(firstEvent),
+      "",
+      formatSseEvent(secondEvent),
+    ];
+    const iterator = streamRemoteSessionEvents({
+      channel: { id: "local", kind: "tui" },
+      endpoint: "https://worker.example/session/events",
+      fetch: (request) => {
+        after.push(new URL(request.url).searchParams.get("after"));
+        return Promise.resolve(new Response(bodies.shift()));
+      },
+      reconnect: { delay: () => Promise.resolve(), random: () => 1 },
+    })[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    expect(after).toEqual([null, "0", "0"]);
+    await iterator.return?.();
+  });
+
+  it("resets backoff after yielding an event", async () => {
+    const delays: number[] = [];
+    const bodies = [
+      "",
+      formatSseEvent(firstEvent),
+      "",
+      formatSseEvent(secondEvent),
+    ];
+    const iterator = streamRemoteSessionEvents({
+      channel: { id: "local", kind: "tui" },
+      endpoint: "https://worker.example/session/events",
+      fetch: () => Promise.resolve(new Response(bodies.shift())),
+      reconnect: {
+        delay: (ms) => {
+          delays.push(ms);
+          return Promise.resolve();
+        },
+        initialDelayMs: 100,
+        random: () => 1,
+      },
+    })[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    expect(delays).toEqual([100, 100, 200]);
+    await iterator.return?.();
+  });
+
+  it("stops without reconnecting when aborted during backoff", async () => {
+    const abort = new AbortController();
+    let requests = 0;
+    const iterator = streamRemoteSessionEvents({
+      channel: { id: "local", kind: "tui" },
+      endpoint: "https://worker.example/session/events",
+      fetch: () => {
+        requests += 1;
+        return Promise.resolve(new Response(""));
+      },
+      reconnect: { initialDelayMs: 60_000, random: () => 1 },
+      signal: abort.signal,
+    })[Symbol.asyncIterator]();
+
+    const next = iterator.next();
+    await Promise.resolve();
+    abort.abort();
+    await expect(withTimeout(next)).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect(requests).toBe(1);
   });
 });
 

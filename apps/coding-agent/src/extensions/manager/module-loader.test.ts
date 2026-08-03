@@ -9,6 +9,7 @@ import { loadExtensionTarget } from "./module-loader";
 const execFileAsync = promisify(execFile);
 
 const cleanupRoots: string[] = [];
+const restartRequiredPattern = /requires a restart.*CommonJS/u;
 
 afterEach(async () => {
   for (const root of cleanupRoots.splice(0)) {
@@ -122,7 +123,7 @@ describe("managed package module loading", () => {
 
   // Runs in a child Node process because module customization hooks do not
   // intercept imports issued through vitest's own module runner.
-  it("reloads commonjs helpers when cache busting", async () => {
+  it("requires a restart instead of mutating cached commonjs helpers", async () => {
     // Given
     const root = await mkdtemp(join(tmpdir(), "pss-module-loader-"));
     cleanupRoots.push(root);
@@ -161,17 +162,14 @@ describe("managed package module loading", () => {
     ].join("\n");
 
     // When
-    const { stdout } = await execFileAsync(
+    const reload = execFileAsync(
       process.execPath,
       ["--input-type=module", "-e", script],
       { timeout: 30_000 }
     );
 
     // Then
-    expect(JSON.parse(stdout.trim())).toEqual({
-      first: "one",
-      second: "two",
-    });
+    await expect(reload).rejects.toThrow(restartRequiredPattern);
   });
 
   it("reloads transitive helper modules when cache busting", async () => {

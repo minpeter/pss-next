@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  defaultRunExtensionCommand,
   installExtensionPackage,
   rollbackExtensionPackage,
 } from "./package-installer";
 import type { RunExtensionCommand } from "./types";
 
 const cleanupRoots: string[] = [];
+const commandTimeoutPattern = /timed out/u;
 
 afterEach(async () => {
   for (const root of cleanupRoots.splice(0)) {
@@ -117,5 +119,35 @@ describe("managed extension package installation", () => {
 
     // Then
     expect(specs).toEqual(["demo@1.0.0"]);
+  });
+
+  it("bounds output captured from the package manager", async () => {
+    const result = await defaultRunExtensionCommand(process.execPath, [
+      "-e",
+      "process.stdout.write('x'.repeat(2_000_100))",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toHaveLength(2_000_000);
+  });
+
+  it("terminates a package manager command after its deadline", async () => {
+    const previousTimeout = process.env.PSS_EXTENSION_NPM_TIMEOUT_MS;
+    process.env.PSS_EXTENSION_NPM_TIMEOUT_MS = "20";
+    try {
+      const result = await defaultRunExtensionCommand(process.execPath, [
+        "-e",
+        "setInterval(() => undefined, 1000)",
+      ]);
+
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(commandTimeoutPattern);
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.PSS_EXTENSION_NPM_TIMEOUT_MS;
+      } else {
+        process.env.PSS_EXTENSION_NPM_TIMEOUT_MS = previousTimeout;
+      }
+    }
   });
 });
