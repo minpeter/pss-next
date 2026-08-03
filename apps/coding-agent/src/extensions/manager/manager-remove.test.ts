@@ -129,4 +129,52 @@ describe("managed extension removal", () => {
       expect.objectContaining({ id: "demo" }),
     ]);
   });
+
+  it("does not change settings when package snapshot preparation fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-remove-prepare-"));
+    cleanupRoots.push(root);
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    const paths = await extensionScopePaths({ cwd, home, scope: "global" });
+    await mkdir(paths.installRoot, { recursive: true });
+    await writeFile(join(paths.installRoot, "unreadable"), "content\n");
+    await writeExtensionSettings(paths.settingsPath, {
+      extensions: [
+        {
+          enabled: true,
+          id: "demo",
+          installedAt: "2026-08-03T00:00:00.000Z",
+          source: "demo@1.0.0",
+          sourceKind: "npm",
+          target: { kind: "package", packageName: "demo" },
+        },
+      ],
+      values: {},
+    });
+    const invocations: string[][] = [];
+    await chmod(paths.installRoot, 0o000);
+    try {
+      await expect(
+        removeExtension({
+          cwd,
+          home,
+          id: "demo",
+          runCommand: (_command, args) => {
+            invocations.push([...args]);
+            return Promise.resolve({ code: 0, stderr: "", stdout: "" });
+          },
+          scope: "global",
+        })
+      ).rejects.toThrow();
+    } finally {
+      await chmod(paths.installRoot, 0o700);
+    }
+
+    expect(invocations).toEqual([]);
+    const persisted = JSON.parse(await readFile(paths.settingsPath, "utf8"));
+    expect(persisted.extensions).toEqual([
+      expect.objectContaining({ id: "demo" }),
+    ]);
+  });
 });

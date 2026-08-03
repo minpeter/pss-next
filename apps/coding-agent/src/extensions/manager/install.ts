@@ -1,9 +1,11 @@
 import { trustProject } from "./activation";
 import { loadExtensionTarget } from "./module-loader";
 import {
+  discardInstallRootSnapshot,
   type InstalledExtensionPackage,
   installExtensionPackage,
-  rollbackExtensionPackage,
+  restoreInstallRoot,
+  snapshotInstallRoot,
 } from "./package-installer";
 import { extensionScopePaths } from "./paths";
 import {
@@ -52,12 +54,16 @@ async function installExtensionOwned(
   if (knownId !== undefined) {
     validateAvailableExtensionId(knownId, document.extensions);
   }
-  const installation = await installManagedExtensionPackage(
-    context,
-    parsedSource,
-    paths.installRoot
-  );
+  const backup =
+    parsedSource.kind === "package"
+      ? await snapshotInstallRoot(paths.installRoot)
+      : undefined;
   try {
+    const installation = await installManagedExtensionPackage(
+      context,
+      parsedSource,
+      paths.installRoot
+    );
     return await recordExtensionInstallation({
       context,
       document,
@@ -67,12 +73,22 @@ async function installExtensionOwned(
       settingsPath: paths.settingsPath,
     });
   } catch (error) {
-    return await rollbackFailedInstallation(
-      context,
-      paths.installRoot,
-      installation,
-      error
-    );
+    if (backup === undefined) {
+      throw error;
+    }
+    try {
+      await restoreInstallRoot(paths.installRoot, backup);
+    } catch (restoreError) {
+      throw new AggregateError(
+        [error, restoreError],
+        "Extension installation and package root restore both failed"
+      );
+    }
+    throw error;
+  } finally {
+    if (backup !== undefined) {
+      await discardInstallRootSnapshot(backup);
+    }
   }
 }
 
@@ -179,32 +195,6 @@ async function recordExtensionInstallation({
     }
   }
   return entry;
-}
-
-async function rollbackFailedInstallation(
-  context: ExtensionManagerContext,
-  installRoot: string,
-  installation: InstalledExtensionPackage | undefined,
-  error: unknown
-): Promise<never> {
-  if (installation === undefined) {
-    throw error;
-  }
-  try {
-    await rollbackExtensionPackage({
-      installRoot,
-      installed: installation,
-      ...(context.runCommand === undefined
-        ? {}
-        : { runCommand: context.runCommand }),
-    });
-  } catch (rollbackError) {
-    throw new AggregateError(
-      [error, rollbackError],
-      "Extension installation and rollback both failed"
-    );
-  }
-  throw error;
 }
 
 function validateAvailableExtensionId(
