@@ -1,8 +1,8 @@
 import {
   assistantRenderer,
-  type ExtensionFactory,
+  type CodingAgentExtensionFactory,
   instructions,
-} from "@minpeter/pss-extension-api";
+} from "@minpeter/pss-coding-agent/extension";
 import { LatexMarkdown } from "./latex-markdown";
 
 export const LATEX_OUTPUT_INSTRUCTIONS = `Format mathematical notation consistently in user-facing responses:
@@ -21,7 +21,7 @@ const missingDependencyMessage = (executable: string): string => {
   return `LaTeX display math is unavailable because ${dependency} was not found. Install the optional LaTeX dependencies; the original Markdown will be shown for now.`;
 };
 
-export const createLatexExtension: ExtensionFactory = (pss) => {
+export const createLatexExtension: CodingAgentExtensionFactory = (pss) => {
   pss.provide(instructions(LATEX_OUTPUT_INSTRUCTIONS));
   pss.provide(
     assistantRenderer(
@@ -42,7 +42,7 @@ export const createLatexExtension: ExtensionFactory = (pss) => {
   );
 };
 
-const createDefaultLatexExtension: ExtensionFactory = (pss) =>
+const createDefaultLatexExtension: CodingAgentExtensionFactory = (pss) =>
   createLatexExtension(pss);
 
 export default createDefaultLatexExtension;

@@ -30,7 +30,7 @@ describe("verifyReleaseArtifacts package checks", () => {
     expect(
       verifyReleaseArtifacts({
         cwd,
-        packages: ["extension-api", "extension-latex"],
+        packages: ["extension-latex"],
       })
     ).toEqual([]);
   });

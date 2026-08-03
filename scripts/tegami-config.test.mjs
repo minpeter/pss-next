@@ -12,11 +12,10 @@ describe("Tegami release configuration", () => {
     expect(script).toContain('repo: "minpeter/pss-runtime"');
     expect(script).toContain('base: "main"');
     expect(script).toContain('workflow: "release.yml"');
-    expect(script.match(/prerelease: "next"/g)).toHaveLength(4);
-    expect(script.match(/distTag: "next"/g)).toHaveLength(4);
+    expect(script.match(/prerelease: "next"/g)).toHaveLength(3);
+    expect(script.match(/distTag: "next"/g)).toHaveLength(3);
     expect(script).toContain('"@minpeter/pss-runtime"');
     expect(script).toContain('"@minpeter/pss-coding-agent"');
-    expect(script).toContain('"@minpeter/pss-extension-api"');
     expect(script).toContain('"@minpeter/pss-extension-latex"');
   });
 
@@ -36,7 +35,6 @@ describe("Tegami release configuration", () => {
   it("publishes package metadata from the current repository", () => {
     for (const path of [
       "packages/runtime/package.json",
-      "packages/extension-api/package.json",
       "apps/coding-agent/package.json",
       "extensions/latex/package.json",
     ]) {

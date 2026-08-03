@@ -1,9 +1,15 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { assistantRenderer, instructions } from "@minpeter/pss-extension-api";
 import { createAgent } from "@minpeter/pss-runtime";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
-import { command, threadMigration, toolRenderer, tools } from "./capabilities";
+import {
+  assistantRenderer,
+  command,
+  instructions,
+  threadMigration,
+  toolRenderer,
+  tools,
+} from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
 
@@ -16,6 +22,45 @@ const qaTool = tool({
 });
 
 describe("coding-agent extension capabilities", () => {
+  it("creates immutable instruction capabilities", () => {
+    const capability = instructions("first", "second");
+
+    expect(capability).toMatchObject({
+      fragments: ["first", "second"],
+      kind: "instructions",
+    });
+    expect(Object.isFrozen(capability)).toBe(true);
+    expect(Object.isFrozen(capability.fragments)).toBe(true);
+  });
+
+  it("normalizes assistant renderer registration options", () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["renderer"];
+      },
+      setText() {
+        return;
+      },
+    });
+
+    expect(assistantRenderer(renderer)).toMatchObject({
+      fallback: false,
+      override: false,
+      renderer,
+    });
+    expect(assistantRenderer(renderer, { fallback: true })).toMatchObject({
+      fallback: true,
+      override: false,
+    });
+    expect(assistantRenderer(renderer, { override: true })).toMatchObject({
+      fallback: false,
+      override: true,
+    });
+  });
+
   it("registers one assistant renderer through the capability API", async () => {
     const renderer = () => ({
       invalidate() {
