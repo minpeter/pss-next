@@ -20,8 +20,10 @@ afterEach(async () => {
 });
 
 function memoryThreadStore(): ThreadStore & {
+  readonly loadCalls: string[];
   readonly stored: Map<string, unknown>;
 } {
+  const loadCalls: string[] = [];
   const stored = new Map<string, unknown>();
   return {
     commit: (key, next, options) => {
@@ -39,10 +41,13 @@ function memoryThreadStore(): ThreadStore & {
       stored.delete(key);
       return Promise.resolve();
     },
-    load: (key) =>
-      Promise.resolve(
+    load: (key) => {
+      loadCalls.push(key);
+      return Promise.resolve(
         stored.has(key) ? { state: stored.get(key), version: "1" } : null
-      ),
+      );
+    },
+    loadCalls,
     stored,
   };
 }
@@ -212,6 +217,24 @@ describe("createSessionManager", () => {
     });
 
     expect(await sessions.listResumableSessions()).toEqual([populated]);
+  });
+
+  it("caches resumable sessions until session state changes", async () => {
+    const { manager: sessions, threads } = manager();
+    const entry = await sessions.resolveStartupSession();
+    threads.stored.set(entry.key, {
+      history: [{ content: "hello", role: "user" }],
+      schemaVersion: 1,
+    });
+
+    expect(await sessions.listResumableSessions()).toEqual([entry]);
+    expect(await sessions.listResumableSessions()).toEqual([entry]);
+    expect(threads.loadCalls).toEqual([entry.key]);
+
+    threads.stored.set(entry.key, { history: [], schemaVersion: 1 });
+    await sessions.touchSession(entry.key);
+    expect(await sessions.listResumableSessions()).toEqual([]);
+    expect(threads.loadCalls).toEqual([entry.key, entry.key]);
   });
 
   it("loads the decoded message history for a recorded session", async () => {

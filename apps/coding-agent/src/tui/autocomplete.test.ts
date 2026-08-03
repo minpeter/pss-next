@@ -55,7 +55,7 @@ describe("createAliasAwareAutocompleteProvider", () => {
     });
   });
 
-  it("restores argument completions after erasing a query", async () => {
+  it("keeps argument completions closed after erasing a query", async () => {
     const sessions = [
       { label: "untitled  #aaaaaaaa", value: "#aaaaaaaa" },
       { label: "test-ek   #bbbbbbbb", value: "test-ek" },
@@ -66,9 +66,11 @@ describe("createAliasAwareAutocompleteProvider", () => {
           description: "Resume a session",
           execute: () => ({ success: true }),
           getArgumentCompletions: async (query) =>
-            sessions.filter(({ label }) =>
-              label.toLowerCase().includes(query.toLowerCase())
-            ),
+            query.length === 0
+              ? null
+              : sessions.filter(({ label }) =>
+                  label.toLowerCase().includes(query.toLowerCase())
+                ),
           name: "resume",
         },
       ],
@@ -83,10 +85,7 @@ describe("createAliasAwareAutocompleteProvider", () => {
     });
     await expect(
       provider.getSuggestions(["/resume "], 0, 8, options)
-    ).resolves.toMatchObject({
-      items: sessions,
-      prefix: "",
-    });
+    ).resolves.toBeNull();
   });
 
   it("does not treat canonical command names as aliases", () => {

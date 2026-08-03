@@ -28,6 +28,8 @@ interface FakeUiScript {
 function fakeUi(script: FakeUiScript): {
   selectLabels: string[];
   selectOptions: { label: string; value: string }[][];
+  statusClears: () => number;
+  statusMessages: string[];
   ui: CodingAgentExtensionUi;
 } {
   const selects = [...(script.selects ?? [])];
@@ -35,6 +37,8 @@ function fakeUi(script: FakeUiScript): {
   const confirms = [...(script.confirms ?? [])];
   const selectLabels: string[] = [];
   const selectOptions: { label: string; value: string }[][] = [];
+  const statusMessages: string[] = [];
+  let statusClears = 0;
   const ui: CodingAgentExtensionUi = {
     confirm: () => Promise.resolve(confirms.shift() ?? false),
     input: () => Promise.resolve(inputs.shift()),
@@ -49,9 +53,20 @@ function fakeUi(script: FakeUiScript): {
       );
       return Promise.resolve(selects.shift());
     },
-    status: () => () => undefined,
+    status: (message) => {
+      statusMessages.push(message);
+      return () => {
+        statusClears += 1;
+      };
+    },
   };
-  return { selectLabels, selectOptions, ui };
+  return {
+    selectLabels,
+    selectOptions,
+    statusClears: () => statusClears,
+    statusMessages,
+    ui,
+  };
 }
 
 function createContext(overrides?: Partial<SessionCommandContext>): {
@@ -224,6 +239,60 @@ describe("/resume", () => {
     expect(visibleWidth(label.slice(0, label.indexOf("#")))).toBe(21);
   });
 
+  it("matches unnamed sessions by their displayed untitled label", async () => {
+    const { context, manager } = createContext();
+    (
+      manager.listResumableSessions as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([entry("cwd:/work"), entry("cwd:/work#deadbeef")]);
+
+    const completions = await command(
+      context,
+      "resume"
+    ).getArgumentCompletions?.("t");
+
+    expect(completions).toEqual([
+      expect.objectContaining({
+        label: expect.stringContaining("untitled"),
+        value: "cwd:/work#deadbeef",
+      }),
+    ]);
+  });
+
+  it("does not load sessions until a search query is entered", async () => {
+    const { statusMessages, ui } = fakeUi({});
+    const { context, manager } = createContext({ ui: () => ui });
+
+    await expect(
+      command(context, "resume").getArgumentCompletions?.(" ")
+    ).resolves.toBeNull();
+    expect(manager.listResumableSessions).not.toHaveBeenCalled();
+    expect(statusMessages).toEqual([]);
+  });
+
+  it("shows loading status while session completions are pending", async () => {
+    const { statusClears, statusMessages, ui } = fakeUi({});
+    const { context, manager } = createContext({ ui: () => ui });
+    let resolveSessions: ((sessions: SessionIndexEntry[]) => void) | undefined;
+    (
+      manager.listResumableSessions as ReturnType<typeof vi.fn>
+    ).mockImplementation(
+      () =>
+        new Promise<SessionIndexEntry[]>((resolve) => {
+          resolveSessions = resolve;
+        })
+    );
+
+    const completions = command(context, "resume").getArgumentCompletions?.(
+      "t"
+    );
+
+    expect(statusMessages).toEqual(["Loading sessions..."]);
+    expect(statusClears()).toBe(0);
+    resolveSessions?.([entry("cwd:/work#deadbeef")]);
+    await completions;
+    expect(statusClears()).toBe(1);
+  });
+
   it("keeps the short id visible in long autocomplete labels", async () => {
     const { context, manager } = createContext();
     (
@@ -255,7 +324,7 @@ describe("/resume", () => {
     const completions = await command(
       context,
       "resume"
-    ).getArgumentCompletions?.("");
+    ).getArgumentCompletions?.("#");
     const hashColumns = completions?.map(({ label }) =>
       visibleWidth(label.slice(0, label.indexOf("#")))
     );
