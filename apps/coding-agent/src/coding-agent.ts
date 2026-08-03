@@ -2,6 +2,7 @@ import {
   type AgentHooks,
   type AgentOptions,
   createAgent,
+  speculativeCompaction,
 } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import { composeAgentHooks } from "./extensions/compose-hooks";
@@ -15,7 +16,7 @@ import {
 import { createWorkspaceTools } from "./workspace-tools";
 
 export interface CreateCodingAgentOptions {
-  readonly autoCompaction?: AgentOptions["autoCompaction"];
+  readonly compaction?: AgentOptions["compaction"];
   readonly extensionHost?: CodingAgentExtensionHost;
   readonly hooks?: AgentHooks;
   readonly host?: AgentOptions["host"];
@@ -33,7 +34,7 @@ export interface CreateCodingAgentOptions {
 }
 
 export function createCodingAgent({
-  autoCompaction,
+  compaction = speculativeCompaction(),
   extensionHost,
   host,
   hooks,
@@ -71,7 +72,7 @@ export function createCodingAgent({
   ];
 
   return createAgent({
-    ...(autoCompaction === undefined ? {} : { autoCompaction }),
+    compaction,
     ...(host === undefined ? {} : { host }),
     hooks:
       hookRegistrations.length === 0

@@ -93,6 +93,8 @@ function createThreadPersistenceMachine(): Fsm<ThreadPersistenceState> {
 }
 
 export class ThreadState {
+  /** Opaque identity for runtime-owned per-thread caches. */
+  readonly compactionIdentity: object = Object.freeze({});
   #appliedMigrations: AppliedThreadMigrations = {};
   readonly #machine = createThreadPersistenceMachine();
   readonly #migrations: readonly ThreadStateMigration[];

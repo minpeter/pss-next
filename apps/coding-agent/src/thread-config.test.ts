@@ -5,8 +5,8 @@ describe("resolveCodingAgentThreadConfig", () => {
   it("defaults to a durable home directory, cwd-scoped key, and automatic compaction", () => {
     expect(
       resolveCodingAgentThreadConfig({}, "/repo/demo", "/home/me")
-    ).toEqual({
-      autoCompaction: undefined,
+    ).toMatchObject({
+      compactionMaxInputTokens: 128_000,
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
       keyFromEnv: false,
@@ -23,8 +23,8 @@ describe("resolveCodingAgentThreadConfig", () => {
         "/repo/demo",
         "/home/me"
       )
-    ).toEqual({
-      autoCompaction: undefined,
+    ).toMatchObject({
+      compactionMaxInputTokens: 128_000,
       directory: ".pss/threads",
       key: "workspace:demo",
       keyFromEnv: true,
@@ -38,8 +38,8 @@ describe("resolveCodingAgentThreadConfig", () => {
         "/repo/demo",
         "/home/me"
       )
-    ).toEqual({
-      autoCompaction: undefined,
+    ).toMatchObject({
+      compactionMaxInputTokens: 128_000,
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
       keyFromEnv: false,
@@ -53,8 +53,8 @@ describe("resolveCodingAgentThreadConfig", () => {
         "/repo/demo",
         "/home/me"
       )
-    ).toEqual({
-      autoCompaction: { maxInputTokens: 64_000 },
+    ).toMatchObject({
+      compactionMaxInputTokens: 64_000,
       directory: "/home/me/.pss/threads",
       key: "cwd:/repo/demo",
       keyFromEnv: false,
@@ -81,7 +81,7 @@ describe("resolveCodingAgentThreadConfig", () => {
         },
         "/repo/demo",
         "/home/me"
-      ).autoCompaction
-    ).toBeUndefined();
+      ).compaction
+    ).toBeTypeOf("function");
   });
 });

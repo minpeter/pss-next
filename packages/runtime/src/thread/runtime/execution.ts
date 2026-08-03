@@ -9,7 +9,7 @@ import type {
 } from "../../execution/host/types";
 import type { RuntimeToolExecutionContext } from "../../llm/tool-execution-types";
 import type { ThreadState } from "../state/thread-state";
-import type { ThreadAutoCompactionOptions } from "./auto-compaction-types";
+import type { AgentCompaction } from "./auto-compaction-types";
 import {
   createThreadToolExecutionContext,
   type ThreadToolCallInterceptor,
@@ -17,7 +17,7 @@ import {
 } from "./execution-checkpoints";
 
 export interface ThreadExecutionOptions {
-  readonly autoCompaction?: ThreadAutoCompactionOptions;
+  readonly compaction?: AgentCompaction;
   readonly executionHost?: AgentHost;
   readonly hookRuntime?: AgentHookRuntime;
 }

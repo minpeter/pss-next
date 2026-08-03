@@ -15,7 +15,7 @@ import {
 } from "../../testing/test-fixtures";
 import { userTextToModelMessage } from "../protocol/mapping";
 import {
-  agentWithAutoCompaction,
+  agentWithCompaction,
   storedAssistantOutput,
   tokenCompactionPolicy,
   waitForModelCalls,
@@ -28,8 +28,8 @@ describe("Agent thread automatic compaction", () => {
     const seenHistory: ModelMessage[][] = [];
     const preparedStepIndices: number[] = [];
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -93,8 +93,8 @@ describe("Agent thread automatic compaction", () => {
   it("stores automatic compaction as a SQLite compaction row", async () => {
     const { storage, store } = createStore();
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(() => {
         calls += 1;
@@ -131,8 +131,8 @@ describe("Agent thread automatic compaction", () => {
     const store = new SpyStore();
     const seenHistory: ModelMessage[][] = [];
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
         seenHistory.push([...history]);
@@ -184,8 +184,8 @@ describe("Agent thread automatic compaction", () => {
     const summaryStarted = createDeferred();
     const summaryRelease = createDeferred();
     let calls = 0;
-    const agent = agentWithAutoCompaction({
-      autoCompaction: tokenCompactionPolicy({ retain: 10, trigger: 40 }),
+    const agent = agentWithCompaction({
+      compaction: tokenCompactionPolicy({ retain: 10, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(async () => {
         calls += 1;

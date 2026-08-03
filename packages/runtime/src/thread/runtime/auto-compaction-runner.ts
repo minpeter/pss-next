@@ -2,299 +2,249 @@ import type { ModelMessage } from "ai";
 import { estimateModelMessagesTokens } from "../../llm/context-gate";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import { hydrateRuntimeAttachments } from "../input/attachments";
-import {
-  compactionContextForModel,
-  type ThreadContextMessage,
-} from "../state/context";
+import { compactionContextForModel } from "../state/context";
 import type { ThreadState } from "../state/thread-state";
-import { selectAutoCompactionRange } from "./auto-compaction-range";
 import {
   summarizeCompactionRange,
   summaryHistoryForRange,
 } from "./auto-compaction-summary";
 import type {
+  AgentCompaction,
+  AgentCompactionReason,
   AutoCompactionRange,
-  ThreadAutoCompactionOptions,
   ThreadCompactionHandler,
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
+import { equalSnapshot } from "./snapshot-equal";
+import { estimatorForCompaction } from "./speculative-compaction";
 
-const activeCompactions = new WeakSet<ThreadState>();
+interface ActiveCompaction {
+  readonly promise: Promise<boolean>;
+  readonly reason: AgentCompactionReason;
+}
+const activeCompactions = new WeakMap<ThreadState, ActiveCompaction>();
+const pendingCompactions = new WeakMap<
+  ThreadState,
+  Omit<RunOptions, "reason">
+>();
 
-export function scheduleThreadAutoCompaction({
-  compact,
-  latestContextTransform,
-  model,
-  policy,
-  state,
-  transformModelContext,
-}: {
+interface RunOptions {
   readonly compact?: ThreadCompactionHandler;
+  readonly compaction?: AgentCompaction;
   readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
-  readonly policy?: ThreadAutoCompactionOptions;
+  readonly reason: AgentCompactionReason;
+  readonly signal?: AbortSignal;
   readonly state: ThreadState;
+  readonly threadKey: string;
   readonly transformModelContext?: ThreadModelContextTransform;
-}): void {
-  if (!policy) {
-    return;
-  }
-
-  if (activeCompactions.has(state)) {
-    return;
-  }
-  activeCompactions.add(state);
-  queueMicrotask(() => {
-    const backgroundCompaction = compactThreadInBackground({
-      compact,
-      latestContextTransform,
-      model,
-      policy,
-      state,
-      transformModelContext,
-    }).finally(() => {
-      activeCompactions.delete(state);
-    });
-    backgroundCompaction.catch(() => undefined);
-  });
 }
 
-async function compactThreadInBackground({
-  compact,
-  latestContextTransform,
-  model,
-  policy,
-  state,
-  transformModelContext,
-}: {
-  readonly compact?: ThreadCompactionHandler;
-  readonly latestContextTransform?: ThreadContextTransformObserver;
-  readonly model: ModelGenerationOptions;
-  readonly policy: ThreadAutoCompactionOptions;
-  readonly state: ThreadState;
-  readonly transformModelContext?: ThreadModelContextTransform;
-}): Promise<void> {
-  try {
-    let compacted = false;
-    let recordCount = state.compactionSnapshot().length;
-    do {
-      compacted = await compactThreadOnce({
-        compact,
-        latestContextTransform,
-        model,
-        policy,
-        state,
-        transformModelContext,
-      });
-      const nextRecordCount = state.compactionSnapshot().length;
-      if (compacted && nextRecordCount === recordCount) {
-        break;
-      }
-      recordCount = nextRecordCount;
-    } while (compacted);
-  } catch {
+export function scheduleThreadCompaction(
+  options: Omit<RunOptions, "reason">
+): void {
+  if (!options.compaction) {
     return;
   }
+  if (activeCompactions.has(options.state)) {
+    pendingCompactions.set(options.state, options);
+    return;
+  }
+  runSingleFlight({ ...options, reason: "completed-turn" }).catch(() => false);
 }
 
-export async function compactThreadBlocking({
-  compact,
-  latestContextTransform,
-  model,
-  policy,
-  state,
-  transformModelContext,
-}: {
-  readonly compact?: ThreadCompactionHandler;
-  readonly latestContextTransform?: ThreadContextTransformObserver;
-  readonly model: ModelGenerationOptions;
-  readonly policy?: ThreadAutoCompactionOptions;
-  readonly state: ThreadState;
-  readonly transformModelContext?: ThreadModelContextTransform;
-}): Promise<boolean> {
-  if (!policy) {
+export async function compactThreadBlocking(
+  options: Omit<RunOptions, "reason">
+): Promise<boolean> {
+  if (!options.compaction) {
     return false;
   }
-
-  return await compactThreadOnce({
-    compact,
-    latestContextTransform,
-    model,
-    policy,
-    state,
-    transformModelContext,
-  });
+  return await runSingleFlight({ ...options, reason: "overflow" });
 }
 
-async function compactThreadOnce({
-  compact,
-  latestContextTransform,
-  model,
-  policy,
-  state,
-  transformModelContext,
-}: {
-  readonly compact?: ThreadCompactionHandler;
-  readonly latestContextTransform?: ThreadContextTransformObserver;
-  readonly model: ModelGenerationOptions;
-  readonly policy: ThreadAutoCompactionOptions;
-  readonly state: ThreadState;
-  readonly transformModelContext?: ThreadModelContextTransform;
-}): Promise<boolean> {
-  for (;;) {
-    const history = state.modelSnapshot();
-    const compactions = state.compactionSnapshot();
-    const estimation = await estimationContextForCompaction({
-      history,
-      latestContextTransform,
-      model,
-      policy,
-    });
-    const range = selectAutoCompactionRange({
-      compactions,
-      history: estimation.history,
-      instructionsTokens: estimation.instructionsTokens,
-      policy,
-    });
-    if (!range) {
-      return false;
+function runSingleFlight(options: RunOptions): Promise<boolean> {
+  const existing = activeCompactions.get(options.state);
+  if (existing) {
+    if (options.reason === "overflow" && existing.reason === "completed-turn") {
+      return existing.promise
+        .catch(() => false)
+        .then(
+          async (compacted) => (await runSingleFlight(options)) || compacted
+        );
     }
+    return existing.promise;
+  }
+  // Register the flight now, but defer all snapshot cloning, estimation, and
+  // policy work until a promise turn.
+  const running = Promise.resolve()
+    .then(() => compactThreadOnce(options))
+    .finally(() => {
+      activeCompactions.delete(options.state);
+      const pending = pendingCompactions.get(options.state);
+      if (pending) {
+        pendingCompactions.delete(options.state);
+        scheduleThreadCompaction(pending);
+      }
+    });
+  activeCompactions.set(options.state, {
+    promise: running,
+    reason: options.reason,
+  });
+  return running;
+}
 
+async function compactThreadOnce(options: RunOptions): Promise<boolean> {
+  const { state } = options;
+  const history = deepFreeze(structuredClone(state.modelSnapshot()));
+  const compactions = deepFreeze(structuredClone(state.compactionSnapshot()));
+  const rawModelContext = state
+    .modelContextSnapshot()
+    .map((message) =>
+      message.role === "compaction"
+        ? compactionContextForModel(message)
+        : message
+    );
+  const estimatedHistory = deepFreeze(
+    await hydrateRuntimeAttachments(history, options.model.attachmentStore)
+  );
+  const hydratedModelContext = deepFreeze(
+    await hydrateRuntimeAttachments(
+      rawModelContext,
+      options.model.attachmentStore
+    )
+  );
+  const estimate = options.compaction
+    ? (estimatorForCompaction(options.compaction) ??
+      estimateModelMessagesTokens)
+    : estimateModelMessagesTokens;
+  const instructionsTokens = options.model.instructions
+    ? estimate([{ content: options.model.instructions, role: "system" }])
+    : 0;
+  const observation = options.latestContextTransform?.();
+  const observedInput = observation
+    ? await hydrateRuntimeAttachments(
+        modelMessagesForEstimate(observation.input),
+        options.model.attachmentStore
+      )
+    : [];
+  const observedOutput = observation
+    ? await hydrateRuntimeAttachments(
+        modelMessagesForEstimate(observation.output),
+        options.model.attachmentStore
+      )
+    : [];
+  const transformOverhead = Math.max(
+    0,
+    estimate(observedOutput) - estimate(observedInput)
+  );
+  const fixedTokens = instructionsTokens + transformOverhead;
+  const signal = options.signal ?? new AbortController().signal;
+  const summarize = async (range: AutoCompactionRange): Promise<string> => {
+    assertRange(range, history.length);
     const summaryHistory = summaryHistoryForRange({
       compactions,
       history,
       range,
     });
-    const summary = await summarizeCompactionRange({
-      estimateTokens: policy.estimateTokens,
+    return await summarizeCompactionRange({
+      estimateTokens: estimate,
       history: summaryHistory,
-      model: summaryModelOptions(
-        model,
-        policy,
-        estimateSummaryInputTokens(summaryHistory, policy)
-      ),
-      transformModelContext,
+      model: { ...options.model, temperature: 0 },
+      signal,
+      transformModelContext: options.transformModelContext,
     });
-    if (summary.length === 0) {
+  };
+  const input = await options.compaction?.(
+    Object.freeze({
+      compactions,
+      estimatedContextTokens: estimate(hydratedModelContext) + fixedTokens,
+      estimatedHistory,
+      history,
+      instructionsTokens: fixedTokens,
+      modelContext: hydratedModelContext,
+      reason: options.reason,
+      signal,
+      summarize,
+      threadIdentity: state.compactionIdentity,
+      threadKey: options.threadKey,
+    })
+  );
+  if (!input) {
+    return false;
+  }
+  assertRange(input, history.length);
+  if (!input.summary.trim()) {
+    return false;
+  }
+  const fresh = (candidate: typeof input): boolean => {
+    if (!candidate.summary.trim()) {
       return false;
     }
-
-    const latestHistory = state.modelSnapshot();
-    const latestEstimation = await estimationContextForCompaction({
-      history: latestHistory,
-      latestContextTransform,
-      model,
-      policy,
-    });
-    const latestRange = selectAutoCompactionRange({
-      compactions: state.compactionSnapshot(),
-      history: latestEstimation.history,
-      instructionsTokens: latestEstimation.instructionsTokens,
-      policy,
-    });
-    if (!sameRange(range, latestRange)) {
-      continue;
+    try {
+      assertRange(candidate, history.length);
+    } catch {
+      return false;
     }
-
-    const input = { ...range, summary };
-    if (compact) {
-      return await compact(input);
-    }
-    await state.compact(input);
-    return true;
+    return (
+      equalSnapshot(compactions, state.compactionSnapshot()) &&
+      equalSnapshot(
+        history.slice(0, candidate.endSeqExclusive),
+        state.modelSnapshot().slice(0, candidate.endSeqExclusive)
+      )
+    );
+  };
+  if (!fresh(input)) {
+    return false;
   }
+  if (options.compact) {
+    return await options.compact(input, fresh);
+  }
+  if (!fresh(input)) {
+    return false;
+  }
+  await state.compact(input);
+  return true;
 }
 
-async function estimationContextForCompaction({
-  history,
-  latestContextTransform,
-  model,
-  policy,
-}: {
-  readonly history: readonly ModelMessage[];
-  readonly latestContextTransform?: ThreadContextTransformObserver;
-  readonly model: ModelGenerationOptions;
-  readonly policy: ThreadAutoCompactionOptions;
-}): Promise<{
-  readonly history: readonly ModelMessage[];
-  readonly instructionsTokens: number;
-}> {
-  const hydrated = await hydrateRuntimeAttachments(
-    history,
-    model.attachmentStore
-  );
-  const baseInstructions = instructionTokens(model, policy);
-  const observation = latestContextTransform?.();
-  if (!observation) {
-    return {
-      history: hydrated,
-      instructionsTokens: baseInstructions,
-    };
+function assertRange(range: AutoCompactionRange, length: number): void {
+  if (
+    !(
+      Number.isSafeInteger(range.startSeq) &&
+      Number.isSafeInteger(range.endSeqExclusive)
+    ) ||
+    range.startSeq < 0 ||
+    range.endSeqExclusive <= range.startSeq ||
+    range.endSeqExclusive > length
+  ) {
+    throw new TypeError(
+      "Compaction callback returned an invalid source range."
+    );
   }
-
-  const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
-  const transformOverhead = Math.max(
-    0,
-    estimate(modelMessagesForEstimate(observation.output)) -
-      estimate(modelMessagesForEstimate(observation.input))
-  );
-  return {
-    history: hydrated,
-    instructionsTokens: baseInstructions + transformOverhead,
-  };
 }
 
 function modelMessagesForEstimate(
-  messages: readonly ThreadContextMessage[] | readonly ModelMessage[]
+  messages: Parameters<NonNullable<ThreadModelContextTransform>>[0]
 ): ModelMessage[] {
   return messages.map((message) =>
     message.role === "compaction" ? compactionContextForModel(message) : message
   );
 }
 
-function sameRange(
-  left: AutoCompactionRange,
-  right: AutoCompactionRange | undefined
-): boolean {
-  return (
-    right !== undefined &&
-    left.startSeq === right.startSeq &&
-    left.endSeqExclusive === right.endSeqExclusive
-  );
-}
-
-function instructionTokens(
-  model: ModelGenerationOptions,
-  policy: ThreadAutoCompactionOptions
-): number {
-  if (!model.instructions) {
-    return 0;
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    if (ArrayBuffer.isView(value)) {
+      return value;
+    }
+    Object.freeze(value);
+    for (const child of Object.values(value)) {
+      deepFreeze(child);
+    }
   }
-
-  const message: ModelMessage = {
-    content: model.instructions,
-    role: "system",
-  };
-  const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
-  return estimate([message]);
+  return value;
 }
 
-function summaryModelOptions(
-  model: ModelGenerationOptions,
-  policy: ThreadAutoCompactionOptions,
-  inputTokens: number
-): ModelGenerationOptions {
-  return {
-    ...model,
-    maxOutputTokens: selectSummaryOutputTokenLimit({
-      inputTokens,
-      retainTokens: policy.retainTokens,
-    }),
-    temperature: 0,
-  };
-}
-
+/** Bound summary output using both the retained-context target and source size. */
 export function selectSummaryOutputTokenLimit({
   inputTokens,
   retainTokens,
@@ -308,15 +258,4 @@ export function selectSummaryOutputTokenLimit({
   );
   const inputCeiling = Math.max(256, Math.floor(inputTokens / 2));
   return Math.min(policyCeiling, inputCeiling);
-}
-
-function estimateSummaryInputTokens(
-  history: readonly ThreadContextMessage[],
-  policy: ThreadAutoCompactionOptions
-): number {
-  const modelMessages = history.map((message) =>
-    message.role === "compaction" ? compactionContextForModel(message) : message
-  );
-  const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
-  return estimate(modelMessages);
 }

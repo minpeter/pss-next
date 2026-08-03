@@ -3,20 +3,13 @@ import { describe, expect, it } from "vitest";
 import { SEND_MESSAGE_TOOL_NAME } from "../tools";
 import {
   collectTurnDelivery,
-  WORKER_AGENT_AUTO_COMPACTION,
+  WORKER_AGENT_COMPACTION,
   WORKER_AGENT_INSTRUCTIONS,
 } from "./agent";
 
-describe("worker-agent auto compaction", () => {
-  it("retains fewer tokens than the compaction trigger", () => {
-    expect(WORKER_AGENT_AUTO_COMPACTION.triggerTokens).toBeGreaterThan(
-      WORKER_AGENT_AUTO_COMPACTION.retainTokens ?? 0
-    );
-    expect(WORKER_AGENT_AUTO_COMPACTION).toEqual({
-      maxInputTokens: 128_000,
-      retainTokens: 32_000,
-      triggerTokens: 96_000,
-    });
+describe("worker-agent compaction", () => {
+  it("uses a callable strategy", () => {
+    expect(WORKER_AGENT_COMPACTION).toBeTypeOf("function");
   });
 });
 

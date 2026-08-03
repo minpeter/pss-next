@@ -1,8 +1,8 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import type { ThreadCompactionRecord } from "../state/snapshot";
+import type { CompactionRangePolicy } from "./auto-compaction-range";
 import { selectAutoCompactionRange } from "./auto-compaction-range";
-import type { ThreadAutoCompactionOptions } from "./auto-compaction-types";
 
 const userMessage = (text: string): ModelMessage => ({
   content: text,
@@ -52,10 +52,9 @@ const tenTokensPerMessage = (messages: readonly ModelMessage[]): number =>
   messages.length * 10;
 
 const policy = (
-  overrides: Partial<ThreadAutoCompactionOptions> = {}
-): ThreadAutoCompactionOptions => ({
+  overrides: Partial<CompactionRangePolicy> = {}
+): CompactionRangePolicy => ({
   estimateTokens: tenTokensPerMessage,
-  maxInputTokens: 100,
   retainTokens: 20,
   triggerTokens: 40,
   ...overrides,
@@ -182,7 +181,6 @@ describe("selectAutoCompactionRange", () => {
         history,
         policy: policy({
           estimateTokens: contentLengthEstimator,
-          maxInputTokens: 200,
           retainTokens: 0,
           triggerTokens: 50,
         }),
@@ -210,7 +208,6 @@ describe("selectAutoCompactionRange", () => {
         history,
         policy: policy({
           estimateTokens: contentLengthEstimator,
-          maxInputTokens: 400,
           retainTokens: 0,
           triggerTokens: 100,
         }),
@@ -315,7 +312,6 @@ describe("selectAutoCompactionRange", () => {
         compactions: [],
         history,
         policy: {
-          maxInputTokens: 400,
           retainTokens: 104,
           triggerTokens: 200,
         },

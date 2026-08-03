@@ -1,12 +1,12 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   type Agent,
-  type AgentAutoCompactionOptions,
   type AgentEvent,
   type AgentHost,
   type AgentInstrumentation,
   type AgentTurn,
   createAgent,
+  speculativeCompaction,
 } from "@minpeter/pss-runtime";
 import { openTelemetry } from "@minpeter/pss-runtime/otel";
 import { drainAgentTurn } from "@minpeter/pss-runtime/platform/cloudflare";
@@ -32,11 +32,11 @@ export const WORKER_AGENT_NAMESPACE = "worker-agent";
 /** Default model id when `AI_MODEL` is unset (also used on wide-event `ai.model`). */
 export const DEFAULT_MODEL = "minimax/MiniMax-M3";
 
-export const WORKER_AGENT_AUTO_COMPACTION: AgentAutoCompactionOptions = {
+export const WORKER_AGENT_COMPACTION = speculativeCompaction({
   maxInputTokens: 128_000,
-  retainTokens: 32_000,
-  triggerTokens: 96_000,
-};
+  promoteRatio: 0.75,
+  retainRatio: 0.25,
+});
 
 export const WORKER_AGENT_INSTRUCTIONS =
   `You are Apex, a direct messaging assistant built by Minpeter.
@@ -153,7 +153,7 @@ export async function createConfiguredAgent(
   const tools = createWorkerAgentToolSet(options);
 
   return await createAgent({
-    autoCompaction: WORKER_AGENT_AUTO_COMPACTION,
+    compaction: WORKER_AGENT_COMPACTION,
     host,
     hooks: createTurnObservabilityHooks(observabilityOptions),
     instructions: WORKER_AGENT_INSTRUCTIONS,

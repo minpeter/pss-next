@@ -7,6 +7,7 @@ import {
 import {
   assistantMessage,
   createCallbackModel,
+  createDeferred,
 } from "../../testing/test-fixtures";
 import {
   encodeRuntimeAttachmentData,
@@ -15,163 +16,229 @@ import {
 import { ThreadState } from "../state/thread-state";
 import {
   compactThreadBlocking,
-  selectSummaryOutputTokenLimit,
+  scheduleThreadCompaction,
 } from "./auto-compaction-runner";
-import type { ThreadAutoCompactionOptions } from "./auto-compaction-types";
+import type {
+  AgentCompaction,
+  ThreadCompactionHandler,
+} from "./auto-compaction-types";
+import { speculativeCompaction } from "./speculative-compaction";
 
-const contentTokens = (messages: readonly ModelMessage[]): number =>
-  messages.reduce((total, message) => total + messageContentTokens(message), 0);
+const model = {
+  model: createCallbackModel(() => [assistantMessage("unused")]),
+};
 
-const compactionPolicy = (): ThreadAutoCompactionOptions => ({
-  estimateTokens: contentTokens,
-  maxInputTokens: 1000,
-  retainTokens: 150,
-  triggerTokens: 500,
-});
-
-const stateWithMessages = async (
-  messages: readonly ModelMessage[]
-): Promise<ThreadState> => {
+async function stateWithHistory(): Promise<ThreadState> {
   const state = new ThreadState({
-    key: "auto-compaction-runner-test",
+    key: "runner-test",
     store: new MemoryThreadStore(),
   });
   await state.ensureLoaded();
-  for (const message of messages) {
+  const history: ModelMessage[] = [
+    { content: "old", role: "user" },
+    assistantMessage("done"),
+    { content: "tail", role: "user" },
+  ];
+  for (const message of history) {
     state.history.appendModelMessage(message);
   }
   return state;
-};
+}
 
-const userMessage = (content: string): ModelMessage => ({
-  content,
-  role: "user",
-});
+function attachmentMessage(ref: RuntimeAttachmentReference): ModelMessage {
+  return {
+    content: [
+      {
+        data: encodeRuntimeAttachmentData(ref),
+        filename: "payload.bin",
+        mediaType: "application/octet-stream",
+        type: "file",
+      },
+    ],
+    role: "user",
+  };
+}
 
-const attachmentMessage = (ref: RuntimeAttachmentReference): ModelMessage => ({
-  content: [
-    {
-      data: encodeRuntimeAttachmentData(ref),
-      filename: "payload.bin",
-      mediaType: "application/octet-stream",
-      type: "file",
-    },
-  ],
-  role: "user",
-});
+describe("compaction runner concurrency", () => {
+  it("reserves a background flight synchronously", async () => {
+    const state = await stateWithHistory();
+    const started = createDeferred();
+    const release = createDeferred();
+    const compaction = vi.fn<AgentCompaction>(async () => {
+      started.resolve();
+      await release.promise;
+      return;
+    });
+    const options = { compaction, model, state, threadKey: "same-key" };
 
-describe("selectSummaryOutputTokenLimit", () => {
-  it("caps dense short ranges to half their input tokens", () => {
-    expect(
-      selectSummaryOutputTokenLimit({
-        inputTokens: 700,
-        retainTokens: 3200,
-      })
-    ).toBe(350);
+    scheduleThreadCompaction(options);
+    scheduleThreadCompaction(options);
+    await started.promise;
+
+    expect(compaction).toHaveBeenCalledTimes(1);
+    release.resolve();
+    await vi.waitFor(() => expect(compaction).toHaveBeenCalledTimes(2));
   });
 
-  it("keeps the policy-derived ceiling for large ranges", () => {
-    expect(
-      selectSummaryOutputTokenLimit({
-        inputTokens: 50_000,
-        retainTokens: 3200,
-      })
-    ).toBe(1600);
+  it("waits for background preparation then performs overflow fallback", async () => {
+    const state = await stateWithHistory();
+    const started = createDeferred();
+    const release = createDeferred();
+    const reasons: string[] = [];
+    const compaction: AgentCompaction = async (context) => {
+      reasons.push(context.reason);
+      if (context.reason === "completed-turn") {
+        started.resolve();
+        await release.promise;
+        return;
+      }
+      return { endSeqExclusive: 2, startSeq: 0, summary: "summary" };
+    };
+    const compact = vi.fn(async (input, guard) => {
+      if (!guard?.(input)) {
+        return false;
+      }
+      await state.compact(input);
+      return true;
+    });
+    const options = { compact, compaction, model, state, threadKey: "thread" };
+
+    scheduleThreadCompaction(options);
+    await started.promise;
+    const blocking = compactThreadBlocking(options);
+    release.resolve();
+
+    await expect(blocking).resolves.toBe(true);
+    expect(reasons).toEqual(["completed-turn", "overflow"]);
+    expect(compact).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a minimum viable summary budget", () => {
-    expect(
-      selectSummaryOutputTokenLimit({
-        inputTokens: 300,
-        retainTokens: 3200,
-      })
-    ).toBe(256);
-  });
-});
+  it("re-evaluates overflow after a completed-turn flight commits", async () => {
+    const state = await stateWithHistory();
+    const started = createDeferred();
+    const release = createDeferred();
+    const reasons: string[] = [];
+    const compaction: AgentCompaction = async (context) => {
+      reasons.push(context.reason);
+      if (context.reason === "completed-turn") {
+        started.resolve();
+        await release.promise;
+        return { endSeqExclusive: 2, startSeq: 0, summary: "background" };
+      }
+      return;
+    };
+    const compact: ThreadCompactionHandler = async (input, guard) => {
+      if (!guard?.(input)) {
+        return false;
+      }
+      await state.compact(input);
+      return true;
+    };
+    const options = { compact, compaction, model, state, threadKey: "thread" };
 
-describe("compactThreadBlocking context estimation", () => {
-  it("hydrates attachment payloads before selecting the compaction range", async () => {
+    scheduleThreadCompaction(options);
+    await started.promise;
+    const blocking = compactThreadBlocking(options);
+    release.resolve();
+
+    await expect(blocking).resolves.toBe(true);
+    expect(reasons).toEqual(["completed-turn", "overflow"]);
+  });
+
+  it("rejects a callback result when the compaction baseline changes before commit", async () => {
+    const state = await stateWithHistory();
+    const compaction: AgentCompaction = () => ({
+      endSeqExclusive: 2,
+      startSeq: 0,
+      summary: "candidate",
+    });
+    const compact = async (
+      input: {
+        endSeqExclusive: number;
+        startSeq: number;
+        summary: string;
+      },
+      guard?: (candidate: typeof input) => boolean
+    ): Promise<boolean> => {
+      await state.compact({ ...input, summary: "newer baseline" });
+      return guard?.(input) ?? true;
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compact,
+        compaction,
+        model,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBe(false);
+    expect(state.compactionSnapshot()).toMatchObject([
+      { summary: { content: "newer baseline", role: "system" } },
+    ]);
+  });
+
+  it("passes deeply frozen snapshots to callbacks", async () => {
+    const state = await stateWithHistory();
+    const compaction: AgentCompaction = (context) => {
+      expect(Object.isFrozen(context.history)).toBe(true);
+      expect(Object.isFrozen(context.history[0])).toBe(true);
+      expect(() =>
+        (context.history as ModelMessage[]).push({
+          content: "mutation",
+          role: "user",
+        })
+      ).toThrow(TypeError);
+      return;
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compaction,
+        model,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBe(false);
+  });
+
+  it("hydrates transform-added attachments before estimating overhead", async () => {
     const attachmentStore = new MemoryAttachmentStore();
     const ref = await attachmentStore.put({
-      bytes: new Uint8Array(800),
+      bytes: new Uint8Array(8000),
       filename: "payload.bin",
       mediaType: "application/octet-stream",
     });
-    const state = await stateWithMessages([
-      userMessage("u".repeat(100)),
-      assistantMessage("a".repeat(100)),
-      attachmentMessage(ref),
-    ]);
-    const compact = vi.fn(() => Promise.resolve(true));
-
-    const compacted = await compactThreadBlocking({
-      compact,
-      model: {
-        attachmentStore,
-        model: createCallbackModel(() => [assistantMessage("short")]),
+    const state = await stateWithHistory();
+    let hydratedBytes = 0;
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => {
+        for (const message of messages) {
+          if (!Array.isArray(message.content)) {
+            continue;
+          }
+          for (const part of message.content) {
+            if (part.type === "file" && part.data instanceof Uint8Array) {
+              hydratedBytes = Math.max(hydratedBytes, part.data.byteLength);
+            }
+          }
+        }
+        return messages.length * 10;
       },
-      policy: compactionPolicy(),
+      maxInputTokens: 1_000_000,
+    });
+
+    scheduleThreadCompaction({
+      compaction,
+      latestContextTransform: () => ({
+        input: [],
+        output: [attachmentMessage(ref)],
+      }),
+      model: { ...model, attachmentStore },
       state,
+      threadKey: "thread",
     });
 
-    expect(compacted).toBe(true);
-    expect(compact).toHaveBeenCalledWith({
-      endSeqExclusive: 2,
-      startSeq: 0,
-      summary: "short",
-    });
-  });
-
-  it("counts observed model context transform overhead before selecting the compaction range", async () => {
-    const messages = [
-      userMessage("u".repeat(100)),
-      assistantMessage("a".repeat(100)),
-      userMessage("tail"),
-    ];
-    const state = await stateWithMessages(messages);
-    const compact = vi.fn(() => Promise.resolve(true));
-    const latestContextTransform = vi.fn(() => ({
-      input: messages,
-      output: [userMessage("ephemeral".repeat(70)), ...messages],
-    }));
-
-    const compacted = await compactThreadBlocking({
-      compact,
-      latestContextTransform,
-      model: {
-        model: createCallbackModel(() => [assistantMessage("short")]),
-      },
-      policy: compactionPolicy(),
-      state,
-    });
-
-    expect(compacted).toBe(true);
-    expect(latestContextTransform).toHaveBeenCalled();
-    expect(compact).toHaveBeenCalledWith({
-      endSeqExclusive: 2,
-      startSeq: 0,
-      summary: "short",
-    });
+    await vi.waitFor(() => expect(hydratedBytes).toBe(8000));
   });
 });
-
-function messageContentTokens(message: ModelMessage): number {
-  if (typeof message.content === "string") {
-    return message.content.length;
-  }
-
-  return message.content.reduce((total, part) => {
-    if (part.type === "text") {
-      return total + part.text.length;
-    }
-    if (part.type === "file") {
-      if (part.data instanceof Uint8Array) {
-        return total + part.data.byteLength;
-      }
-      if (typeof part.data === "string") {
-        return total + part.data.length;
-      }
-    }
-    return total;
-  }, 0);
-}
