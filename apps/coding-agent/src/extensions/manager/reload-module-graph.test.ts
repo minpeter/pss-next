@@ -7,6 +7,7 @@ import { beginCommonJsReloadTransaction } from "./reload-module-graph";
 
 const require = createRequire(import.meta.url);
 const cleanupRoots: string[] = [];
+const restartRequiredPattern = /requires a restart.*CommonJS/u;
 
 afterEach(async () => {
   for (const root of cleanupRoots.splice(0)) {
@@ -21,7 +22,7 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 describe("beginCommonJsReloadTransaction", () => {
-  it("evicts extension-owned entries and restores them on rollback", async () => {
+  it("requires a restart when an extension-owned CommonJS entry is loaded", async () => {
     // Given
     const root = await temporaryDirectory();
     const helperPath = join(root, "helper.cjs");
@@ -30,17 +31,12 @@ describe("beginCommonJsReloadTransaction", () => {
     expect(require.cache[helperPath]).toBeDefined();
 
     // When
-    const transaction = beginCommonJsReloadTransaction([root]);
-    const evicted = require.cache[helperPath];
-    await writeFile(helperPath, 'module.exports = { marker: "two" };\n');
-    const reloaded: unknown = require(helperPath);
-    transaction.rollback();
-    const restored: unknown = require(helperPath);
+    const reload = () => beginCommonJsReloadTransaction([root]);
 
     // Then
-    expect(evicted).toBeUndefined();
-    expect(reloaded).toMatchObject({ marker: "two" });
-    expect(restored).toBe(original);
+    expect(reload).toThrow(restartRequiredPattern);
+    expect(require.cache[helperPath]).toBeDefined();
+    expect(require(helperPath)).toBe(original);
   });
 
   it("leaves node_modules entries untouched", async () => {
@@ -58,5 +54,15 @@ describe("beginCommonJsReloadTransaction", () => {
     // Then
     expect(require.cache[dependencyPath]).toBeDefined();
     expect(require(dependencyPath)).toBe(dependency);
+  });
+
+  it("requires a restart for CommonJS loaded only by the staged candidate", async () => {
+    const root = await temporaryDirectory();
+    const candidatePath = join(root, "candidate.cjs");
+
+    expect(() =>
+      beginCommonJsReloadTransaction([root], [candidatePath])
+    ).toThrow(restartRequiredPattern);
+    expect(require.cache[candidatePath]).toBeUndefined();
   });
 });

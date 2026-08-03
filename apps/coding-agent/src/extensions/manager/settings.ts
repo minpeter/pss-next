@@ -1,19 +1,13 @@
 import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { withProcessFileLock } from "@minpeter/pss-runtime/platform/file";
 import { z } from "zod";
 import type { ExtensionSettingsEntry } from "./types";
 
 /** In-process serialization per settings path (complements cross-process lockfile). */
 const settingsQueues = new Map<string, Promise<unknown>>();
+const operationQueues = new Map<string, Promise<unknown>>();
 
 const targetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("module"), path: z.string().min(1) }),
@@ -110,7 +104,12 @@ export async function withExtensionSettingsLock<Result>(
   settingsQueues.set(path, queued);
   await previous.catch(() => undefined);
   try {
-    return await withExclusiveLockfile(`${path}.lock`, run);
+    return await withProcessFileLock(
+      `${path}.lock`,
+      "extension settings",
+      run,
+      { timeoutMs: SETTINGS_LOCK_WAIT_MS }
+    );
   } finally {
     release();
     if (settingsQueues.get(path) === queued) {
@@ -119,47 +118,34 @@ export async function withExtensionSettingsLock<Result>(
   }
 }
 
-const LOCK_STALE_MS = 30_000;
-const LOCK_WAIT_MS = 10_000;
-
-async function withExclusiveLockfile<Result>(
-  lockPath: string,
+/** Serialize the entire package/settings transaction for one install root. */
+export async function withExtensionOperationLock<Result>(
+  installRoot: string,
   run: () => Promise<Result>
 ): Promise<Result> {
-  await mkdir(dirname(lockPath), { mode: 0o700, recursive: true });
-  const started = Date.now();
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  while (handle === undefined) {
-    try {
-      handle = await open(lockPath, "wx");
-    } catch (error) {
-      if (!hasErrorCode(error, "EEXIST")) {
-        throw error;
-      }
-      try {
-        const info = await stat(lockPath);
-        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
-          await unlink(lockPath).catch(() => undefined);
-          continue;
-        }
-      } catch {
-        // lock disappeared; retry create
-      }
-      if (Date.now() - started > LOCK_WAIT_MS) {
-        throw new Error(
-          `Timed out acquiring extension settings lock: ${lockPath}`
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, 15));
+  const lockPath = `${installRoot}.operation.lock`;
+  const previous = operationQueues.get(lockPath) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => gate);
+  operationQueues.set(lockPath, queued);
+  await previous.catch(() => undefined);
+  try {
+    return await withProcessFileLock(lockPath, "extension operation", run, {
+      timeoutMs: OPERATION_LOCK_WAIT_MS,
+    });
+  } finally {
+    release();
+    if (operationQueues.get(lockPath) === queued) {
+      operationQueues.delete(lockPath);
     }
   }
-  try {
-    return await run();
-  } finally {
-    await handle.close().catch(() => undefined);
-    await unlink(lockPath).catch(() => undefined);
-  }
 }
+
+const SETTINGS_LOCK_WAIT_MS = 10_000;
+const OPERATION_LOCK_WAIT_MS = 15 * 60_000;
 
 export async function readTrustedProjects(
   path: string
@@ -184,6 +170,18 @@ export async function writeTrustedProjects(
   await writeJsonAtomically(path, {
     projects: [...projects],
     schemaVersion: 1,
+  });
+}
+
+export async function addTrustedProject(
+  path: string,
+  project: string
+): Promise<void> {
+  await withExtensionSettingsLock(path, async () => {
+    const projects = await readTrustedProjects(path);
+    if (!projects.includes(project)) {
+      await writeTrustedProjects(path, [...projects, project]);
+    }
   });
 }
 

@@ -8,30 +8,91 @@ export interface InstalledExtensionPackage {
   readonly previousSpec?: string;
 }
 
+const DEFAULT_NPM_TIMEOUT_MS = 120_000;
+const MAX_COMMAND_OUTPUT = 2_000_000;
+const TERMINATION_GRACE_MS = 1000;
+
 export const defaultRunExtensionCommand: RunExtensionCommand = (
   command,
   args
 ) =>
   new Promise((resolvePromise) => {
+    const configuredTimeout = Number.parseInt(
+      process.env.PSS_EXTENSION_NPM_TIMEOUT_MS ?? "",
+      10
+    );
+    const timeoutMs =
+      Number.isSafeInteger(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_NPM_TIMEOUT_MS;
     const child = spawn(command, [...args], {
+      detached: process.platform !== "win32",
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let forceTimer: ReturnType<typeof setTimeout> | undefined;
+    const append = (current: string, chunk: string): string =>
+      (current + chunk).slice(-MAX_COMMAND_OUTPUT);
+    const kill = (signal: NodeJS.Signals) => {
+      if (child.pid === undefined) {
+        return;
+      }
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        child.kill(signal);
+      }
+    };
+    const terminate = () => {
+      kill("SIGTERM");
+      forceTimer = setTimeout(() => {
+        kill("SIGKILL");
+        settle({
+          code: 1,
+          stderr: stderr || `npm command timed out after ${timeoutMs}ms`,
+          stdout,
+        });
+      }, TERMINATION_GRACE_MS);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, timeoutMs);
+    const settle = (result: CommandResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (forceTimer !== undefined) {
+        clearTimeout(forceTimer);
+      }
+      resolvePromise(result);
+    };
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
+      stdout = append(stdout, chunk);
     });
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      stderr = append(stderr, chunk);
     });
     child.on("error", (error) => {
-      resolvePromise({ code: 1, stderr: error.message, stdout });
+      settle({ code: 1, stderr: error.message, stdout });
     });
     child.on("close", (code) => {
-      resolvePromise({ code: code ?? 1, stderr, stdout });
+      if (timedOut) {
+        return;
+      }
+      settle({
+        code: code ?? 1,
+        stderr,
+        stdout,
+      });
     });
   });
 

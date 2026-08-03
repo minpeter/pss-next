@@ -1,10 +1,11 @@
 import { realpath } from "node:fs/promises";
 import { extensionScopePaths, extensionTrustPath } from "./paths";
 import {
+  addTrustedProject,
   readExtensionSettings,
   readTrustedProjects,
   updateExtensionSettings,
-  writeTrustedProjects,
+  withExtensionOperationLock,
 } from "./settings";
 import type {
   ExtensionManagerContext,
@@ -60,11 +61,31 @@ export async function setExtensionEnabled(
     throw new TypeError("Provide extension ids or --all");
   }
   const paths = await extensionScopePaths(context);
+  return await withExtensionOperationLock(paths.installRoot, async () =>
+    setExtensionEnabledOwned(context, paths)
+  );
+}
+
+async function setExtensionEnabledOwned(
+  context: ExtensionManagerContext & {
+    readonly all: boolean;
+    readonly enabled: boolean;
+    readonly ids: readonly string[];
+    readonly scope: ExtensionScope;
+  },
+  paths: Awaited<ReturnType<typeof extensionScopePaths>>
+): Promise<readonly ExtensionSettingsEntry[]> {
   const selected = context.all ? null : new Set(context.ids);
+  const previousEnabled = new Map<string, boolean>();
   const next = await updateExtensionSettings(paths.settingsPath, (document) => {
     const ids =
       selected ?? new Set(document.extensions.map((entry) => entry.id));
     assertIdsExist(document.extensions, ids);
+    for (const entry of document.extensions) {
+      if (ids.has(entry.id)) {
+        previousEnabled.set(entry.id, entry.enabled);
+      }
+    }
     return {
       ...document,
       extensions: document.extensions.map((entry) =>
@@ -73,7 +94,26 @@ export async function setExtensionEnabled(
     };
   });
   if (context.enabled && context.scope === "project") {
-    await trustProject(context);
+    try {
+      await trustProject(context);
+    } catch (error) {
+      try {
+        await updateExtensionSettings(paths.settingsPath, (latest) => ({
+          ...latest,
+          extensions: latest.extensions.map((entry) =>
+            previousEnabled.has(entry.id)
+              ? { ...entry, enabled: previousEnabled.get(entry.id) ?? false }
+              : entry
+          ),
+        }));
+      } catch (restoreError) {
+        throw new AggregateError(
+          [error, restoreError],
+          "Project trust and extension enable restore both failed"
+        );
+      }
+      throw error;
+    }
   }
   const ids = selected ?? new Set(next.extensions.map((entry) => entry.id));
   return next.extensions.filter((entry) => ids.has(entry.id));
@@ -84,10 +124,7 @@ export async function trustProject(
 ): Promise<void> {
   const project = await realpath(context.cwd);
   const path = extensionTrustPath(context.home);
-  const projects = await readTrustedProjects(path);
-  if (!projects.includes(project)) {
-    await writeTrustedProjects(path, [...projects, project]);
-  }
+  await addTrustedProject(path, project);
 }
 
 async function isProjectTrusted(

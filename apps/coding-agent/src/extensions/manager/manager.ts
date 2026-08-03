@@ -8,7 +8,11 @@ import {
   removeExtensionPackage,
 } from "./package-installer";
 import { extensionScopePaths } from "./paths";
-import { readExtensionSettings, updateExtensionSettings } from "./settings";
+import {
+  readExtensionSettings,
+  updateExtensionSettings,
+  withExtensionOperationLock,
+} from "./settings";
 import { parseExtensionSource } from "./source";
 import type {
   ExtensionManagerContext,
@@ -23,6 +27,15 @@ export async function removeExtension(
   }
 ): Promise<ExtensionSettingsEntry> {
   const paths = await extensionScopePaths(context);
+  return await withExtensionOperationLock(paths.installRoot, async () =>
+    removeExtensionOwned(context, paths)
+  );
+}
+
+async function removeExtensionOwned(
+  context: ExtensionManagerContext & { readonly id: string },
+  paths: Awaited<ReturnType<typeof extensionScopePaths>>
+): Promise<ExtensionSettingsEntry> {
   let removed: ExtensionSettingsEntry | undefined;
   let remainingPackages: readonly ExtensionSettingsEntry[] = [];
   await updateExtensionSettings(paths.settingsPath, (document) => {
@@ -49,13 +62,36 @@ export async function removeExtension(
           item.target.packageName === packageName
       )
     ) {
-      await removeExtensionPackage({
-        installRoot: paths.installRoot,
-        packageName,
-        ...(context.runCommand === undefined
-          ? {}
-          : { runCommand: context.runCommand }),
-      });
+      const backup = await snapshotInstallRoot(paths.installRoot);
+      try {
+        await removeExtensionPackage({
+          installRoot: paths.installRoot,
+          packageName,
+          ...(context.runCommand === undefined
+            ? {}
+            : { runCommand: context.runCommand }),
+        });
+      } catch (error) {
+        try {
+          await restoreInstallRoot(paths.installRoot, backup.root);
+          await updateExtensionSettings(paths.settingsPath, (latest) => ({
+            ...latest,
+            extensions: latest.extensions.some(
+              (candidate) => candidate.id === entry.id
+            )
+              ? latest.extensions
+              : [...latest.extensions, entry],
+          }));
+        } catch (restoreError) {
+          throw new AggregateError(
+            [error, restoreError],
+            `Extension "${entry.id}" removal and settings restore both failed`
+          );
+        }
+        throw error;
+      } finally {
+        await rm(backup.parent, { force: true, recursive: true });
+      }
     }
   }
   return entry;
@@ -69,14 +105,87 @@ export async function updateExtensions(
   }
 ): Promise<readonly ExtensionSettingsEntry[]> {
   const paths = await extensionScopePaths(context);
+  return await withExtensionOperationLock(paths.installRoot, async () =>
+    updateExtensionsOwned(context, paths)
+  );
+}
+
+async function updateExtensionsOwned(
+  context: ExtensionManagerContext & {
+    readonly all: boolean;
+    readonly ids: readonly string[];
+  },
+  paths: Awaited<ReturnType<typeof extensionScopePaths>>
+): Promise<readonly ExtensionSettingsEntry[]> {
   const document = await readExtensionSettings(paths.settingsPath);
   const selected =
     context.all || context.ids.length === 0
       ? new Set(document.extensions.map((entry) => entry.id))
       : new Set(context.ids);
   assertIdsExist(document.extensions, selected);
+  const { packageUpdates, updated } = await prepareExtensionUpdates(
+    context,
+    document.extensions,
+    selected,
+    paths.installRoot
+  );
+  const byId = new Map(updated.map((entry) => [entry.id, entry]));
+  const commitSettings = () =>
+    updateExtensionSettings(paths.settingsPath, (latest) => ({
+      ...latest,
+      extensions: latest.extensions.map((entry) => byId.get(entry.id) ?? entry),
+    }));
+  if (packageUpdates.length === 0) {
+    await commitSettings();
+    return updated;
+  }
+
+  const backup = await snapshotInstallRoot(paths.installRoot);
+  try {
+    for (const update of packageUpdates) {
+      await applyManagedPackageUpdate(
+        context,
+        update.entry.id,
+        update.target,
+        update.installSpec,
+        paths.installRoot
+      );
+    }
+    await commitSettings();
+  } catch (error) {
+    try {
+      await restoreInstallRoot(paths.installRoot, backup.root);
+    } catch (restoreError) {
+      throw new AggregateError(
+        [error, restoreError],
+        "Extension update and package root restore both failed"
+      );
+    }
+    throw error;
+  } finally {
+    await rm(backup.parent, { force: true, recursive: true });
+  }
+  return updated;
+}
+
+interface PreparedPackageUpdate {
+  readonly entry: ExtensionSettingsEntry;
+  readonly installSpec: string;
+  readonly target: { readonly kind: "package"; readonly packageName: string };
+}
+
+async function prepareExtensionUpdates(
+  context: ExtensionManagerContext,
+  entries: readonly ExtensionSettingsEntry[],
+  selected: ReadonlySet<string>,
+  installRoot: string
+): Promise<{
+  readonly packageUpdates: readonly PreparedPackageUpdate[];
+  readonly updated: readonly ExtensionSettingsEntry[];
+}> {
+  const packageUpdates: PreparedPackageUpdate[] = [];
   const updated: ExtensionSettingsEntry[] = [];
-  for (const entry of document.extensions) {
+  for (const entry of entries) {
     if (!selected.has(entry.id)) {
       continue;
     }
@@ -90,13 +199,17 @@ export async function updateExtensions(
           `Extension "${entry.id}" no longer resolves to a package`
         );
       }
-      await updateManagedPackage(
+      await validatePackageUpdate(
         context,
         entry.id,
         entry.target,
-        parsedSource.installSpec,
-        paths.installRoot
+        parsedSource.installSpec
       );
+      packageUpdates.push({
+        entry,
+        installSpec: parsedSource.installSpec,
+        target: entry.target,
+      });
     } else {
       await loadExtensionTarget({
         cacheBust: (context.now?.() ?? new Date()).toISOString(),
@@ -104,7 +217,7 @@ export async function updateExtensions(
         ...(context.importer === undefined
           ? {}
           : { importer: context.importer }),
-        installRoot: paths.installRoot,
+        installRoot,
         target: entry.target,
       });
     }
@@ -113,57 +226,48 @@ export async function updateExtensions(
       updatedAt: (context.now?.() ?? new Date()).toISOString(),
     });
   }
-  const byId = new Map(updated.map((entry) => [entry.id, entry]));
-  await updateExtensionSettings(paths.settingsPath, (latest) => ({
-    ...latest,
-    extensions: latest.extensions.map((entry) => byId.get(entry.id) ?? entry),
-  }));
-  return updated;
+  return { packageUpdates, updated };
 }
 
-async function updateManagedPackage(
+async function applyManagedPackageUpdate(
   context: ExtensionManagerContext,
   id: string,
   target: { readonly kind: "package"; readonly packageName: string },
   installSpec: string,
   installRoot: string
 ): Promise<void> {
-  await validatePackageUpdate(context, id, target, installSpec);
-  const backupParent = await mkdtemp(
-    join(tmpdir(), "pss-extension-update-backup-")
-  );
-  const backupRoot = join(backupParent, "managed");
-  await cp(installRoot, backupRoot, { recursive: true });
-  try {
-    await installExtensionPackage({
-      installRoot,
-      installSpec,
-      packageName: target.packageName,
-      ...(context.runCommand === undefined
-        ? {}
-        : { runCommand: context.runCommand }),
-    });
-    await loadExtensionTarget({
-      cacheBust: randomUUID(),
-      id,
-      ...(context.importer === undefined ? {} : { importer: context.importer }),
-      installRoot,
-      target,
-    });
-  } catch (error) {
-    try {
-      await rm(installRoot, { force: true, recursive: true });
-      await cp(backupRoot, installRoot, { recursive: true });
-    } catch (restoreError) {
-      throw new AggregateError(
-        [error, restoreError],
-        `Extension "${id}" update and restore both failed`
-      );
-    }
-    throw error;
-  } finally {
-    await rm(backupParent, { force: true, recursive: true });
-  }
+  await installExtensionPackage({
+    installRoot,
+    installSpec,
+    packageName: target.packageName,
+    ...(context.runCommand === undefined
+      ? {}
+      : { runCommand: context.runCommand }),
+  });
+  await loadExtensionTarget({
+    cacheBust: randomUUID(),
+    id,
+    ...(context.importer === undefined ? {} : { importer: context.importer }),
+    installRoot,
+    target,
+  });
+}
+
+async function snapshotInstallRoot(
+  installRoot: string
+): Promise<{ readonly parent: string; readonly root: string }> {
+  const parent = await mkdtemp(join(tmpdir(), "pss-extension-backup-"));
+  const root = join(parent, "managed");
+  await cp(installRoot, root, { recursive: true });
+  return { parent, root };
+}
+
+async function restoreInstallRoot(
+  installRoot: string,
+  backupRoot: string
+): Promise<void> {
+  await rm(installRoot, { force: true, recursive: true });
+  await cp(backupRoot, installRoot, { recursive: true });
 }
 
 async function validatePackageUpdate(

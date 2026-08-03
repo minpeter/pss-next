@@ -213,7 +213,7 @@ describe("FileExecutionStore", () => {
     });
   });
 
-  it("keeps long transaction locks fresh while direct thread writes wait", async () => {
+  it("does not reclaim a live transaction lock regardless of its mtime", async () => {
     const directory = await tempDir();
     const store = new FileExecutionStore(directory);
     const transactionStarted = createDeferred();
