@@ -162,7 +162,7 @@ describe("managed extension package installation", () => {
         'const { writeFileSync } = require("node:fs")',
         `writeFileSync(${JSON.stringify(descendantStarted)}, "started")`,
         'process.on("SIGTERM", () => undefined)',
-        `setTimeout(() => writeFileSync(${JSON.stringify(delayedWrite)}, "late"), 1800)`,
+        `setTimeout(() => writeFileSync(${JSON.stringify(delayedWrite)}, "late"), 2500)`,
         "setInterval(() => undefined, 1000)",
       ].join(";");
       const parentScript = [
@@ -171,13 +171,14 @@ describe("managed extension package installation", () => {
         "setInterval(() => undefined, 1000)",
       ].join(";");
       const previousTimeout = process.env.PSS_EXTENSION_NPM_TIMEOUT_MS;
-      process.env.PSS_EXTENSION_NPM_TIMEOUT_MS = "250";
+      // Leave enough time for both Node processes to start on loaded CI runners.
+      process.env.PSS_EXTENSION_NPM_TIMEOUT_MS = "1000";
       try {
         const result = await defaultRunExtensionCommand(process.execPath, [
           "-e",
           parentScript,
         ]);
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        await new Promise((resolve) => setTimeout(resolve, 1600));
 
         expect(result.code).toBe(1);
         await expect(readFile(descendantStarted, "utf8")).resolves.toBe(
