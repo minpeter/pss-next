@@ -39,6 +39,13 @@ interface TextOutput {
   write(text: string): unknown;
 }
 
+const defaultWebExtensionOptions = (availability: WebToolsAvailability) => ({
+  web:
+    availability === "disabled"
+      ? (false as const)
+      : { webToolsAvailability: availability },
+});
+
 export interface CodingAgentExecResult {
   readonly durationMs: number;
   readonly error?: string;
@@ -175,8 +182,10 @@ export async function runCodingAgentExec({
     },
   };
   const absoluteWorkspace = resolve(workspace);
-  const extensionHost =
-    await createCodingAgentExtensionHostWithDefaults(extensions);
+  const extensionHost = await createCodingAgentExtensionHostWithDefaults(
+    extensions,
+    defaultWebExtensionOptions(webToolsAvailability)
+  );
   let agent: Awaited<ReturnType<typeof createCodingAgent>>;
   let resolvedPrompt = prompt;
   try {

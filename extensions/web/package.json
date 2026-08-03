@@ -1,0 +1,49 @@
+{
+  "name": "@minpeter/pss-extension-web",
+  "version": "0.0.0",
+  "description": "OpenSearch-backed web tools for the PSS coding agent.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@minpeter/pss-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minpeter/pss-runtime.git",
+    "directory": "extensions/web"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "ultracite check ."
+  },
+  "dependencies": {
+    "@minpeter/opensearch": "0.1.1",
+    "ai": "7.0.37"
+  },
+  "peerDependencies": {
+    "@minpeter/pss-coding-agent": "workspace:^"
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

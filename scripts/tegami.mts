@@ -29,6 +29,12 @@ const paper = tegami({
         distTag: "next",
       },
     },
+    "@minpeter/pss-extension-web": {
+      prerelease: "next",
+      npm: {
+        distTag: "next",
+      },
+    },
     "@minpeter/pss-coding-agent": {
       prerelease: "next",
       npm: {

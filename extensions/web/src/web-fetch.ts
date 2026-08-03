@@ -1,8 +1,7 @@
 import type { FetchOptions, FetchResult } from "@minpeter/opensearch/node";
 import { jsonSchema, type Tool, tool } from "ai";
-
-import type { CodingAgentOpenSearchClient } from "./tools";
-import { abortIfRequested } from "./tools-errors";
+import { abortIfRequested } from "./errors";
+import type { CodingAgentOpenSearchClient } from "./web-tools";
 
 const MAX_FETCH_URLS = 10;
 

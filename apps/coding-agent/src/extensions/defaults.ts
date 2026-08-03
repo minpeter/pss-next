@@ -1,4 +1,8 @@
 import latexExtension from "@minpeter/pss-extension-latex";
+import {
+  type CreateCodingAgentToolsOptions,
+  createWebExtension,
+} from "@minpeter/pss-extension-web";
 import { createCodingAgentExtensionHost } from "./host";
 import type {
   CodingAgentExtensionInput,
@@ -10,11 +14,32 @@ const latexModule: CodingAgentExtensionModule = {
   id: "@minpeter/pss-extension-latex",
 };
 
+export interface DefaultCodingAgentExtensionsOptions {
+  readonly web?: CreateCodingAgentToolsOptions | false;
+}
+
 export const withDefaultCodingAgentExtensions = (
-  extensions: readonly CodingAgentExtensionInput[]
-): readonly CodingAgentExtensionInput[] => [latexModule, ...extensions];
+  extensions: readonly CodingAgentExtensionInput[],
+  options: DefaultCodingAgentExtensionsOptions = {}
+): readonly CodingAgentExtensionInput[] => {
+  const webModule: CodingAgentExtensionModule | undefined =
+    options.web === false
+      ? undefined
+      : {
+          default: createWebExtension(options.web),
+          id: "@minpeter/pss-extension-web",
+        };
+  return [
+    latexModule,
+    ...(webModule === undefined ? [] : [webModule]),
+    ...extensions,
+  ];
+};
 
 export const createCodingAgentExtensionHostWithDefaults = (
-  extensions: readonly CodingAgentExtensionInput[]
+  extensions: readonly CodingAgentExtensionInput[],
+  options: DefaultCodingAgentExtensionsOptions = {}
 ) =>
-  createCodingAgentExtensionHost(withDefaultCodingAgentExtensions(extensions));
+  createCodingAgentExtensionHost(
+    withDefaultCodingAgentExtensions(extensions, options)
+  );
