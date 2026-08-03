@@ -154,7 +154,10 @@ function selectFixtures(fixtures, options) {
 }
 
 const options = parseArguments(process.argv.slice(2));
-const evalsDirectory = resolve(benchmarkRoot, "evals");
+// Tests point PSS_BENCH_EVALS_DIR at a hermetic fixture; runners use the synced checkout.
+const evalsDirectory = process.env.PSS_BENCH_EVALS_DIR
+  ? resolve(process.env.PSS_BENCH_EVALS_DIR)
+  : resolve(benchmarkRoot, "evals");
 const { fixtures, errors } = loadAllFixtures(evalsDirectory, {
   validation: "vitest",
 });
