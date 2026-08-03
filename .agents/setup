@@ -7,6 +7,14 @@ cd "$repo_root"
 export PATH="$HOME/.local/bin:$PATH"
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share"
 
+if [[ ! -x /usr/bin/google-chrome ]] &&
+  [[ ! -x /usr/bin/chromium ]] &&
+  [[ ! -x /usr/bin/chromium-browser ]]; then
+  echo "Installing Chromium for LaTeX rendering tests..."
+  sudo apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y chromium
+fi
+
 profile_marker="# pss-runtime orb tools"
 if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<'EOF'
