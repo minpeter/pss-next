@@ -1,45 +1,107 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add hashline edit diffs to the coding-agent TUI\n\nThe coding agent now renders anchored `edit_file` results as sorted,\nsenpi-style word diffs with faint changed regions, stronger intra-token\nhighlights, and dim context rows for unchanged lines.\n\nThe TUI modules are organized by code flow under `src/tui/`, and read/diff\nrendering now displays terminal control characters as safe visible\nplaceholders instead of forwarding them to the terminal.\n"
-    filename: 2026-07-23-coding-agent-tui-hashline-diff.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Load AGENTS.md context files, prompt templates, and skills\n\npss now loads file-based context resources without requiring an extension.\n`AGENTS.md` context files are discovered from `~/.pss/AGENTS.md` and from\nthe repository root (the first ancestor containing `.git`) down to the\nworking directory, closest file last, and injected into the system prompt\nin both the TUI and headless exec.\n\nPrompt templates (`~/.pss/prompts/*.md` globally,\n`<project>/.pss/prompts/*.md` trust-gated per project) become `/name`\nslash commands in the TUI and expand `pss exec` prompts of the form\n`/name args`. `$ARGUMENTS` receives the full argument string and\n`$1`–`$9` positional arguments in a single substitution pass, so\nplaceholder-like text inside arguments is never re-substituted; bodies\nwithout placeholders get the arguments appended. An optional\n`description:` frontmatter line labels the command. Built-in and extension\ncommands always win name collisions; shadowed templates are skipped with a\nnotice, and project templates beat global ones, which beat\nextension-contributed ones.\n\nSkills are `skills/<name>/SKILL.md` directories with `name`/`description`\nfrontmatter, discovered globally and (trust-gated) per project. Only the\nmetadata loads eagerly; the system prompt lists each skill and the model\nreads the `SKILL.md` on demand when a task matches.\n\nExtensions contribute prompt and skill directories with the new\n`resources` capability (absolute paths, validated). Untrusted project\nresources stay blocked with a notice — the same trust gate the extension\nloader uses — and malformed trust settings fail safe. Context resources\nare re-discovered by `/reload`, so edits apply without a restart; a failed\nreload keeps the previous resources with the previous runtime.\n"
+    filename: 2026-07-28-context-resources.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add the core hooks runtime and installable coding-agent extensions\n\nReplace the legacy runtime plugin pipeline with one typed `AgentHooks`\nboundary for model transforms and tool interception. Stored thread snapshots\ncan now run versioned, atomic migrations that persist exactly-once application\nmetadata without exposing partial state after callback or commit failures.\n\nCoding-agent extensions can be authored as default-export factories receiving\n`ExtensionAPI`, while static programmatic extensions remain supported. The\nhost composes instructions, tools, commands, UI contributions, lifecycle\ncallbacks, runtime hooks, and durable thread migrations with source-attributed\nvalidation errors. Concise `pss.use()`, `pss.on()`, and `pss.provide()` methods\nregister control hooks, named event observers, and branded capabilities for\ninstructions, tools, commands, migrations, and renderers without restoring\nthe legacy plugin runtime. Factory capabilities validate and publish\natomically after configuration succeeds.\n\nAdd `pss extension install`, `list`, `remove`, `update`, `enable`, and\n`disable` for npm, Git, local package, and loose ESM sources at global or\nproject scope. Trusted project discovery loads extensions consistently in the\nTUI and headless exec runner. Managed installs validate package boundaries,\nreject symlink and export-path escapes, disable lifecycle scripts, and restore\nthe prior package and settings state when installation, update, or trust\nrecording fails.\n"
-    filename: 2026-07-24-core-hooks-extension-host.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Stage /reload extension imports in an isolated module context\n\n`/reload` now evaluates every replacement extension candidate in a\nworker-thread module context before anything in the live process is\ntouched. A candidate that throws at module scope, or exports the wrong\nshape, fails the reload during staging — so the live runtime's ESM module\ngraph and CommonJS cache are only modified once all candidates load\ncleanly, and a rolled-back reload can no longer leave freshly re-executed\nhelper instances observable to the still-running previous runtime through\nthat window. The staging worker reports the observed export shape\n(factory, extension object, or invalid), letting loader validation fail at\nstaging time exactly as the commit-time import would.\n\nModule side effects run once in the discarded worker context and once more\nat commit time; staging trades that repeat execution for keeping the live\nmodule graph untouched on failure. The staging worker keeps the process\nalive only while imports are in flight and is terminated when the staging\nsession ends, and remaining commit-time failures (for example an\nactivation error after a clean import) continue to use the transactional\nCommonJS snapshot/rollback.\n"
+    filename: 2026-07-28-reload-staging-isolation.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add /reload, an inter-extension event bus, and provider observations\n\nThe TUI gains a `/reload` command that rebuilds the extension runtime from\ndisk without restarting the session. Extensions are rediscovered across\nmanaged installs, local modules, and `-e` paths, re-imported past the module\ncache, and activated against a replacement agent while the durable thread\nkeeps its history. Reload is staged for safety: discovery, configuration,\nvalidation, and agent construction happen while the previous runtime keeps\nrunning, the previous runtime is then disposed under a bounded timeout\nbefore the replacement activates (so old cleanup can never overwrite the\nreplacement's extension state), and an activation failure rebuilds a\nruntime from the previous extensions so the session stays usable. Cache\nbusting propagates through the extension-owned module graph via a module\ncustomization hook, including CommonJS helpers and a managed package's own\nmodules; CommonJS eviction is transactional and restored when a reload\nfails, and dependency trees under `node_modules` keep their loaded versions\nso repeated reloads do not accumulate duplicate dependency graphs. The\nruntime exports `commitThreadStateMigrations`, which `/reload` uses to run\nand commit reloaded migrations for the stored thread before the swap,\npreserving exactly-once migration semantics; a failed reload also refreshes\nthe surviving thread handle so it cannot commit on a stale revision. The\ncommand is offered only when the host can rediscover extensions, and\n`reload` joins the reserved command names extensions cannot register.\n\nExtension services gain `services.events`, a shared publish/subscribe bus\nfor extension-to-extension communication. Payloads are JSON values cloned\nper delivery, delivery is deferred so synchronous handler work cannot block\nthe publisher, handlers run under the host timeout/abort boundary, and\nfailures are attributed to the subscribing extension without affecting the\npublisher or other subscribers. The `host:` and `provider:` namespaces are\nreserved for host-originated events.\n\nThe host now publishes read-only provider HTTP observations on the bus:\n`provider:request`, `provider:response`, and `provider:error`. URLs are\nstripped of credentials, query strings, and fragments, request bodies and\nrequest headers are never exposed, response headers pass a safelist, and\ntransport error messages are scrubbed of URL-like tokens. Observation\nfailures never interrupt provider traffic, and both the TUI and headless\nexec wire the observation fetch automatically.\n"
-    filename: 2026-07-26-extension-runtime-surface.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Manage named, resumable, forkable sessions with lifecycle events\n\nThe TUI now manages sessions per working directory. Metadata — display\nnames, fork parentage, and the active session resumed on the next startup —\nlives in a fail-safe sidecar index next to the thread files; a corrupt\nindex degrades to an empty one with a notice and never touches durable\nthread state. Session recency bumps on every completed turn, so pickers\nsort by actual use. `PSS_THREAD_KEY` still forces a key; the forced key is\nregistered (naming and forking work) but never clobbers the active pointer\nfor regular startups, and `pss inspect-thread` follows the active session\nunless the key is forced.\n\nCommands: `/new [name]` starts a new empty session. `/resume` opens an\ninteractive picker to switch, rename, or delete a session (deleting the\nlive session is blocked); `/resume <key|name>` switches directly with\nargument completions. `/name <name>` and the `--name` startup flag set the\ndisplay name shown in the header. `/fork` offers branch points: the latest\nstate or before any earlier user message — the fork keeps the truncated\nhistory, drops compaction records that extend past the cut, seeds\n`appliedMigrations` so migrations never re-run, and records the parent\nthread key; a fork whose registration fails deletes its copied thread.\n`/clear` keeps its wipe-in-place meaning and loses its `new` alias to the\ndedicated command. `new`, `resume`, `name`, `fork`, and `model` join the\nreserved command names.\n\nExtensions observe the lifecycle through host bus events:\n`host:session-start` (reasons `startup`/`new`/`resume`/`fork`/`clear`),\n`host:session-switch`, and `host:session-shutdown`. The new `sessionGuard`\ncapability adds cancelable pre-switch/pre-fork decision points; guard\nerrors, timeouts, malformed decisions, and explicit `null` returns fail\nclosed, consistent with strict hook decisions.\n\n`@minpeter/pss-runtime` exports the thread snapshot codecs\n(`decodeStoredThreadState`, `encodeThreadSnapshot`, and their types and\nvalidation errors) so hosts can implement branch-before-message forks over\nvalidated state instead of parsing stored snapshots by hand.\n"
+    filename: 2026-07-28-session-management.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Load local extensions without installing\n\nLoose extension modules now load automatically from\n`~/.pss/extensions/<name>.<ts|mts|js|mjs>` and\n`~/.pss/extensions/<name>/index.*`, plus the project-scoped\n`<project>/.pss/extensions/` once the project is trusted. TypeScript modules\nrun directly through Node's native type stripping, so authoring an extension\nneeds no packaging or build step. File and directory names become the stable\nextension id and must match `[a-z0-9][a-z0-9._-]*`; symbolic links and invalid\nnames are skipped with startup notices instead of failing startup.\n\nManaged installs keep precedence: a local module whose id collides with an\ninstalled extension is skipped with a notice, and project-local modules\noverride global-local modules with the same id. Untrusted projects that\ncontain loose extension modules surface the existing blocked-extensions\nnotice.\n\nAdd a repeatable `-e`/`--extension <path>` flag to the TUI and `pss exec` that\nloads a module file or index directory for the current run only, without\ntouching settings. CLI extensions are an explicit user action, so they load\nwithout trust gating and take precedence over configured extensions with the\nsame id. Invalid paths, non-module files, duplicate ids, and missing index\nmodules fail fast with actionable errors before the session starts.\n"
-    filename: 2026-07-26-local-cli-extensions.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Tighten model options and remove stale internal code\n\nModel-catalog cache configuration is now exposed only by coding-model session\nfactories, where it is actually used. The native language-model factories no\nlonger advertise and silently forward a no-op `catalogCache` option, while the\nnew session-specific option types preserve explicit cache configuration for\nembedders and tests. Shared provider construction also keeps native and\nswitchable model setup from drifting apart.\n\nRemove an unused copied TUI color palette, three orphaned image-codec\ninitialization promises, a dead test fixture, and a mismatched image-codec\ncomment. Repository TypeScript checks now reject unused locals and parameters,\nand workspace/Biome metadata is kept aligned with the active pnpm workspace and\ntool versions.\n"
+    filename: 2026-07-28-stale-model-options.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Delegate web tool providers to OpenSearch instead of gating on TinyFish\n\n`createCodingAgentTools()` no longer gates `web_search`/`web_fetch` behind\n`TINYFISH_API_KEY`. Provider selection is delegated to\n`@minpeter/opensearch`, which resolves keyed engines (TinyFish, Exa, Brave,\nTavily, ...) from the environment and always has keyless fallbacks such as\nDuckDuckGo search and local fetch, so the tools register whenever\n`webToolsAvailability` is not `disabled`.\n\nThe now-dead missing-key surface is removed: `WEB_TOOLS_DISABLED_MESSAGE`,\n`CodingAgentWebToolsUnavailableError`, and the `onWebToolsDisabled` option are\ngone, and the TUI no longer emits a startup notice for a missing key. The\n`webToolsAvailability` type and the `pss exec --web-tools` flag keep accepting\n`disabled|optional|required` (`optional` and `required` now behave the same),\nand `pss exec` still defaults to `disabled`.\n"
-    filename: 2026-07-27-opensearch-keyless-web-tools.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Default to minimax/MiniMax-M3\n\nThe fallback model id used when `AI_MODEL` is unset moves from\n`minimax/MiniMax-M2.7` to `minimax/MiniMax-M3`. Set `AI_MODEL` to pin the\nprevious model.\n"
+    filename: 2026-07-29-default-model-minimax-m3.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n---\n\n## Render LaTeX display math through an overridable extension\n\nAssistant `$$ ... $$` and `\\[ ... \\]` display blocks now render through\nLaTeX, DVI, `dvipng`, and ImageMagick into cached transparent PNGs in\nKitty-graphics terminals. The renderer preserves incomplete or invalid source\nas Markdown, repairs common single-backslash row terminators, keeps\nhigh-resolution source images at terminal-sized logical dimensions, and\ndeduplicates missing-dependency notices for the lifetime of the TUI session.\nFormula scale and terminal-specific horizontal correction are configurable\nwith `PSS_LATEX_SCALE` and `PSS_LATEX_ASPECT`.\n\nThe implementation ships as the independently versioned\n`@minpeter/pss-extension-latex` package, which coding-agent includes by\ndefault. The assistant-renderer capability now exposes lifecycle cancellation,\ndisposal, redraw, notification, ownership, conflict, and reload boundaries.\nOfficial LaTeX registers as a fallback; third-party renderers must explicitly\nopt into replacing it, and removing an override restores the official\nrenderer.\n\nNative rendering uses an allowlisted environment, bounded queue and cache\nreads, process-tree cancellation, PNG dimension limits, disabled\nGhostscript/raw-PostScript paths, and per-stage time and output limits. It runs\nonly on Linux with Bubblewrap namespace/filesystem isolation and `prlimit`\nresource bounds available; otherwise the original Markdown remains visible.\n"
+    filename: 2026-07-29-latex-extension-renderer.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## License the workspace under the Sustainable Use License\n\nThe repository previously shipped without a license file, leaving published\npackages with no stated terms. `LICENSE.md` now declares the Sustainable Use\nLicense 1.0 at the workspace root and is mirrored into the two published\npackages, which set `\"license\": \"SEE LICENSE IN LICENSE.md\"` and include the\nfile in their published `files` list.\n\nInternal business, non-commercial, and personal use stay free, including\nmodification and free redistribution. Reselling the software or offering it as\na paid product or service requires a separate commercial license.\n\nThe license applies retroactively to every earlier release, including the ones\npublished with no license field, so previously installed versions are covered by\nthe same terms instead of being left unlicensed.\n"
+    filename: 2026-07-29-sustainable-use-license.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Update the AI SDK\n\nUpdate the runtime, coding agent, and web extension to AI SDK 7.0.45.\n"
+    filename: 2026-08-03-ai-sdk-update.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Harden file ownership and extension mutation transactions\n\nReplace time-expiring local file leases with atomic PID/token-owned locks.\nLive processes retain ownership even while suspended, dead owners are reaped\nunder a separately owned lock, and stale holders cannot release a successor's\nlock. The lock explicitly targets one shared PID namespace and a local\nfilesystem rather than claiming cross-container or distributed-filesystem\nsafety.\n\nSerialize each extension scope's install, update, remove, enable, and trust\nmutations through one operation owner. Package updates validate before\nmutation and restore a single install-root snapshot if any package or final\nsettings commit fails; failed removals likewise restore package bytes before\nrestoring settings, and failed project trust restores the prior enabled state.\nPackage-manager subprocesses now have bounded output, a configurable deadline,\nand process-group SIGTERM/SIGKILL escalation where supported.\n\nReload staging now rejects candidate graphs that introduce extension-owned\nCommonJS modules before importing them into the live process. Existing\nCommonJS cache entries return a restart-required result instead of attempting\nunsafe process-wide cache eviction, while ESM reload remains supported.\n"
+    filename: 2026-08-03-harden-runtime-ownership.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Make edit_file anchors symmetric\n\nUse `target` for one line or `first` and `last` for ranges, with non-empty `new_content`.\nAlign the edit benchmarks with the real tool contract and add deterministic multi-file recovery coverage.\n"
+    filename: 2026-08-03-symmetric-edit-file-anchors.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Extract the coding agent's web tools into an extension\n\nMove `web_search`, `web_fetch`, their OpenSearch integration, and TUI renderers\ninto a default `@minpeter/pss-extension-web` package while preserving existing overrides and headless defaults.\n"
+    filename: 2026-08-03-web-extension.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-bench-shared:\n    type: patch\n  npm:@minpeter/pss-benchmark-nextjs:\n    type: patch\n---\n\n## Vendor benchmark workspace dependencies\n\nPackage unpublished workspace dependencies with the coding-agent benchmark artifact so sandbox installation succeeds.\n"
+    filename: 2026-08-03-vendor-benchmark-dependencies.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Prepare fresh Amp orbs for development\n\nInstall the pinned Node and pnpm toolchain, workspace dependencies, and Chromium in fresh Amp orbs, with a fast wake-up lifecycle.\n"
+    filename: 2026-08-03-amp-orb-setup.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update Cloudflare Workers type definitions\n\nRefresh the Worker and edge QA projects to the latest Cloudflare runtime type definitions.\n"
+    filename: 2026-08-03-cloudflare-workers-types.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Document the pull request Tegami policy\n\nRequire pull requests to include a concise Tegami entry before merge and use\npatch-level releases by default unless another release level is requested.\n"
+    filename: 2026-08-03-document-pr-tegami-policy.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-07-23-coding-agent-tui-hashline-diff.md
-      - 2026-07-24-core-hooks-extension-host.md
-      - 2026-07-26-extension-runtime-surface.md
-      - 2026-07-26-local-cli-extensions.md
-      - 2026-07-27-opensearch-keyless-web-tools.md
+      - 2026-07-28-context-resources.md
+      - 2026-07-28-reload-staging-isolation.md
+      - 2026-07-28-session-management.md
+      - 2026-07-28-stale-model-options.md
+      - 2026-07-29-default-model-minimax-m3.md
+      - 2026-07-29-latex-extension-renderer.md
+      - 2026-07-29-sustainable-use-license.md
+      - 2026-08-03-ai-sdk-update.md
+      - 2026-08-03-harden-runtime-ownership.md
+      - 2026-08-03-symmetric-edit-file-anchors.md
+      - 2026-08-03-web-extension.md
     id: npm:@minpeter/pss-coding-agent
+    updated: true
+  - changelogIds:
+      - 2026-07-29-latex-extension-renderer.md
+    id: npm:@minpeter/pss-extension-latex
+    updated: true
+  - changelogIds:
+      - 2026-08-03-ai-sdk-update.md
+      - 2026-08-03-web-extension.md
+    id: npm:@minpeter/pss-extension-web
+    updated: true
+  - changelogIds:
+      - 2026-08-03-vendor-benchmark-dependencies.md
+    id: npm:@minpeter/pss-bench-shared
     updated: true
   - id: npm:@minpeter/pss-benchmark-compaction-score
     updated: false
-  - id: npm:@minpeter/pss-benchmark-nextjs
-    updated: false
-  - id: npm:@minpeter/pss-bench-shared
-    updated: false
   - changelogIds:
-      - 2026-07-24-core-hooks-extension-host.md
-      - 2026-07-26-extension-runtime-surface.md
+      - 2026-08-03-vendor-benchmark-dependencies.md
+    id: npm:@minpeter/pss-benchmark-nextjs
+    updated: true
+  - id: npm:@minpeter/pss-edit-format-bench
+    updated: true
+  - changelogIds:
+      - 2026-07-28-session-management.md
+      - 2026-07-28-stale-model-options.md
+      - 2026-07-29-sustainable-use-license.md
+      - 2026-08-03-ai-sdk-update.md
+      - 2026-08-03-amp-orb-setup.md
+      - 2026-08-03-cloudflare-workers-types.md
+      - 2026-08-03-document-pr-tegami-policy.md
+      - 2026-08-03-harden-runtime-ownership.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
   - id: npm:@minpeter/pss-benchmark-compaction-score
-  - id: npm:@minpeter/pss-benchmark-nextjs
+  - id: npm:@minpeter/pss-edit-format-bench
+  - distTag: next
+    id: npm:@minpeter/pss-extension-latex
+  - distTag: next
+    id: npm:@minpeter/pss-extension-web
   - id: npm:@minpeter/pss-bench-shared
+  - id: npm:@minpeter/pss-benchmark-nextjs
   - distTag: next
     id: npm:@minpeter/pss-runtime
   - id: npm:@minpeter/pss-worker-agent
