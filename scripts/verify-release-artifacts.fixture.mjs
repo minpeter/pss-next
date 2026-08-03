@@ -65,12 +65,7 @@ export function createTrackedTempRoot(prefix) {
 export function createFixture() {
   const cwd = createTrackedTempRoot("pss-release-artifacts-");
 
-  for (const packageName of [
-    "runtime",
-    "extension-api",
-    "extension-latex",
-    "coding-agent",
-  ]) {
+  for (const packageName of ["runtime", "extension-latex", "coding-agent"]) {
     const packageRoot = fixturePackageRoot(cwd, packageName);
     mkdirSync(join(packageRoot, "dist"), { recursive: true });
     writeFileSync(

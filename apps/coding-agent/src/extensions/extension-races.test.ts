@@ -1,5 +1,5 @@
-import { instructions } from "@minpeter/pss-extension-api";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { instructions } from "./capabilities";
 
 const commitSpy = vi.hoisted(() => vi.fn());
 

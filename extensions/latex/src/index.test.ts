@@ -1,9 +1,9 @@
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
 import type {
+  CodingAgentExtensionFactory,
   ExtensionAPI,
   ExtensionCapability,
-  ExtensionFactory,
-} from "@minpeter/pss-extension-api";
+} from "@minpeter/pss-coding-agent/extension";
 import { describe, expect, it } from "vitest";
 import latexExtension, {
   createLatexExtension,
@@ -28,12 +28,18 @@ const markdownTheme: MarkdownTheme = {
 };
 
 const recordCapabilities = async (
-  factory: ExtensionFactory
+  factory: CodingAgentExtensionFactory
 ): Promise<readonly ExtensionCapability[]> => {
   const capabilities: ExtensionCapability[] = [];
   const api: ExtensionAPI = {
+    on() {
+      return;
+    },
     provide(capability) {
       capabilities.push(capability);
+    },
+    use() {
+      return;
     },
   };
   await factory(api);

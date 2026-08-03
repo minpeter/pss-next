@@ -23,12 +23,6 @@ const paper = tegami({
         distTag: "next",
       },
     },
-    "@minpeter/pss-extension-api": {
-      prerelease: "next",
-      npm: {
-        distTag: "next",
-      },
-    },
     "@minpeter/pss-extension-latex": {
       prerelease: "next",
       npm: {

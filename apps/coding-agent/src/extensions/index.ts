@@ -1,10 +1,4 @@
 // biome-ignore-all lint/performance/noBarrelFile: public extension package entrypoint
-export {
-  type AssistantRendererCapability,
-  assistantRenderer,
-  type InstructionsCapability,
-  instructions,
-} from "@minpeter/pss-extension-api";
 export type {
   ThreadMigrationContext,
   ThreadMigrationSnapshot,
@@ -33,8 +27,10 @@ export type {
   ToolRendererMap,
 } from "../tui/tool-call-view";
 export type {
+  AssistantRendererCapability,
   CommandCapability,
   ExtensionCapability,
+  InstructionsCapability,
   ModelProviderCapability,
   ResourcesCapability,
   SessionGuardCapability,
@@ -43,7 +39,9 @@ export type {
   ToolsCapability,
 } from "./capabilities";
 export {
+  assistantRenderer,
   command,
+  instructions,
   modelProvider,
   resources,
   sessionGuard,
