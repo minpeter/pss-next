@@ -420,15 +420,19 @@ derivations, matrices, and other non-trivial notation. Display delimiters stay
 on their own lines. The renderer still accepts `\[ ... \]` for user- or
 context-supplied Markdown. The prompt also requires two literal backslashes for
 rows in `cases`, matrices, arrays, and aligned equations; the renderer repairs
-the common single-backslash-at-end-of-row model error before invoking TeX.
+the common single-backslash-at-end-of-row model error before invoking MathJax.
 Delimiters inside inline, fenced, or indented code remain plain Markdown.
 
-Rendering uses `latex -> DVI -> dvipng`, followed by ImageMagick trimming,
-sharpening, and transparent padding. It retains a high-resolution PNG while
+Rendering runs bundled MathJax and resvg WebAssembly in a persistent Node
+worker to produce a transparent PNG. Script-specific bundled Noto fonts cover
+Latin, locale-correct Japanese, Korean, Simplified and Traditional Chinese,
+Arabic, Hebrew, Devanagari, and Thai text; no browser, system font, system
+package, or executable is required. It retains a high-resolution PNG while
 using smaller logical display dimensions, so Kitty downsamples instead of
-upscaling a low-resolution source. Placeholder columns are derived from the PNG
-aspect ratio and the terminal's measured cell width/height rather than rounding
-width and height independently, which avoids horizontally compressed formulas.
+upscaling a low-resolution source. Placeholder columns are derived from the
+PNG aspect ratio and the terminal's measured cell width/height rather than
+rounding width and height independently, which avoids horizontally compressed
+formulas.
 Every display formula also gets one terminal blank row above and below,
 matching Codex's visual spacing. The final PNG is
 cached under
@@ -436,26 +440,22 @@ cached under
 Kitty Unicode-placeholder cells, so TUI redraws and scrolling keep the image
 attached to its text rows.
 
-On Linux, install `bwrap`, `prlimit`, `latex`, `dvipng`, and ImageMagick
-(`magick`, or the legacy `convert`) to enable image rendering. Native TeX is
-disabled on other platforms and whenever the OS sandbox or resource limiter is
-unavailable. Missing tools, invalid TeX, unsupported terminals, and incomplete
-streamed delimiters fall back to the original Markdown instead of failing the
-turn. When an executable is missing, the TUI shows one installation notice per
-session instead of silently failing or repeating the warning for every
-formula. Set `PSS_LATEX=0` to disable rendering,
+The self-contained renderer behaves consistently on Linux, macOS, and Windows.
+Invalid TeX, emoji, unsafe HTML/style macros, unsupported terminals, and
+incomplete streamed delimiters fall back to the original Markdown instead of
+failing the turn. Set `PSS_LATEX=0` to disable rendering,
 `PSS_LATEX_COLOR=#202020` to choose the six-digit foreground color (useful for
 light terminal themes), `PSS_LATEX_SCALE=0.9` to tune formula size from `0.5`
 to `2`, `PSS_LATEX_ASPECT=1.05` for a small terminal-specific horizontal
 correction from `0.75` to `1.25`, or `PSS_LATEX_CACHE_DIR` to override the PNG
 cache.
-Model-generated TeX runs without shell escape or an inherited credential
-environment, in a private temporary directory, with restricted file
-input/output, bounded output, file and image limits, process-tree cancellation,
-and a per-stage timeout. `dvipng` disables Ghostscript and raw PostScript.
-Bubblewrap isolates PID, IPC, network, UTS, and filesystem access, exposing
-only read-only system roots plus the writable private render directory;
-`prlimit` bounds CPU time, address space, file size, and open descriptors.
+Model-generated formulas run without shell escape, browser, network access, or
+TeX filesystem input. Unsafe HTML/style macros and emoji are rejected, while
+SVG/PNG bytes, dimensions, pixels, and render queues are bounded. The worker
+has conservative Node heap and stack limits; a 10-second timeout, cancellation,
+or worker failure terminates it, falls back to source Markdown, and lets the
+next formula start a fresh worker. These are Node worker heap/time limits, not
+hard CPU or OS address-space limits.
 
 ## CLI
 
