@@ -7,6 +7,26 @@ import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionInput } from "./types";
 
 describe("default coding-agent extensions", () => {
+  it("registers web tools and renderers unless explicitly disabled", async () => {
+    const enabled = await createCodingAgentExtensionHostWithDefaults([]);
+    const disabled = await createCodingAgentExtensionHostWithDefaults([], {
+      web: false,
+    });
+
+    expect(Object.keys(enabled.tools)).toStrictEqual([
+      "web_search",
+      "web_fetch",
+    ]);
+    expect(Object.keys(enabled.toolRenderers)).toStrictEqual([
+      "web_search",
+      "web_fetch",
+    ]);
+    expect(disabled.tools).toStrictEqual({});
+    expect(disabled.toolRenderers).toStrictEqual({});
+
+    await Promise.all([enabled.dispose(), disabled.dispose()]);
+  });
+
   it("lets an explicit assistant renderer override default LaTeX", async () => {
     const preferredRenderer = () => ({
       invalidate() {

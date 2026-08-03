@@ -167,6 +167,10 @@ const foregroundThemeConfig = (): Pick<AgentTUIConfig, "theme"> => {
   return foregroundColor === undefined ? {} : { theme: { foregroundColor } };
 };
 
+const defaultExtensionOptionsForTools = (tools: ToolSet | undefined) => ({
+  web: tools === undefined ? {} : (false as const),
+});
+
 export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
@@ -175,8 +179,12 @@ export async function startTui(
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
+  const defaultExtensionOptions = defaultExtensionOptionsForTools(
+    options.tools
+  );
   let extensionHost = await createCodingAgentExtensionHostWithDefaults(
-    options.extensions ?? []
+    options.extensions ?? [],
+    defaultExtensionOptions
   );
   providerEmitter.current = (type, payload) => {
     extensionHost.emitHostEvent(type, payload);
@@ -616,7 +624,8 @@ export async function startTui(
           createAgent: (host) => Promise.resolve(createReplacementAgent(host)),
           createHost: async (loaded) => {
             const host = await createCodingAgentExtensionHostWithDefaults(
-              loaded.extensions
+              loaded.extensions,
+              defaultExtensionOptions
             );
             // Re-discover context resources against the replacement host so
             // edited AGENTS.md files, templates, skills, and freshly
@@ -673,7 +682,8 @@ export async function startTui(
             contextResources = previous.context;
             const recoveredHost =
               await createCodingAgentExtensionHostWithDefaults(
-                currentExtensionInputs
+                currentExtensionInputs,
+                defaultExtensionOptions
               );
             let recoveredAgent:
               | Awaited<ReturnType<typeof createCodingAgent>>
