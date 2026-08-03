@@ -160,4 +160,96 @@ describe("extension installation transaction", () => {
       extensions: [{ id: "demo" }],
     });
   });
+
+  it("restores package bytes when npm fails after a partial mutation", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "pss-extension-install-partial-")
+    );
+    cleanupRoots.push(root);
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    const context = { cwd, home, scope: "global" as const };
+    const paths = await extensionScopePaths(context);
+    const originalPackageJson = `${JSON.stringify({
+      dependencies: { existing: "1.0.0" },
+      private: true,
+    })}\n`;
+    await mkdir(join(paths.installRoot, "node_modules", "existing"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(paths.installRoot, "package.json"),
+      originalPackageJson,
+      "utf8"
+    );
+    await writeFile(
+      join(paths.installRoot, "node_modules", "existing", "index.js"),
+      "original\n",
+      "utf8"
+    );
+    const runCommand: RunExtensionCommand = async () => {
+      await writeFile(
+        join(paths.installRoot, "package.json"),
+        JSON.stringify({ dependencies: { demo: "1.0.0" } }),
+        "utf8"
+      );
+      await mkdir(join(paths.installRoot, "node_modules", "demo"), {
+        recursive: true,
+      });
+      await writeFile(
+        join(paths.installRoot, "node_modules", "demo", "partial.js"),
+        "partial\n",
+        "utf8"
+      );
+      return { code: 1, stderr: "partial install failure", stdout: "" };
+    };
+
+    await expect(
+      installExtension({
+        ...context,
+        enabled: true,
+        runCommand,
+        source: "demo@1.0.0",
+      })
+    ).rejects.toThrow("partial install failure");
+
+    await expect(
+      readFile(join(paths.installRoot, "package.json"), "utf8")
+    ).resolves.toBe(originalPackageJson);
+    await expect(
+      readFile(
+        join(paths.installRoot, "node_modules", "existing", "index.js"),
+        "utf8"
+      )
+    ).resolves.toBe("original\n");
+    await expect(
+      access(join(paths.installRoot, "node_modules", "demo"))
+    ).rejects.toThrow();
+  });
+
+  it("removes a newly created package root when its first install fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pss-extension-install-new-"));
+    cleanupRoots.push(root);
+    const cwd = join(root, "project");
+    const home = join(root, "home");
+    await mkdir(cwd, { recursive: true });
+    const context = { cwd, home, scope: "global" as const };
+    const paths = await extensionScopePaths(context);
+
+    await expect(
+      installExtension({
+        ...context,
+        enabled: true,
+        runCommand: async () => ({
+          code: 1,
+          stderr: "first install failure",
+          stdout: "",
+        }),
+        source: "demo@1.0.0",
+      })
+    ).rejects.toThrow("first install failure");
+
+    await expect(access(paths.installRoot)).rejects.toThrow();
+  });
 });

@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadExtensionTarget } from "./module-loader";
 import {
+  discardInstallRootSnapshot,
   installExtensionPackage,
   removeExtensionPackage,
+  restoreInstallRoot,
+  snapshotInstallRoot,
 } from "./package-installer";
 import { extensionScopePaths } from "./paths";
 import {
@@ -36,62 +39,71 @@ async function removeExtensionOwned(
   context: ExtensionManagerContext & { readonly id: string },
   paths: Awaited<ReturnType<typeof extensionScopePaths>>
 ): Promise<ExtensionSettingsEntry> {
-  let removed: ExtensionSettingsEntry | undefined;
-  let remainingPackages: readonly ExtensionSettingsEntry[] = [];
-  await updateExtensionSettings(paths.settingsPath, (document) => {
-    const entry = document.extensions.find((item) => item.id === context.id);
-    if (entry === undefined) {
-      throw new Error(`Extension "${context.id}" is not installed`);
-    }
-    removed = entry;
-    remainingPackages = document.extensions.filter(
-      (item) => item.id !== entry.id
+  const document = await readExtensionSettings(paths.settingsPath);
+  const entry = document.extensions.find((item) => item.id === context.id);
+  if (entry === undefined) {
+    throw new Error(`Extension "${context.id}" is not installed`);
+  }
+  const remainingPackages = document.extensions.filter(
+    (item) => item.id !== entry.id
+  );
+  const packageName =
+    entry.target.kind === "package" ? entry.target.packageName : undefined;
+  const removePackage =
+    packageName !== undefined &&
+    !remainingPackages.some(
+      (item) =>
+        item.target.kind === "package" &&
+        item.target.packageName === packageName
     );
-    return {
-      ...document,
-      extensions: remainingPackages,
-    };
-  });
-  const entry = removed as ExtensionSettingsEntry;
-  if (entry.target.kind === "package") {
-    const packageName = entry.target.packageName;
-    if (
-      !remainingPackages.some(
-        (item) =>
-          item.target.kind === "package" &&
-          item.target.packageName === packageName
-      )
-    ) {
-      const backup = await snapshotInstallRoot(paths.installRoot);
-      try {
-        await removeExtensionPackage({
-          installRoot: paths.installRoot,
-          packageName,
-          ...(context.runCommand === undefined
-            ? {}
-            : { runCommand: context.runCommand }),
-        });
-      } catch (error) {
-        try {
-          await restoreInstallRoot(paths.installRoot, backup.root);
-          await updateExtensionSettings(paths.settingsPath, (latest) => ({
-            ...latest,
-            extensions: latest.extensions.some(
-              (candidate) => candidate.id === entry.id
-            )
-              ? latest.extensions
-              : [...latest.extensions, entry],
-          }));
-        } catch (restoreError) {
-          throw new AggregateError(
-            [error, restoreError],
-            `Extension "${entry.id}" removal and settings restore both failed`
-          );
-        }
-        throw error;
-      } finally {
-        await rm(backup.parent, { force: true, recursive: true });
+  const backup = removePackage
+    ? await snapshotInstallRoot(paths.installRoot)
+    : undefined;
+  let settingsRemoved = false;
+  try {
+    await updateExtensionSettings(paths.settingsPath, (latest) => {
+      if (!latest.extensions.some((item) => item.id === entry.id)) {
+        throw new Error(`Extension "${entry.id}" is not installed`);
       }
+      return {
+        ...latest,
+        extensions: latest.extensions.filter((item) => item.id !== entry.id),
+      };
+    });
+    settingsRemoved = true;
+    if (removePackage && packageName !== undefined) {
+      await removeExtensionPackage({
+        installRoot: paths.installRoot,
+        packageName,
+        ...(context.runCommand === undefined
+          ? {}
+          : { runCommand: context.runCommand }),
+      });
+    }
+  } catch (error) {
+    if (!(settingsRemoved && backup)) {
+      throw error;
+    }
+    try {
+      await restoreInstallRoot(paths.installRoot, backup);
+      await updateExtensionSettings(paths.settingsPath, (latest) => ({
+        ...latest,
+        extensions: latest.extensions.some(
+          (candidate) => candidate.id === entry.id
+        )
+          ? latest.extensions
+          : [...latest.extensions, entry],
+      }));
+    } catch (restoreError) {
+      throw new AggregateError(
+        [error, restoreError],
+        `Extension "${entry.id}" removal and settings restore both failed`
+      );
+    }
+    throw error;
+  } finally {
+    if (backup) {
+      await discardInstallRootSnapshot(backup);
     }
   }
   return entry;
@@ -154,7 +166,7 @@ async function updateExtensionsOwned(
     await commitSettings();
   } catch (error) {
     try {
-      await restoreInstallRoot(paths.installRoot, backup.root);
+      await restoreInstallRoot(paths.installRoot, backup);
     } catch (restoreError) {
       throw new AggregateError(
         [error, restoreError],
@@ -163,7 +175,7 @@ async function updateExtensionsOwned(
     }
     throw error;
   } finally {
-    await rm(backup.parent, { force: true, recursive: true });
+    await discardInstallRootSnapshot(backup);
   }
   return updated;
 }
@@ -251,23 +263,6 @@ async function applyManagedPackageUpdate(
     installRoot,
     target,
   });
-}
-
-async function snapshotInstallRoot(
-  installRoot: string
-): Promise<{ readonly parent: string; readonly root: string }> {
-  const parent = await mkdtemp(join(tmpdir(), "pss-extension-backup-"));
-  const root = join(parent, "managed");
-  await cp(installRoot, root, { recursive: true });
-  return { parent, root };
-}
-
-async function restoreInstallRoot(
-  installRoot: string,
-  backupRoot: string
-): Promise<void> {
-  await rm(installRoot, { force: true, recursive: true });
-  await cp(backupRoot, installRoot, { recursive: true });
 }
 
 async function validatePackageUpdate(

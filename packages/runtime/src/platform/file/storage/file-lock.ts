@@ -13,10 +13,11 @@ interface LockOwner {
 }
 
 /**
- * A process-owned lock for a single host and local filesystem. This is not a
- * distributed lock: PID liveness and local atomic link/unlink semantics are
- * required. Locks never expire; a live (including stopped) process retains
- * ownership, and only an owner whose PID is definitely absent is reclaimed.
+ * A process-owned lock for one shared PID namespace and local filesystem. This
+ * is not a distributed or cross-container lock: shared PID visibility and
+ * local atomic link/unlink semantics are required. Locks never expire; a live
+ * (including stopped) process retains ownership, and only an owner whose PID
+ * is definitely absent is reclaimed.
  */
 export async function withProcessFileLock<T>(
   lockFile: string,
