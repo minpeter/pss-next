@@ -56,16 +56,38 @@ const formatOrder = (attempts: readonly Attempt[]): readonly string[] => {
   return [...known, ...extras];
 };
 
+interface ReportContext {
+  readonly attempts: readonly Attempt[];
+  readonly formats: readonly string[];
+  readonly line: (text?: string) => void;
+  readonly models: readonly string[];
+}
+
 export const buildReport = (
   attempts: readonly Attempt[],
   models: readonly string[]
 ): string => {
-  const formats = formatOrder(attempts);
   const out: string[] = [];
-  const line = (text = ""): void => {
-    out.push(text);
+  const ctx: ReportContext = {
+    attempts,
+    formats: formatOrder(attempts),
+    line: (text = "") => {
+      out.push(text);
+    },
+    models,
   };
+  passRates(ctx);
+  failures(ctx);
+  tolerances(ctx);
+  pairedDeltas(ctx);
+  fingerprints(ctx);
+  recovery(ctx);
+  perTask(ctx);
+  return out.join("\n");
+};
 
+const passRates = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Pass rate by model and format");
   line("");
   line(
@@ -98,7 +120,10 @@ export const buildReport = (
       );
     }
   }
+};
 
+const failures = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Failures by cause");
   line("");
   line("| model | format | cause | count |");
@@ -121,7 +146,10 @@ export const buildReport = (
       }
     }
   }
+};
 
+const tolerances = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Tolerance paths fired");
   line("");
   line("| model | format | tolerance | count |");
@@ -144,7 +172,10 @@ export const buildReport = (
       }
     }
   }
+};
 
+const pairedDeltas = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Paired format deltas");
   line("");
   line(
@@ -194,7 +225,10 @@ export const buildReport = (
       }
     }
   }
+};
 
+const fingerprints = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Fingerprints");
   line("");
   let anyMixed = false;
@@ -234,7 +268,10 @@ export const buildReport = (
         : `Single fingerprint across the run: ${singles.join(", ")}`
     );
   }
+};
 
+const recovery = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   const recoveryRows = attempts.filter(
     (attempt) => attempt.recovery !== undefined
   );
@@ -283,51 +320,62 @@ export const buildReport = (
       }
     }
 
-    line("\n## Cumulative pass rate by attempt");
-    line("");
-    line(
-      "| model | format | scored | " +
-        [
-          ...new Set(
-            recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
-          ),
-        ]
-          .sort((a, b) => a - b)
-          .map((attempt) => `attempt ${attempt}`)
-          .join(" | ") +
-        " |"
-    );
-    const attemptSteps = [
-      ...new Set(
-        recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
-      ),
-    ].sort((a, b) => a - b);
-    line(
-      `|---|${"---|".repeat(models.length > 0 ? 3 + attemptSteps.length - 1 : 0)}`
-    );
-    for (const model of models) {
-      for (const format of formats) {
-        const rows = recoveryRows.filter(
-          (attempt) => attempt.model === model && attempt.format === format
-        );
-        if (rows.length === 0) {
-          continue;
-        }
-        const cumulative = attemptSteps.map((attempt) => {
-          const solved = rows.filter(
-            (row) =>
-              row.recovery?.recovered === true &&
-              (row.recovery?.attemptsUsed ?? 0) <= attempt
-          ).length;
-          return `${solved}/${rows.length} ${percent(solved, rows.length)}`;
-        });
-        line(
-          `| ${model} | ${format} | ${rows.length} | ${cumulative.join(" | ")} |`
-        );
+    cumulativeRecovery(ctx, recoveryRows);
+  }
+};
+
+const cumulativeRecovery = (
+  ctx: ReportContext,
+  recoveryRows: readonly Attempt[]
+): void => {
+  const { formats, line, models } = ctx;
+  line("\n## Cumulative pass rate by attempt");
+  line("");
+  line(
+    "| model | format | scored | " +
+      [
+        ...new Set(
+          recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
+        ),
+      ]
+        .sort((a, b) => a - b)
+        .map((attempt) => `attempt ${attempt}`)
+        .join(" | ") +
+      " |"
+  );
+  const attemptSteps = [
+    ...new Set(
+      recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)
+    ),
+  ].sort((a, b) => a - b);
+  line(
+    `|---|${"---|".repeat(models.length > 0 ? 3 + attemptSteps.length - 1 : 0)}`
+  );
+  for (const model of models) {
+    for (const format of formats) {
+      const rows = recoveryRows.filter(
+        (attempt) => attempt.model === model && attempt.format === format
+      );
+      if (rows.length === 0) {
+        continue;
       }
+      const cumulative = attemptSteps.map((attempt) => {
+        const solved = rows.filter(
+          (row) =>
+            row.recovery?.recovered === true &&
+            (row.recovery?.attemptsUsed ?? 0) <= attempt
+        ).length;
+        return `${solved}/${rows.length} ${percent(solved, rows.length)}`;
+      });
+      line(
+        `| ${model} | ${format} | ${rows.length} | ${cumulative.join(" | ")} |`
+      );
     }
   }
+};
 
+const perTask = (ctx: ReportContext): void => {
+  const { attempts, formats, line, models } = ctx;
   line("\n## Per-task pass counts");
   line("");
   const header = models
@@ -355,6 +403,4 @@ export const buildReport = (
     );
     line(`| ${task.id} | ${cells.join(" | ")} |`);
   }
-
-  return out.join("\n");
 };

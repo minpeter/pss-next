@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tool } from "ai";
 import { createWorkspaceTools } from "@minpeter/pss-coding-agent";
+import { tool } from "ai";
 import type { AgenticToolEvent } from "./agentic";
 import type { AgenticTraceSink } from "./agentic-trace";
 import type { EditTask } from "./tasks";
