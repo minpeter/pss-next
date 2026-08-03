@@ -1,7 +1,8 @@
 ---
 packages:
   npm:@minpeter/pss-coding-agent:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-coding-agent)
 ---
 
 ## Load AGENTS.md context files, prompt templates, and skills

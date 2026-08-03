@@ -1,14 +1,6 @@
----
-packages:
-  npm:@minpeter/pss-coding-agent:
-    replay:
-      - exit-prerelease(npm:@minpeter/pss-coding-agent)
-  npm:@minpeter/pss-extension-latex:
-    replay:
-      - exit-prerelease(npm:@minpeter/pss-extension-latex)
----
+## @minpeter/pss-extension-latex@0.0.1-next.0 (next)
 
-## Render LaTeX display math through an overridable extension
+### Render LaTeX display math through an overridable extension
 
 Assistant `$$ ... $$` and `\[ ... \]` display blocks now render through
 LaTeX, DVI, `dvipng`, and ImageMagick into cached transparent PNGs in

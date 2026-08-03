@@ -1,3 +1,112 @@
+## @minpeter/pss-runtime@0.3.0-next.5 (next)
+
+### Manage named, resumable, forkable sessions with lifecycle events
+
+The TUI now manages sessions per working directory. Metadata — display
+names, fork parentage, and the active session resumed on the next startup —
+lives in a fail-safe sidecar index next to the thread files; a corrupt
+index degrades to an empty one with a notice and never touches durable
+thread state. Session recency bumps on every completed turn, so pickers
+sort by actual use. `PSS_THREAD_KEY` still forces a key; the forced key is
+registered (naming and forking work) but never clobbers the active pointer
+for regular startups, and `pss inspect-thread` follows the active session
+unless the key is forced.
+
+Commands: `/new [name]` starts a new empty session. `/resume` opens an
+interactive picker to switch, rename, or delete a session (deleting the
+live session is blocked); `/resume <key|name>` switches directly with
+argument completions. `/name <name>` and the `--name` startup flag set the
+display name shown in the header. `/fork` offers branch points: the latest
+state or before any earlier user message — the fork keeps the truncated
+history, drops compaction records that extend past the cut, seeds
+`appliedMigrations` so migrations never re-run, and records the parent
+thread key; a fork whose registration fails deletes its copied thread.
+`/clear` keeps its wipe-in-place meaning and loses its `new` alias to the
+dedicated command. `new`, `resume`, `name`, `fork`, and `model` join the
+reserved command names.
+
+Extensions observe the lifecycle through host bus events:
+`host:session-start` (reasons `startup`/`new`/`resume`/`fork`/`clear`),
+`host:session-switch`, and `host:session-shutdown`. The new `sessionGuard`
+capability adds cancelable pre-switch/pre-fork decision points; guard
+errors, timeouts, malformed decisions, and explicit `null` returns fail
+closed, consistent with strict hook decisions.
+
+`@minpeter/pss-runtime` exports the thread snapshot codecs
+(`decodeStoredThreadState`, `encodeThreadSnapshot`, and their types and
+validation errors) so hosts can implement branch-before-message forks over
+validated state instead of parsing stored snapshots by hand.
+
+### Tighten model options and remove stale internal code
+
+Model-catalog cache configuration is now exposed only by coding-model session
+factories, where it is actually used. The native language-model factories no
+longer advertise and silently forward a no-op `catalogCache` option, while the
+new session-specific option types preserve explicit cache configuration for
+embedders and tests. Shared provider construction also keeps native and
+switchable model setup from drifting apart.
+
+Remove an unused copied TUI color palette, three orphaned image-codec
+initialization promises, a dead test fixture, and a mismatched image-codec
+comment. Repository TypeScript checks now reject unused locals and parameters,
+and workspace/Biome metadata is kept aligned with the active pnpm workspace and
+tool versions.
+
+### License the workspace under the Sustainable Use License
+
+The repository previously shipped without a license file, leaving published
+packages with no stated terms. `LICENSE.md` now declares the Sustainable Use
+License 1.0 at the workspace root and is mirrored into the two published
+packages, which set `"license": "SEE LICENSE IN LICENSE.md"` and include the
+file in their published `files` list.
+
+Internal business, non-commercial, and personal use stay free, including
+modification and free redistribution. Reselling the software or offering it as
+a paid product or service requires a separate commercial license.
+
+The license applies retroactively to every earlier release, including the ones
+published with no license field, so previously installed versions are covered by
+the same terms instead of being left unlicensed.
+
+### Update the AI SDK
+
+Update the runtime, coding agent, and web extension to AI SDK 7.0.45.
+
+### Prepare fresh Amp orbs for development
+
+Install the pinned Node and pnpm toolchain, workspace dependencies, and Chromium in fresh Amp orbs, with a fast wake-up lifecycle.
+
+### Update Cloudflare Workers type definitions
+
+Refresh the Worker and edge QA projects to the latest Cloudflare runtime type definitions.
+
+### Document the pull request Tegami policy
+
+Require pull requests to include a concise Tegami entry before merge and use
+patch-level releases by default unless another release level is requested.
+
+### Harden file ownership and extension mutation transactions
+
+Replace time-expiring local file leases with atomic PID/token-owned locks.
+Live processes retain ownership even while suspended, dead owners are reaped
+under a separately owned lock, and stale holders cannot release a successor's
+lock. The lock explicitly targets one shared PID namespace and a local
+filesystem rather than claiming cross-container or distributed-filesystem
+safety.
+
+Serialize each extension scope's install, update, remove, enable, and trust
+mutations through one operation owner. Package updates validate before
+mutation and restore a single install-root snapshot if any package or final
+settings commit fails; failed removals likewise restore package bytes before
+restoring settings, and failed project trust restores the prior enabled state.
+Package-manager subprocesses now have bounded output, a configurable deadline,
+and process-group SIGTERM/SIGKILL escalation where supported.
+
+Reload staging now rejects candidate graphs that introduce extension-owned
+CommonJS modules before importing them into the live process. Existing
+CommonJS cache entries return a restart-required result instead of attempting
+unsafe process-wide cache eviction, while ESM reload remains supported.
+
 ## @minpeter/pss-runtime@0.3.0-next.4 (next)
 
 ### Add the core hooks runtime and installable coding-agent extensions

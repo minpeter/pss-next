@@ -1,7 +1,8 @@
 ---
 packages:
   npm:@minpeter/pss-coding-agent:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-coding-agent)
 ---
 
 ## Default to minimax/MiniMax-M3
