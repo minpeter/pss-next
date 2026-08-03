@@ -14,7 +14,7 @@ export const formatTokens = (n: number): string => {
 };
 
 /**
- * Tracks session token usage for the TUI footer.
+ * Tracks the latest model request's token usage for the TUI footer.
  *
  * Authoritative numbers come from `model-usage` events at each step end.
  * Between those, streamed output fragments feed a live estimate (prefixed
@@ -28,13 +28,13 @@ export class TokenUsageTracker {
   #outputTokens = 0;
   #totalTokens = 0;
 
-  /** Fold an authoritative per-step usage event into the session totals. */
+  /** Replace the previous step with the latest authoritative usage. */
   addUsage(usage: ModelUsage): void {
     // The finished step's live estimate is superseded by the real numbers.
     this.#estimatedChars = 0;
-    this.#inputTokens += usage.inputTokens ?? 0;
-    this.#outputTokens += usage.outputTokens ?? 0;
-    this.#totalTokens +=
+    this.#inputTokens = usage.inputTokens ?? 0;
+    this.#outputTokens = usage.outputTokens ?? 0;
+    this.#totalTokens =
       usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
   }
 

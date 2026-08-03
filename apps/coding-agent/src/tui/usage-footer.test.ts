@@ -30,14 +30,14 @@ describe("TokenUsageTracker", () => {
     expect(tracker.footerText()).toBeUndefined();
   });
 
-  it("accumulates authoritative usage across steps", () => {
+  it("shows the latest authoritative usage without recounting prior context", () => {
     const tracker = new TokenUsageTracker();
     tracker.addUsage(usage({ inputTokens: 100, outputTokens: 20 }));
     tracker.addUsage(
       usage({ inputTokens: 900, outputTokens: 180, totalTokens: 1080 })
     );
 
-    expect(tracker.footerText()).toBe("1.2k tokens (1.0k in / 200 out)");
+    expect(tracker.footerText()).toBe("1.1k tokens (900 in / 180 out)");
   });
 
   it("shows a live estimate while the first step streams", () => {
