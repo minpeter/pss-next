@@ -280,6 +280,49 @@ export const buildReport = (
         );
       }
     }
+
+    line("\n## Cumulative pass rate by attempt");
+    line("");
+    line(
+      "| model | format | scored | " +
+        [
+          ...new Set(
+            recoveryRows.map(
+              (attempt) => attempt.recovery?.attemptsUsed ?? 1
+            )
+          ),
+        ]
+          .sort((a, b) => a - b)
+          .map((attempt) => `attempt ${attempt}`)
+          .join(" | ") +
+        " |"
+    );
+    const attemptSteps = [
+      ...new Set(recoveryRows.map((attempt) => attempt.recovery?.attemptsUsed ?? 1)),
+    ].sort((a, b) => a - b);
+    line(
+      `|---|${"---|".repeat(models.length > 0 ? 3 + attemptSteps.length - 1 : 0)}`
+    );
+    for (const model of models) {
+      for (const format of formats) {
+        const rows = recoveryRows.filter(
+          (attempt) =>
+            attempt.model === model && attempt.format === format
+        );
+        if (rows.length === 0) {
+          continue;
+        }
+        const cumulative = attemptSteps.map((attempt) => {
+          const solved = rows.filter(
+            (row) =>
+              row.recovery?.recovered === true &&
+              (row.recovery?.attemptsUsed ?? 0) <= attempt
+          ).length;
+          return `${solved}/${rows.length} ${percent(solved, rows.length)}`;
+        });
+        line(`| ${model} | ${format} | ${rows.length} | ${cumulative.join(" | ")} |`);
+      }
+    }
   }
 
   line("\n## Per-task pass counts");

@@ -75,12 +75,19 @@ export interface ApplyOutcome {
    * comparison would otherwise credit grok for replies the others reject.
    */
   readonly tolerances?: readonly string[];
+  /**
+   * The exact text the real edit tool returns to the model after a successful
+   * apply — an "OK - edited file" block with an anchored diff. The recovery
+   * loop feeds this back as the tool result; a real tool never reports that
+   * an edit "does not match the intended change".
+   */
+  readonly toolOutput?: string;
 }
 
 export interface EditFormat {
   readonly name: string;
   render(path: string, initial: string): RenderedTask;
-  apply(reply: string, initial: string): ApplyOutcome;
+  apply(reply: string, initial: string, path?: string): ApplyOutcome;
 }
 
 const LINE_SEPARATOR = /\r?\n/u;
@@ -92,6 +99,92 @@ const splitBody = (text: string): string[] => {
 
 const joinBody = (lines: readonly string[]): string =>
   lines.length === 0 ? "" : `${lines.join("\n")}\n`;
+
+const longestCommonSubsequenceTable = (
+  oldLines: readonly string[],
+  newLines: readonly string[]
+): number[][] => {
+  const width = oldLines.length + 1;
+  const table = Array.from({ length: newLines.length + 1 }, () =>
+    new Array<number>(width).fill(0)
+  );
+  for (let row = newLines.length - 1; row >= 0; row -= 1) {
+    for (let col = oldLines.length - 1; col >= 0; col -= 1) {
+      table[row][col] =
+        oldLines[col] === newLines[row]
+          ? (table[row + 1][col + 1] ?? 0) + 1
+          : Math.max(table[row + 1][col] ?? 0, table[row][col + 1] ?? 0);
+    }
+  }
+  return table;
+};
+
+const appendToolDiff = (
+  lines: string[],
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  table: readonly (readonly number[])[],
+  anchor: (lines: readonly string[], lineIndex: number) => string
+): void => {
+  let row = 0;
+  let col = 0;
+  let section = 0;
+  let open = false;
+  while (row < newLines.length || col < oldLines.length) {
+    if (
+      row < newLines.length &&
+      col < oldLines.length &&
+      oldLines[col] === newLines[row]
+    ) {
+      row += 1;
+      col += 1;
+      open = false;
+      continue;
+    }
+    if (!open) {
+      section += 1;
+      lines.push(`@@ edit ${section}`);
+      open = true;
+    }
+    const deleteFirst =
+      col < oldLines.length &&
+      (row >= newLines.length ||
+        (table[row]?.[col + 1] ?? 0) >= (table[row + 1]?.[col] ?? 0));
+    if (deleteFirst) {
+      lines.push(`-${anchor(oldLines, col)}|${oldLines[col] ?? ""}`);
+      col += 1;
+      continue;
+    }
+    lines.push(`+${anchor(newLines, row)}|${newLines[row] ?? ""}`);
+    row += 1;
+  }
+};
+
+/**
+ * Line diff between the pre- and post-edit file, rendered as the anchored
+ * -/+ block a real edit tool returns. `anchor` computes each line's address
+ * in the format's own vocabulary (LINE#ID for pss, line numbers for omp,
+ * grok chunk fingerprints for grok); old lines anchor against the original
+ * file, new lines against the edited one.
+ */
+const buildToolOutput = (
+  path: string,
+  initial: string,
+  output: string,
+  anchor: (lines: readonly string[], lineIndex: number) => string
+): string => {
+  const oldLines = splitBody(initial);
+  const newLines = splitBody(output);
+  const lines: string[] = [
+    "OK - edited file",
+    `path: ${path}`,
+    `file_hash: ${computeFileHash(output)}`,
+    "diff:",
+  ];
+  const table = longestCommonSubsequenceTable(oldLines, newLines);
+  appendToolDiff(lines, oldLines, newLines, table, anchor);
+  return lines.join("\n");
+};
 
 // –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 // Hashline helpers, matching apps/coding-agent/src/workspace-tools/hashline.ts
@@ -161,12 +254,41 @@ const pssCallSchema = z
 const extractJson = (reply: string): string => {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/u.exec(reply);
   const body = (fenced?.[1] ?? reply).trim();
+  // Providers may wrap the payload in tool-call XML (e.g. minimax's
+  // <minimax:tool_call><invoke><parameter name="payload">…) that repeats
+  // the JSON payload. Take the first complete, brace-balanced object so a
+  // duplicate payload after the wrapper cannot merge into the first one.
   const start = body.indexOf("{");
-  const end = body.lastIndexOf("}");
-  if (start === -1 || end <= start) {
+  if (start === -1) {
     throw new Error("No JSON object in reply");
   }
-  return body.slice(start, end + 1);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < body.length; index += 1) {
+    const char = body[index] as string;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return body.slice(start, index + 1);
+      }
+    }
+  }
+  throw new Error("No JSON object in reply");
 };
 
 /**
@@ -328,7 +450,7 @@ function assertNoIntersectingPssInsertions(
  * here; a reply either parses cleanly or fails exactly as the real tool does.
  */
 export const pssFormat: EditFormat = {
-  apply(reply, initial) {
+  apply(reply, initial, path) {
     try {
       const call = pssCallSchema.parse(JSON.parse(extractJson(reply)));
       for (const edit of call.edits) {
@@ -365,7 +487,13 @@ export const pssFormat: EditFormat = {
           edit.op === "replace" ? edit.end - edit.index + 1 : 0;
         output.splice(edit.index, deleteCount, ...edit.lines);
       }
-      return { text: joinBody(output) };
+      const applied = joinBody(output);
+      return {
+        text: applied,
+        toolOutput: buildToolOutput(path ?? "", initial, applied, (lines, index) =>
+          formatLineAnchor(index + 1, lines[index] ?? "")
+        ),
+      };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -422,7 +550,7 @@ export const pssFormat: EditFormat = {
 const FILE_TAG = "A1B2";
 
 export const ompFormat: EditFormat = {
-  apply(reply, initial) {
+  apply(reply, initial, path) {
     try {
       const fenced = /```(?:\w+)?\s*([\s\S]*?)```/u.exec(reply);
       const patch = (fenced?.[1] ?? reply).trim();
@@ -430,7 +558,13 @@ export const ompFormat: EditFormat = {
       if (parsed.edits.length === 0) {
         throw new Error("No hashline operations parsed");
       }
-      return { text: applyEdits(initial, parsed.edits).text };
+      const applied = applyEdits(initial, parsed.edits).text;
+      return {
+        text: applied,
+        toolOutput: buildToolOutput(path ?? "", initial, applied, (_lines, index) =>
+          String(index + 1)
+        ),
+      };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -648,7 +782,7 @@ const ompJsonToDsl = (call: z.infer<typeof ompJsonCallSchema>): string => {
 };
 
 export const ompJsonFormat: EditFormat = {
-  apply(reply, initial) {
+  apply(reply, initial, path) {
     try {
       const call = ompJsonCallSchema.parse(JSON.parse(extractJson(reply)));
       for (const hunk of call.hunks) {
@@ -664,7 +798,13 @@ export const ompJsonFormat: EditFormat = {
       if (edits.length === 0) {
         throw new Error("No hashline operations parsed");
       }
-      return { text: applyEdits(initial, edits).text };
+      const applied = applyEdits(initial, edits).text;
+      return {
+        text: applied,
+        toolOutput: buildToolOutput(path ?? "", initial, applied, (_lines, index) =>
+          String(index + 1)
+        ),
+      };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -789,7 +929,7 @@ const grokEditSchema = z
   .strict();
 
 export const grokFormat: EditFormat = {
-  apply(reply, initial) {
+  apply(reply, initial, path) {
     const tolerances: string[] = [];
     try {
       const parsed = JSON.parse(extractJson(reply)) as { edits?: unknown };
@@ -911,7 +1051,14 @@ export const grokFormat: EditFormat = {
           ...edit.payload
         );
       }
-      return { text: joinBody(output), tolerances };
+      const applied = joinBody(output);
+      return {
+        text: applied,
+        tolerances,
+        toolOutput: buildToolOutput(path ?? "", initial, applied, (lines, index) =>
+          grokAnchor(lines, index)
+        ),
+      };
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : String(error),

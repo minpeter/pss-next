@@ -71,7 +71,12 @@ describe("buildReport", () => {
         task: "t2",
         run: 1,
         passed: true,
-        recovery: { attemptsUsed: 2, recovered: true, firstAttemptFailed: true, repeatedFailure: false },
+        recovery: {
+          attemptsUsed: 2,
+          firstAttemptFailed: true,
+          recovered: true,
+          repeatedFailure: false,
+        },
       }),
       attempt({
         model: "m1",
@@ -80,7 +85,12 @@ describe("buildReport", () => {
         run: 1,
         passed: false,
         failure: "unparsable: x",
-        recovery: { attemptsUsed: 3, recovered: false, firstAttemptFailed: true, repeatedFailure: true },
+        recovery: {
+          attemptsUsed: 3,
+          firstAttemptFailed: true,
+          recovered: false,
+          repeatedFailure: true,
+        },
       }),
     ];
     const out = buildReport(withRecovery, ["m1"]);
@@ -94,5 +104,43 @@ describe("buildReport", () => {
 
   it("omits the recovery section when no attempt carries recovery data", () => {
     expect(report).not.toContain("## Recovery by model and format");
+  });
+
+  it("renders a cumulative pass-rate ladder by attempt", () => {
+    const withRecovery: readonly Attempt[] = [
+      attempt({
+        model: "m1",
+        format: "a",
+        task: "t1",
+        run: 1,
+        passed: true,
+        recovery: { attemptsUsed: 1, recovered: true, firstAttemptFailed: false, repeatedFailure: false },
+      }),
+      attempt({
+        model: "m1",
+        format: "a",
+        task: "t2",
+        run: 1,
+        passed: true,
+        recovery: { attemptsUsed: 2, recovered: true, firstAttemptFailed: true, repeatedFailure: false },
+      }),
+      attempt({
+        model: "m1",
+        format: "a",
+        task: "t3",
+        run: 1,
+        passed: false,
+        failure: "unparsable: x",
+        recovery: { attemptsUsed: 3, recovered: false, firstAttemptFailed: true, repeatedFailure: true },
+      }),
+    ];
+    const out = buildReport(withRecovery, ["m1"]);
+    expect(out).toContain("## Cumulative pass rate by attempt");
+    expect(out).toContain("attempt 1");
+    expect(out).toContain("attempt 2");
+    expect(out).toContain("attempt 3");
+    expect(out).toContain("1/3"); // solved within 1 attempt
+    expect(out).toContain("2/3"); // solved within 2 attempts
+    expect(out).toContain("3/3"); // all scored solved within 3 attempts
   });
 });

@@ -217,6 +217,29 @@ describe("expanded task suite", () => {
     }
   });
 
+  it("annotates every task for language kind and difficulty slices", () => {
+    for (const task of EDIT_TASKS) {
+      expect(task).toHaveProperty("metadata.language");
+      expect(task).toHaveProperty("metadata.category", task.kind);
+      expect(task).toHaveProperty("metadata.difficulty");
+      expect(task).toHaveProperty("metadata.difficultyScore");
+      expect(task).toHaveProperty("metadata.seed");
+      expect(task).toHaveProperty("metadata.targetLines");
+      expect(task).toHaveProperty("metadata.changedHunks");
+      expect(task).toHaveProperty("metadata.contextFeatures");
+    }
+  });
+
+  it("includes an exact multi-file fixture with one intended target", () => {
+    const task = EDIT_TASKS.find((item) => item.id === "multi-file-import");
+
+    expect(task).toBeDefined();
+    expect(task).toHaveProperty(["initialFiles", "src/main.ts"]);
+    expect(task).toHaveProperty(["initialFiles", "src/config.ts"]);
+    expect(task).toHaveProperty(["expectedFiles", "src/main.ts"]);
+    expect(task).toHaveProperty(["expectedFiles", "src/config.ts"]);
+  });
+
   it("every task's expected output differs from its initial content", () => {
     for (const task of EDIT_TASKS) {
       expect(task.expected).not.toBe(task.initial);

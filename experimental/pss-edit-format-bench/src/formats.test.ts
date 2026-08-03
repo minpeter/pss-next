@@ -88,6 +88,35 @@ describe("pss-json adapter", () => {
 
     expect(outcome.error).toMatch(/outside the file/u);
   });
+
+  it("strips provider tool-call XML wrappers before parsing", () => {
+    const task = taskById("single-line-to-two");
+    const anchor = anchorOf(pssFormat.render(task.path, task.initial).user, 2);
+    const payload = JSON.stringify({
+      path: task.path,
+      edits: [
+        {
+          new_content: ['    greeting = "Hi"', '    msg = f"{greeting}, {name}"'],
+          op: "replace",
+          target: anchor,
+        },
+      ],
+    });
+    const reply = [
+      payload,
+      "<minimax:tool_call>",
+      '<invoke name="pss-json">',
+      '<parameter name="payload">',
+      payload,
+      "</parameter>",
+      "</invoke>",
+      "</minimax:tool_call>",
+    ].join("\n");
+
+    const outcome = pssFormat.apply(reply, task.initial);
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.text).toBe(task.expected);
+  });
 });
 
 describe("omp-dsl adapter", () => {

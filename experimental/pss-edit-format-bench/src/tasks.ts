@@ -6,13 +6,34 @@
  * never on how the edit was phrased. `kind` slices results by change type,
  * following CanItEdit's change-kind reporting.
  */
-export interface EditTask {
+import type { WorkspaceFileSet } from "./workspace";
+
+export type TaskDifficulty = "easy" | "hard" | "medium";
+
+export interface EditTaskMetadata {
+  readonly category: string;
+  readonly changedHunks: number;
+  readonly contextFeatures: readonly string[];
+  readonly difficulty: TaskDifficulty;
+  readonly difficultyScore: number;
+  readonly language: string;
+  readonly seed: number;
+  readonly targetLines: readonly number[];
+}
+
+interface RawEditTask {
+  readonly expected: string;
   readonly id: string;
-  readonly path: string;
-  readonly kind: string;
   readonly initial: string;
   readonly instruction: string;
-  readonly expected: string;
+  readonly kind: string;
+  readonly path: string;
+}
+
+export interface EditTask extends RawEditTask {
+  readonly expectedFiles: WorkspaceFileSet;
+  readonly initialFiles: WorkspaceFileSet;
+  readonly metadata: EditTaskMetadata;
 }
 
 const GREET = `def greet(name):
@@ -56,7 +77,7 @@ const LARGE_CONDENSED = `${Array.from(
   (_, index) => `export const value${index + 39} = ${(index + 39) * 3};`
 ).join("\n")}\n`;
 
-export const EDIT_TASKS: readonly EditTask[] = [
+const RAW_EDIT_TASKS: readonly RawEditTask[] = [
   {
     expected: `def greet(name):
     greeting = "Hi"
@@ -233,9 +254,9 @@ func add(a int, b int) int {
     path: "calc.go",
   },
   {
-    expected: `# header v2\nvalue = 1   \n`,
+    expected: "# header v2\nvalue = 1   \n",
     id: "trailing-ws-preserve",
-    initial: `# header\nvalue = 1   \n`,
+    initial: "# header\nvalue = 1   \n",
     instruction:
       "Change only the first line to `# header v2`. The second line `value = 1` ends with three trailing spaces; keep them byte-for-byte.",
     kind: "trap",
@@ -443,4 +464,133 @@ const c = 3;
     kind: "insert",
     path: "vars.js",
   },
+  {
+    expected: `export const endpoint = "https://api.example.test/v2";
+`,
+    id: "multi-file-import",
+    initial: `export const endpoint = "https://api.example.test/v1";
+`,
+    instruction:
+      "In src/config.ts, change the endpoint suffix from `/v1` to `/v2`. Do not modify src/main.ts or create any other files.",
+    kind: "replace",
+    path: "src/config.ts",
+  },
 ];
+
+export const EDIT_TASKS: readonly EditTask[] = RAW_EDIT_TASKS.map((task) => {
+  const initialFiles =
+    task.id === "multi-file-import"
+      ? {
+          "src/config.ts": task.initial,
+          "src/main.ts":
+            'import { endpoint } from "./config";\nconsole.log(endpoint);\n',
+        }
+      : { [task.path]: task.initial };
+  const expectedFiles =
+    task.id === "multi-file-import"
+      ? {
+          "src/config.ts": task.expected,
+          "src/main.ts":
+            'import { endpoint } from "./config";\nconsole.log(endpoint);\n',
+        }
+      : { [task.path]: task.expected };
+  return {
+    ...task,
+    expectedFiles,
+    initialFiles,
+    metadata: metadataFor(task),
+  };
+});
+
+function metadataFor(task: RawEditTask): EditTaskMetadata {
+  const lineCount = task.initial.split("\n").length - 1;
+  const difficultyScore = difficultyScoreFor(lineCount);
+  const initialLines = task.initial.split("\n");
+  const expectedLines = task.expected.split("\n");
+  const targetLines = Array.from(
+    { length: Math.max(initialLines.length, expectedLines.length) },
+    (_, index) => index
+  )
+    .filter((index) => initialLines[index] !== expectedLines[index])
+    .map((index) => index + 1);
+  const contextFeatures = [
+    ...(lineCount > 30 ? ["long-context"] : []),
+    ...(new Set(initialLines).size < initialLines.length - 1
+      ? ["repeated-lines"]
+      : []),
+    ...(containsNonAscii(task.initial) ? ["unicode"] : []),
+    ...(task.initial.includes("\t") ? ["tabs"] : []),
+  ];
+  return {
+    category: task.kind,
+    changedHunks: countContiguousRanges(targetLines),
+    contextFeatures,
+    difficulty: difficultyFor(difficultyScore),
+    difficultyScore,
+    language: languageFor(task.path),
+    seed: stableSeed(task.id),
+    targetLines,
+  };
+}
+
+function difficultyScoreFor(lineCount: number): number {
+  if (lineCount > 30) {
+    return 3;
+  }
+  return lineCount > 8 ? 2 : 1;
+}
+
+function difficultyFor(score: number): TaskDifficulty {
+  if (score === 1) {
+    return "easy";
+  }
+  return score === 2 ? "medium" : "hard";
+}
+
+function containsNonAscii(value: string): boolean {
+  return Array.from(value).some(
+    (character) => (character.codePointAt(0) ?? 0) > 127
+  );
+}
+
+function countContiguousRanges(lines: readonly number[]): number {
+  let ranges = 0;
+  let previous: number | undefined;
+  for (const line of lines) {
+    if (previous === undefined || line !== previous + 1) {
+      ranges += 1;
+    }
+    previous = line;
+  }
+  return ranges;
+}
+
+function languageFor(path: string): string {
+  const extension = path.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "go":
+      return "go";
+    case "json":
+      return "json";
+    case "md":
+      return "markdown";
+    case "py":
+      return "python";
+    case "rs":
+      return "rust";
+    case "ts":
+      return "typescript";
+    case "txt":
+      return "text";
+    default:
+      return "javascript";
+  }
+}
+
+function stableSeed(value: string): number {
+  let seed = 0;
+  for (const character of value) {
+    seed = (seed * 31 + (character.codePointAt(0) ?? 0)) % 4_294_967_296;
+  }
+  return seed;
+}

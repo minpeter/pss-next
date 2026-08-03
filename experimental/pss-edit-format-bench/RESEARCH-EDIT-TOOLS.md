@@ -215,11 +215,18 @@ grok-json의 `write`(전체 재작성) op가 앵커 0개·tolerance 0건으로 *
 
 **동기**: 최초 편집 실패(일시적)와 반복 실수(포맷-모델 비호환)는 다른 현상 — 후자는 재시도로도 안 고쳐진다. `--recovery <n>` 플래그로 최대 n회까지 피드백(에러 메시지/적용 결과 diff)을 주고 재시도, 복구 여부를 측정한다.
 
+![first-shot 성공률 vs 복구성 (독립적 축)](assets/edit-formats-recovery-axes.png)
+
+**그래프 해석** (생성기: `assets/recovery-axes-chart.py`, `uv run --with matplotlib python3 assets/recovery-axes-chart.py`):
+- 왼쪽: 본 벤치(384 attempts)의 first-shot 통과율 — deepseek×grok-json이 95.8%로 최고.
+- 오른쪽: x=first-shot, y=복구율(실패 시도 중) — deepseek×grok-json만 유일하게 (95.8%, 0%) 위치. 상단 연녹색(복구 가능)과 하단 연분홍(막다른 포맷) 사분면으로 **두 축이 독립적**임을 표시. 빈 마커 7개는 데모에서 실패가 없어 복구율 n/a.
+
 **구현** (`src/recovery.ts` + run.ts/report.ts):
 - `--recovery 3` → 각 시도가 실패하면 거부 사유(파싱 에러) 또는 적용 결과 diff를 user 메시지로 피드백, 최대 3회까지 재시도.
+- **2026-08-03 개정: 도구-프로토콜 복구** — 피드백을 더 이상 user-role 문장으로 조작하지 않는다. 재시도 턴은 `userPrompt → assistant(편집 payload) → tool(실제 도구 출력)` 구조가 되고, tool 메시지에는 **실제 도구가 반환하는 데이터만** 담는다: 거부 시 원문 에러 문자열(pss는 이미 "Re-read the file."을 자체 에러에 포함), 적용 성공 시 `OK - edited file` 블록 + 포맷별 앵커 diff (`buildToolOutput`). 벤치의 pss-json 시스템 프롬프트가 "edit_file returns an OK block with a diff"라고 약속한 계약을 복구 루프가 이제 지킨다. **오라클 문장("does not match the intended change" + 전체 파일 덤프)은 제거** — 실제 도구는 의도를 알 수 없으므로. `run.ts`는 tool 메시지를 AI SDK의 `tool-result` 파트로 직렬화(라이브 프로바이더 검증 완료).
 - Attempt에 `recovery` 레코드 추가: `{ attemptsUsed, recovered, firstAttemptFailed, repeatedFailure }`.
 - 보고서에 **"Recovery by model and format"** 섹션 추가: `first-shot` / `recovered` / `recovery rate`(실패 중 회복률) / `repeated-failure`(같은 오류 클래스 반복) / `avg attempts`.
-- RED→GREEN: `recovery.test.ts`(4건) + `report.test.ts`(2건) — 실패하는 테스트 먼저 작성 후 구현, 93건 전체 통과 + tsc clean.
+- RED→GREEN: `recovery.test.ts`(6건) + `report.test.ts`(2건) — 실패하는 테스트 먼저 작성 후 구현, 96건 전체 통과 + tsc clean.
 
 **라이브 데모** (2 tasks × 4 formats × 2 models × 1 run, `--recovery 3`):
 
@@ -237,6 +244,78 @@ grok-json의 `write`(전체 재작성) op가 앵커 0개·tolerance 0건으로 *
 **관측**: deepseek의 grok-json만 유일하게 `py-append-method`에서 첫 시도 실패 → 3회 재시도에도 미복구(recovery rate 0.0%, repeated-failure 1/2). 같은 모델이 다른 포맷에서는 전부 first-shot 성공 — 이는 **일시적 실수가 아니라 grok-json 앵커 포맷과 deepseek의 지속적 비호환**을 가리킨다. "최초 실패 vs 반복 실수" 구분이 작동하는 예시.
 
 **공정성 시사점**: first-shot rate만 보면 deepseek grok-json이 95.8%(이전 §8)로 최고처럼 보이지만, recovery 측정은 실패 시 복구 불가능한 포맷임을 드러낸다. **단일-샷 성공률과 복구성은 독립적인 축** — 둘 다 보고해야 "그 포맷을 이 모델에 줄 만한가"를 판단할 수 있다.
+
+### 재시도별 누적 통과율 — minimax-m3 × pss-json (2026-08-03, 24 tasks × 3 runs = 72 attempts)
+
+![재시도별 누적 통과율](assets/edit-formats-attempt-ladder.png)
+
+**실행**: `--models minimaxai/minimax-m3 --formats pss-json --runs 3 --recovery 3 --disable-thinking`, 67 scored attempts (request 실패 5건 제외). `--formats` 필터는 이 실행을 위해 run.ts에 추가 — 원하는 포맷만 골라 측정할 수 있다. 생성기: `assets/attempt-ladder-chart.py`.
+
+| 시도 | 누적 통과 | 비율 | Δ (1회차 대비) |
+|---|---|---|---|
+| 1회차 (first-shot) | 65/67 | 97.0% | — |
+| 2회차 | 65/67 | 97.0% | 0pt |
+| 3회차 | 65/67 | 97.0% | 0pt |
+
+**관측**: 도구 프로토콜(실제 도구 출력만 피드백)로 재측정한 결과 **first-shot 97.0%에서 재시도가 더하는 이득은 0** — 복구 0/2 (recovery rate 0.0%). 이전 오라클 피드백 실행(94.3% → 95.7%, 복구 25%)과 비교하면, **그 +1.4pt 개선은 전부 "does not match the intended change" 오라클 문장이 만든 것**이었음이 드러난다. 실제 도구가 반환하는 에러 문자열이나 OK+diff 블록만으로는 minimax×pss-json의 실패(파싱 1건, wrong-content 1건)를 고치지 못한다. deepseek×grok-json의 "높은 first-shot + 복구 불가"와 달리 여기는 "높은 first-shot + 오라클 제거로 복구 곡선이 사라진" 케이스 — **오라클 피드백이 복구율을 부풀렸다는 직접 증거**다.
+
+### m2.7 추가 측정 (2026-08-03) + transport 버그 수정
+
+**m2.7 도구 프로토콜**: 24 tasks × 3 runs = 72 attempts, 전부 채점(request 실패 0건). first-shot 47/72 = **65.3%**, 재시도 후에도 65.3% — **복구 0/25 (0.0%)**, repeated-failure 9/72, avg attempts 1.7. m3(97.0%) 대비 크게 약하고 실패도 많지만(unparsable 15건, wrong-content 10건) 그 중 단 한 건도 도구 출력만으로 복구되지 않았다. **두 모델 모두 오라클 제거 후 복구 0건** — "도구 출력만으로 의미적/형식 오류 복구 불가"가 모델 무관한 현상임을 보여준다.
+
+**수정 과정에서 발견된 transport 버그**: 첫 m2.7 실행은 72회 중 28~21회가 "All eligible upstream providers failed"로 떨어졌다. 원인은 **도구-프로토콜의 assistant 메시지가 plain-text로만 보내진 것** — m2.7 업스트림은 `assistant(tool-call 파트) + tool` 조합만 받고, plain-text assistant 뒤의 tool 메시지는 전부 거부했다(m3는 둘 다 허용). `run.ts`가 assistant 메시지에도 `tool-call` 파트를 붙이도록 수정(`input: { payload }`)한 뒤 request 실패 0건으로 정상 측정됐다. 이는 **포맷 벤치의 transport 계층이 모델별로 다르게 동작할 수 있다**는 공정성 교훈이기도 하다 — transport 실패를 scored 모집단에서 제외하는 기존 규칙(V4)이 실제로 발동하는 사례.
+
+### read_file 검증 채널 추가 재측정 (2026-08-03) — 복구 곡선이 살아났다
+
+![재시도별 누적 통과율](assets/edit-formats-attempt-ladder.png)
+
+**동기**: 도구 프로토콜(에러 문자열 + OK/diff만)에서는 두 모델 모두 복구 0건이었다. 실제 하네스에서 모델이 wrong-content를 고치는 경로는 **편집 후 재읽기** — `edit_file`이 "OK + diff"를 주면 모델이 `read_file`로 현재 파일 상태를 보고 태스크와 비교해 수정한다. 벤치 복구 루프에 그 채널이 없었던 것.
+
+**구현** (`recovery.ts` + `run.ts`):
+- 편집이 적용됐지만 내용이 틀린 경우 tool 메시지에 **현재 파일 상태를 `read_file` 형식으로 append** (`renderFile` 콜백 = 각 포맷의 `render(path, content).user` — 앵커/해시 포함).
+- **누적 상태 적용**: 각 재시도는 원본 initial이 아니라 **직전 시도까지의 편집이 반영된 현재 상태**에 적용된다. (기존엔 항상 원본에 재적용 → 모델이 정확한 수정을 내도 "Stale anchor"로 거부됐다. 실제 에이전트의 편집 누적과 동일한 의미.)
+- `extractJson`을 balanced-brace 파서로 교체 — m2.7이 출력에 `<minimax:tool_call>` XML 래퍼로 JSON을 중복 붙이는 경우를 처리.
+- RED→GREEN: `recovery.test.ts` 누적 상태 테스트 + `formats.test.ts` XML 래퍼 테스트 추가, 99건 전체 통과 + tsc clean.
+
+**측정 (24 tasks × 3 runs, `--recovery 3`)**:
+
+| 모델 | 1회차 | 2회차 | 3회차 | recovery rate | repeated-failure |
+|---|---|---|---|---|---|
+| **m3 read_file** | 81.4% (57/70) | 92.9% (65/70) | 95.7% (67/70) | **76.9%** (10/13) | 0/70 |
+| **m2.7 read_file** | 65.3% (47/72) | 69.4% (50/72) | 73.6% (53/72) | **24.0%** (6/25) | 9/72 |
+| m3 도구 프로토콜 (이전) | 97.0% | 97.0% | 97.0% | 0.0% (0/2) | — |
+| m2.7 도구 프로토콜 (이전) | 65.3% | 65.3% | 65.3% | 0.0% (0/25) | 9/72 |
+| m3 오라클 (제거됨) | 94.3% | 95.7% | 95.7% | 25% (1/4) | — |
+
+**관측**:
+- **검증 채널이 복구를 살린다.** m3은 first-shot 실패 13건 중 10건을 재시도로 복구 (76.9%) — wrong-content도 read_file로 현재 상태를 보고 자기수정한다. m2.7은 25건 중 6건 (24.0%).
+- m2.7의 `while-to-for-range`는 이전 0/3 → **3/3 전부 복구** — 누적 상태 적용으로 "정확한 수정인데 stale anchor로 거부"되던 사례가 풀렸다.
+- m2.7 잔여 실패(delete-middle-line, insert-indented-block, move-block-up, large-range-replace, py-dedent-block, delete-first-line)는 대부분 **pss-json으로 표현 불가능한 태스크** (suite.test.ts의 delete-first-line 주석: delete op 없음 + new_content 비면 안 됨) — 모델 실력 문제가 아니라 포맷 표현력 문제. unparsable 15건 중 상당수는 m2.7의 XML 래핑/오타.
+- **공정성 결론**: "도구 출력만으로 의미적 오류를 복구할 수 없다"는 0%는 **검증 채널 부재의 인공물**이었다. read_file 채널 + 누적 상태를 갖춘 벤치는 실제 에이전트와 동등한 복구 측정이 되고, 모델 간 복구 능력 차이(m3 76.9% vs m2.7 24.0%)를 드러낸다.
+
+### runs=10 전체 포맷 재측정 (2026-08-03) — 표본 확대 결과
+
+![4개 edit format의 1턴 성공률과 3턴 복구성](assets/edit-formats-recovery-runs10.png)
+
+**실행**: 모델별 4 formats × 24 tasks × 10 runs = 960 logical attempts, `--recovery 3`, `read_file` 검증 채널 + 누적 상태, temperature 0, thinking off. request 실패는 scored 모집단에서 제외했다.
+
+| 모델 | 포맷 | scored | 1턴 | 3턴 최종 | recovery rate | repeated-failure |
+|---|---|---:|---:|---:|---:|---:|
+| m3 | pss-json | 238/240 | 87.8% (209/238) | **96.2%** (229/238) | **69.0%** (20/29) | 2/238 |
+| m3 | omp-dsl | 240/240 | 95.4% (229/240) | **99.6%** (239/240) | **90.9%** (10/11) | 0/240 |
+| m3 | omp-json | 240/240 | 82.9% (199/240) | **84.2%** (202/240) | **7.3%** (3/41) | 0/240 |
+| m3 | grok-json | 233/240 | 90.6% (211/233) | **97.9%** (228/233) | **77.3%** (17/22) | 3/233 |
+| m2.7 | pss-json | 240/240 | 65.8% (158/240) | **72.9%** (175/240) | **20.7%** (17/82) | 36/240 |
+| m2.7 | omp-dsl | 240/240 | 77.9% (187/240) | **90.0%** (216/240) | **54.7%** (29/53) | 24/240 |
+| m2.7 | omp-json | 240/240 | 96.3% (231/240) | **96.7%** (232/240) | **11.1%** (1/9) | 0/240 |
+| m2.7 | grok-json | 240/240 | 80.8% (194/240) | **94.2%** (226/240) | **69.6%** (32/46) | 0/240 |
+
+**관측**:
+- **모델별 최적 포맷이 갈린다.** m3는 `omp-dsl`이 99.6%로 최고이고, m2.7은 `omp-json`이 96.7%로 최고다. 같은 포맷을 모든 모델에 기본값으로 주면 안 된다는 결론이 240 scored attempts/cell 표본에서도 유지된다.
+- **검증 채널 효과는 포맷별로 다르다.** m3의 `omp-dsl`은 11개 first-shot 실패 중 10개를 복구(90.9%), `grok-json`은 22개 중 17개(77.3%), `pss-json`은 29개 중 20개(69.0%)를 복구했다. 반대로 `omp-json`은 41개 중 3개(7.3%)만 복구했다.
+- **m2.7은 `grok-json`과 `omp-dsl`에서 복구 곡선이 크다.** 각각 69.6%(32/46), 54.7%(29/53)이며, `pss-json`은 20.7%(17/82)로 낮고 repeated-failure가 36/240이다. `omp-json`은 first-shot이 이미 96.3%라 복구 대상 자체가 9건뿐이다.
+- **runs=10에서 실행 간 변동성보다 포맷×모델 상호작용이 선명해졌다.** m3는 `omp-json`의 구조적 실패(최종 84.2%, indentation 38건)가 두드러지고, m2.7은 `pss-json`의 파싱 실패(unparsable 55건)가 두드러진다.
+- **해석 기준**: 3턴 최종 성공률은 전체 해결률, recovery rate는 first-shot 실패가 실제 검증 피드백으로 해결되는 비율이다. 둘을 합치지 않고 함께 보고해야 포맷의 절대 성능과 복구성을 분리할 수 있다.
 
 ---
 

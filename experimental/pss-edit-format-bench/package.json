@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "bench": "tsx src/run.ts",
+    "fixtures": "tsx src/fixtures-cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

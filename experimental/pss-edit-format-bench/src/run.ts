@@ -48,6 +48,7 @@ function parseArguments(argv: readonly string[]) {
   const options = {
     concurrency: DEFAULT_CONCURRENCY,
     disableThinking: false,
+    formats: EDIT_FORMATS,
     models: DEFAULT_MODELS,
     recoveryAttempts: DEFAULT_RECOVERY_ATTEMPTS,
     requestAttempts: DEFAULT_REQUEST_ATTEMPTS,
@@ -60,6 +61,18 @@ function parseArguments(argv: readonly string[]) {
     const value = argv[index + 1];
     if (flag === "--models" && value) {
       options.models = value.split(",").map((entry) => entry.trim());
+      index += 1;
+    } else if (flag === "--formats" && value) {
+      const names = value.split(",").map((entry) => entry.trim());
+      const unknown = names.filter(
+        (name) => !EDIT_FORMATS.some((format) => format.name === name)
+      );
+      if (unknown.length > 0) {
+        throw new Error(`Unknown format(s): ${unknown.join(", ")}`);
+      }
+      options.formats = EDIT_FORMATS.filter((format) =>
+        names.includes(format.name)
+      );
       index += 1;
     } else if (flag === "--runs" && value) {
       options.runs = Number.parseInt(value, 10);
@@ -168,7 +181,36 @@ async function runAttempt({
     const result = await generateText({
       abortSignal: AbortSignal.timeout(requestTimeoutMs),
       instructions: rendered.system,
-      messages: messages.map(({ content, role }) => ({ content, role })),
+      messages: messages.map((message) => {
+        if (message.role === "assistant" && "toolCallId" in message) {
+          return {
+            role: "assistant",
+            content: [
+              { type: "text", text: message.content },
+              {
+                type: "tool-call",
+                toolCallId: message.toolCallId,
+                toolName: message.toolName,
+                input: { payload: message.content },
+              },
+            ],
+          };
+        }
+        if (message.role === "tool") {
+          return {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: message.toolCallId,
+                toolName: message.toolName,
+                output: { type: "text", value: message.output },
+              },
+            ],
+          };
+        }
+        return { content: message.content, role: message.role };
+      }),
       model: provider(model),
       ...(disableThinking
         ? {
@@ -190,11 +232,14 @@ async function runAttempt({
     try {
       if (recoveryAttempts > 1) {
         const recovery = await runWithRecovery({
-          apply: (reply, initial) => format.apply(reply, initial),
+          apply: (reply, initial, path) => format.apply(reply, initial, path),
           callModel,
           expected: task.expected,
           initial: task.initial,
           maxAttempts: recoveryAttempts,
+          path: task.path,
+          renderFile: (path, content) => format.render(path, content).user,
+          toolName: format.name,
           userPrompt,
         });
         const benchMetadata = null;
@@ -243,7 +288,7 @@ async function runAttempt({
         // of being dropped from the matrix.
         ...(fixedTemperature ? {} : { temperature: 0 }),
       });
-      const outcome = format.apply(result.text, task.initial);
+      const outcome = format.apply(result.text, task.initial, task.path);
       const passed = outcome.text === task.expected;
       const benchMetadata = result.providerMetadata?.bench as
         | { systemFingerprint?: string }
@@ -326,7 +371,7 @@ if (tasks.length === 0) {
 
 const pending: (() => Promise<Attempt>)[] = [];
 for (const model of options.models) {
-  for (const format of EDIT_FORMATS) {
+  for (const format of options.formats) {
     for (const task of tasks) {
       for (let run = 1; run <= options.runs; run += 1) {
         pending.push(() =>
@@ -347,7 +392,7 @@ for (const model of options.models) {
   }
 }
 process.stdout.write(
-  `Running ${pending.length} attempts: ${options.models.length} models x ${EDIT_FORMATS.length} formats x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, timeout ${options.requestTimeoutMs}ms, up to ${options.requestAttempts} tries${options.recoveryAttempts > 1 ? `, up to ${options.recoveryAttempts} recovery attempts` : ""})\n`
+  `Running ${pending.length} attempts: ${options.models.length} models x ${options.formats.length} formats x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, timeout ${options.requestTimeoutMs}ms, up to ${options.requestAttempts} tries${options.recoveryAttempts > 1 ? `, up to ${options.recoveryAttempts} recovery attempts` : ""})\n`
 );
 const attempts = await pooled(pending, options.concurrency);
 process.stdout.write(buildReport(attempts, options.models));
