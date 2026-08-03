@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.16",
+    "@minpeter/pss-coding-agent": "workspace:*",
     "@oh-my-pi/hashline": "17.1.0",
     "ai": "7.0.37",
     "dotenv": "^17.4.2",

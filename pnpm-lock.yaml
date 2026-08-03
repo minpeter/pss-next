@@ -379,6 +379,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.16
         version: 3.0.16(zod@4.4.3)
+      '@minpeter/pss-coding-agent':
+        specifier: workspace:*
+        version: link:../../apps/coding-agent
       '@oh-my-pi/hashline':
         specifier: 17.1.0
         version: 17.1.0

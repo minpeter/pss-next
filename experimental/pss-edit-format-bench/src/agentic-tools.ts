@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tool } from "ai";
-import { createEditFileTool } from "../../../apps/coding-agent/src/workspace-tools/edit-file";
-import { createReadFileTool } from "../../../apps/coding-agent/src/workspace-tools/read-file";
+import { createWorkspaceTools } from "@minpeter/pss-coding-agent";
 import type { AgenticToolEvent } from "./agentic";
 import type { AgenticTraceSink } from "./agentic-trace";
 import type { EditTask } from "./tasks";
@@ -36,8 +35,12 @@ const outputText = async (
 
 export const createAgenticTools = (options: AgenticToolsOptions) => {
   const { events, requestAttempt, run, task, trace, workspace } = options;
-  const readFileTool = createReadFileTool(workspace);
-  const editFileTool = createEditFileTool(workspace);
+  const workspaceTools = createWorkspaceTools({ workspace });
+  const readFileTool = workspaceTools.read_file;
+  const editFileTool = workspaceTools.edit_file;
+  if (readFileTool === undefined || editFileTool === undefined) {
+    throw new Error("Workspace tools must include read_file and edit_file");
+  }
   const readExecute = readFileTool.execute;
   const editExecute = editFileTool.execute;
   if (readExecute === undefined || editExecute === undefined) {

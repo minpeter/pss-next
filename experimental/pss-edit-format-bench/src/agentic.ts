@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import type { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, stepCountIs } from "ai";
 import { config as loadDotenv } from "dotenv";
-import { CODING_AGENT_INSTRUCTIONS } from "../../../apps/coding-agent/src/instructions";
+import { CODING_AGENT_INSTRUCTIONS } from "@minpeter/pss-coding-agent";
 import { createAgenticTools } from "./agentic-tools";
 import type { AgenticTraceSink } from "./agentic-trace";
 import type { EditTask } from "./tasks";
