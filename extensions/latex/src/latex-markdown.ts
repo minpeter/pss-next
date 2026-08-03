@@ -16,7 +16,8 @@ import { formulaCjkLocale, renderMathJaxPng } from "./mathjax-renderer";
 
 const CACHE_VERSION = "mathjax-resvg-wasm-v1";
 const DEFAULT_COLOR = "#767676";
-const MATHJAX_DISPLAY_SCALE = 0.25;
+// The worker rasterizes at 48 px; display at a readable 20 px logical size.
+const MATHJAX_DISPLAY_SCALE = 5 / 12;
 const MAX_FORMULA_LENGTH = 8192;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const MAX_PNG_DIMENSION = 8192;

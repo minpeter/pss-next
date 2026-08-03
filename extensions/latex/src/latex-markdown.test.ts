@@ -23,6 +23,7 @@ const originalCells = getCellDimensions();
 const originalPath = process.env.PATH;
 const originalCache = process.env.PSS_LATEX_CACHE_DIR;
 const originalLatexSetting = process.env.PSS_LATEX;
+const originalLatexScale = process.env.PSS_LATEX_SCALE;
 const temporaryDirectories: string[] = [];
 const theme: MarkdownTheme = Object.fromEntries(
   [
@@ -61,6 +62,11 @@ afterEach(async () => {
   } else {
     process.env.PSS_LATEX = originalLatexSetting;
   }
+  if (originalLatexScale === undefined) {
+    delete process.env.PSS_LATEX_SCALE;
+  } else {
+    process.env.PSS_LATEX_SCALE = originalLatexScale;
+  }
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -74,6 +80,7 @@ const renderFormula = async (
 ): Promise<string[]> => {
   process.env.PSS_LATEX_CACHE_DIR = cache;
   process.env.PSS_LATEX = "1";
+  process.env.PSS_LATEX_SCALE = "1";
   setCapabilities({ hyperlinks: true, images: "kitty", trueColor: true });
   setCellDimensions({ heightPx: 18, widthPx: 9 });
   let resolve!: () => void;
@@ -123,6 +130,7 @@ describe("LatexMarkdown WASM rendering", () => {
     const entries = await readdir(cache);
     expect(entries).toHaveLength(1);
     expect(first.join("\n")).toContain("\x1b_Ga=T,f=100,q=2,C=1");
+    expect(first.join("\n")).toContain("r=2");
     const second = await renderFormula("x^2+y^2=z^2", cache);
     expect(await readdir(cache)).toEqual(entries);
     expect(second.join("\n")).toContain("\x1b_Ga=T");
