@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import {
+  assertDeterministicFixtureManifest,
   generateFixtureManifest,
   listFixtureTasks,
   loadFixtureCorpus,
@@ -53,6 +54,7 @@ export const runFixtureCli = async (
     }
     case "check": {
       const manifest = await loadFixtureCorpus(root);
+      assertDeterministicFixtureManifest(manifest);
       for (const task of manifest.tasks) {
         const taskRoot = resolve(root, "tasks", task.id);
         const input = await verifyWorkspace(

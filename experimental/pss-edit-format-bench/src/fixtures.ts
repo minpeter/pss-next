@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type { WorkspaceFileSet } from "./workspace";
 
@@ -45,20 +46,31 @@ export const generateFixtureManifest = (
     const difficulty = difficulties[index % difficulties.length];
     const language = languages[index % languages.length];
     const nonce = Math.floor(random() * 1_000_000);
-    const path = `src/fixture.${extensionFor(language)}`;
+    const extension = extensionFor(language);
+    const path = `src/fixture.${extension}`;
     const context = renderFixture(language, difficulty, nonce);
+    const initialFiles: Record<string, string> = {
+      [path]: context.initial,
+    };
+    const expectedFiles: Record<string, string> = {
+      [path]: context.expected,
+    };
+    const contextFeatures = [...context.features];
+    if (difficulty === "hard") {
+      const supportPath = `src/support.${extension}`;
+      const supportContent = `${syntaxFor(language).line("support_value", nonce)}\n`;
+      initialFiles[supportPath] = supportContent;
+      expectedFiles[supportPath] = supportContent;
+      contextFeatures.push("multi-file");
+    }
     return {
-      expectedFiles: {
-        [path]: context.expected,
-      },
+      expectedFiles,
       id: `seed-${seed}-${index.toString().padStart(3, "0")}`,
-      initialFiles: {
-        [path]: context.initial,
-      },
+      initialFiles,
       instruction: `In ${path}, change only the marked target value from ${nonce} to ${nonce + 1}. Preserve every other byte.`,
       metadata: {
         category: "replace-line",
-        contextFeatures: context.features,
+        contextFeatures,
         difficulty,
         difficultyScore: (index % difficulties.length) + 1,
         language,
@@ -68,6 +80,20 @@ export const generateFixtureManifest = (
     };
   });
   return { seed, tasks, version: 1 };
+};
+
+export const assertDeterministicFixtureManifest = (
+  manifest: FixtureManifest
+): void => {
+  const regenerated = generateFixtureManifest(
+    manifest.seed,
+    manifest.tasks.length
+  );
+  if (!isDeepStrictEqual(manifest, regenerated)) {
+    throw new Error(
+      `fixture corpus does not match deterministic seed=${manifest.seed} count=${manifest.tasks.length}`
+    );
+  }
 };
 
 export const writeFixtureCorpus = async (
