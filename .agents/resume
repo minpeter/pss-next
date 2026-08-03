@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This repository has no backing services or tunnels to repair after an orb wakes.
+echo "Orb resume complete; no services require repair."
