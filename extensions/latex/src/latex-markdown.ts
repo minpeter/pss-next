@@ -1,17 +1,8 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  open,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   type Component,
   encodeKitty,
@@ -21,25 +12,16 @@ import {
   type MarkdownTheme,
 } from "@earendil-works/pi-tui";
 import { decode } from "fast-png";
-import {
-  renderUnicodeFormula,
-  resolveCjkLocale,
-} from "./unicode-browser-renderer";
+import { formulaCjkLocale, renderMathJaxPng } from "./mathjax-renderer";
 
-const CACHE_VERSION = "latex-dvi-dvipng-lcd-v10";
+const CACHE_VERSION = "mathjax-resvg-wasm-v1";
 const DEFAULT_COLOR = "#767676";
-const DEFAULT_DPI = 288;
-const DEFAULT_DISPLAY_DPI = 120;
 const MATHJAX_DISPLAY_SCALE = 0.25;
 const MAX_FORMULA_LENGTH = 8192;
-const MAX_PROCESS_OUTPUT_BYTES = 128 * 1024;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const MAX_PNG_DIMENSION = 8192;
 const MAX_PNG_PIXELS = 16 * 1024 * 1024;
 const MAX_QUEUED_RENDERS = 32;
-const PROCESS_TIMEOUT_MS = 10_000;
-const SANDBOX_ADDRESS_SPACE_BYTES = 1024 * 1024 * 1024;
-const SANDBOX_FILE_BYTES = 16 * 1024 * 1024;
 const PNG_SIGNATURE = "89504e470d0a1a0a";
 const FENCED_CODE_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
 const INDENTED_CODE_PATTERN = /^(?: {4}|\t)/;
@@ -84,19 +66,8 @@ interface MarkdownTextStyle {
 interface LatexMarkdownOptions {
   defaultTextStyle?: MarkdownTextStyle;
   foregroundColor?: string;
-  onMissingTool?: (executable: string) => void;
   requestRender?: () => void;
   signal?: AbortSignal;
-}
-
-class MissingExecutableError extends Error {
-  readonly executable: string;
-
-  constructor(executable: string) {
-    super(`Required executable not found: ${executable}`);
-    this.name = "MissingExecutableError";
-    this.executable = executable;
-  }
 }
 
 const isEscaped = (text: string, index: number): boolean => {
@@ -366,37 +337,24 @@ const latexAspectCorrection = (): number => {
     : 1;
 };
 
-const latexDisplayScale = (unicode: boolean): number => {
+const latexDisplayScale = (): number => {
   const configured = Number(process.env.PSS_LATEX_SCALE ?? "1");
   const userScale = Number.isFinite(configured)
     ? Math.max(0.5, Math.min(2, configured))
     : 1;
-  const rendererScale = unicode
-    ? MATHJAX_DISPLAY_SCALE
-    : DEFAULT_DISPLAY_DPI / DEFAULT_DPI;
-  return rendererScale * userScale;
+  return MATHJAX_DISPLAY_SCALE * userScale;
 };
 
-const displayDimensions = (
-  { heightPx, widthPx }: PngDimensions,
-  unicode: boolean
-): { displayHeightPx: number; displayWidthPx: number } => {
-  const scale = latexDisplayScale(unicode);
+const displayDimensions = ({
+  heightPx,
+  widthPx,
+}: PngDimensions): { displayHeightPx: number; displayWidthPx: number } => {
+  const scale = latexDisplayScale();
   return {
     displayHeightPx: Math.max(1, Math.ceil(heightPx * scale)),
     displayWidthPx: Math.max(1, Math.ceil(widthPx * scale)),
   };
 };
-
-const dvipngColor = (color: string): string => {
-  const channels = [1, 3, 5].map((offset) =>
-    (Number.parseInt(color.slice(offset, offset + 2), 16) / 255).toFixed(4)
-  );
-  return `rgb ${channels.join(" ")}`;
-};
-
-const containsUnicode = (value: string): boolean =>
-  Array.from(value).some((character) => (character.codePointAt(0) ?? 0) > 0x7f);
 
 const cacheDirectory = (): string =>
   process.env.PSS_LATEX_CACHE_DIR ??
@@ -408,15 +366,15 @@ const formulaCacheKey = (formula: string, color: string): string =>
     .update("\0")
     .update(color)
     .update("\0")
-    .update(containsUnicode(formula) ? resolveCjkLocale() : "ascii")
+    .update(formulaCjkLocale(formula) ?? "non-cjk")
     .update("\0")
     .update(formula)
     .digest("hex");
 
-let nextUnicodeImageId = Math.floor(Math.random() * 0xff_ff_fe) + 1;
-const allocateUnicodeImageId = (): number => {
-  const allocated = nextUnicodeImageId;
-  nextUnicodeImageId = (nextUnicodeImageId % 0xff_ff_ff) + 1;
+let nextImageId = Math.floor(Math.random() * 0xff_ff_fe) + 1;
+const allocateImageId = (): number => {
+  const allocated = nextImageId;
+  nextImageId = (nextImageId % 0xff_ff_ff) + 1;
   return allocated;
 };
 
@@ -424,246 +382,29 @@ const allocateUnicodeImageId = (): number => {
 export const normalizeLatexFormula = (formula: string): string =>
   formula.replace(SINGLE_ROW_TERMINATOR_PATTERN, "\\\\");
 
-const texDocument = (
-  formula: string
-): string => String.raw`\documentclass[12pt]{article}
-\usepackage[utf8]{inputenc}
-\usepackage{amsmath,amssymb}
-\pagestyle{empty}
-\setlength{\textwidth}{100in}
-\begin{document}
-\begin{displaymath}
-\displaystyle ${formula}
-\end{displaymath}
-\end{document}
-`;
-
-interface RunProcessOptions {
-  cwd: string;
-  env?: NodeJS.ProcessEnv;
-  signal?: AbortSignal;
-}
-
-const executablePath = async (executable: string): Promise<string> => {
-  const candidates = isAbsolute(executable)
-    ? [executable]
-    : (process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")
-        .split(delimiter)
-        .map((directory) => join(directory, executable));
-  for (const candidate of candidates) {
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EACCES" && code !== "ENOENT") {
-        throw error;
+const validatePng = (png: Buffer): PngDimensions => {
+  if (png.length > MAX_PNG_BYTES) {
+    throw new Error("LaTeX renderer produced an oversized PNG");
+  }
+  const dimensions = pngDimensions(png);
+  if (!dimensionsWithinLimits(dimensions)) {
+    throw new Error("LaTeX renderer produced an invalid or oversized PNG");
+  }
+  const decoded = decode(png);
+  if (decoded.channels === 2 || decoded.channels === 4) {
+    const alphaOffset = decoded.channels - 1;
+    for (
+      let index = alphaOffset;
+      index < decoded.data.length;
+      index += decoded.channels
+    ) {
+      if ((decoded.data[index] ?? 0) > 0) {
+        return dimensions;
       }
     }
+    throw new Error("LaTeX renderer produced a blank PNG");
   }
-  throw new MissingExecutableError(executable);
-};
-
-const allowedProcessEnvironment = (
-  environment: NodeJS.ProcessEnv | undefined,
-  cwd: string
-): NodeJS.ProcessEnv => {
-  const source = environment ?? process.env;
-  const env: NodeJS.ProcessEnv = {
-    HOME: cwd,
-    LANG: source.LANG ?? "C.UTF-8",
-    LC_ALL: source.LC_ALL ?? source.LANG ?? "C.UTF-8",
-    openin_any: "p",
-    openout_any: "p",
-    PATH: source.PATH ?? "/usr/local/bin:/usr/bin:/bin",
-    shell_escape: "f",
-    TEMP: cwd,
-    TEXMFOUTPUT: ".",
-    TMP: cwd,
-    TMPDIR: cwd,
-    TZ: source.TZ ?? "UTC",
-    USERPROFILE: cwd,
-    XDG_CACHE_HOME: cwd,
-  };
-  for (const key of ["COMSPEC", "PATHEXT", "SystemRoot", "WINDIR"]) {
-    if (source[key] !== undefined) {
-      env[key] = source[key];
-    }
-  }
-  return env;
-};
-
-const sandboxedInvocation = async (
-  executable: string,
-  args: readonly string[],
-  options: RunProcessOptions
-): Promise<{
-  args: string[];
-  env: NodeJS.ProcessEnv;
-  executable: string;
-}> => {
-  const resolvedExecutable = await executablePath(executable);
-  const env = allowedProcessEnvironment(options.env, options.cwd);
-  if (process.platform !== "linux") {
-    throw new MissingExecutableError("bwrap");
-  }
-  const bubblewrap = await executablePath("bwrap");
-  const prlimit = await executablePath("prlimit");
-  const sandboxDirectory = "/tmp/work";
-  const sandboxEnvironment = allowedProcessEnvironment(env, sandboxDirectory);
-  const setEnvironment = Object.entries(sandboxEnvironment).flatMap(
-    ([key, value]) => (value === undefined ? [] : ["--setenv", key, value])
-  );
-  const systemRoots = [
-    "/usr",
-    "/bin",
-    "/lib",
-    "/lib64",
-    "/etc",
-    "/var/lib/texmf",
-    "/var/cache/fontconfig",
-    "/nix/store",
-  ];
-  const rootBindings: string[] = [];
-  for (const root of systemRoots) {
-    try {
-      await access(root, constants.R_OK);
-      rootBindings.push("--ro-bind", root, root);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EACCES" && code !== "ENOENT") {
-        throw error;
-      }
-    }
-  }
-  const limitedCommand = [
-    prlimit,
-    `--as=${SANDBOX_ADDRESS_SPACE_BYTES}`,
-    "--core=0",
-    "--cpu=15",
-    `--fsize=${SANDBOX_FILE_BYTES}`,
-    "--nofile=128",
-    "--",
-    resolvedExecutable,
-    ...args,
-  ];
-  return {
-    args: [
-      "--die-with-parent",
-      "--new-session",
-      "--unshare-all",
-      "--cap-drop",
-      "ALL",
-      ...rootBindings,
-      "--tmpfs",
-      "/tmp",
-      "--dir",
-      sandboxDirectory,
-      "--bind",
-      options.cwd,
-      sandboxDirectory,
-      "--chdir",
-      sandboxDirectory,
-      "--proc",
-      "/proc",
-      "--dev",
-      "/dev",
-      "--clearenv",
-      ...setEnvironment,
-      ...limitedCommand,
-    ],
-    env,
-    executable: bubblewrap,
-  };
-};
-
-const runProcess = async (
-  executable: string,
-  args: string[],
-  options: RunProcessOptions
-): Promise<void> => {
-  options.signal?.throwIfAborted();
-  const invocation = await sandboxedInvocation(executable, args, options);
-  options.signal?.throwIfAborted();
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let outputBytes = 0;
-    const child = spawn(invocation.executable, invocation.args, {
-      cwd: options.cwd,
-      detached: process.platform !== "win32",
-      env: invocation.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const abort = (): void => {
-      if (child.pid !== undefined && process.platform !== "win32") {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-          return;
-        } catch {
-          child.kill("SIGKILL");
-          return;
-        }
-      }
-      if (child.pid !== undefined && process.platform === "win32") {
-        spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-          windowsHide: true,
-        }).unref();
-      }
-      child.kill("SIGKILL");
-    };
-    const finish = (error?: Error): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      options.signal?.removeEventListener("abort", onAbort);
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    };
-    const onAbort = (): void => {
-      abort();
-      const reason = options.signal?.reason;
-      finish(
-        reason instanceof Error
-          ? reason
-          : new DOMException("The operation was aborted", "AbortError")
-      );
-    };
-    const captureOutput = (chunk: Buffer): void => {
-      outputBytes += chunk.length;
-      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
-        abort();
-        finish(new Error(`${executable} produced too much output`));
-      }
-    };
-    const timeout = setTimeout(() => {
-      abort();
-      finish(new Error(`${executable} timed out`));
-    }, PROCESS_TIMEOUT_MS);
-    child.stdout.on("data", captureOutput);
-    child.stderr.on("data", captureOutput);
-    child.once("error", (error) => finish(error));
-    child.once("close", (code, signal) => {
-      if (code === 0) {
-        finish();
-        return;
-      }
-      finish(
-        new Error(
-          `${executable} exited with ${code ?? `signal ${signal ?? "unknown"}`}`
-        )
-      );
-    });
-    options.signal?.addEventListener("abort", onAbort, { once: true });
-    if (options.signal?.aborted) {
-      onAbort();
-    }
-  });
+  return dimensions;
 };
 
 const readBoundedPng = async (path: string): Promise<Buffer> => {
@@ -699,74 +440,10 @@ const readBoundedPng = async (path: string): Promise<Buffer> => {
       throw new Error("LaTeX renderer produced an oversized PNG");
     }
     const png = buffer.subarray(0, totalBytes);
-    const decoded = decode(png);
-    if (decoded.channels === 2 || decoded.channels === 4) {
-      const alphaOffset = decoded.channels - 1;
-      let visible = false;
-      for (
-        let index = alphaOffset;
-        index < decoded.data.length;
-        index += decoded.channels
-      ) {
-        if ((decoded.data[index] ?? 0) > 0) {
-          visible = true;
-          break;
-        }
-      }
-      if (!visible) {
-        throw new Error("LaTeX renderer produced a blank PNG");
-      }
-    }
+    validatePng(png);
     return png;
   } finally {
     await file.close();
-  }
-};
-
-export const postProcessPngArgs = (input: string, output: string): string[] => [
-  "-limit",
-  "memory",
-  "256MiB",
-  "-limit",
-  "map",
-  "512MiB",
-  "-limit",
-  "disk",
-  "256MiB",
-  "-background",
-  "none",
-  input,
-  "-alpha",
-  "on",
-  "-trim",
-  "+repage",
-  "-filter",
-  "LanczosSharp",
-  "-unsharp",
-  "0x0.8+0.45+0",
-  "-bordercolor",
-  "none",
-  "-border",
-  "10x5",
-  output,
-];
-const postProcessPng = async (
-  cwd: string,
-  input: string,
-  output: string,
-  signal?: AbortSignal
-): Promise<void> => {
-  const args = postProcessPngArgs(input, output);
-  try {
-    await runProcess("magick", args, { cwd, signal });
-  } catch (error) {
-    if (
-      !(error instanceof MissingExecutableError) ||
-      error.executable !== "magick"
-    ) {
-      throw error;
-    }
-    await runProcess("convert", args, { cwd, signal });
   }
 };
 
@@ -786,15 +463,13 @@ const renderLatex = async (
   const key = formulaCacheKey(formula, color);
   const directory = cacheDirectory();
   const cachedPath = join(directory, `${key}.png`);
-  const unicode = containsUnicode(formula);
-
   try {
     const cached = await readBoundedPng(cachedPath);
     const dimensions = pngDimensions(cached);
     if (dimensionsWithinLimits(dimensions)) {
       return {
         ...dimensions,
-        ...displayDimensions(dimensions, unicode),
+        ...displayDimensions(dimensions),
         base64: cached.toString("base64"),
         imageId: 0,
       };
@@ -804,107 +479,27 @@ const renderLatex = async (
   }
 
   signal?.throwIfAborted();
-  const workingDirectory = await mkdtemp(join(tmpdir(), "pss-latex-"));
+  const normalizedFormula = normalizeLatexFormula(formula);
+  const png = await renderMathJaxPng(normalizedFormula, color, signal);
+  const dimensions = validatePng(png);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const temporaryCachePath = join(
+    directory,
+    `.${key}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`
+  );
   try {
-    const texPath = join(workingDirectory, "formula.tex");
-    const outputPngPath = join(workingDirectory, "formula.png");
-    signal?.throwIfAborted();
-    const normalizedFormula = normalizeLatexFormula(formula);
-    if (unicode) {
-      const rendered = await renderUnicodeFormula(
-        normalizedFormula,
-        color,
-        signal
-      );
-      await writeFile(join(workingDirectory, "formula-raw.png"), rendered.png, {
-        mode: 0o600,
-      });
-    } else {
-      await writeFile(texPath, texDocument(normalizedFormula), { mode: 0o600 });
-    }
-
-    // openin_any/openout_any keep untrusted model-generated TeX inside the
-    // dedicated temporary directory. Shell escape is disabled independently.
-    const texEnv = {
-      openin_any: "p",
-      openout_any: "p",
-      PATH: process.env.PATH,
-      shell_escape: "f",
-      TEXMFOUTPUT: ".",
-    };
-    if (unicode) {
-      await postProcessPng(
-        workingDirectory,
-        "formula-raw.png",
-        "formula.png",
-        signal
-      );
-    } else {
-      await runProcess(
-        "latex",
-        [
-          "-interaction=nonstopmode",
-          "-halt-on-error",
-          "-no-shell-escape",
-          "-output-directory",
-          ".",
-          "formula.tex",
-        ],
-        { cwd: workingDirectory, env: texEnv, signal }
-      );
-      await runProcess(
-        "dvipng",
-        [
-          "--nogs",
-          "--norawps",
-          "-D",
-          String(DEFAULT_DPI),
-          "-T",
-          "tight",
-          "-z",
-          "9",
-          "-bg",
-          "Transparent",
-          "-fg",
-          dvipngColor(color),
-          "-o",
-          "formula-raw.png",
-          "formula.dvi",
-        ],
-        { cwd: workingDirectory, env: texEnv, signal }
-      );
-      await postProcessPng(
-        workingDirectory,
-        "formula-raw.png",
-        "formula.png",
-        signal
-      );
-    }
-
-    const png = await readBoundedPng(outputPngPath);
-    const dimensions = pngDimensions(png);
-    if (!dimensionsWithinLimits(dimensions)) {
-      throw new Error("LaTeX renderer produced an invalid or oversized PNG");
-    }
-
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    const temporaryCachePath = join(
-      directory,
-      `.${key}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`
-    );
     await writeFile(temporaryCachePath, png, { mode: 0o600 });
     signal?.throwIfAborted();
     await rename(temporaryCachePath, cachedPath);
-
-    return {
-      ...dimensions,
-      ...displayDimensions(dimensions, unicode),
-      base64: png.toString("base64"),
-      imageId: 0,
-    };
   } finally {
-    await rm(workingDirectory, { force: true, recursive: true });
+    await rm(temporaryCachePath, { force: true });
   }
+  return {
+    ...dimensions,
+    ...displayDimensions(dimensions),
+    base64: png.toString("base64"),
+    imageId: 0,
+  };
 };
 
 const renderQueue: Array<() => void> = [];
@@ -913,7 +508,7 @@ const renderPromises = new WeakMap<
   Map<string, Promise<RenderedLatex>>
 >();
 let activeRenderCount = 0;
-const MAX_CONCURRENT_RENDERS = 2;
+const MAX_CONCURRENT_RENDERS = 1;
 
 const startQueuedRenders = (): void => {
   while (activeRenderCount < MAX_CONCURRENT_RENDERS && renderQueue.length > 0) {
@@ -1236,19 +831,16 @@ export class LatexMarkdown implements Component {
           if (this.signal.aborted) {
             return;
           }
-          state.image = { ...image, imageId: allocateUnicodeImageId() };
+          state.image = { ...image, imageId: allocateImageId() };
           state.status = "ready";
           this.invalidate();
           this.options.requestRender?.();
         },
-        (error: unknown) => {
+        () => {
           if (this.signal.aborted) {
             return;
           }
           state.status = "failed";
-          if (error instanceof MissingExecutableError) {
-            this.options.onMissingTool?.(error.executable);
-          }
           this.invalidate();
           this.options.requestRender?.();
         }

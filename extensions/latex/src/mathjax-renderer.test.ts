@@ -1,135 +1,133 @@
+import { decode } from "fast-png";
 import { describe, expect, it } from "vitest";
-import { renderMathJaxChtml } from "./mathjax-renderer";
 import {
-  browserGeometryWithinLimits,
-  renderUnicodeFormula,
-  unicodeBrowserLaunchOptions,
-  unicodeFormulaSupported,
-} from "./unicode-browser-renderer";
+  formulaCjkLocale,
+  formulaSupported,
+  renderMathJaxPng,
+} from "./mathjax-renderer";
 
-describe("renderMathJaxChtml", () => {
-  it("preserves Unicode text in browser-layout math", async () => {
-    const formula = String.raw`\text{타원곡선} \implies \text{椭圆曲线}`;
+const visibleBounds = (png: Buffer) => {
+  const image = decode(png);
+  let minX = image.width;
+  let minY = image.height;
+  let maxX = -1;
+  let maxY = -1;
+  const alpha = image.channels - 1;
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const offset = (y * image.width + x) * image.channels;
+      if ((image.data[offset + alpha] ?? 0) === 0) {
+        continue;
+      }
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return { height: maxY - minY + 1, image, width: maxX - minX + 1 };
+};
 
-    const result = await renderMathJaxChtml(formula);
-
-    expect(result.html).toContain("타원곡선");
-    expect(result.html).toContain("椭圆曲线");
-    expect(result.html).toContain("mjx-mtext");
-    expect(result.css).toContain("@font-face");
-  });
-
-  it("renders AMS negated-existence symbols without truncation", {
-    timeout: 30_000,
-  }, async () => {
-    const formula = String.raw`\boxed{\forall n > 2,\ \nexists x,y,z \in \mathbb{Z}_{>0} \text{ such that } x^n+y^n=z^n}
-\quad \text{(양의 정수해 없음)}`;
-    const result = await renderMathJaxChtml(formula);
-    const rendered = await renderUnicodeFormula(formula, "#e8e8e8");
-
-    expect(result.html).not.toContain("data-mjx-error");
-    expect(result.html).toContain('data-latex="\\nexists"');
-    expect(rendered.png.readUInt32BE(16)).toBeGreaterThan(500);
-  });
-
-  it("renders multiline boxed Unicode formulas without truncation", {
-    timeout: 30_000,
-  }, async () => {
-    const result = await renderUnicodeFormula(
-      String.raw`\boxed{
-\forall n>2,\quad
-x^n+y^n=z^n
-\text{은 양의 정수해를 갖지 않는다}
-}`,
-      "#e8e8e8"
-    );
-
-    expect(result.png.readUInt32BE(16)).toBeGreaterThan(500);
-    expect(result.probe.containerWidth).toBeGreaterThanOrEqual(
-      result.probe.runs[0]?.width ?? Number.POSITIVE_INFINITY
-    );
-    expect(result.probe.runs).toContainEqual(
-      expect.objectContaining({
-        text: "은 양의 정수해를 갖지 않는다",
-        visible: true,
-      })
-    );
-  });
-
-  it("preserves RTL text order in Unicode runs", {
-    timeout: 30_000,
-  }, async () => {
-    const result = await renderUnicodeFormula(
-      String.raw`\text{שלום עולם}`,
-      "#e8e8e8"
-    );
-
-    expect(result.png.length).toBeGreaterThan(500);
-    const run = result.probe.runs[0];
-    expect(run).toMatchObject({
-      direction: "rtl",
-      fontAvailable: true,
-      text: "שלום עולם",
-      visible: true,
-    });
-    expect(run?.clusterLefts[0]).toBeGreaterThan(
-      run?.clusterLefts.at(-1) ?? Number.POSITIVE_INFINITY
-    );
-  });
-
-  it("rejects malformed Unicode TeX instead of rendering an error image", async () => {
-    await expect(renderMathJaxChtml(String.raw`\text{한글`)).rejects.toThrow();
-  });
-
+describe("MathJax and resvg WASM renderer", () => {
   it.each([
-    ["regional flag", String.raw`\text{🇺🇸}`],
-    ["keycap", String.raw`\text{1️⃣}`],
-    ["ZWJ", String.raw`\text{👩‍💻}`],
-  ])("falls back for %s emoji sequences", (_name, formula) => {
-    expect(unicodeFormulaSupported(formula)).toBe(false);
+    ["ASCII", "x^2+y^2=z^2"],
+    ["multiline AMS", String.raw`\begin{aligned}a&=b+c\\d&=e-f\end{aligned}`],
+    ["Korean/CJK", String.raw`\text{타원곡선 椭圆曲线}`],
+    ["Arabic/Hebrew", String.raw`\text{مرحبا שלום}`],
+    ["Devanagari", String.raw`\text{नमस्ते दुनिया}`],
+    ["Thai", String.raw`\text{สวัสดีชาวโลก}`],
+  ])(
+    "renders %s formulas from bundled assets",
+    async (_name, formula) => {
+      const png = await renderMathJaxPng(formula, "#2468ac");
+      const bounds = visibleBounds(png);
+      expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+      expect(bounds.width).toBeGreaterThan(0);
+      expect(bounds.height).toBeGreaterThan(0);
+    },
+    30_000
+  );
+
+  it("produces bounded dimensions, transparency, and requested glyph color", async () => {
+    const { image, width, height } = visibleBounds(
+      await renderMathJaxPng(String.raw`\frac{x}{y}`, "#123456")
+    );
+    expect(image.width).toBeGreaterThan(width);
+    expect(image.height).toBeGreaterThan(height);
+    expect(image.channels).toBe(4);
+    expect(image.data[3]).toBe(0);
+    let colored = false;
+    for (let offset = 0; offset < image.data.length; offset += 4) {
+      if ((image.data[offset + 3] ?? 0) > 200) {
+        colored ||=
+          image.data[offset] === 0x12 &&
+          image.data[offset + 1] === 0x34 &&
+          image.data[offset + 2] === 0x56;
+      }
+    }
+    expect(colored).toBe(true);
+    expect(image.width * image.height).toBeLessThan(16 * 1024 * 1024);
   });
 
-  it("requires the Chromium sandbox", () => {
-    expect(
-      unicodeBrowserLaunchOptions("/usr/bin/google-chrome").chromiumSandbox
-    ).toBe(true);
+  it("rejects malformed TeX, emoji, and unsafe macros for source fallback", async () => {
+    await expect(
+      renderMathJaxPng(String.raw`\text{broken`, "#000000")
+    ).rejects.toThrow();
+    for (const formula of [
+      String.raw`\text{proof ✅}`,
+      String.raw`\href{x}{y}`,
+      String.raw`\style{x}{y}`,
+    ]) {
+      expect(formulaSupported(formula)).toBe(false);
+      await expect(renderMathJaxPng(formula, "#000000")).rejects.toThrow();
+    }
   });
 
-  it("ignores untrusted browser executable overrides", {
-    timeout: 30_000,
-  }, async () => {
-    const original = process.env.PSS_LATEX_BROWSER;
-    process.env.PSS_LATEX_BROWSER = "/bin/false";
+  it("rejects undefined, require, and resource-bearing macros", async () => {
+    for (const formula of [
+      String.raw`\undefinedMacro{x}`,
+      String.raw`\require{autoload}`,
+      String.raw`\href{https://example.test}{x}`,
+      String.raw`\includegraphics{file.png}`,
+    ]) {
+      await expect(renderMathJaxPng(formula, "#000000")).rejects.toThrow();
+    }
+  });
+
+  it("rejects formulas that exceed the MathJax template limit", async () => {
+    const formula = String.raw`\newcommand{\x}{x}${String.raw`\x`.repeat(1001)}`;
+
+    await expect(renderMathJaxPng(formula, "#000000")).rejects.toThrow();
+  });
+
+  it("resolves CJK locale for locale-sensitive cache keys", () => {
+    const original = process.env.PSS_LATEX_CJK_LOCALE;
     try {
-      const rendered = await renderUnicodeFormula(
-        String.raw`\text{한글}`,
-        "#e8e8e8"
-      );
-      expect(rendered.png.subarray(0, 8)).toEqual(
-        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
-      );
-      expect(rendered.probe.runs).toContainEqual(
-        expect.objectContaining({
-          text: "한글",
-          visible: true,
-        })
-      );
+      process.env.PSS_LATEX_CJK_LOCALE = "ja";
+      expect(formulaCjkLocale(String.raw`\text{漢字}`)).toBe("ja");
+      process.env.PSS_LATEX_CJK_LOCALE = "zh-Hant";
+      expect(formulaCjkLocale(String.raw`\text{漢字}`)).toBe("zh-Hant");
+      expect(formulaCjkLocale("x^2")).toBeUndefined();
     } finally {
       if (original === undefined) {
-        delete process.env.PSS_LATEX_BROWSER;
+        delete process.env.PSS_LATEX_CJK_LOCALE;
       } else {
-        process.env.PSS_LATEX_BROWSER = original;
+        process.env.PSS_LATEX_CJK_LOCALE = original;
       }
     }
   });
 
-  it("rejects dangerous HTML macros and oversized browser geometry", () => {
-    expect(
-      unicodeFormulaSupported(String.raw`\style{font-size:100000px}{\text{한}}`)
-    ).toBe(false);
-    expect(unicodeFormulaSupported(String.raw`\href{x}{\text{한}}`)).toBe(
-      false
+  it("restarts successfully after an aborted worker render", async () => {
+    const controller = new AbortController();
+    const rendering = renderMathJaxPng(
+      String.raw`\text{한글 日本語 中文} ${"x+".repeat(2000)}x`,
+      "#000000",
+      controller.signal
     );
-    expect(browserGeometryWithinLimits(10_000, 13_496)).toBe(false);
+    setTimeout(() => controller.abort(), 1);
+    await expect(rendering).rejects.toThrow();
+    await expect(renderMathJaxPng("x+1", "#000000")).resolves.toBeInstanceOf(
+      Buffer
+    );
   });
 });

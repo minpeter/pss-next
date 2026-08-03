@@ -1,7 +1,7 @@
 {
   "name": "@minpeter/pss-extension-latex",
   "version": "0.0.1-next.0",
-  "description": "Sandboxed LaTeX display rendering for the PSS coding-agent TUI.",
+  "description": "Self-contained LaTeX display rendering for the PSS coding-agent TUI.",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -35,9 +35,18 @@
     "lint": "ultracite check ."
   },
   "dependencies": {
+    "@fontsource-variable/noto-sans": "5.3.0",
+    "@fontsource-variable/noto-sans-arabic": "5.3.0",
+    "@fontsource-variable/noto-sans-devanagari": "5.3.0",
+    "@fontsource-variable/noto-sans-hebrew": "5.3.0",
+    "@fontsource-variable/noto-sans-jp": "5.3.0",
+    "@fontsource-variable/noto-sans-kr": "5.3.0",
+    "@fontsource-variable/noto-sans-sc": "5.3.0",
+    "@fontsource-variable/noto-sans-tc": "5.3.0",
+    "@fontsource-variable/noto-sans-thai": "5.3.0",
+    "@resvg/resvg-wasm": "2.6.2",
     "fast-png": "8.0.0",
-    "mathjax": "4.1.3",
-    "playwright-core": "1.62.0"
+    "mathjax": "4.1.3"
   },
   "peerDependencies": {
     "@earendil-works/pi-tui": "^0.82.1",

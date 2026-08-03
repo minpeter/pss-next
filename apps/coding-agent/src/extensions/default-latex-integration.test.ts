@@ -66,7 +66,7 @@ describe("coding-agent LaTeX extension integration", () => {
     await host.dispose();
   });
 
-  it("deduplicates missing dependencies across extension reloads", async () => {
+  it("renders without dependency notices across extension reloads", async () => {
     const originalCapabilities = getCapabilities();
     const originalLatex = process.env.PSS_LATEX;
     const originalPath = process.env.PATH;
@@ -74,7 +74,7 @@ describe("coding-agent LaTeX extension integration", () => {
     const notifications = createAssistantRendererNotifications((message) => {
       messages.push(message);
     });
-    const renderMissingDependency = async (
+    const renderDisplay = async (
       host: Awaited<ReturnType<typeof createCodingAgentExtensionHost>>,
       formula: string
     ): Promise<void> => {
@@ -103,15 +103,14 @@ describe("coding-agent LaTeX extension integration", () => {
         trueColor: true,
       });
       const initialHost = await createCodingAgentExtensionHost([latexModule]);
-      await renderMissingDependency(initialHost, "x = 101");
+      await renderDisplay(initialHost, "x = 101");
       await initialHost.dispose();
 
       const reloadedHost = await createCodingAgentExtensionHost([latexModule]);
-      await renderMissingDependency(reloadedHost, "x = 102");
+      await renderDisplay(reloadedHost, "x = 102");
       await reloadedHost.dispose();
 
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toContain("`latex` was not found");
+      expect(messages).toHaveLength(0);
     } finally {
       setCapabilities(originalCapabilities);
       if (originalLatex === undefined) {
