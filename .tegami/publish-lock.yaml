@@ -1,44 +1,51 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Stabilize package timeout testing\n\nGive spawned test processes enough startup time on loaded CI runners while preserving coverage of forced descendant termination.\n"
-    filename: 2026-08-03-stabilize-package-timeout-test.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add speculative background compaction\n\nReplace the legacy auto-compaction options with a callable compaction policy\nand add a speculative strategy that prepares summaries before promotion.\nPreserve overflow recovery, hook interception, and stale-commit protection.\n"
+    filename: 2026-08-03-speculative-background-compaction.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n---\n\n## Increase the default LaTeX display size\n\nRender display formulas at a more readable terminal size while preserving high-resolution source images and user scale overrides.\n"
+    filename: 2026-08-03-latex-display-size.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-03-stabilize-package-timeout-test.md
+      - 2026-08-03-speculative-background-compaction.md
     id: npm:@minpeter/pss-coding-agent
     updated: true
-  - id: npm:@minpeter/pss-extension-latex
-    updated: false
-  - id: npm:@minpeter/pss-extension-web
+  - id: npm:@minpeter/pss-benchmark-compaction-score
     updated: false
   - id: npm:@minpeter/pss-bench-shared
     updated: false
-  - id: npm:@minpeter/pss-benchmark-compaction-score
-    updated: false
-  - id: npm:@minpeter/pss-benchmark-nextjs
-    updated: false
   - id: npm:@minpeter/pss-edit-format-bench
     updated: true
-  - id: npm:@minpeter/pss-runtime
+  - id: npm:@minpeter/pss-benchmark-nextjs
     updated: false
+  - changelogIds:
+      - 2026-08-03-latex-display-size.md
+    id: npm:@minpeter/pss-extension-latex
+    updated: true
+  - id: npm:@minpeter/pss-extension-web
+    updated: false
+  - changelogIds:
+      - 2026-08-03-speculative-background-compaction.md
+    id: npm:@minpeter/pss-runtime
+    updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
   - id: npm:@minpeter/pss-benchmark-compaction-score
   - id: npm:@minpeter/pss-edit-format-bench
+  - id: npm:@minpeter/pss-bench-shared
+  - id: npm:@minpeter/pss-benchmark-nextjs
   - distTag: next
     id: npm:@minpeter/pss-extension-latex
   - distTag: next
     id: npm:@minpeter/pss-extension-web
-  - id: npm:@minpeter/pss-bench-shared
-  - id: npm:@minpeter/pss-benchmark-nextjs
   - distTag: next
     id: npm:@minpeter/pss-runtime
   - id: npm:@minpeter/pss-worker-agent
   - id: npm:@minpeter/pss-example-background-subagent
   - id: npm:@minpeter/pss-example-basic
-  - id: npm:@minpeter/pss-example-hooks
   - id: npm:@minpeter/pss-example-evals
+  - id: npm:@minpeter/pss-example-hooks
   - id: npm:@minpeter/pss-example-local-file-agent
   - id: npm:@minpeter/pss-example-sync-subagent
   - id: npm:@minpeter/pss-runtime-edge-image-qa

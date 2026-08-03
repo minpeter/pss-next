@@ -1,3 +1,9 @@
+## @minpeter/pss-extension-latex@0.0.1-next.1 (next)
+
+### Increase the default LaTeX display size
+
+Render display formulas at a more readable terminal size while preserving high-resolution source images and user scale overrides.
+
 ## @minpeter/pss-extension-latex@0.0.1-next.0 (next)
 
 ### Render LaTeX display math through an overridable extension
