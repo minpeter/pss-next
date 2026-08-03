@@ -104,6 +104,10 @@ export function createSessionManager(
   // Serialize read-modify-write cycles so concurrent commands cannot drop
   // one another's index updates.
   let queue: Promise<unknown> = Promise.resolve();
+  let resumableSessionsCache: Promise<readonly SessionIndexEntry[]> | undefined;
+  const invalidateResumableSessions = (): void => {
+    resumableSessionsCache = undefined;
+  };
   const enqueue = <Result>(
     task: (document: SessionIndexDocument) => Promise<{
       readonly document: SessionIndexDocument;
@@ -131,8 +135,9 @@ export function createSessionManager(
     setActiveSession(upsertSession(document, entry), cwd, entry.key);
 
   return {
-    createSession: (name) =>
-      enqueue((document) => {
+    createSession: (name) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
         const at = timestamp();
         const entry: SessionIndexEntry = {
           createdAt: at,
@@ -145,7 +150,8 @@ export function createSessionManager(
           document: registerActive(document, entry),
           result: entry,
         });
-      }),
+      });
+    },
     cwd,
     findSession: (query) =>
       enqueue((document) =>
@@ -155,6 +161,7 @@ export function createSessionManager(
         })
       ),
     forkSession: async (fromKey, forkOptions = {}) => {
+      invalidateResumableSessions();
       if (threads === undefined) {
         throw new Error("Forking requires thread storage.");
       }
@@ -225,8 +232,11 @@ export function createSessionManager(
       }
       return points;
     },
-    listResumableSessions: () =>
-      enqueue(async (document) => {
+    listResumableSessions: () => {
+      if (resumableSessionsCache !== undefined) {
+        return resumableSessionsCache;
+      }
+      const request = enqueue(async (document) => {
         if (threads === undefined) {
           return { document, result: [] };
         }
@@ -245,7 +255,15 @@ export function createSessionManager(
             .filter(({ hasMessages }) => hasMessages)
             .map(({ session }) => session),
         };
-      }),
+      });
+      resumableSessionsCache = request;
+      request.catch(() => {
+        if (resumableSessionsCache === request) {
+          resumableSessionsCache = undefined;
+        }
+      });
+      return request;
+    },
     listSessions: () =>
       enqueue((document) =>
         Promise.resolve({
@@ -254,6 +272,7 @@ export function createSessionManager(
         })
       ),
     removeSession: async (key) => {
+      invalidateResumableSessions();
       await enqueue((document) =>
         Promise.resolve({
           document: removeSession(document, key),
@@ -262,8 +281,9 @@ export function createSessionManager(
       );
       await threads?.delete(key);
     },
-    renameSession: (key, name) =>
-      enqueue((document) => {
+    renameSession: (key, name) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
         const existing = document.sessions.find(
           (session) => session.key === key
         );
@@ -278,9 +298,11 @@ export function createSessionManager(
           document: next,
           result: { ...existing, name, updatedAt: at },
         });
-      }),
-    resolveStartupSession: ({ name, overrideKey } = {}) =>
-      enqueue((document) => {
+      });
+    },
+    resolveStartupSession: ({ name, overrideKey } = {}) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
         const key = overrideKey ?? newSessionKey(cwd);
         const existing = document.sessions.find(
           (session) => session.key === key
@@ -304,9 +326,11 @@ export function createSessionManager(
             ? registerActive(document, entry)
             : upsertSession(document, entry);
         return Promise.resolve({ document: next, result: entry });
-      }),
-    touchSession: (key) =>
-      enqueue((document) => {
+      });
+    },
+    touchSession: (key) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
         const exists = document.sessions.some((session) => session.key === key);
         return Promise.resolve({
           document: exists
@@ -314,9 +338,11 @@ export function createSessionManager(
             : document,
           result: undefined,
         });
-      }),
-    switchToSession: (key) =>
-      enqueue((document) => {
+      });
+    },
+    switchToSession: (key) => {
+      invalidateResumableSessions();
+      return enqueue((document) => {
         const existing = document.sessions.find(
           (session) => session.key === key
         );
@@ -335,7 +361,8 @@ export function createSessionManager(
           document: next,
           result: { ...existing, updatedAt: at },
         });
-      }),
+      });
+    },
   };
 }
 

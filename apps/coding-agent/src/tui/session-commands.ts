@@ -1,5 +1,9 @@
 import type { CodingAgentExtensionUi } from "../extensions/types";
-import { sessionUpdatedLabel } from "../sessions/session-display";
+import {
+  sessionDisplayKey,
+  sessionDisplayTitle,
+  sessionUpdatedLabel,
+} from "../sessions/session-display";
 import type { SessionChangeEvent } from "../sessions/session-guards";
 import type { SessionIndexEntry } from "../sessions/session-index";
 import {
@@ -102,15 +106,28 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
         return await resumeSession(context, entry);
       }),
     getArgumentCompletions: async (argumentPrefix) => {
-      const sessions = await context.manager.listResumableSessions();
-      const prefix = argumentPrefix.toLowerCase();
+      const prefix = argumentPrefix.trim().toLowerCase();
+      if (prefix.length === 0) {
+        return null;
+      }
+      const clearLoading = context.ui?.()?.status("Loading sessions...");
+      let sessions: readonly SessionIndexEntry[];
+      try {
+        sessions = await context.manager.listResumableSessions();
+      } finally {
+        clearLoading?.();
+      }
       const completions: TuiCommandArgumentCompletion[] = [];
       for (const session of sessions) {
         if (session.key === context.currentSession().key) {
           continue;
         }
         const value = session.name ?? session.key;
-        if (prefix.length > 0 && !value.toLowerCase().startsWith(prefix)) {
+        const matchesDisplayedValue = [
+          sessionDisplayTitle(session),
+          sessionDisplayKey(session),
+        ].some((candidate) => candidate.toLowerCase().includes(prefix));
+        if (!matchesDisplayedValue) {
           continue;
         }
         completions.push({
