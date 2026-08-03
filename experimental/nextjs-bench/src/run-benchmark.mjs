@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -26,6 +26,9 @@ const benchmarkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(benchmarkRoot, "../..");
 const artifactsDirectory = resolve(benchmarkRoot, ".artifacts");
 const tarballPath = resolve(artifactsDirectory, "pss-coding-agent.tgz");
+const vendorDirectory = resolve(artifactsDirectory, "vendor");
+/** Must match `sandboxVendorDirectory` used when packing the agent. */
+const SANDBOX_VENDOR_DIRECTORY = "/tmp/pss-vendor";
 loadDotenv({
   override: false,
   path: [resolve(benchmarkRoot, ".env"), resolve(repositoryRoot, ".env")],
@@ -110,14 +113,27 @@ async function readArtifactManifest() {
 
 async function createSetup(nextVersion, agentsMd) {
   const tarball = (await readFile(tarballPath)).toString("base64");
+  // Workspace dependencies are unpublished, so the agent manifest points at
+  // absolute `file:` tarballs under SANDBOX_VENDOR_DIRECTORY. Ship them
+  // alongside the agent tarball so `npm install -g` can resolve them.
+  const vendorNames = await readdir(vendorDirectory).catch(() => []);
+  const vendorFiles = Object.fromEntries(
+    await Promise.all(
+      vendorNames.map(async (name) => [
+        `.pss-vendor/${name}.b64`,
+        (await readFile(resolve(vendorDirectory, name))).toString("base64"),
+      ])
+    )
+  );
   return async (sandbox) => {
     await sandbox.writeFiles({
       ".pss-coding-agent.tgz.b64": tarball,
+      ...vendorFiles,
       ...agentsMdFiles(agentsMd),
     });
     const decode = await sandbox.runCommand("bash", [
       "-c",
-      "base64 -d .pss-coding-agent.tgz.b64 > /tmp/pss-coding-agent.tgz && rm .pss-coding-agent.tgz.b64",
+      `base64 -d .pss-coding-agent.tgz.b64 > /tmp/pss-coding-agent.tgz && rm .pss-coding-agent.tgz.b64 && mkdir -p ${SANDBOX_VENDOR_DIRECTORY} && for f in .pss-vendor/*.b64; do [ -e "$f" ] || continue; base64 -d "$f" > ${SANDBOX_VENDOR_DIRECTORY}/"$(basename "$f" .b64)"; done && rm -rf .pss-vendor`,
     ]);
     if (decode.exitCode !== 0) {
       throw new Error(`PSS artifact decode failed: ${decode.stderr}`);
