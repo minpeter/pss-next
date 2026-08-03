@@ -9,6 +9,7 @@ import {
   StartRateLimiter,
 } from "@vercel/agent-eval";
 import { config as loadDotenv } from "dotenv";
+import { agentsMdFiles, resolveExperimentName } from "./agents-md.mjs";
 import { resolveNextVersion, resolveStartsPerMinute } from "./config.mjs";
 import {
   DEFAULT_BASE_URL,
@@ -16,7 +17,6 @@ import {
   NEXTJS_EVALS_SHA,
   SMOKE_EVALS,
 } from "./constants.mjs";
-import { agentsMdFiles, resolveExperimentName } from "./agents-md.mjs";
 import { resolveBenchmarkProfile } from "./profiles.mjs";
 import { createPssAgent } from "./pss-agent.mjs";
 
@@ -97,8 +97,14 @@ async function readArtifactManifest() {
     return JSON.parse(
       await readFile(resolve(artifactsDirectory, "manifest.json"), "utf8")
     );
-  } catch {
-    return;
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
+      return;
+    }
+    throw error;
   }
 }
 

@@ -9,6 +9,8 @@ import {
 } from "../src/agents-md.mjs";
 
 const benchmarkDirectory = fileURLToPath(new URL("..", import.meta.url));
+const agentsMdHeaderPattern = /^<!-- BEGIN:nextjs-agent-rules -->/u;
+const nextDocsPathPattern = /node_modules\/next\/dist\/docs\//u;
 
 test("Given the AGENTS.md option, when dry-running the benchmark, then the manifest records it", () => {
   const result = spawnSync(
@@ -26,8 +28,8 @@ test("Given the variant, when sandbox files are built, then AGENTS.md is written
 
   assert.deepEqual(Object.keys(files), ["AGENTS.md"]);
   // The upstream experiments point the agent at the installed canary docs.
-  assert.match(files["AGENTS.md"], /node_modules\/next\/dist\/docs\//u);
-  assert.match(AGENTS_MD_CONTENT, /^<!-- BEGIN:nextjs-agent-rules -->/u);
+  assert.match(files["AGENTS.md"], nextDocsPathPattern);
+  assert.match(AGENTS_MD_CONTENT, agentsMdHeaderPattern);
 });
 
 test("Given the baseline, when sandbox files are built, then no AGENTS.md is written", () => {
