@@ -136,6 +136,37 @@ describe("renderDiagramArt", () => {
     expect(art?.join("\n")).toContain("yes");
   });
 
+  it("renders class and ER operators without mangling them", () => {
+    expect(renderDiagramArt("classDiagram\n  Animal <|-- Dog")).toBeDefined();
+    expect(
+      renderDiagramArt("erDiagram\n  CUSTOMER ||--o{ ORDER : places")
+    ).toBeDefined();
+    expect(
+      renderDiagramArt("erDiagram\n  CUSTOMER ||--|| ORDER : places")
+    ).toBeDefined();
+  });
+
+  it("leaves arrow-like text inside bracket labels untouched", () => {
+    const art = renderDiagramArt('graph LR\n  A["x-->y"] --> B');
+
+    expect(art).toBeDefined();
+    expect(art?.join("\n")).toContain("x-->y");
+  });
+
+  it("rejects single-line chains and arrowless node floods", () => {
+    const chain = `graph LR\n${Array.from(
+      { length: 300 },
+      (_, i) => `N${i}-->N${i + 1}`
+    ).join(" ")}`;
+    const nodes = `graph TD\n${Array.from(
+      { length: 250 },
+      (_, i) => `N${i}[node ${i}]`
+    ).join("\n")}`;
+
+    expect(renderDiagramArt(chain)).toBeUndefined();
+    expect(renderDiagramArt(nodes)).toBeUndefined();
+  });
+
   it("renders sequence diagrams", () => {
     const art = renderDiagramArt(
       "sequenceDiagram\n  participant U as 사용자\n  U->>U: ping"

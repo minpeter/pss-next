@@ -10,8 +10,8 @@ import { renderMermaidASCII } from "beautiful-mermaid";
 const MAX_SOURCE_LENGTH = 32_768;
 const MAX_ART_LINES = 80;
 const MAX_ART_CACHE_ENTRIES = 128;
-const MAX_EXPANDED_EDGES = 300;
-const MAX_NODES = 500;
+const MAX_EXPANDED_EDGES = 200;
+const MAX_NODES = 200;
 const MAX_PLACEHOLDER_INDICES = 16_384;
 const RESERVED_PUA_PATTERN = /[\uE000-\uE07F]/;
 const MARKDOWN_LINES_PATTERN = /.*(?:\n|$)/g;
@@ -33,9 +33,7 @@ const ARROW_BEFORE_SPACE_PATTERN = new RegExp(
   `${ARROW_PREFIX}${ARROW_TOKEN}(?=\\s)`,
   "gu"
 );
-const EDGE_LABEL_TARGET_PATTERN = /(\|[^|\n]*\|)(?=\S)/g;
-const WIDE_CHAR_PATTERN =
-  /[\u1100-\u11FF\u2E80-\u2FDF\u3000-\u3029\u3040-\u30FF\u3130-\u318F\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7AF\uF900-\uFAFF\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6\u{1B000}-\u{1B152}\u{1F300}-\u{1FAFF}\u{20000}-\u{2EBEF}]/gu;
+const EDGE_LABEL_TARGET_PATTERN = /((?:-->|->>|-->>|->)\|[^|\n]+\|)(?=\S)/g;
 const PLACEHOLDER_BASE = 0xe0_00;
 const PLACEHOLDER_DIGIT = 0x7f;
 const PLACEHOLDER_PATTERN = /[\uE000-\uE07F]{2}/g;
@@ -211,17 +209,51 @@ const TIGHT_PRESET: AsciiPreset = {
 // beautiful-mermaid accepts the header only alone on the first line, while
 // mermaid itself also allows `graph LR;` and single-line diagrams. Its
 // parser likewise requires whitespace around arrows, so common idioms like
-// `A-->B` and `A-->|yes|B` are spaced out here first.
+// `A-->B` and `A-->|yes|B` are spaced out here first - outside bracket
+// labels, where arrow-like text is content.
+const spaceArrowsOutsideBrackets = (line: string): string => {
+  let output = "";
+  let segment = "";
+  let depth = 0;
+  const flushSegment = (): void => {
+    output += segment
+      .replace(ARROW_BEFORE_LABEL_PATTERN, "$1 $2")
+      .replace(ARROW_BEFORE_NODE_PATTERN, "$1 $2 ")
+      .replace(ARROW_BEFORE_SPACE_PATTERN, "$1 $2")
+      .replace(EDGE_LABEL_TARGET_PATTERN, "$1 ");
+    segment = "";
+  };
+  for (const char of line) {
+    if (depth === 0 && (char === "[" || char === "{" || char === "(")) {
+      flushSegment();
+      depth = 1;
+      output += char;
+      continue;
+    }
+    if (depth > 0) {
+      output += char;
+      if (char === "[" || char === "{" || char === "(") {
+        depth += 1;
+      } else if (char === "]" || char === "}" || char === ")") {
+        depth -= 1;
+      }
+      continue;
+    }
+    segment += char;
+  }
+  flushSegment();
+  return output;
+};
+
 const normalizeDiagramSource = (source: string): string => {
   const match = HEADER_SEMICOLON_PATTERN.exec(source);
   const headerSplit =
     match === null ? source : `${match[1]}\n${source.slice(match[0].length)}`;
   return headerSplit
     .replace(TRAILING_SEMICOLON_PATTERN, "")
-    .replace(ARROW_BEFORE_LABEL_PATTERN, "$1 $2")
-    .replace(ARROW_BEFORE_NODE_PATTERN, "$1 $2 ")
-    .replace(ARROW_BEFORE_SPACE_PATTERN, "$1 $2")
-    .replace(EDGE_LABEL_TARGET_PATTERN, "$1 ");
+    .split("\n")
+    .map(spaceArrowsOutsideBrackets)
+    .join("\n");
 };
 
 // beautiful-mermaid pads box art by UTF-16 length, so East Asian wide
@@ -230,16 +262,20 @@ const normalizeDiagramSource = (source: string): string => {
 // with correct widths, then collapse each pair back to the original glyph.
 // The pair alphabet is reserved: sources already using it render as plain
 // fences rather than risking mis-decoded annotations.
-const ARROW_STATEMENT_PATTERN = /-{1,2}>+|-{1,2}\+{1,2}>/;
+// Edge runs approximate operator count for the budget: every mermaid edge
+// operator carries exactly one of these runs, while the node-token pattern
+// catches bracketed node declarations.
+const EDGE_RUN_PATTERN = /-{2,}|-\.|-|={2,}|\.\./g;
 const AMPERSAND_PATTERN = /&/g;
 const NODE_TOKEN_PATTERN = /[[(][^\]()\n]*[\])]/g;
 
 const ampCount = (text: string): number =>
   text.match(AMPERSAND_PATTERN)?.length ?? 0;
 
-// Mermaid shorthand like `A & B --> C & D` expands cartesianly into
-// lhs * rhs edges per statement; rendering is synchronous, so bound the
-// expansion before it can monopolize the TUI process.
+// Rendering is synchronous, so bound the graph before it can monopolize
+// the TUI process. Count every edge run (mermaid chains statements on one
+// line) and estimate cartesian groups as (left ampersands + 1) x (right
+// ampersands + 1); node tokens accumulate even without operators.
 const exceedsComplexityBudget = (source: string): boolean => {
   let expandedEdges = 0;
   let nodeTokens = 0;
@@ -249,14 +285,20 @@ const exceedsComplexityBudget = (source: string): boolean => {
       continue;
     }
     nodeTokens += trimmed.match(NODE_TOKEN_PATTERN)?.length ?? 0;
-    const arrowIndex = trimmed.search(ARROW_STATEMENT_PATTERN);
-    if (arrowIndex === -1) {
+    if (nodeTokens > MAX_NODES) {
+      return true;
+    }
+    const runs = [...trimmed.matchAll(EDGE_RUN_PATTERN)];
+    if (runs.length === 0) {
       continue;
     }
-    const left = trimmed.slice(0, arrowIndex);
-    const right = trimmed.slice(arrowIndex);
-    expandedEdges += Math.max(1, ampCount(left)) * Math.max(1, ampCount(right));
-    if (expandedEdges > MAX_EXPANDED_EDGES || nodeTokens > MAX_NODES) {
+    const leftAmp = ampCount(trimmed.slice(0, runs[0]?.index ?? 0));
+    const lastRun = runs.at(-1);
+    const rightAmp = ampCount(
+      trimmed.slice((lastRun?.index ?? 0) + (lastRun?.[0].length ?? 0))
+    );
+    expandedEdges += runs.length * (leftAmp + 1) * (rightAmp + 1);
+    if (expandedEdges > MAX_EXPANDED_EDGES) {
       return true;
     }
   }
@@ -266,16 +308,24 @@ const expandWideChars = (
   source: string
 ): { expanded: string; wideChars: string[] } => {
   const wideChars: string[] = [];
-  const expanded = source.replace(WIDE_CHAR_PATTERN, (char) => {
-    const index = wideChars.length;
-    wideChars.push(char);
-    return (
-      String.fromCodePoint(
-        PLACEHOLDER_BASE + Math.floor(index / (PLACEHOLDER_DIGIT + 1))
-      ) +
-      String.fromCodePoint(PLACEHOLDER_BASE + (index % (PLACEHOLDER_DIGIT + 1)))
-    );
-  });
+  let expanded = "";
+  for (const char of source) {
+    // Per-glyph terminal width is the ground truth for the art alignment
+    // shim: expand exactly the characters the terminal draws two cells wide.
+    if (visibleWidth(char) === 2) {
+      const index = wideChars.length;
+      wideChars.push(char);
+      expanded +=
+        String.fromCodePoint(
+          PLACEHOLDER_BASE + Math.floor(index / (PLACEHOLDER_DIGIT + 1))
+        ) +
+        String.fromCodePoint(
+          PLACEHOLDER_BASE + (index % (PLACEHOLDER_DIGIT + 1))
+        );
+    } else {
+      expanded += char;
+    }
+  }
   return { expanded, wideChars };
 };
 
@@ -291,45 +341,46 @@ const collapsePlaceholders = (
     return wideChars[index] ?? "";
   });
 
-const bracketsBalanced = (source: string): boolean => {
-  let curly = 0;
-  let round = 0;
+const squareBracketsBalanced = (source: string): boolean => {
   let square = 0;
   for (const char of source) {
     if (char === "[") {
       square += 1;
     } else if (char === "]") {
       square -= 1;
-    } else if (char === "{") {
-      curly += 1;
-    } else if (char === "}") {
-      curly -= 1;
-    } else if (char === "(") {
-      round += 1;
-    } else if (char === ")") {
-      round -= 1;
     }
-    if (square < 0 || curly < 0 || round < 0) {
+    if (square < 0) {
       return false;
     }
   }
-  return square === 0 && curly === 0 && round === 0;
+  return square === 0;
 };
 
-// beautiful-mermaid parses permissively and silently drops malformed tails,
-// so reject obviously broken bodies instead of annotating a partial diagram.
-const BARE_LINK_PATTERN = /(?<![-<>])--(?![->])/u;
+const FLOWCHART_HEADER_PATTERN = /^\s*(?:graph|flowchart)\b/m;
+const ARROW_TOKEN_PATTERN = /-{1,2}>+|-{1,2}\+{1,2}>/;
 const ARROW_GLYPH_PATTERN = /[►▶▼◀▲]/u;
+const DASH_RUN_PATTERN = /-{2,}/;
+const BRACKET_CONTENTS_PATTERN = /[[{(][^[\]{}()]*[\]})]/g;
 
 // beautiful-mermaid parses permissively and silently drops malformed tails,
-// so reject obviously broken bodies instead of annotating a partial diagram.
+// so reject obviously broken bodies instead of annotating a partial diagram:
+// unbalanced node brackets, arrows without targets, and bare dash links the
+// engine cannot draw (valid class/ER operators carry no dash-run of 2+
+// outside brackets, so they pass through).
 const diagramBodySane = (source: string, art: string): boolean => {
-  if (!bracketsBalanced(source) || BARE_LINK_PATTERN.test(source)) {
+  if (!squareBracketsBalanced(source)) {
     return false;
   }
+  const flowchart = FLOWCHART_HEADER_PATTERN.test(source);
   let arrows = 0;
   for (const line of source.split("\n")) {
-    const arrow = ARROW_STATEMENT_PATTERN.exec(line);
+    if (flowchart) {
+      const stripped = line.replace(BRACKET_CONTENTS_PATTERN, "");
+      if (DASH_RUN_PATTERN.test(stripped) && !stripped.includes(">")) {
+        return false;
+      }
+    }
+    const arrow = ARROW_TOKEN_PATTERN.exec(line);
     if (arrow === null) {
       continue;
     }
@@ -338,7 +389,7 @@ const diagramBodySane = (source: string, art: string): boolean => {
       return false;
     }
   }
-  return arrows === 0 || ARROW_GLYPH_PATTERN.test(art);
+  return !flowchart || arrows === 0 || ARROW_GLYPH_PATTERN.test(art);
 };
 
 /** Render diagram source to box-art lines, or undefined when unsupported. */
