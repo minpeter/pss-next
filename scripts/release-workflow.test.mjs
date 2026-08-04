@@ -26,6 +26,8 @@ describe("release workflow", () => {
     expect(ciWorkflow).toContain('node: ["24", "26"]');
     expect(ciWorkflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("pnpm tegami ci");
+    expect(workflow).toContain("pnpm --filter @minpeter/pss-runtime pack");
+    expect(workflow).toContain("pnpm --filter @minpeter/pss-extension-web pack");
     expect(workflow).toContain("pnpm --filter @minpeter/pss-coding-agent pack");
     expect(workflow).toContain(
       "npm install --package-lock-only --ignore-scripts"
