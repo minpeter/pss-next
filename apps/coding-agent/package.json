@@ -86,12 +86,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "ultracite check .",
-    "preview:edit": "tsx --conditions=@minpeter/pss-source scripts/preview-edit-render.ts"
+    "preview:edit": "tsx --conditions=@minpeter/pss-source scripts/preview-edit-render.ts",
+    "preview:assistant": "tsx --conditions=@minpeter/pss-source scripts/preview-assistant-render.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.16",
     "@earendil-works/pi-tui": "^0.82.1",
     "@minpeter/pss-extension-latex": "workspace:^",
+    "@minpeter/pss-extension-mermaid": "workspace:^",
     "@minpeter/pss-extension-web": "workspace:^",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",

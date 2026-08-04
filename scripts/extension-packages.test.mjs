@@ -6,6 +6,10 @@ const packageCases = [
     directory: "extensions/latex",
     name: "@minpeter/pss-extension-latex",
   },
+  {
+    directory: "extensions/mermaid",
+    name: "@minpeter/pss-extension-mermaid",
+  },
 ];
 
 describe("official extension packages", () => {

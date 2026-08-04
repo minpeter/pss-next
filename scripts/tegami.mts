@@ -60,6 +60,12 @@ const paper = tegami({
         distTag: "next",
       },
     },
+    "@minpeter/pss-extension-mermaid": {
+      prerelease: "next",
+      npm: {
+        distTag: "next",
+      },
+    },
     "@minpeter/pss-extension-web": {
       prerelease: "next",
       npm: {

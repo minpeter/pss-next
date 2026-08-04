@@ -84,12 +84,17 @@ describe("default coding-agent extensions", () => {
     const recoveredHost = await createCodingAgentExtensionHostWithDefaults([]);
 
     expect(initialHost.getAssistantRendererOwner()).toBe(
-      "@minpeter/pss-extension-latex"
+      "@minpeter/pss-extension-mermaid"
     );
+    expect(initialHost.getAssistantRendererChainOwners()).toEqual([
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+    ]);
     expect(replacementHost.assistantRenderer).toBe(overrideRenderer);
     expect(replacementHost.getAssistantRendererOwner()).toBe("reload-override");
+    expect(replacementHost.getAssistantRendererChainOwners()).toEqual([]);
     expect(recoveredHost.getAssistantRendererOwner()).toBe(
-      "@minpeter/pss-extension-latex"
+      "@minpeter/pss-extension-mermaid"
     );
 
     await Promise.all([
