@@ -21,6 +21,8 @@ import { createStepCap } from "./step-cap";
 
 export interface MethodAttemptOptions {
   readonly disableThinking: boolean;
+  /** Optional override for tests (scripted models). */
+  readonly languageModel?: LanguageModel;
   readonly maxSteps: number;
   readonly method: EditMethod;
   readonly model: string;
@@ -30,8 +32,6 @@ export interface MethodAttemptOptions {
   readonly run: number;
   readonly task: EditTask;
   readonly trace?: AgenticTraceSink;
-  /** Optional override for tests (scripted models). */
-  readonly languageModel?: LanguageModel;
 }
 
 const stringify = (value: unknown): string => JSON.stringify(value) ?? "null";
@@ -132,7 +132,6 @@ export async function runMethodAttempt(
   options: MethodAttemptOptions
 ): Promise<AgenticAttempt> {
   const {
-    disableThinking,
     languageModel,
     maxSteps,
     method,
@@ -144,12 +143,12 @@ export async function runMethodAttempt(
     task,
     trace,
   } = options;
+  // options.disableThinking reserved for providers that support thinking control
   const startedAt = Date.now();
   let lastError = "";
   const retryFailures: AgenticRetryFailure[] = [];
   const systemPrompt = method.instructions;
   const userPrompt = buildAgenticPrompt(task);
-  void disableThinking;
 
   for (let requestTry = 0; requestTry < requestAttempts; requestTry += 1) {
     const attemptStartedAt = Date.now();

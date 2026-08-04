@@ -1,10 +1,7 @@
-import { tool, type ToolSet } from "ai";
+import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { EditFormat } from "../formats";
-import {
-  readWorkspaceText,
-  writeWorkspaceText,
-} from "./fs";
+import { readWorkspaceText, writeWorkspaceText } from "./fs";
 import type { EditMethod, EditMethodId, MethodToolHooks } from "./types";
 import { wrapMethodTool } from "./wrap";
 
@@ -94,18 +91,22 @@ const createFormatTools = (
     description: editDescription,
     inputSchema: editSchema,
     execute: async (input) => {
-      const path =
+      let path = hooks.targetPath;
+      if (
         typeof input === "object" &&
         input !== null &&
         "path" in input &&
         typeof input.path === "string"
-          ? input.path
-          : typeof input === "object" &&
-              input !== null &&
-              "file_path" in input &&
-              typeof input.file_path === "string"
-            ? input.file_path
-            : hooks.targetPath;
+      ) {
+        path = input.path;
+      } else if (
+        typeof input === "object" &&
+        input !== null &&
+        "file_path" in input &&
+        typeof input.file_path === "string"
+      ) {
+        path = input.file_path;
+      }
       const file = await readWorkspaceText(workspace, path);
       const outcome = format.apply(toReply(input), file.content, file.relative);
       if (outcome.error !== undefined) {
@@ -170,7 +171,7 @@ export const ompJsonMethodOptions = {
   editSchema: ompJsonEditSchema,
   instructionsExtra: [
     "read_file shows [PATH#TAG] and N:content lines.",
-    'edit_file takes { file_path, tag, hunks:[{op,...}] } with original-file line numbers.',
+    "edit_file takes { file_path, tag, hunks:[{op,...}] } with original-file line numbers.",
     "ops: swap, swap_block, insert_pre/post/head/tail/block_after, delete, delete_block, remove, move.",
   ].join("\n"),
   toReply: (input: unknown) => JSON.stringify(ompJsonEditSchema.parse(input)),
@@ -182,8 +183,8 @@ export const grokMethodOptions = {
   editSchema: grokEditSchema,
   instructionsExtra: [
     "read_file shows ANCHOR→CONTENT lines with chunk fingerprints.",
-    'edit_file takes { edits:[{op, anchor?, end_anchor?, content}] }.',
-    'op is replace, insert_after, or write. Never invent anchors.',
+    "edit_file takes { edits:[{op, anchor?, end_anchor?, content}] }.",
+    "op is replace, insert_after, or write. Never invent anchors.",
   ].join("\n"),
   toReply: (input: unknown) => JSON.stringify(grokEditSchema.parse(input)),
 };

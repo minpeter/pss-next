@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -39,7 +39,7 @@ const execute = async (
   const result = await tool.execute(
     input as never,
     {
-      abortSignal: AbortSignal.timeout(5_000),
+      abortSignal: AbortSignal.timeout(5000),
       messages: [],
       toolCallId: "test",
     } as never
@@ -59,9 +59,7 @@ describe("edit methods write the filesystem", () => {
     expect(readOut).toContain("file_hash:");
     const hash = computeFileHash(task.initial);
     // greet.py line 2 is the msg assignment — use production anchors from read
-    const line2 = readOut
-      .split("\n")
-      .find((line) => line.startsWith("2#"));
+    const line2 = readOut.split("\n").find((line) => line.startsWith("2#"));
     expect(line2).toBeDefined();
     const anchor = line2?.split("|")[0];
     expect(anchor).toBeDefined();

@@ -1,8 +1,4 @@
-import {
-  grokFormat,
-  ompFormat,
-  ompJsonFormat,
-} from "../formats";
+import { grokFormat, ompFormat, ompJsonFormat } from "../formats";
 import {
   createFormatMethod,
   grokMethodOptions,

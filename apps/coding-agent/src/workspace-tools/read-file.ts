@@ -11,7 +11,9 @@ const inputSchema = z
     path: z
       .string()
       .min(1)
-      .describe("File or directory path (relative to workspace or absolute under it)."),
+      .describe(
+        "File or directory path (relative to workspace or absolute under it)."
+      ),
     offset: z
       .number()
       .int()

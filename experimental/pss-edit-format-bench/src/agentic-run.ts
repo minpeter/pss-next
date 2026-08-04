@@ -2,11 +2,14 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { config as loadDotenv } from "dotenv";
+import type { AgenticAttempt } from "./agentic";
 import { buildAgenticReport } from "./agentic-report";
 import { createAgenticTraceWriter } from "./agentic-trace";
-import type { AgenticAttempt } from "./agentic";
 import { pooled } from "./harness/pool";
-import { type MethodAttemptOptions, runMethodAttempt } from "./harness/run-attempt";
+import {
+  type MethodAttemptOptions,
+  runMethodAttempt,
+} from "./harness/run-attempt";
 import { resolveEditMethods } from "./methods";
 import { extractFingerprint } from "./stats";
 import { EDIT_TASKS } from "./tasks";
@@ -209,7 +212,10 @@ const main = async (): Promise<void> => {
   );
   const report = buildAgenticReport(attempts);
   await writeFile(
-    resolve(evidenceDir, `agentic-${options.model.replaceAll("/", "_")}-${methodLabel}.md`),
+    resolve(
+      evidenceDir,
+      `agentic-${options.model.replaceAll("/", "_")}-${methodLabel}.md`
+    ),
     `${report}\n`,
     "utf8"
   );

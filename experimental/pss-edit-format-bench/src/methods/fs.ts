@@ -16,8 +16,10 @@ export const resolveUnderWorkspace = (
   return candidate;
 };
 
-export const workspaceRelative = (workspace: string, absolute: string): string =>
-  relative(resolve(workspace), absolute).split(sep).join("/");
+export const workspaceRelative = (
+  workspace: string,
+  absolute: string
+): string => relative(resolve(workspace), absolute).split(sep).join("/");
 
 export const readWorkspaceText = async (
   workspace: string,

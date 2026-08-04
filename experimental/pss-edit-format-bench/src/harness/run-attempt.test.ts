@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
+import { describe, expect, it } from "vitest";
 import { getEditMethod } from "../methods";
 import { EDIT_TASKS } from "../tasks";
 import { runMethodAttempt } from "./run-attempt";
@@ -27,7 +27,11 @@ const emptyUsage = {
  * Runtime prefers doStream when present. Force generate path like pss-runtime
  * test utils (`createMockLanguageModelV4`).
  */
-const scriptedToolThenText = (toolName: string, input: unknown, text: string) => {
+const scriptedToolThenText = (
+  toolName: string,
+  input: unknown,
+  text: string
+) => {
   const model = new MockLanguageModelV4({
     doGenerate: [
       {

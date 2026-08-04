@@ -25,8 +25,11 @@ const addedThirdLinePattern = /\+3#[A-Z]+\|export const third = 3;/u;
 const freshAnchorPattern = /2#[A-Z]+/u;
 const directoryTruncationPattern = /truncated|showing 1000 of 1005/iu;
 const fileHashPattern = /file_hash: ([0-9a-f]{8})/u;
+const criticalPattern = /CRITICAL/u;
 const firstPattern = /first/u;
 const firstLineAnchorPattern = /1#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
+const lineIdPattern = /LINE#ID/u;
+const neverIncludeContentPattern = /never include \|content/i;
 const grepResultPattern = /src\/new\.ts:1#[ZPMQVRWSNKTXJBYH]{2}\|needle/u;
 const intersectPattern = /intersect|overlap/iu;
 const newContentPattern = /new_content/u;
@@ -110,11 +113,11 @@ describe("workspace coding tools", () => {
         ? field.description
         : undefined;
     };
-    expect(descriptionOf("target")).toMatch(/LINE#ID/);
-    expect(descriptionOf("first")).toMatch(/LINE#ID/);
-    expect(descriptionOf("last")).toMatch(/LINE#ID/);
-    expect(descriptionOf("target")).toMatch(/never include \|content/i);
-    expect(tools.edit_file.description).toMatch(/CRITICAL/);
+    expect(descriptionOf("target")).toMatch(lineIdPattern);
+    expect(descriptionOf("first")).toMatch(lineIdPattern);
+    expect(descriptionOf("last")).toMatch(lineIdPattern);
+    expect(descriptionOf("target")).toMatch(neverIncludeContentPattern);
+    expect(tools.edit_file.description).toMatch(criticalPattern);
   });
 
   it("reads hashline anchors and applies deterministic edits", async () => {
