@@ -1,14 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Keep private workspaces out of release planning\n\nExclude every private and experimental workspace from Tegami's dependency graph so benchmark dependency bumps cannot indefinitely block coding-agent publication.\n"
-    filename: 2026-08-04-exclude-private-release-workspaces.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Prevent private dependent version bumps\n\nDisable Tegami dependency propagation into excluded workspaces so coding-agent releases cannot mutate private benchmark versions or delay publication.\n"
-    filename: 2026-08-04-prevent-private-dependent-bumps.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Verify coding-agent dependencies before publishing\n\nPack the coding agent and resolve its registry dependencies before Tegami can publish, preventing releases that depend on missing npm packages.\n"
+    filename: 2026-08-04-verify-coding-agent-installability.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-04-exclude-private-release-workspaces.md
-      - 2026-08-04-prevent-private-dependent-bumps.md
+      - 2026-08-04-verify-coding-agent-installability.md
     id: npm:@minpeter/pss-coding-agent
     updated: true
   - id: npm:@minpeter/pss-extension-latex

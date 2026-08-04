@@ -1,3 +1,9 @@
+## @minpeter/pss-coding-agent@0.0.14-next.11 (next)
+
+### Verify coding-agent dependencies before publishing
+
+Pack the coding agent and resolve its registry dependencies before Tegami can publish, preventing releases that depend on missing npm packages.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.10 (next)
 
 ### Keep private workspaces out of release planning
