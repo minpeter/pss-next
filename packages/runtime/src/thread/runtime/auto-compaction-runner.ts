@@ -16,6 +16,7 @@ import type {
   AgentCompaction,
   AgentCompactionReason,
   AutoCompactionRange,
+  CompactionSummaryOptions,
   ThreadCompactionHandler,
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
@@ -155,7 +156,10 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
     observedOutput,
   });
   const signal = options.signal ?? new AbortController().signal;
-  const summarize = async (range: AutoCompactionRange): Promise<string> => {
+  const summarize = async (
+    range: AutoCompactionRange,
+    summaryOptions: CompactionSummaryOptions = {}
+  ): Promise<string> => {
     assertRange(range, history.length);
     const summaryHistory = summaryHistoryForRange({
       compactions,
@@ -167,6 +171,8 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
       history: summaryHistory,
       model: { ...options.model, temperature: 0 },
       signal,
+      summaryInstructions: summaryOptions.instructions,
+      toolEvidence: summaryOptions.toolEvidence,
       transformModelContext: options.transformModelContext,
     });
   };

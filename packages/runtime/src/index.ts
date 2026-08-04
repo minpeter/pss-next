@@ -177,6 +177,7 @@ export type {
   AgentCompaction,
   AgentCompactionContext,
   AgentCompactionReason,
+  CompactionSummaryOptions,
 } from "./thread/runtime/auto-compaction-types";
 export {
   type SpeculativeCompactionOptions,

@@ -206,6 +206,49 @@ describe("compaction runner concurrency", () => {
     ).resolves.toBe(false);
   });
 
+  it("forwards per-compaction summary options to the summarizer", async () => {
+    const state = new ThreadState({
+      key: "summary-options",
+      store: new MemoryThreadStore(),
+    });
+    await state.ensureLoaded();
+    state.history.appendModelMessage({
+      content: "source context ".repeat(500),
+      role: "user",
+    });
+    state.history.appendModelMessage(assistantMessage("source response"));
+    state.history.appendModelMessage({ content: "tail", role: "user" });
+    let summaryPrompt: readonly ModelMessage[] = [];
+    const summaryModel = createCallbackModel(({ history }) => {
+      summaryPrompt = history;
+      return [assistantMessage("semantic summary")];
+    });
+    const compaction: AgentCompaction = async (context) => {
+      const range = { endSeqExclusive: 2, startSeq: 0 };
+      const summary = await context.summarize(range, {
+        instructions: "CUSTOM SEMANTIC SUMMARY POLICY",
+        toolEvidence: "omit",
+      });
+      return { ...range, summary };
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compaction,
+        model: { model: summaryModel },
+        state,
+        threadKey: "summary-options",
+      })
+    ).resolves.toBe(true);
+
+    expect(JSON.stringify(summaryPrompt)).toContain(
+      "CUSTOM SEMANTIC SUMMARY POLICY"
+    );
+    expect(state.compactionSnapshot()).toMatchObject([
+      { summary: { content: "semantic summary", role: "system" } },
+    ]);
+  });
+
   it("shares calibrated fixed and marginal costs with compaction", async () => {
     const state = await stateWithHistory();
     const registry = new ContextTokenCalibrationRegistry();

@@ -39,7 +39,7 @@ describe("Senpi compaction prompt profiles", () => {
 
     expect(production?.instructions).toBe(buildCompactionSummaryInstructions());
     expect(production?.hash).toBe(
-      "sha256:ff99c46efbb488e877c12fefb198c231cd3c8494a76c80a42ee9bd4e626a483e"
+      "sha256:7ea878eb30458a20fb20ed6e41e2987cf91e1f76e2d8fba46c477cd24f86f38c"
     );
   });
 

@@ -111,6 +111,8 @@ export function buildCompactionSummaryInstructions(): string {
     "Preserve the active user request and explicit constraints verbatim when recording the objective and constraints.",
     "Merge any previous summary with newer messages. Resolve contradictions in favor of the latest explicit correction.",
     "Be concise, but never trade away exact identifiers, task state, blockers, next actions, or verification evidence.",
+    "Describe tool activity semantically by its purpose, outcome, and relevant evidence. Never serialize tool invocation syntax, function-call envelopes, call IDs, XML tool tags, or JSON argument wrappers into the summary.",
+    "Preserve exact user-authored code, data, and shell commands when relevant, but never present them as model or provider tool-call protocol.",
     "Distinguish completed work from planned work. Omit filler and repeated acknowledgements.",
     "Output only the handoff sections below. Do not add a preamble, routing line, or conversational reply.",
     "",
@@ -124,6 +126,7 @@ export async function summarizeCompactionRange({
   model,
   signal = new AbortController().signal,
   summaryInstructions,
+  toolEvidence = "deterministic",
   transformModelContext,
 }: {
   readonly estimateTokens?: (messages: readonly ModelMessage[]) => number;
@@ -131,6 +134,7 @@ export async function summarizeCompactionRange({
   readonly model: ModelGenerationOptions;
   readonly signal?: AbortSignal;
   readonly summaryInstructions?: string;
+  readonly toolEvidence?: "deterministic" | "omit";
   readonly transformModelContext?: ThreadModelContextTransform;
 }): Promise<string> {
   const sourceContext = history.map((message) =>
@@ -139,10 +143,13 @@ export async function summarizeCompactionRange({
   const sourceTokens = estimateTokens(sourceContext);
   const measureTokens = (text: string) =>
     estimateTokens([{ content: text, role: "system" }]);
-  const ledger = buildToolEvidenceLedger(history, {
-    budgetTokens: Math.floor(sourceTokens * LEDGER_SOURCE_SHARE),
-    measureTokens,
-  });
+  const ledger =
+    toolEvidence === "omit"
+      ? ""
+      : buildToolEvidenceLedger(history, {
+          budgetTokens: Math.floor(sourceTokens * LEDGER_SOURCE_SHARE),
+          measureTokens,
+        });
   const maxOutputTokens = summaryOutputBudget({
     history,
     ledger,

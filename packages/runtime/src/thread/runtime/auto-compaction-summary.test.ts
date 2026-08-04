@@ -43,6 +43,8 @@ describe("automatic compaction summary contract", () => {
     expect(headings).toEqual(
       COMPACTION_SUMMARY_CONTRACT.sections.map(({ title }) => `## ${title}`)
     );
+    expect(instructions).toContain("Describe tool activity semantically");
+    expect(instructions).toContain("Never serialize tool invocation syntax");
   });
 
   it("passes deterministic generation controls to the summary model", async () => {
@@ -124,6 +126,36 @@ describe("automatic compaction summary contract", () => {
         model: { model },
       })
     ).resolves.toContain("5 passed, 4 failed");
+  });
+
+  it("omits deterministic tool evidence when requested", async () => {
+    const model = createMockLanguageModelV4(() =>
+      Promise.resolve(mockLanguageModelV4Text("Semantic outcome only."))
+    );
+
+    await expect(
+      summarizeCompactionRange({
+        history: [
+          { content: "context ".repeat(2000), role: "user" },
+          {
+            content: [
+              {
+                output: {
+                  type: "text",
+                  value: '{"action":"get_weather","parameters":{}}',
+                },
+                toolCallId: "tool-1",
+                toolName: "get_weather",
+                type: "tool-result",
+              },
+            ],
+            role: "tool",
+          },
+        ],
+        model: { model },
+        toolEvidence: "omit",
+      })
+    ).resolves.toBe("Semantic outcome only.");
   });
 
   it("carries a prior deterministic tool ledger across another hop", async () => {
