@@ -209,15 +209,15 @@ describe("renderDiagramArt", () => {
       "graph LR\nA[\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}]-->B"
     );
     const accent = renderDiagramArt("graph LR\nA[cafe\u0301]-->B");
+    const combining = renderDiagramArt("graph LR\nA[q\u0301]-->B");
+    const zeroWidth = renderDiagramArt("graph LR\nA[ab\u200Bcd]-->B");
 
-    expect(emoji).toBeDefined();
-    expect(accent).toBeDefined();
-    expect(new Set((emoji ?? []).map((line) => visibleWidth(line))).size).toBe(
-      1
-    );
-    expect(new Set((accent ?? []).map((line) => visibleWidth(line))).size).toBe(
-      1
-    );
+    for (const art of [emoji, accent, combining, zeroWidth]) {
+      expect(art).toBeDefined();
+      expect(new Set((art ?? []).map((line) => visibleWidth(line))).size).toBe(
+        1
+      );
+    }
   });
 
   it("renders subgraph clusters without a stray end node", () => {

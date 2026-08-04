@@ -7,7 +7,7 @@ const MAX_ART_LINES = 80;
 const MAX_EXPANDED_EDGES = 200;
 const MAX_NODES = 200;
 const MAX_PLACEHOLDER_INDICES = 16_384;
-const RESERVED_PUA_PATTERN = /[\uE000-\uE07F]/;
+const RESERVED_PUA_PATTERN = /[\uE000-\uE1FF]/;
 const HEADER_SEMICOLON_PATTERN =
   /^(\s*(?:graph|flowchart)\s+[A-Za-z]{2})\s*;+\s*/;
 const TRAILING_SEMICOLON_PATTERN = /;[ \t]*$/gm;
@@ -34,7 +34,10 @@ const NODE_DECLARATION_PATTERN = /[[({][^\](){}]*[\])}]/g;
 const ARROW_TOKEN_PATTERN = /-{1,2}>+|-{1,2}\+{1,2}>/;
 const PLACEHOLDER_BASE = 0xe0_00;
 const PLACEHOLDER_DIGIT = 0x7f;
+const PLACEHOLDER_SINGLE_BASE = 0xe1_00;
+const MAX_SINGLE_PLACEHOLDERS = 128;
 const PLACEHOLDER_PATTERN = /[\uE000-\uE07F]{2}/g;
+const PLACEHOLDER_SINGLE_PATTERN = /[\uE100-\uE17F]/g;
 
 interface AsciiPreset {
   readonly boxBorderPadding: number;
@@ -215,11 +218,22 @@ const expandWideChars = (
   let expanded = "";
   // NFC folds combining sequences into single codepoints so both sides of
   // the shim count the same widths; zero-width characters are dropped since
-  // the library would count them but terminals never draw them.
+  // the library would count them but terminals never draw them. Graphemes
+  // that occupy one cell across several codepoints (e.g. q + a combining
+  // accent with no precomposed form) get a single placeholder from a second
+  // alphabet so their column count matches too.
   for (const grapheme of graphemes(source.normalize("NFC"))) {
     const width = visibleWidth(grapheme);
     if (width === 0 && grapheme !== "\n") {
       continue;
+    }
+    if (width === 1 && grapheme.length > 1) {
+      const index = wideChars.length;
+      if (index < MAX_SINGLE_PLACEHOLDERS) {
+        wideChars.push(grapheme);
+        expanded += String.fromCodePoint(PLACEHOLDER_SINGLE_BASE + index);
+        continue;
+      }
     }
     if (width === 2) {
       const index = wideChars.length;
@@ -241,14 +255,19 @@ const expandWideChars = (
 const collapsePlaceholders = (
   art: string,
   wideChars: readonly string[]
-): string =>
-  art.replace(PLACEHOLDER_PATTERN, (pair) => {
+): string => {
+  const paired = art.replace(PLACEHOLDER_PATTERN, (pair) => {
     const index =
       ((pair.codePointAt(0) ?? 0) - PLACEHOLDER_BASE) *
         (PLACEHOLDER_DIGIT + 1) +
       ((pair.codePointAt(1) ?? 0) - PLACEHOLDER_BASE);
     return wideChars[index] ?? "";
   });
+  return paired.replace(PLACEHOLDER_SINGLE_PATTERN, (char) => {
+    const index = (char.codePointAt(0) ?? 0) - PLACEHOLDER_SINGLE_BASE;
+    return wideChars[index] ?? "";
+  });
+};
 
 const squareBracketsBalanced = (source: string): boolean => {
   let square = 0;
