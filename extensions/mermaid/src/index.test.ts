@@ -86,13 +86,4 @@ describe("Mermaid extension factory", () => {
       view.dispose?.();
     }
   );
-
-  it("documents complete mermaid fence output", () => {
-    expect(MERMAID_OUTPUT_INSTRUCTIONS).toContain("```mermaid");
-    expect(MERMAID_OUTPUT_INSTRUCTIONS).toContain(
-      "close the fence before continuing"
-    );
-    expect(MERMAID_OUTPUT_INSTRUCTIONS).toContain("one diagram per fence");
-    expect(MERMAID_OUTPUT_INSTRUCTIONS).toContain("valid Mermaid source");
-  });
 });

@@ -56,6 +56,7 @@ const main = async (): Promise<void> => {
       notifyReady = resolve;
     });
     const view = host.assistantRenderer?.({
+      foregroundColor: process.env.PSS_TUI_FOREGROUND,
       markdownTheme: plainTheme,
       notify: (message) => process.stderr.write(`${message}\n`),
       notifyOnce: (_key, message) => process.stderr.write(`${message}\n`),
@@ -76,12 +77,13 @@ const main = async (): Promise<void> => {
     }
     view.setText(text);
     view.render(width);
-    const winner = await Promise.race([
-      ready.then(() => "ready" as const),
-      new Promise((resolve) => {
-        setTimeout(() => resolve("timeout" as const), RENDER_TIMEOUT_MS);
-      }),
-    ]);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      notifyReady?.();
+    }, RENDER_TIMEOUT_MS);
+    await ready;
+    clearTimeout(timeout);
     const lines = view.render(width);
     process.stdout.write(
       `\nassistant renderer preview — width ${width}\n\n${lines.join("\n")}\n`
@@ -93,7 +95,7 @@ const main = async (): Promise<void> => {
     };
     process.stdout.write(`__PSS_QA_META__${JSON.stringify(metadata)}\n`);
     view.dispose?.();
-    if (winner === "timeout") {
+    if (timedOut) {
       process.stderr.write("timed out waiting for both renders\n");
       process.exitCode = 1;
     }

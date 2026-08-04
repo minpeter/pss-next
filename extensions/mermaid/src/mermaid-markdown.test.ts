@@ -1,5 +1,8 @@
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
+
+const ARROW_GLYPH = /[►▶▼◀▲]/u;
+
 import { describe, expect, it } from "vitest";
 import {
   extractMermaidBlocks,
@@ -116,6 +119,23 @@ describe("renderDiagramArt", () => {
     expect(renderDiagramArt("graph LR;\nA-->B;")).toBeDefined();
   });
 
+  it("renders unspaced arrows with both endpoints and the edge", () => {
+    const art = renderDiagramArt("graph LR\nA-->B");
+    const joined = art?.join("\n") ?? "";
+
+    expect(art).toBeDefined();
+    expect(joined).toContain("A");
+    expect(joined).toContain("B");
+    expect(joined).toMatch(ARROW_GLYPH);
+  });
+
+  it("renders unspaced edge labels", () => {
+    const art = renderDiagramArt("graph LR\nA-->|yes|B");
+
+    expect(art).toBeDefined();
+    expect(art?.join("\n")).toContain("yes");
+  });
+
   it("renders sequence diagrams", () => {
     const art = renderDiagramArt(
       "sequenceDiagram\n  participant U as 사용자\n  U->>U: ping"
@@ -141,6 +161,29 @@ describe("renderDiagramArt", () => {
     expect(renderDiagramArt("not a diagram")).toBeUndefined();
     expect(renderDiagramArt("gitGraph\n  commit")).toBeUndefined();
     expect(renderDiagramArt('pie\n  "a": 1')).toBeUndefined();
+  });
+
+  it("rejects malformed bodies that render as partial diagrams", () => {
+    expect(renderDiagramArt("graph TD\n  A -->")).toBeUndefined();
+    expect(renderDiagramArt("graph TD\n  A[unterminated")).toBeUndefined();
+  });
+
+  it("rejects bare links the engine cannot render", () => {
+    expect(renderDiagramArt("graph TD\n  A--B")).toBeUndefined();
+  });
+
+  it("rejects cartesian expansions beyond the edge budget", () => {
+    const left = Array.from({ length: 50 }, (_, i) => `A${i}`).join(" & ");
+    const right = Array.from({ length: 50 }, (_, i) => `B${i}`).join(" & ");
+    const source = `graph TD\n  ${left} --> ${right}`;
+
+    expect(renderDiagramArt(source)).toBeUndefined();
+  });
+
+  it("rejects sources that already use the reserved placeholder range", () => {
+    expect(
+      renderDiagramArt("graph TD\n  A[\uE000\uE001] --> B[ok]")
+    ).toBeUndefined();
   });
 });
 

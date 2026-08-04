@@ -385,11 +385,13 @@ speculative guidance.
 
 LaTeX support is implemented by the official
 `@minpeter/pss-extension-latex` package. The coding-agent includes it by
-default but only owns the generic, exclusive assistant-renderer capability and
-the ordinary Markdown fallback; the extension package owns formula parsing,
-rendering, caching, Kitty placement, instructions, and dependency notices.
-This uses the same extension registration, conflict attribution, and `/reload`
-lifecycle as third-party extensions.
+default and owns the generic assistant-renderer capability plus the ordinary
+Markdown fallback; each extension package owns its own parsing, rendering,
+caching, instructions, and dependency notices. Bundled fallback renderers
+compose into an ordered chain: each renderer handles the fragments it owns
+and delegates everything else inward, and the plain Markdown view sits at the
+bottom. This uses the same extension registration, conflict attribution, and
+`/reload` lifecycle as third-party extensions.
 
 The extension is independently importable:
 
@@ -397,12 +399,14 @@ The extension is independently importable:
 import createLatexExtension from "@minpeter/pss-extension-latex";
 ```
 
-Bundled LaTeX registers as the fallback assistant renderer. A third-party
-renderer can replace it only by explicitly registering with
-`{ override: true }`; a bare second renderer remains a source-attributed
-configuration error. Renderer contexts receive an `AbortSignal`,
-session-scoped `notifyOnce`, and a redraw callback, and optional view disposal
-runs when the transcript is cleared or the TUI stops.
+Bundled LaTeX and Mermaid register as fallback assistant renderers; later
+registrations delegate unhandled Markdown to earlier ones. A third-party
+renderer can join the chain with `{ fallback: true }` or replace it entirely
+by explicitly registering with `{ override: true }`; a bare second exclusive
+renderer remains a source-attributed configuration error. Renderer contexts
+receive an `AbortSignal`, session-scoped `notifyOnce`, a redraw callback, and
+a `delegate` that renders unhandled text through the next inner renderer.
+Optional view disposal runs when the transcript is cleared or the TUI stops.
 
 On Kitty-graphics terminals (Kitty, Ghostty, WezTerm, and Warp), complete
 Markdown display-math blocks are rendered as typeset images:
@@ -456,6 +460,29 @@ has conservative Node heap and stack limits; a 10-second timeout, cancellation,
 or worker failure terminates it, falls back to source Markdown, and lets the
 next formula start a fresh worker. These are Node worker heap/time limits, not
 hard CPU or OS address-space limits.
+
+### Mermaid diagrams in the TUI
+
+Mermaid support is implemented by the official
+`@minpeter/pss-extension-mermaid` package, included by default and registered
+as the outermost fallback assistant renderer after LaTeX. The extension is
+independently importable:
+
+```ts
+import createMermaidExtension from "@minpeter/pss-extension-mermaid";
+```
+
+Complete ```` ```mermaid ```` fenced blocks keep their original source visible
+and get a Unicode box-art rendering appended directly below, following the pi
+ecosystem's `pi-mermaid` convention. Rendering is synchronous and pure
+TypeScript via `beautiful-mermaid`: no browser, DOM shim, worker, image
+protocol, disk cache, or network access, so it works in every terminal.
+Flowchart, sequence, state, class, ER, and XY-chart diagrams are supported,
+and wide East Asian label characters keep box borders aligned through a
+placeholder expansion shim. Unclosed fences while streaming, malformed or
+unsupported sources, expansions beyond a complexity budget, and oversized
+outputs all fall back to showing only the source fence. Set `PSS_MERMAID=0`
+to disable rendering.
 
 ## CLI
 
