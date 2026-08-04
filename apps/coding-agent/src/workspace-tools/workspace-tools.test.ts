@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolExecutionOptions } from "ai";
+import { asSchema, type ToolExecutionOptions } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorkspaceTools } from "./index";
 import { truncateToolOutput } from "./output";
@@ -25,8 +25,11 @@ const addedThirdLinePattern = /\+3#[A-Z]+\|export const third = 3;/u;
 const freshAnchorPattern = /2#[A-Z]+/u;
 const directoryTruncationPattern = /truncated|showing 1000 of 1005/iu;
 const fileHashPattern = /file_hash: ([0-9a-f]{8})/u;
+const criticalPattern = /CRITICAL/u;
 const firstPattern = /first/u;
 const firstLineAnchorPattern = /1#[ZPMQVRWSNKTXJBYH]{2}(?=\|)/u;
+const lineIdPattern = /LINE#ID/u;
+const neverIncludeContentPattern = /never include \|content/i;
 const grepResultPattern = /src\/new\.ts:1#[ZPMQVRWSNKTXJBYH]{2}\|needle/u;
 const intersectPattern = /intersect|overlap/iu;
 const newContentPattern = /new_content/u;
@@ -80,6 +83,41 @@ describe("workspace coding tools", () => {
       rm(workspace, { recursive: true, force: true }),
       rm(outside, { recursive: true, force: true }),
     ]);
+  });
+
+  it("exposes LINE#ID field descriptions on edit_file JSON Schema", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const schema = await asSchema(tools.edit_file.inputSchema).jsonSchema;
+    const edits = schema.properties?.edits;
+    const items =
+      edits !== undefined &&
+      typeof edits === "object" &&
+      "items" in edits &&
+      edits.items !== undefined &&
+      typeof edits.items === "object" &&
+      !Array.isArray(edits.items)
+        ? edits.items
+        : undefined;
+    const editFields =
+      items !== undefined &&
+      "properties" in items &&
+      items.properties !== undefined
+        ? items.properties
+        : undefined;
+    const descriptionOf = (key: string): string | undefined => {
+      const field = editFields?.[key];
+      return field !== undefined &&
+        typeof field === "object" &&
+        "description" in field &&
+        typeof field.description === "string"
+        ? field.description
+        : undefined;
+    };
+    expect(descriptionOf("target")).toMatch(lineIdPattern);
+    expect(descriptionOf("first")).toMatch(lineIdPattern);
+    expect(descriptionOf("last")).toMatch(lineIdPattern);
+    expect(descriptionOf("target")).toMatch(neverIncludeContentPattern);
+    expect(tools.edit_file.description).toMatch(criticalPattern);
   });
 
   it("reads hashline anchors and applies deterministic edits", async () => {

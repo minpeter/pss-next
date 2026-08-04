@@ -8,9 +8,25 @@ import { resolveWorkspacePath, workspaceRelativePath } from "./path-safety";
 const END_OF_LINE_PATTERN = /\r?\n/u;
 const inputSchema = z
   .object({
-    path: z.string().min(1),
-    offset: z.number().int().positive().optional(),
-    limit: z.number().int().positive().max(2000).optional(),
+    path: z
+      .string()
+      .min(1)
+      .describe(
+        "File or directory path (relative to workspace or absolute under it)."
+      ),
+    offset: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("1-indexed start line (default 1)."),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(2000)
+      .optional()
+      .describe("Max lines to return (default 500, max 2000)."),
   })
   .strict();
 
@@ -19,7 +35,7 @@ export function createReadFileTool(
 ): Tool<z.infer<typeof inputSchema>, string> {
   return tool({
     description:
-      "Read a UTF-8 file with plugsuits-compatible LINE#ID hashline anchors. Directories return a sorted listing. Read before editing.",
+      'Read a UTF-8 file with plugsuits-compatible LINE#ID hashline anchors (format N#ID|content). Copy anchors as "N#ID" only for edit_file — never include the |content suffix. Directories return a sorted listing. Read before editing.',
     inputSchema,
     execute: async ({ path, offset = 1, limit = 500 }) => {
       const resolved = await resolveWorkspacePath(workspace, path);

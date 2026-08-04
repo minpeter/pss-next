@@ -4,14 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bench": "tsx src/run.ts",
-    "fixtures": "tsx src/fixtures-cli.ts",
+    "bench": "tsx --conditions=@minpeter/pss-source src/run.ts",
+    "bench:agentic": "tsx --conditions=@minpeter/pss-source src/agentic-run.ts",
+    "fixtures": "tsx --conditions=@minpeter/pss-source src/fixtures-cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.16",
     "@minpeter/pss-coding-agent": "workspace:*",
+    "@minpeter/pss-runtime": "workspace:*",
     "@oh-my-pi/hashline": "17.1.0",
     "ai": "7.0.45",
     "dotenv": "^17.4.2",
