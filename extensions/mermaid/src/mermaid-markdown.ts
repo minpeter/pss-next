@@ -5,38 +5,12 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { renderMermaidASCII } from "beautiful-mermaid";
+import { renderMermaidArt } from "./mermaid-renderer";
 
 const MAX_SOURCE_LENGTH = 32_768;
-const MAX_ART_LINES = 80;
 const MAX_ART_CACHE_ENTRIES = 128;
-const MAX_EXPANDED_EDGES = 200;
-const MAX_NODES = 200;
-const MAX_PLACEHOLDER_INDICES = 16_384;
-const RESERVED_PUA_PATTERN = /[\uE000-\uE07F]/;
 const MARKDOWN_LINES_PATTERN = /.*(?:\n|$)/g;
 const FENCE_LINE_PATTERN = /^ {0,3}(`{3,}|~{3,})[ \t]*(.*?)[ \t]*$/;
-const HEADER_SEMICOLON_PATTERN =
-  /^(\s*(?:graph|flowchart)\s+[A-Za-z]{2})\s*;+\s*/;
-const TRAILING_SEMICOLON_PATTERN = /;[ \t]*$/gm;
-const ARROW_TOKEN = "(-->>|->>|-->|->|==>|-\\.->)";
-const ARROW_PREFIX = "([\\w\\]\\)}\"'가-힯])";
-const ARROW_BEFORE_NODE_PATTERN = new RegExp(
-  `${ARROW_PREFIX}${ARROW_TOKEN}(?=[^\\s|])`,
-  "gu"
-);
-const ARROW_BEFORE_LABEL_PATTERN = new RegExp(
-  `${ARROW_PREFIX}${ARROW_TOKEN}(?=\\|)`,
-  "gu"
-);
-const ARROW_BEFORE_SPACE_PATTERN = new RegExp(
-  `${ARROW_PREFIX}${ARROW_TOKEN}(?=\\s)`,
-  "gu"
-);
-const EDGE_LABEL_TARGET_PATTERN = /((?:-->|->>|-->>|->)\|[^|\n]+\|)(?=\S)/g;
-const PLACEHOLDER_BASE = 0xe0_00;
-const PLACEHOLDER_DIGIT = 0x7f;
-const PLACEHOLDER_PATTERN = /[\uE000-\uE07F]{2}/g;
 
 export interface MermaidBlockPart {
   raw: string;
@@ -71,6 +45,13 @@ interface MermaidMarkdownOptions {
     dispose?(): void;
     render(width: number): string[];
   };
+  requestRender?: () => void;
+  signal?: AbortSignal;
+}
+
+interface DiagramRenderState {
+  art?: readonly string[];
+  status: "failed" | "pending" | "ready";
 }
 
 const fenceMarker = (line: string): FenceMarker | undefined => {
@@ -189,255 +170,6 @@ export const extractMermaidBlocks = (text: string): MermaidBlockPart[] => {
     : state.parts;
 };
 
-interface AsciiPreset {
-  readonly boxBorderPadding: number;
-  readonly paddingX: number;
-  readonly paddingY: number;
-}
-
-const DEFAULT_PRESET: AsciiPreset = {
-  boxBorderPadding: 1,
-  paddingX: 5,
-  paddingY: 5,
-};
-const TIGHT_PRESET: AsciiPreset = {
-  boxBorderPadding: 1,
-  paddingX: 2,
-  paddingY: 2,
-};
-
-// beautiful-mermaid accepts the header only alone on the first line, while
-// mermaid itself also allows `graph LR;` and single-line diagrams. Its
-// parser likewise requires whitespace around arrows, so common idioms like
-// `A-->B` and `A-->|yes|B` are spaced out here first - outside bracket
-// labels, where arrow-like text is content.
-const spaceArrowsOutsideBrackets = (line: string): string => {
-  let output = "";
-  let segment = "";
-  let depth = 0;
-  const flushSegment = (): void => {
-    output += segment
-      .replace(ARROW_BEFORE_LABEL_PATTERN, "$1 $2")
-      .replace(ARROW_BEFORE_NODE_PATTERN, "$1 $2 ")
-      .replace(ARROW_BEFORE_SPACE_PATTERN, "$1 $2")
-      .replace(EDGE_LABEL_TARGET_PATTERN, "$1 ");
-    segment = "";
-  };
-  for (const char of line) {
-    if (depth === 0 && (char === "[" || char === "{" || char === "(")) {
-      flushSegment();
-      depth = 1;
-      output += char;
-      continue;
-    }
-    if (depth > 0) {
-      output += char;
-      if (char === "[" || char === "{" || char === "(") {
-        depth += 1;
-      } else if (char === "]" || char === "}" || char === ")") {
-        depth -= 1;
-      }
-      continue;
-    }
-    segment += char;
-  }
-  flushSegment();
-  return output;
-};
-
-const normalizeDiagramSource = (source: string): string => {
-  const match = HEADER_SEMICOLON_PATTERN.exec(source);
-  const headerSplit =
-    match === null ? source : `${match[1]}\n${source.slice(match[0].length)}`;
-  return headerSplit
-    .replace(TRAILING_SEMICOLON_PATTERN, "")
-    .split("\n")
-    .map(spaceArrowsOutsideBrackets)
-    .join("\n");
-};
-
-// beautiful-mermaid pads box art by UTF-16 length, so East Asian wide
-// labels break alignment. Expand every wide label char into a private-use
-// pair (two narrow columns, self-describing index), let the library lay out
-// with correct widths, then collapse each pair back to the original glyph.
-// The pair alphabet is reserved: sources already using it render as plain
-// fences rather than risking mis-decoded annotations.
-// Edge runs approximate operator count for the budget: every mermaid edge
-// operator carries exactly one of these runs, while the node-token pattern
-// catches bracketed node declarations.
-const EDGE_RUN_PATTERN = /-{2,}|-\.|-|={2,}|\.\./g;
-const AMPERSAND_PATTERN = /&/g;
-const NODE_TOKEN_PATTERN = /[[(][^\]()\n]*[\])]/g;
-
-const ampCount = (text: string): number =>
-  text.match(AMPERSAND_PATTERN)?.length ?? 0;
-
-// Rendering is synchronous, so bound the graph before it can monopolize
-// the TUI process. Count every edge run (mermaid chains statements on one
-// line) and estimate cartesian groups as (left ampersands + 1) x (right
-// ampersands + 1); node tokens accumulate even without operators.
-const exceedsComplexityBudget = (source: string): boolean => {
-  let expandedEdges = 0;
-  let nodeTokens = 0;
-  for (const line of source.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("%%") || trimmed.length === 0) {
-      continue;
-    }
-    nodeTokens += trimmed.match(NODE_TOKEN_PATTERN)?.length ?? 0;
-    if (nodeTokens > MAX_NODES) {
-      return true;
-    }
-    const runs = [...trimmed.matchAll(EDGE_RUN_PATTERN)];
-    if (runs.length === 0) {
-      continue;
-    }
-    const leftAmp = ampCount(trimmed.slice(0, runs[0]?.index ?? 0));
-    const lastRun = runs.at(-1);
-    const rightAmp = ampCount(
-      trimmed.slice((lastRun?.index ?? 0) + (lastRun?.[0].length ?? 0))
-    );
-    expandedEdges += runs.length * (leftAmp + 1) * (rightAmp + 1);
-    if (expandedEdges > MAX_EXPANDED_EDGES) {
-      return true;
-    }
-  }
-  return false;
-};
-const expandWideChars = (
-  source: string
-): { expanded: string; wideChars: string[] } => {
-  const wideChars: string[] = [];
-  let expanded = "";
-  for (const char of source) {
-    // Per-glyph terminal width is the ground truth for the art alignment
-    // shim: expand exactly the characters the terminal draws two cells wide.
-    if (visibleWidth(char) === 2) {
-      const index = wideChars.length;
-      wideChars.push(char);
-      expanded +=
-        String.fromCodePoint(
-          PLACEHOLDER_BASE + Math.floor(index / (PLACEHOLDER_DIGIT + 1))
-        ) +
-        String.fromCodePoint(
-          PLACEHOLDER_BASE + (index % (PLACEHOLDER_DIGIT + 1))
-        );
-    } else {
-      expanded += char;
-    }
-  }
-  return { expanded, wideChars };
-};
-
-const collapsePlaceholders = (
-  art: string,
-  wideChars: readonly string[]
-): string =>
-  art.replace(PLACEHOLDER_PATTERN, (pair) => {
-    const index =
-      ((pair.codePointAt(0) ?? 0) - PLACEHOLDER_BASE) *
-        (PLACEHOLDER_DIGIT + 1) +
-      ((pair.codePointAt(1) ?? 0) - PLACEHOLDER_BASE);
-    return wideChars[index] ?? "";
-  });
-
-const squareBracketsBalanced = (source: string): boolean => {
-  let square = 0;
-  for (const char of source) {
-    if (char === "[") {
-      square += 1;
-    } else if (char === "]") {
-      square -= 1;
-    }
-    if (square < 0) {
-      return false;
-    }
-  }
-  return square === 0;
-};
-
-const FLOWCHART_HEADER_PATTERN = /^\s*(?:graph|flowchart)\b/m;
-const ARROW_TOKEN_PATTERN = /-{1,2}>+|-{1,2}\+{1,2}>/;
-const ARROW_GLYPH_PATTERN = /[►▶▼◀▲]/u;
-const DASH_RUN_PATTERN = /-{2,}/;
-const BRACKET_CONTENTS_PATTERN = /[[{(][^[\]{}()]*[\]})]/g;
-
-// beautiful-mermaid parses permissively and silently drops malformed tails,
-// so reject obviously broken bodies instead of annotating a partial diagram:
-// unbalanced node brackets, arrows without targets, and bare dash links the
-// engine cannot draw (valid class/ER operators carry no dash-run of 2+
-// outside brackets, so they pass through).
-const diagramBodySane = (source: string, art: string): boolean => {
-  if (!squareBracketsBalanced(source)) {
-    return false;
-  }
-  const flowchart = FLOWCHART_HEADER_PATTERN.test(source);
-  let arrows = 0;
-  for (const line of source.split("\n")) {
-    if (flowchart) {
-      const stripped = line.replace(BRACKET_CONTENTS_PATTERN, "");
-      if (DASH_RUN_PATTERN.test(stripped) && !stripped.includes(">")) {
-        return false;
-      }
-    }
-    const arrow = ARROW_TOKEN_PATTERN.exec(line);
-    if (arrow === null) {
-      continue;
-    }
-    arrows += 1;
-    if (line.slice(arrow.index + arrow[0].length).trim().length === 0) {
-      return false;
-    }
-  }
-  return !flowchart || arrows === 0 || ARROW_GLYPH_PATTERN.test(art);
-};
-
-/** Render diagram source to box-art lines, or undefined when unsupported. */
-export const renderDiagramArt = (source: string): string[] | undefined => {
-  const normalized = normalizeDiagramSource(source.trim());
-  if (
-    normalized.length === 0 ||
-    normalized.length > MAX_SOURCE_LENGTH ||
-    RESERVED_PUA_PATTERN.test(normalized) ||
-    exceedsComplexityBudget(normalized)
-  ) {
-    return;
-  }
-  const { expanded, wideChars } = expandWideChars(normalized);
-  if (wideChars.length >= MAX_PLACEHOLDER_INDICES) {
-    return;
-  }
-  const render = (preset: AsciiPreset): string[] => {
-    const art = collapsePlaceholders(
-      renderMermaidASCII(expanded, { ...preset, colorMode: "none" }),
-      wideChars
-    );
-    return diagramBodySane(normalized, art) ? trimArtLines(art) : [];
-  };
-  let lines: string[];
-  try {
-    lines = render(DEFAULT_PRESET);
-  } catch {
-    return;
-  }
-  if (lines.length > MAX_ART_LINES) {
-    try {
-      lines = render(TIGHT_PRESET);
-    } catch {
-      return;
-    }
-  }
-  return lines.length > MAX_ART_LINES || lines.length === 0 ? undefined : lines;
-};
-
-const trimArtLines = (art: string): string[] => {
-  const lines = art.split("\n").map((line) => line.trimEnd());
-  while (lines.length > 0 && (lines.at(-1) ?? "").length === 0) {
-    lines.pop();
-  }
-  return lines;
-};
-
 const isBlankRenderLine = (line: string | undefined): boolean =>
   line !== undefined && line.trim().length === 0;
 
@@ -452,10 +184,10 @@ const appendMarkdownLines = (target: string[], rendered: string[]): void => {
 
 /** Markdown component that appends box-art diagrams under mermaid fences. */
 export class MermaidMarkdown implements Component {
-  private readonly artCache = new Map<string, string[] | undefined>();
   private cachedLines: string[] | undefined;
   private cachedText: string | undefined;
   private cachedWidth: number | undefined;
+  private readonly controller = new AbortController();
   private readonly delegateViews = new Map<
     string,
     { dispose?(): void; render(width: number): string[] }
@@ -464,6 +196,8 @@ export class MermaidMarkdown implements Component {
   private readonly options: MermaidMarkdownOptions;
   private readonly paddingX: number;
   private readonly paddingY: number;
+  private readonly renderStates = new Map<string, DiagramRenderState>();
+  private readonly signal: AbortSignal;
   private text: string;
   private readonly theme: MarkdownTheme;
 
@@ -479,6 +213,11 @@ export class MermaidMarkdown implements Component {
     this.paddingY = paddingY;
     this.theme = theme;
     this.options = options;
+    this.signal =
+      options.signal === undefined
+        ? this.controller.signal
+        : AbortSignal.any([this.controller.signal, options.signal]);
+    this.startRenderJobs();
   }
 
   dispose(): void {
@@ -487,6 +226,7 @@ export class MermaidMarkdown implements Component {
     }
     this.disposed = true;
     this.disposeDelegateViews();
+    this.controller.abort();
   }
 
   setText(text: string): void {
@@ -496,6 +236,7 @@ export class MermaidMarkdown implements Component {
     this.text = text;
     this.disposeDelegateViews();
     this.invalidate();
+    this.startRenderJobs();
   }
 
   invalidate(): void {
@@ -534,9 +275,9 @@ export class MermaidMarkdown implements Component {
     for (const part of parts) {
       if (part.type === "mermaid" && part.source) {
         appendMarkdownLines(lines, this.renderMarkdown(part.raw, 0, width));
-        const art = this.artFor(part.source);
-        if (art !== undefined) {
-          for (const artLine of art) {
+        const state = this.renderStates.get(part.source);
+        if (state?.status === "ready" && state.art !== undefined) {
+          for (const artLine of state.art) {
             lines.push(this.fitArtLine(artLine, width));
           }
           lines.push("");
@@ -549,22 +290,46 @@ export class MermaidMarkdown implements Component {
     return this.cache(width, lines);
   }
 
-  private artFor(source: string): string[] | undefined {
-    const cached = this.artCache.get(source);
-    if (cached !== undefined || this.artCache.has(source)) {
-      this.artCache.delete(source);
-      this.artCache.set(source, cached);
-      return cached;
+  private startRenderJobs(): void {
+    if (this.signal.aborted || !this.mermaidEnabled()) {
+      return;
     }
-    const art = renderDiagramArt(source);
-    if (this.artCache.size >= MAX_ART_CACHE_ENTRIES) {
-      const oldest = this.artCache.keys().next().value;
-      if (oldest !== undefined) {
-        this.artCache.delete(oldest);
+    for (const part of extractMermaidBlocks(this.text)) {
+      if (!(part.type === "mermaid" && part.source)) {
+        continue;
       }
+      const source = part.source;
+      if (this.renderStates.has(source)) {
+        continue;
+      }
+      const state: DiagramRenderState = { status: "pending" };
+      this.renderStates.set(source, state);
+      if (this.renderStates.size > MAX_ART_CACHE_ENTRIES) {
+        const oldest = this.renderStates.keys().next().value;
+        if (oldest !== undefined) {
+          this.renderStates.delete(oldest);
+        }
+      }
+      renderMermaidArt(source, this.signal).then(
+        (art) => {
+          if (this.signal.aborted) {
+            return;
+          }
+          state.art = art;
+          state.status = art === undefined ? "failed" : "ready";
+          this.invalidate();
+          this.options.requestRender?.();
+        },
+        () => {
+          if (this.signal.aborted) {
+            return;
+          }
+          state.status = "failed";
+          this.invalidate();
+          this.options.requestRender?.();
+        }
+      );
     }
-    this.artCache.set(source, art);
-    return art;
   }
 
   private fitArtLine(line: string, width: number): string {

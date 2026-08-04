@@ -474,9 +474,10 @@ import createMermaidExtension from "@minpeter/pss-extension-mermaid";
 
 Complete ```` ```mermaid ```` fenced blocks keep their original source visible
 and get a Unicode box-art rendering appended directly below, following the pi
-ecosystem's `pi-mermaid` convention. Rendering is synchronous and pure
-TypeScript via `beautiful-mermaid`: no browser, DOM shim, worker, image
-protocol, disk cache, or network access, so it works in every terminal.
+ecosystem's `pi-mermaid` convention. Rendering runs in a bounded Node
+worker (5-second timeout, 256 MB heap cap) via `beautiful-mermaid`: no
+browser, DOM shim, image protocol, disk cache, or network access, so it
+works in every terminal.
 Flowchart, sequence, state, class, ER, and XY-chart diagrams are supported,
 and wide East Asian label characters keep box borders aligned through a
 placeholder expansion shim. Unclosed fences while streaming, malformed or

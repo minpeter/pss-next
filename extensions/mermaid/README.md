@@ -10,11 +10,10 @@ diagrams as Unicode box art with
 original fence source stays visible and the rendered diagram appears directly
 below it, as an annotation.
 
-Rendering is synchronous, pure TypeScript, and works in every terminal: no
-browser, DOM shim, worker thread, image protocol, disk cache, or network
-access. Flowchart, sequence, state, class, ER, and XY-chart diagrams are
-supported; other diagram types and malformed sources simply show the original
-fence. Unclosed fences while streaming show the source until they complete,
+Rendering runs in a bounded Node worker (5-second timeout, 256 MB heap
+cap) and works in every terminal: no browser, DOM shim, image protocol,
+disk cache, or network access. Pathological or malformed diagrams fall back
+to the original fence. Unclosed fences while streaming show the source until they complete,
 and oversized outputs fall back to the source.
 
 ```ts

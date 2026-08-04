@@ -49,7 +49,11 @@ describe("default assistant renderer composition", () => {
         notifyOnce: () => undefined,
         requestRender: () => {
           const output = view?.render(80).join("\n") ?? "";
-          if (output.includes(KITTY_SEQUENCE) && !output.includes("x = 1")) {
+          const imagesReady =
+            output.includes(KITTY_SEQUENCE) &&
+            output.includes(BOX_ART) &&
+            !output.includes("x = 1");
+          if (imagesReady) {
             resolveReady?.();
           }
         },

@@ -15,8 +15,12 @@ export const createMermaidExtension: CodingAgentExtensionFactory = (pss) => {
   pss.provide(instructions(MERMAID_OUTPUT_INSTRUCTIONS));
   pss.provide(
     assistantRenderer(
-      ({ delegate, markdownTheme }) =>
-        new MermaidMarkdown("", 1, 0, markdownTheme, { delegate }),
+      ({ delegate, markdownTheme, requestRender, signal }) =>
+        new MermaidMarkdown("", 1, 0, markdownTheme, {
+          delegate,
+          requestRender,
+          signal,
+        }),
       { fallback: true }
     )
   );

@@ -4,11 +4,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 const ARROW_GLYPH = /[►▶▼◀▲]/u;
 
 import { describe, expect, it } from "vitest";
-import {
-  extractMermaidBlocks,
-  MermaidMarkdown,
-  renderDiagramArt,
-} from "./mermaid-markdown";
+import { renderDiagramArt } from "./mermaid-art-worker";
+import { extractMermaidBlocks, MermaidMarkdown } from "./mermaid-markdown";
 
 const markdownTheme: MarkdownTheme = {
   bold: (text) => text,
@@ -167,6 +164,25 @@ describe("renderDiagramArt", () => {
     expect(renderDiagramArt(nodes)).toBeUndefined();
   });
 
+  it("counts bare and curly nodes and adjacent cartesian groups", () => {
+    const bare = `graph TD\n${Array.from(
+      { length: 250 },
+      (_, i) => `N${i}`
+    ).join("\n")}`;
+    const curly = `graph TD\n${Array.from(
+      { length: 250 },
+      (_, i) => `N${i}{node ${i}}`
+    ).join("\n")}`;
+    const left = Array.from({ length: 30 }, (_, i) => `L${i}`).join(" & ");
+    const mid = Array.from({ length: 30 }, (_, i) => `M${i}`).join(" & ");
+
+    expect(renderDiagramArt(bare)).toBeUndefined();
+    expect(renderDiagramArt(curly)).toBeUndefined();
+    expect(
+      renderDiagramArt(`graph LR\n  A ==> ${left} ==> ${mid} ==> D`)
+    ).toBeUndefined();
+  });
+
   it("renders sequence diagrams", () => {
     const art = renderDiagramArt(
       "sequenceDiagram\n  participant U as 사용자\n  U->>U: ping"
@@ -199,8 +215,10 @@ describe("renderDiagramArt", () => {
     expect(renderDiagramArt("graph TD\n  A[unterminated")).toBeUndefined();
   });
 
-  it("rejects bare links the engine cannot render", () => {
-    expect(renderDiagramArt("graph TD\n  A--B")).toBeUndefined();
+  it("renders tight bare links as plain links", () => {
+    const art = renderDiagramArt("graph TD\n  A--B");
+
+    expect(art).toBeDefined();
   });
 
   it("rejects cartesian expansions beyond the edge budget", () => {
@@ -219,7 +237,10 @@ describe("renderDiagramArt", () => {
 });
 
 describe("MermaidMarkdown", () => {
-  const withMermaidEnv = (value: string | undefined, run: () => void): void => {
+  const withMermaidEnv = async (
+    value: string | undefined,
+    run: () => Promise<void> | void
+  ): Promise<void> => {
     const original = process.env.PSS_MERMAID;
     if (value === undefined) {
       delete process.env.PSS_MERMAID;
@@ -227,7 +248,7 @@ describe("MermaidMarkdown", () => {
       process.env.PSS_MERMAID = value;
     }
     try {
-      run();
+      await run();
     } finally {
       if (original === undefined) {
         delete process.env.PSS_MERMAID;
@@ -237,10 +258,17 @@ describe("MermaidMarkdown", () => {
     }
   };
 
-  it("appends box art below the preserved source fence", () => {
-    withMermaidEnv(undefined, () => {
-      const view = new MermaidMarkdown("", 1, 0, markdownTheme);
+  it("appends box art below the preserved source fence", async () => {
+    await withMermaidEnv(undefined, async () => {
+      let notifyReady: (() => void) | undefined;
+      const ready = new Promise<void>((resolve) => {
+        notifyReady = resolve;
+      });
+      const view = new MermaidMarkdown("", 1, 0, markdownTheme, {
+        requestRender: () => notifyReady?.(),
+      });
       view.setText("before\n\n```mermaid\ngraph TD;\n  A-->B;\n```\n\nafter\n");
+      await ready;
       const output = view.render(80).join("\n");
 
       expect(output).toContain("```mermaid");
@@ -252,10 +280,17 @@ describe("MermaidMarkdown", () => {
     });
   });
 
-  it("falls back to the source fence when the diagram is invalid", () => {
-    withMermaidEnv(undefined, () => {
-      const view = new MermaidMarkdown("", 1, 0, markdownTheme);
+  it("falls back to the source fence when the diagram is invalid", async () => {
+    await withMermaidEnv(undefined, async () => {
+      let notifyReady: (() => void) | undefined;
+      const ready = new Promise<void>((resolve) => {
+        notifyReady = resolve;
+      });
+      const view = new MermaidMarkdown("", 1, 0, markdownTheme, {
+        requestRender: () => notifyReady?.(),
+      });
       view.setText("```mermaid\nthis is not a diagram\n```\n");
+      await ready;
       const output = view.render(80).join("\n");
 
       expect(output).toContain("this is not a diagram");
