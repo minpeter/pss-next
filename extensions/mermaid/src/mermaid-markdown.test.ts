@@ -191,6 +191,35 @@ describe("renderDiagramArt", () => {
     expect(art?.join("\n")).toContain("사용자");
   });
 
+  it("renders sequence diagrams with textual brackets", () => {
+    expect(renderDiagramArt("sequenceDiagram\nA->>B: array[0")).toBeDefined();
+  });
+
+  it("does not mistake a participant named graph for a flowchart", () => {
+    const art = renderDiagramArt(
+      "sequenceDiagram\n  participant graph\n  graph->>B: x-->y"
+    );
+
+    expect(art).toBeDefined();
+    expect(art?.join("\n")).toContain("x-->y");
+  });
+
+  it("aligns ZWJ emoji and combining-accent labels", () => {
+    const emoji = renderDiagramArt(
+      "graph LR\nA[\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}]-->B"
+    );
+    const accent = renderDiagramArt("graph LR\nA[cafe\u0301]-->B");
+
+    expect(emoji).toBeDefined();
+    expect(accent).toBeDefined();
+    expect(new Set((emoji ?? []).map((line) => visibleWidth(line))).size).toBe(
+      1
+    );
+    expect(new Set((accent ?? []).map((line) => visibleWidth(line))).size).toBe(
+      1
+    );
+  });
+
   it("renders subgraph clusters without a stray end node", () => {
     const art = renderDiagramArt(`graph TD;
   subgraph client[클라이언트]
@@ -299,8 +328,8 @@ describe("MermaidMarkdown", () => {
     });
   });
 
-  it("renders no art when PSS_MERMAID is 0", () => {
-    withMermaidEnv("0", () => {
+  it("renders no art when PSS_MERMAID is 0", async () => {
+    await withMermaidEnv("0", () => {
       const view = new MermaidMarkdown("", 1, 0, markdownTheme);
       view.setText("```mermaid\ngraph TD;\n  A-->B;\n```\n");
       const output = view.render(80).join("\n");
@@ -311,8 +340,8 @@ describe("MermaidMarkdown", () => {
     });
   });
 
-  it("passes non-mermaid markdown through to the delegate", () => {
-    withMermaidEnv(undefined, () => {
+  it("passes non-mermaid markdown through to the delegate", async () => {
+    await withMermaidEnv(undefined, () => {
       const delegated: string[] = [];
       const view = new MermaidMarkdown("", 1, 0, markdownTheme, {
         delegate: (text) => {
@@ -323,6 +352,26 @@ describe("MermaidMarkdown", () => {
       view.setText("just prose");
       expect(view.render(80)).toEqual(["D:just prose"]);
       expect(delegated).toEqual(["just prose"]);
+      view.dispose();
+    });
+  });
+
+  it("saturates instead of re-enqueueing evicted diagram jobs", async () => {
+    await withMermaidEnv(undefined, () => {
+      const fences = Array.from(
+        { length: 130 },
+        (_, i) => `\`\`\`mermaid\ngraph LR\nA${i}-->B${i}\n\`\`\`\n`
+      );
+      const view = new MermaidMarkdown("", 1, 0, markdownTheme);
+      view.setText(fences.join("\n"));
+      view.setText(`${fences.join("\n")}\ntail\n`);
+      const output = view.render(200).join("\n");
+
+      expect(output).toContain("A0-->B0");
+      expect(output).toContain("A129-->B129");
+      const states = (view as unknown as { renderStates: Map<string, unknown> })
+        .renderStates;
+      expect(states.size).toBeLessThanOrEqual(128);
       view.dispose();
     });
   });

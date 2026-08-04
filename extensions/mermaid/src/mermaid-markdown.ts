@@ -302,14 +302,14 @@ export class MermaidMarkdown implements Component {
       if (this.renderStates.has(source)) {
         continue;
       }
+      // Evicting here would re-enqueue the source on the next streaming
+      // update, and inserting a marker would grow the map without bound;
+      // skip entirely so a diagram flood degrades to source-only output.
+      if (this.renderStates.size >= MAX_ART_CACHE_ENTRIES) {
+        continue;
+      }
       const state: DiagramRenderState = { status: "pending" };
       this.renderStates.set(source, state);
-      if (this.renderStates.size > MAX_ART_CACHE_ENTRIES) {
-        const oldest = this.renderStates.keys().next().value;
-        if (oldest !== undefined) {
-          this.renderStates.delete(oldest);
-        }
-      }
       renderMermaidArt(source, this.signal).then(
         (art) => {
           if (this.signal.aborted) {

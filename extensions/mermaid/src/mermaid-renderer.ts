@@ -1,6 +1,7 @@
 import { Worker } from "node:worker_threads";
 
 const RENDER_TIMEOUT_MS = 5000;
+const MAX_IN_FLIGHT = 32;
 
 interface WorkerReply {
   readonly art?: readonly string[];
@@ -107,11 +108,22 @@ const dispatchRender = (
 };
 
 /** Render diagram source to box-art lines in a bounded worker, if possible. */
+let inFlight = 0;
+
+/** Render diagram source to box-art lines in a bounded worker, if possible. */
 export const renderMermaidArt = (
   source: string,
   signal?: AbortSignal
 ): Promise<readonly string[] | undefined> => {
+  if (inFlight >= MAX_IN_FLIGHT) {
+    return Promise.resolve(undefined);
+  }
+  inFlight += 1;
   const result = renderTail.then(() => dispatchRender(source, signal));
+  const settle = (): void => {
+    inFlight -= 1;
+  };
+  result.then(settle, settle);
   renderTail = result.then(
     () => undefined,
     () => undefined

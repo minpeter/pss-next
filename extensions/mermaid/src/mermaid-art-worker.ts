@@ -11,7 +11,7 @@ const RESERVED_PUA_PATTERN = /[\uE000-\uE07F]/;
 const HEADER_SEMICOLON_PATTERN =
   /^(\s*(?:graph|flowchart)\s+[A-Za-z]{2})\s*;+\s*/;
 const TRAILING_SEMICOLON_PATTERN = /;[ \t]*$/gm;
-const FLOWCHART_HEADER_PATTERN = /^\s*(?:graph|flowchart)\b/m;
+const FLOWCHART_HEADER_PATTERN = /^\s*(?:graph|flowchart)\b/;
 const ARROW_TOKEN = "(-->>|->>|-->|->|==>|-.->)";
 const ARROW_PREFIX = "([\\w\\]\\)}\"'가-힯])";
 const ARROW_BEFORE_NODE_PATTERN = new RegExp(
@@ -213,8 +213,15 @@ const expandWideChars = (
 ): { expanded: string; wideChars: string[] } => {
   const wideChars: string[] = [];
   let expanded = "";
-  for (const grapheme of graphemes(source)) {
-    if (visibleWidth(grapheme) === 2) {
+  // NFC folds combining sequences into single codepoints so both sides of
+  // the shim count the same widths; zero-width characters are dropped since
+  // the library would count them but terminals never draw them.
+  for (const grapheme of graphemes(source.normalize("NFC"))) {
+    const width = visibleWidth(grapheme);
+    if (width === 0 && grapheme !== "\n") {
+      continue;
+    }
+    if (width === 2) {
       const index = wideChars.length;
       wideChars.push(grapheme);
       expanded +=
@@ -262,7 +269,8 @@ const squareBracketsBalanced = (source: string): boolean => {
 // so reject obviously broken bodies instead of annotating a partial diagram:
 // unbalanced node brackets and arrows without targets.
 const diagramBodySane = (source: string): boolean => {
-  if (!squareBracketsBalanced(source)) {
+  const flowchart = FLOWCHART_HEADER_PATTERN.test(source);
+  if (flowchart && !squareBracketsBalanced(source)) {
     return false;
   }
   for (const line of source.split("\n")) {
