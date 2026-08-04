@@ -26,8 +26,9 @@ describe("release workflow", () => {
     expect(ciWorkflow).toContain('node: ["24", "26"]');
     expect(ciWorkflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("pnpm tegami ci");
-    expect(workflow).not.toContain(
-      "Verify npm trusted publishing prerequisites"
+    expect(workflow).toContain("pnpm --filter @minpeter/pss-coding-agent pack");
+    expect(workflow).toContain(
+      "npm install --package-lock-only --ignore-scripts"
     );
     expect(workflow).not.toContain("NPM_CONFIG_PROVENANCE");
     expect(workflow).not.toContain("changesets/action");
