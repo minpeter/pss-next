@@ -1,9 +1,13 @@
 ---
 packages:
+  npm:@minpeter/pss-coding-agent:
+    type: patch
+  npm:@minpeter/pss-extension-web:
+    type: patch
   npm:@minpeter/pss-runtime:
     type: patch
 ---
 
-## Update the runtime AI SDK
+## Update the AI SDK
 
-Update the runtime to AI SDK 7.0.51 for downstream version alignment.
+Update runtime and consumer packages to AI SDK 7.0.51 for consistent tool types and downstream version alignment.
