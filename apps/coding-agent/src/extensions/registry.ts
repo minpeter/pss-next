@@ -79,18 +79,30 @@ export function createCodingAgentExtensionRegistry({
     if (typeof renderer !== "function") {
       throw new TypeError("Assistant renderer must be a function");
     }
-    if (collections.assistantRenderer !== undefined) {
-      const existingOwner = collections.owners.assistantRenderer ?? extensionId;
-      throw new Error(
-        `Assistant renderer from extension "${extensionId}" conflicts with extension "${existingOwner}"`
-      );
-    }
     const fallback = options.fallback === true;
     const override = options.override === true;
     if (fallback && override) {
       throw new TypeError(
         "Assistant renderer cannot be both a fallback and an override"
       );
+    }
+    if (
+      collections.assistantRenderer !== undefined ||
+      collections.assistantRendererChain.length > 0
+    ) {
+      const existingOwner = collections.owners.assistantRenderer ?? extensionId;
+      throw new Error(
+        `Assistant renderer from extension "${extensionId}" conflicts with extension "${existingOwner}"`
+      );
+    }
+    if (fallback) {
+      collections.assistantRendererChain.push({
+        fallback,
+        override,
+        renderer: renderer as AssistantRenderer,
+      });
+      collections.owners.assistantRendererChain.push(extensionId);
+      return;
     }
     collections.assistantRenderer = {
       fallback,

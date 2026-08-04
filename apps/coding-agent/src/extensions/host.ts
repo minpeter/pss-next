@@ -6,7 +6,10 @@ import type {
 } from "@minpeter/pss-runtime";
 import type { ToolSet } from "ai";
 import type { RegisteredSessionGuard } from "../sessions/session-guards";
-import type { AssistantRenderer } from "../tui/assistant-renderer";
+import {
+  type AssistantRenderer,
+  composeAssistantRenderers,
+} from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
 import { composeAgentHooks, type RegisteredAgentHooks } from "./compose-hooks";
@@ -30,6 +33,8 @@ import type {
 export class CodingAgentExtensionHost {
   readonly #collections: ExtensionRegistryCollections;
   readonly #lifecycle: ExtensionHostLifecycle;
+  #composedFallbackRenderer: AssistantRenderer | undefined;
+  #fallbackRendererComposed = false;
 
   private constructor(
     extensions: readonly CodingAgentExtension[],
@@ -94,7 +99,17 @@ export class CodingAgentExtensionHost {
   }
 
   get assistantRenderer(): AssistantRenderer | undefined {
-    return this.#collections.assistantRenderer?.renderer;
+    const exclusive = this.#collections.assistantRenderer;
+    if (exclusive !== undefined) {
+      return exclusive.renderer;
+    }
+    if (!this.#fallbackRendererComposed) {
+      this.#composedFallbackRenderer = composeAssistantRenderers(
+        this.#collections.assistantRendererChain.map((entry) => entry.renderer)
+      );
+      this.#fallbackRendererComposed = true;
+    }
+    return this.#composedFallbackRenderer;
   }
 
   get hookRegistrations(): readonly RegisteredAgentHooks[] {
@@ -198,7 +213,15 @@ export class CodingAgentExtensionHost {
   }
 
   getAssistantRendererOwner(): string | undefined {
-    return this.#collections.owners.assistantRenderer;
+    return (
+      this.#collections.owners.assistantRenderer ??
+      this.#collections.owners.assistantRendererChain.at(-1)
+    );
+  }
+
+  /** Owners of the fallback chain in registration order (innermost first). */
+  getAssistantRendererChainOwners(): readonly string[] {
+    return [...this.#collections.owners.assistantRendererChain];
   }
 
   getToolRendererOwner(name: string): string | undefined {

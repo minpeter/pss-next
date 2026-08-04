@@ -66,6 +66,10 @@ interface MarkdownTextStyle {
 
 interface LatexMarkdownOptions {
   defaultTextStyle?: MarkdownTextStyle;
+  delegate?: (text: string) => {
+    dispose?(): void;
+    render(width: number): string[];
+  };
   foregroundColor?: string;
   requestRender?: () => void;
   signal?: AbortSignal;
@@ -694,6 +698,10 @@ export class LatexMarkdown implements Component {
   private readonly paddingX: number;
   private readonly paddingY: number;
   private readonly renderStates = new Map<string, MathRenderState>();
+  private readonly delegateViews = new Map<
+    string,
+    { dispose?(): void; render(width: number): string[] }
+  >();
   private text: string;
   private readonly theme: MarkdownTheme;
   private readonly signal: AbortSignal;
@@ -723,6 +731,7 @@ export class LatexMarkdown implements Component {
       return;
     }
     this.disposed = true;
+    this.disposeDelegateViews();
     this.controller.abort();
   }
 
@@ -731,6 +740,7 @@ export class LatexMarkdown implements Component {
       return;
     }
     this.text = text;
+    this.disposeDelegateViews();
     this.invalidate();
     this.startRenderJobs();
   }
@@ -791,13 +801,47 @@ export class LatexMarkdown implements Component {
     paddingY: number,
     width: number
   ): string[] {
-    return new Markdown(
-      highlightInlineMath(text),
-      this.paddingX,
-      paddingY,
-      this.theme,
-      this.options.defaultTextStyle
-    ).render(width);
+    const highlighted = highlightInlineMath(text);
+    const delegate = this.options.delegate;
+    if (delegate === undefined) {
+      return new Markdown(
+        highlighted,
+        this.paddingX,
+        paddingY,
+        this.theme,
+        this.options.defaultTextStyle
+      ).render(width);
+    }
+    const lines = this.delegateMarkdown(delegate, highlighted).render(width);
+    if (paddingY <= 0) {
+      return lines;
+    }
+    const emptyLine = " ".repeat(width);
+    const margin = Array.from({ length: paddingY }, () => emptyLine);
+    return [...margin, ...lines, ...margin];
+  }
+
+  private delegateMarkdown(
+    delegate: (text: string) => {
+      dispose?(): void;
+      render(width: number): string[];
+    },
+    text: string
+  ): { dispose?(): void; render(width: number): string[] } {
+    const existing = this.delegateViews.get(text);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const view = delegate(text);
+    this.delegateViews.set(text, view);
+    return view;
+  }
+
+  private disposeDelegateViews(): void {
+    for (const view of this.delegateViews.values()) {
+      view.dispose?.();
+    }
+    this.delegateViews.clear();
   }
 
   private cache(width: number, lines: string[]): string[] {
