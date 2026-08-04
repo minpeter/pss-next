@@ -36,6 +36,7 @@ export function defaultAgentEventAttributes(event: AgentEvent): Attributes {
       return base;
     case "assistant-output-delta":
     case "assistant-reasoning-delta":
+    case "context-usage":
     case "tool-call-input-delta":
     case "tool-call-input-end":
     case "tool-call-input-start":

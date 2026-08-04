@@ -72,6 +72,9 @@ export async function appendCapturedStepOutput({
 }): Promise<StepOutputResult> {
   try {
     await emit(output.usage);
+    if (output.contextUsage) {
+      await emit({ ...output.contextUsage, type: "context-usage" });
+    }
     const transformedOutput = transformModelStep
       ? await transformModelStep(output.messages, signal)
       : output.messages;

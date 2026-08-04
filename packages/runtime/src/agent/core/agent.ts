@@ -1,4 +1,8 @@
 import type { AgentHost, NotificationRecord } from "../../execution/host/types";
+import {
+  ContextTokenCalibrationRegistry,
+  ContextTokenMeter,
+} from "../../llm/context-tokens";
 import { createInMemoryHost } from "../../platform/memory";
 import { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentInput } from "../../thread/input/input";
@@ -58,6 +62,8 @@ export type AgentConstructorOptions = AgentOptions;
 export class Agent {
   readonly #modelOptions: AgentModelOptions;
   readonly #threads = new Map<string, AgentThreadEntry>();
+  readonly #contextTokenRegistry = new ContextTokenCalibrationRegistry();
+  readonly #contextTokens?: AgentOptions["contextTokens"];
   readonly #ownerNamespace: string;
   readonly #store: ThreadStore;
   readonly #host: AgentHost;
@@ -88,6 +94,7 @@ export class Agent {
     this.#hookRuntime = new AgentHookRuntime(options.hooks);
     this.#notificationOverlays = options.notificationOverlays;
     this.#compaction = options.compaction;
+    this.#contextTokens = options.contextTokens;
     this.#modelOptions = {
       alwaysActiveTools: options.alwaysActiveTools,
       attachmentStore:
@@ -171,7 +178,14 @@ export class Agent {
 
     let thread: AgentThread | undefined;
     thread = new AgentThread(
-      this.#modelOptions,
+      {
+        ...this.#modelOptions,
+        contextTokenMeter: new ContextTokenMeter(
+          this.#contextTokenRegistry,
+          this.#contextTokens
+        ),
+        contextTokens: this.#contextTokens,
+      },
       { key, migrations: this.#threadMigrations, store: this.#store },
       {
         compaction: this.#compaction,

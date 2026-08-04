@@ -76,7 +76,8 @@ export function speculativeCompaction(
       "speculativeCompaction: prepareRatio must be smaller than promoteRatio."
     );
   }
-  const estimate = options.estimateTokens ?? estimateModelMessagesTokens;
+  const customEstimate = options.estimateTokens;
+  const estimate = customEstimate ?? estimateModelMessagesTokens;
   const candidates = new WeakMap<object, Candidate>();
   const compaction: AgentCompaction = async (context) => {
     const tokens = context.estimatedContextTokens;
@@ -98,16 +99,22 @@ export function speculativeCompaction(
     return;
   };
   contextGateMetadata.set(compaction, {
-    estimateTokens: ({ instructions, messages }) =>
-      estimate(
-        instructions
-          ? [{ content: instructions, role: "system" }, ...messages]
-          : messages
-      ),
+    ...(customEstimate
+      ? {
+          estimateTokens: ({ instructions, messages }) =>
+            customEstimate(
+              instructions
+                ? [{ content: instructions, role: "system" }, ...messages]
+                : messages
+            ),
+        }
+      : {}),
     maxInputTokens: max,
     onOverflow: "compact",
   });
-  estimatorMetadata.set(compaction, estimate);
+  if (customEstimate) {
+    estimatorMetadata.set(compaction, customEstimate);
+  }
   return compaction;
 }
 
@@ -201,8 +208,9 @@ function selectRange(
     compactions: context.compactions,
     history: context.estimatedHistory,
     instructionsTokens: context.instructionsTokens,
+    messageTokenCosts: context.estimatedHistoryMessageTokens,
     policy: {
-      estimateTokens: estimate,
+      estimateTokens: context.estimateTokens ?? estimate,
       retainTokens: Math.floor(max * retain),
       triggerTokens: 1,
     },

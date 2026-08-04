@@ -1,7 +1,11 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentCompactionContext } from "./auto-compaction-types";
-import { speculativeCompaction } from "./speculative-compaction";
+import {
+  contextGateForCompaction,
+  estimatorForCompaction,
+  speculativeCompaction,
+} from "./speculative-compaction";
 
 const message = (
   content: string,
@@ -38,6 +42,33 @@ describe("speculativeCompaction", () => {
     { prepareRatio: 0.9, promoteRatio: 0.8 },
   ])("rejects invalid factory options: %o", (options) => {
     expect(() => speculativeCompaction(options)).toThrow(TypeError);
+  });
+
+  it("leaves default token accounting to the runtime context meter", () => {
+    const compaction = speculativeCompaction({ maxInputTokens: 100 });
+
+    expect(estimatorForCompaction(compaction)).toBeUndefined();
+    expect(contextGateForCompaction(compaction)).toEqual({
+      maxInputTokens: 100,
+      onOverflow: "compact",
+    });
+  });
+
+  it("preserves an explicit token estimator as a complete override", () => {
+    const estimateTokens = vi.fn(() => 17);
+    const compaction = speculativeCompaction({ estimateTokens });
+
+    expect(estimatorForCompaction(compaction)).toBe(estimateTokens);
+    expect(
+      contextGateForCompaction(compaction)?.estimateTokens?.({
+        instructions: "system",
+        messages: [message("user")],
+      })
+    ).toBe(17);
+    expect(estimateTokens).toHaveBeenCalledWith([
+      { content: "system", role: "system" },
+      message("user"),
+    ]);
   });
 
   it("promotes a prepared candidate after tail append without summarizing twice", async () => {

@@ -123,7 +123,11 @@ describe("thread stream events", () => {
 
     const live = await collect(await thread.send("go"));
 
-    expect(live.map((event) => event.type)).toEqual(expectedLiveTypes);
+    expect(
+      live
+        .filter((event) => event.type !== "context-usage")
+        .map((event) => event.type)
+    ).toEqual(expectedLiveTypes);
   });
 
   it("preserves committed event parity with doGenerate-only models", async () => {
@@ -156,13 +160,22 @@ describe("thread stream events", () => {
     );
   });
 
-  it("rejects stream events at the durable recording boundary", () => {
-    expect(() =>
-      recordDurableThreadEvent([], {
-        text: "must stay ephemeral",
-        type: "assistant-output-delta",
-      })
-    ).toThrow(TypeError);
+  it.each([
+    {
+      text: "must stay ephemeral",
+      type: "assistant-output-delta" as const,
+    },
+    {
+      calibration: { observations: 0, revision: 0 },
+      currentRequest: {
+        input: { basis: "heuristic" as const, marginTokens: 0, tokens: 0 },
+        output: { basis: "heuristic" as const, marginTokens: 0, tokens: 0 },
+        total: { basis: "heuristic" as const, marginTokens: 0, tokens: 0 },
+      },
+      type: "context-usage" as const,
+    },
+  ])("rejects $type at the durable recording boundary", (event) => {
+    expect(() => recordDurableThreadEvent([], event)).toThrow(TypeError);
   });
 
   it("bypasses observer capture for stream events", async () => {

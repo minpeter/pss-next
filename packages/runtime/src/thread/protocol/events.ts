@@ -1,3 +1,4 @@
+import type { ContextUsageSnapshot } from "../../llm/context-tokens";
 import type { UserInput, UserMessage, UserText } from "../input/input";
 import type { InputEventMeta } from "../input/input-meta-types";
 
@@ -101,6 +102,10 @@ export interface ToolCallInputEnd {
   type: "tool-call-input-end";
 }
 
+export interface ContextUsageEvent extends ContextUsageSnapshot {
+  type: "context-usage";
+}
+
 export type TurnErrorCategory =
   | "authentication"
   | "bad-request"
@@ -188,7 +193,8 @@ export type AgentEvent =
    * Ephemeral signal that tool-call input streaming finished; never persisted.
    * The committed tool-call event remains the durable record.
    */
-  | ToolCallInputEnd;
+  | ToolCallInputEnd
+  | ContextUsageEvent;
 
 export type AgentEventListener = (event: AgentEvent) => void;
 
@@ -218,6 +224,7 @@ const telemetryAgentEventTypes = {
 } satisfies Partial<Record<AgentEvent["type"], true>>;
 
 export const streamAgentEventTypes = Object.freeze({
+  "context-usage": true,
   "assistant-output-delta": true,
   "assistant-reasoning-delta": true,
   "tool-call-input-delta": true,

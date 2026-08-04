@@ -1,14 +1,14 @@
-import type { AgentEvent, ModelUsage } from "@minpeter/pss-runtime";
+import type { AgentEvent } from "@minpeter/pss-runtime";
 import { describe, expect, it, vi } from "vitest";
-import { agentEventStreamParts } from "./agent-event-stream";
+import {
+  type AgentEventStreamOptions,
+  agentEventStreamParts,
+} from "./agent-event-stream";
 import type { TuiStreamPart } from "./stream-handlers";
 
 const collect = async (
   events: AgentEvent[],
-  options?: {
-    onModelUsage?: (usage: ModelUsage) => void;
-    onOutputDelta?: (text: string) => void;
-  }
+  options?: AgentEventStreamOptions
 ): Promise<TuiStreamPart[]> => {
   const parts: TuiStreamPart[] = [];
   const source = (async function* () {
@@ -21,33 +21,19 @@ const collect = async (
 };
 
 describe("agentEventStreamParts", () => {
-  it("forwards streamed output fragments to onOutputDelta", async () => {
-    const onOutputDelta = vi.fn();
-    await collect(
-      [
-        { type: "step-start" },
-        { type: "assistant-reasoning-delta", text: "thinking" },
-        { type: "assistant-output-delta", text: "Hello" },
-        {
-          type: "tool-call-input-start",
-          toolCallId: "call-1",
-          toolName: "bash",
-        },
-        {
-          type: "tool-call-input-delta",
-          inputTextDelta: '{"command":"ls"}',
-          toolCallId: "call-1",
-        },
-        { type: "step-end" },
-      ],
-      { onOutputDelta }
-    );
-
-    expect(onOutputDelta.mock.calls.map(([text]) => text)).toEqual([
-      "thinking",
-      "Hello",
-      '{"command":"ls"}',
-    ]);
+  it("forwards runtime context snapshots", async () => {
+    const onContextUsage = vi.fn();
+    const snapshot = {
+      calibration: { observations: 0, revision: 0 },
+      currentRequest: {
+        input: { basis: "heuristic", marginTokens: 1, tokens: 10 },
+        output: { basis: "heuristic", marginTokens: 1, tokens: 2 },
+        total: { basis: "heuristic", marginTokens: 2, tokens: 12 },
+      },
+      type: "context-usage",
+    } as const;
+    await collect([snapshot], { onContextUsage });
+    expect(onContextUsage).toHaveBeenCalledWith(snapshot);
   });
 
   it("streams assistant text deltas without replaying the committed text", async () => {

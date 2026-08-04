@@ -13,6 +13,10 @@ export interface AgentCompactionContext {
   readonly compactions: readonly ThreadCompactionRecord[];
   readonly estimatedContextTokens: number;
   readonly estimatedHistory: readonly ModelMessage[];
+  /** Marginal costs aligned by index with estimatedHistory. */
+  readonly estimatedHistoryMessageTokens?: readonly number[];
+  /** Runtime-pinned estimator aligned with estimatedContextTokens. */
+  readonly estimateTokens?: ThreadTokenEstimator;
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens: number;
   readonly modelContext: readonly ModelMessage[];

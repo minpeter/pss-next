@@ -50,10 +50,24 @@ export type {
   ThreadEventCursor,
   ThreadEventReadOptions,
 } from "./execution/host/types";
+export type {
+  ModelContextTokenEstimateInput,
+  ModelPromptMeasurement,
+  ModelPromptMeasurementProfile,
+  ModelPromptTool,
+} from "./llm/context-gate";
 export {
   ContextBudgetExceededError,
+  defaultModelPromptMeasurementProfile,
   estimateModelMessagesTokens,
 } from "./llm/context-gate";
+export type {
+  ContextTokenOptions,
+  ContextTokenProfile,
+  ContextUsageSnapshot,
+  TokenEstimate,
+  TokenEstimateBasis,
+} from "./llm/context-tokens";
 export { ModelToolSelectionError } from "./llm/model-step-error";
 export type {
   PrepareModelStep,

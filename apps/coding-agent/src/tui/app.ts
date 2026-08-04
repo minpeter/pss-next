@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   type AgentOptions,
+  type ContextUsageSnapshot,
   commitThreadStateMigrations,
   threadStoreKey,
 } from "@minpeter/pss-runtime";
@@ -64,7 +65,7 @@ import { createToolRenderers } from "./renderers/tool-renderers";
 import { createSessionCommands } from "./session-commands";
 import { shouldReplayOnStartup } from "./session-startup-replay";
 import { formatSessionResumeHint } from "./terminal-exit";
-import { TokenUsageTracker } from "./usage-footer";
+import { contextUsageFooter } from "./usage-footer";
 
 export interface StartTuiOptions {
   readonly extensions?: readonly CodingAgentExtensionInput[];
@@ -327,15 +328,15 @@ export async function startTui(
     }
 
     const footer: { text?: string } = {};
-    const usageTracker = new TokenUsageTracker();
+    let latestContextUsage: ContextUsageSnapshot | undefined;
     const titleGenerationInFlight = new Set<string>();
 
     const renderUsageFooter = (): void => {
-      footer.text = usageTracker.footerText();
+      footer.text = contextUsageFooter(latestContextUsage);
     };
 
     const resetUsageTotals = (): void => {
-      usageTracker.reset();
+      latestContextUsage = undefined;
       renderUsageFooter();
     };
 
@@ -462,8 +463,8 @@ export async function startTui(
               },
             },
           }),
-      onModelUsage: (usage) => {
-        usageTracker.addUsage(usage);
+      onContextUsage: (snapshot) => {
+        latestContextUsage = snapshot;
         renderUsageFooter();
       },
       sessionSelector: {
@@ -480,14 +481,6 @@ export async function startTui(
           const entry = await sessionManager.switchToSession(sessionKey);
           await switchThread(entry, "resume");
         },
-      },
-      onOutputDelta: (text) => {
-        usageTracker.addOutputDelta(text);
-        renderUsageFooter();
-      },
-      onStreamStart: () => {
-        usageTracker.beginTurn();
-        renderUsageFooter();
       },
       onTurnComplete: () => {
         const completedSession = currentSession;

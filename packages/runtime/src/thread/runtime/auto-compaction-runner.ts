@@ -1,5 +1,9 @@
 import type { ModelMessage } from "ai";
-import { estimateModelMessagesTokens } from "../../llm/context-gate";
+import {
+  defaultModelPromptMeasurementProfile,
+  estimateModelMessagesTokens,
+} from "../../llm/context-gate";
+import type { ContextTokenView } from "../../llm/context-tokens";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import { hydrateRuntimeAttachments } from "../input/attachments";
 import { compactionContextForModel } from "../state/context";
@@ -96,6 +100,16 @@ function runSingleFlight(options: RunOptions): Promise<boolean> {
 
 async function compactThreadOnce(options: RunOptions): Promise<boolean> {
   const { state } = options;
+  const legacyEstimate = options.compaction
+    ? estimatorForCompaction(options.compaction)
+    : undefined;
+  const meterView = legacyEstimate
+    ? undefined
+    : options.model.contextTokenMeter?.view();
+  const observationSnapshot = options.latestContextTransform?.();
+  const observation = observationSnapshot
+    ? deepFreeze(structuredClone(observationSnapshot))
+    : undefined;
   const history = deepFreeze(structuredClone(state.modelSnapshot()));
   const compactions = deepFreeze(structuredClone(state.compactionSnapshot()));
   const rawModelContext = state
@@ -114,14 +128,6 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
       options.model.attachmentStore
     )
   );
-  const estimate = options.compaction
-    ? (estimatorForCompaction(options.compaction) ??
-      estimateModelMessagesTokens)
-    : estimateModelMessagesTokens;
-  const instructionsTokens = options.model.instructions
-    ? estimate([{ content: options.model.instructions, role: "system" }])
-    : 0;
-  const observation = options.latestContextTransform?.();
   const observedInput = observation
     ? await hydrateRuntimeAttachments(
         modelMessagesForEstimate(observation.input),
@@ -134,11 +140,20 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
         options.model.attachmentStore
       )
     : [];
-  const transformOverhead = Math.max(
-    0,
-    estimate(observedOutput) - estimate(observedInput)
-  );
-  const fixedTokens = instructionsTokens + transformOverhead;
+  const {
+    estimate,
+    estimatedContextTokens,
+    estimatedHistoryMessageTokens,
+    fixedTokens,
+  } = compactionTokenAccounting({
+    estimatedHistory,
+    hydratedModelContext,
+    legacyEstimate,
+    meterView,
+    model: options.model,
+    observedInput,
+    observedOutput,
+  });
   const signal = options.signal ?? new AbortController().signal;
   const summarize = async (range: AutoCompactionRange): Promise<string> => {
     assertRange(range, history.length);
@@ -158,8 +173,12 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
   const input = await options.compaction?.(
     Object.freeze({
       compactions,
-      estimatedContextTokens: estimate(hydratedModelContext) + fixedTokens,
+      estimatedContextTokens,
       estimatedHistory,
+      ...(estimatedHistoryMessageTokens
+        ? { estimatedHistoryMessageTokens }
+        : {}),
+      estimateTokens: estimate,
       history,
       instructionsTokens: fixedTokens,
       modelContext: hydratedModelContext,
@@ -205,6 +224,74 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
   }
   await state.compact(input);
   return true;
+}
+
+function compactionTokenAccounting({
+  estimatedHistory,
+  hydratedModelContext,
+  legacyEstimate,
+  meterView,
+  model,
+  observedInput,
+  observedOutput,
+}: {
+  readonly estimatedHistory: readonly ModelMessage[];
+  readonly hydratedModelContext: readonly ModelMessage[];
+  readonly legacyEstimate?: (messages: readonly ModelMessage[]) => number;
+  readonly meterView?: ContextTokenView;
+  readonly model: ModelGenerationOptions;
+  readonly observedInput: readonly ModelMessage[];
+  readonly observedOutput: readonly ModelMessage[];
+}): {
+  readonly estimate: (messages: readonly ModelMessage[]) => number;
+  readonly estimatedContextTokens: number;
+  readonly estimatedHistoryMessageTokens?: readonly number[];
+  readonly fixedTokens: number;
+} {
+  const measurementProfile =
+    model.contextTokens?.measurementProfile ??
+    defaultModelPromptMeasurementProfile;
+  let estimate = legacyEstimate ?? estimateModelMessagesTokens;
+  if (meterView) {
+    estimate = (messages) =>
+      meterView
+        .estimateMessageUnits(measurementProfile.measureMessages(messages))
+        .reduce((sum, tokens) => sum + tokens, 0);
+  }
+
+  const instructionsTokens =
+    meterView || !model.instructions
+      ? 0
+      : estimate([{ content: model.instructions, role: "system" }]);
+  const transformOverhead = Math.max(
+    0,
+    estimate(observedOutput) - estimate(observedInput)
+  );
+  const legacyFixedTokens = instructionsTokens + transformOverhead;
+  const meterProfile = meterView?.profile({
+    contextMessageUnits:
+      measurementProfile.measureMessages(hydratedModelContext),
+    historyMessageUnits: measurementProfile.measureMessages(estimatedHistory),
+  });
+  let estimatedHistoryMessageTokens: readonly number[] | undefined;
+  if (meterProfile) {
+    estimatedHistoryMessageTokens = meterProfile.historyMarginal;
+  } else if (legacyEstimate) {
+    estimatedHistoryMessageTokens = estimatedHistory.map((message) =>
+      estimate([message])
+    );
+  }
+  const fixedTokens = meterProfile
+    ? meterProfile.fixedPrompt + transformOverhead
+    : legacyFixedTokens;
+  return {
+    estimate,
+    estimatedContextTokens: meterProfile
+      ? meterProfile.fullInput + transformOverhead
+      : estimate(hydratedModelContext) + fixedTokens,
+    ...(estimatedHistoryMessageTokens ? { estimatedHistoryMessageTokens } : {}),
+    fixedTokens,
+  };
 }
 
 function assertRange(range: AutoCompactionRange, length: number): void {

@@ -1,4 +1,8 @@
-import type { AgentEvent, ModelUsage } from "@minpeter/pss-runtime";
+import type {
+  AgentEvent,
+  ContextUsageSnapshot,
+  ModelUsage,
+} from "@minpeter/pss-runtime";
 import { createTuiErrorPresentation } from "./error-presentation";
 import type { TuiStreamPart } from "./stream-handlers";
 
@@ -6,14 +10,8 @@ import type { TuiStreamPart } from "./stream-handlers";
  * Options accepted by the agent-event to stream-part adapter.
  */
 export interface AgentEventStreamOptions {
-  /** Receives every normalized model-usage event for footer/telemetry. */
+  onContextUsage?: (snapshot: ContextUsageSnapshot) => void;
   onModelUsage?: (usage: ModelUsage) => void;
-  /**
-   * Receives every streamed output text fragment (assistant text,
-   * reasoning, and tool-call input deltas) so callers can estimate live
-   * token usage between authoritative `model-usage` events.
-   */
-  onOutputDelta?: (text: string) => void;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -92,6 +90,9 @@ export async function* agentEventStreamParts(
 
   for await (const event of events) {
     switch (event.type) {
+      case "context-usage":
+        options.onContextUsage?.(event);
+        break;
       case "turn-start":
         yield { type: "start" };
         break;
@@ -101,7 +102,6 @@ export async function* agentEventStreamParts(
         yield { type: "start-step" };
         break;
       case "assistant-reasoning-delta":
-        options.onOutputDelta?.(event.text);
         yield* assistantDeltaParts("reasoning", event.text, sawReasoningDelta);
         sawReasoningDelta = true;
         break;
@@ -113,7 +113,6 @@ export async function* agentEventStreamParts(
         );
         break;
       case "assistant-output-delta":
-        options.onOutputDelta?.(event.text);
         yield* assistantDeltaParts("text", event.text, sawTextDelta);
         sawTextDelta = true;
         break;
@@ -128,7 +127,6 @@ export async function* agentEventStreamParts(
         };
         break;
       case "tool-call-input-delta":
-        options.onOutputDelta?.(event.inputTextDelta);
         yield {
           type: "tool-input-delta",
           inputTextDelta: event.inputTextDelta,

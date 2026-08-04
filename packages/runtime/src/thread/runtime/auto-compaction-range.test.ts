@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import type { CompactionRangePolicy } from "./auto-compaction-range";
 import { selectAutoCompactionRange } from "./auto-compaction-range";
@@ -61,6 +61,28 @@ const policy = (
 });
 
 describe("selectAutoCompactionRange", () => {
+  it("uses aligned marginal costs without re-estimating each message", () => {
+    const history = [
+      userMessage("u0"),
+      assistantMessage("a1"),
+      userMessage("u2"),
+      assistantMessage("a3"),
+    ];
+    const estimateTokens = vi.fn(tenTokensPerMessage);
+
+    expect(
+      selectAutoCompactionRange({
+        compactions: [],
+        history,
+        instructionsTokens: 20,
+        messageTokenCosts: [10, 10, 10, 10],
+        policy: policy({ estimateTokens, retainTokens: 20 }),
+      })
+    ).toEqual({ endSeqExclusive: 2, startSeq: 0 });
+    // Only the compaction wrapper floor still needs estimation.
+    expect(estimateTokens).toHaveBeenCalledTimes(1);
+  });
+
   it("returns undefined while estimated tokens are below the trigger", () => {
     const history = [userMessage("a"), assistantMessage("b"), userMessage("c")];
 
