@@ -21,6 +21,17 @@ export function writeSqlStatement(
     writeThreadEvent(state, bindings);
     return;
   }
+  if (query.startsWith("delete from pss_thread_event_meta")) {
+    state.threadEventMeta.delete(stringBinding(bindings[0]));
+    return;
+  }
+  if (query.startsWith("delete from pss_thread_event")) {
+    const key = stringBinding(bindings[0]);
+    state.threadEvents = state.threadEvents.filter(
+      (row) => row.thread_key !== key
+    );
+    return;
+  }
   if (query.includes("pss_thread_")) {
     writeThreadStatement(state, query, bindings);
     return;
@@ -37,6 +48,20 @@ export function writeSqlStatement(
   }
   if (query.startsWith("delete from pss_payload_chunk")) {
     deletePayloadChunks(state, bindings);
+    return;
+  }
+  if (query.startsWith("delete from pss_event_meta")) {
+    state.eventMeta.delete(stringBinding(bindings[0]));
+    return;
+  }
+  if (query.startsWith("delete from pss_event")) {
+    const key = stringBinding(bindings[0]);
+    state.events = state.events.filter((row) => row.run_key !== key);
+    return;
+  }
+  if (query.startsWith("delete from pss_checkpoint")) {
+    const key = stringBinding(bindings[0]);
+    state.checkpoints = state.checkpoints.filter((row) => row.run_key !== key);
     return;
   }
   if (query.startsWith("insert into pss_event_meta")) {
@@ -93,13 +118,14 @@ function deletePayloadChunks(
 ): void {
   const scope = stringBinding(bindings[0]);
   const ownerKey = stringBinding(bindings[1]);
-  const payloadKey = stringBinding(bindings[2]);
+  const payloadKey =
+    bindings.length > 2 ? stringBinding(bindings[2]) : undefined;
   state.payloadChunks = state.payloadChunks.filter(
     (row) =>
       !(
         row.scope === scope &&
         row.owner_key === ownerKey &&
-        row.payload_key === payloadKey
+        (payloadKey === undefined || row.payload_key === payloadKey)
       )
   );
 }

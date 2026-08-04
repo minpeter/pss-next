@@ -151,6 +151,7 @@ function projectThreadInput(row: ThreadInputRow, query: string): unknown {
 function projectThreadMeta(row: ThreadMetaRow, query: string): unknown {
   if (query.startsWith("select version, message_count, next_seq, state_blob")) {
     return {
+      applied_migrations: row.applied_migrations,
       message_count: row.message_count,
       next_seq: row.next_seq,
       state_blob: row.state_blob,

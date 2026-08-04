@@ -54,6 +54,12 @@ export class InMemoryExecutionStore implements HostStore {
     return this.threads;
   }
 
+  async deleteThread(threadKey: string): Promise<void> {
+    await this.transaction(async (tx) => {
+      await tx.deleteThread?.(threadKey);
+    });
+  }
+
   async transaction<T>(
     fn: (tx: HostStoreTransaction) => Promise<T>
   ): Promise<T> {
@@ -98,6 +104,35 @@ class InMemoryTransactionStore implements HostStoreTransaction {
 
   get sessions(): ThreadStore {
     return this.threads;
+  }
+
+  deleteThread(threadKey: string): Promise<void> {
+    deleteThreadFromState(this.#state, threadKey);
+    return Promise.resolve();
+  }
+}
+
+function deleteThreadFromState(state: ExecutionState, threadKey: string): void {
+  const runIds = [...state.turns.values()]
+    .filter((turn) => turn.threadKey === threadKey)
+    .map((turn) => turn.runId);
+  const runIdSet = new Set(runIds);
+  state.inputsByThread.delete(threadKey);
+  state.threadEvents.delete(threadKey);
+  state.threads.delete(threadKey);
+  state.threadVersions.delete(threadKey);
+  for (const runId of runIds) {
+    state.turns.delete(runId);
+    state.events.delete(runId);
+    state.checkpoints.delete(runId);
+  }
+  for (const [key, notification] of state.notificationsByKey) {
+    if (
+      notification.threadKey === threadKey ||
+      runIdSet.has(notification.runId)
+    ) {
+      state.notificationsByKey.delete(key);
+    }
   }
 }
 

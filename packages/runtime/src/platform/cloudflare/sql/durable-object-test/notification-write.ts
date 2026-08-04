@@ -14,6 +14,14 @@ export function writeNotificationStatement(
     upsertNotification(state, bindings);
     return true;
   }
+  if (query.startsWith("delete from pss_notification")) {
+    const prefix = stringBinding(bindings[0]);
+    const threadKey = stringBinding(bindings[1]);
+    state.notifications = state.notifications.filter(
+      (row) => !(row.prefix === prefix && row.thread_key === threadKey)
+    );
+    return true;
+  }
   return false;
 }
 

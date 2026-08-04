@@ -102,6 +102,7 @@ export function printApiMap(): void {
   printSection("API -> SQL table map");
   const lines = [
     "threads.commit/load -> pss_thread_meta + pss_thread_message + pss_thread_message_chunk",
+    "store.deleteThread -> all runtime-owned thread, run, event, checkpoint, notification, input, scheduled-work, and payload-chunk rows",
     "turns.create/get/update -> pss_run",
     "events.append/read -> pss_event + pss_event_meta",
     "checkpoints.append/latest -> pss_checkpoint + pss_run.checkpoint_version",

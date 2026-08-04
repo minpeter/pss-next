@@ -16,6 +16,10 @@ export function writeThreadStatement(
   query: string,
   bindings: readonly unknown[]
 ): void {
+  if (query.startsWith("delete from pss_thread_input")) {
+    deleteThreadInputs(state, bindings);
+    return;
+  }
   if (query.startsWith("insert into pss_thread_input")) {
     upsertThreadInput(state, bindings);
     return;
@@ -61,6 +65,17 @@ export function writeThreadStatement(
     return;
   }
   throw new Error(`Unsupported in-memory thread SQL statement: ${query}`);
+}
+
+function deleteThreadInputs(
+  state: InMemoryDurableObjectSqlState,
+  bindings: readonly unknown[]
+): void {
+  const prefix = stringBinding(bindings[0]);
+  const threadKey = stringBinding(bindings[1]);
+  state.threadInputs = state.threadInputs.filter(
+    (row) => !(row.prefix === prefix && row.thread_key === threadKey)
+  );
 }
 
 function upsertThreadInput(
@@ -230,6 +245,7 @@ function createThreadMetaRow(
 ): ThreadMetaRow {
   if (bindings.length >= 5) {
     return {
+      applied_migrations: nullableStringBinding(bindings[5]),
       message_count: numberBinding(bindings[2]),
       next_seq: numberBinding(bindings[3]),
       state_blob: nullableStringBinding(bindings[4]),
@@ -238,6 +254,7 @@ function createThreadMetaRow(
     };
   }
   return {
+    applied_migrations: null,
     message_count: 1,
     next_seq: 1,
     state_blob: null,

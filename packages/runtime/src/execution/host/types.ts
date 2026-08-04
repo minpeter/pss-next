@@ -277,8 +277,12 @@ export interface HostStorePorts {
   readonly turns: TurnStore;
 }
 
-export interface HostStoreTransaction extends HostStorePorts {}
+export interface HostStoreTransaction extends HostStorePorts {
+  deleteThread?(threadKey: string): Promise<void>;
+}
 
 export interface HostStore extends HostStorePorts {
+  /** Atomically removes all runtime-owned data for a thread, when supported. */
+  deleteThread?(threadKey: string): Promise<void>;
   transaction<T>(fn: (tx: HostStoreTransaction) => Promise<T>): Promise<T>;
 }

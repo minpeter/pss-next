@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeStoredThreadSnapshot } from "../../../../thread/state/snapshot";
-import type { InMemorySqlStorage } from "../../sql/node-test/node-sqlite-storage";
+import { InMemorySqlStorage } from "../../sql/node-test/node-sqlite-storage";
 import type { CloudflareDurableObjectStorage } from "../durable-object/durable-object-storage";
 import { storeKey } from "../execution/records";
 import { DurableObjectSqliteThreadStore } from "./thread-store";
@@ -16,6 +16,23 @@ import {
 import { ensureThreadSchema } from "./thread-store-sql";
 
 describe("DurableObjectSqliteThreadStore", () => {
+  it("migrates old thread meta schemas once and keeps repeated ensure idempotent", () => {
+    const storage = new InMemorySqlStorage();
+    storage.exec(
+      "CREATE TABLE pss_thread_meta (thread_key TEXT PRIMARY KEY, version TEXT NOT NULL, message_count INTEGER NOT NULL, next_seq INTEGER NOT NULL, state_blob TEXT)"
+    );
+
+    ensureThreadSchema(storage);
+    ensureThreadSchema(storage);
+
+    expect(
+      storage
+        .exec<{ readonly name: string }>("PRAGMA table_info(pss_thread_meta)")
+        .toArray()
+        .filter((column) => column.name === "applied_migrations")
+    ).toHaveLength(1);
+  });
+
   it("throws when the Durable Object is not SQLite-backed", () => {
     expect(
       () =>
