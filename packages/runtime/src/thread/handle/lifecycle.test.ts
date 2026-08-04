@@ -116,7 +116,9 @@ describe("Agent thread lifecycle", () => {
       ),
     });
 
-    const events = await collect(await agent.send("fail"));
+    const events = (await collect(await agent.send("fail"))).filter(
+      (event) => event.type !== "context-usage"
+    );
 
     expect(events).toEqual([
       sentUserText("fail"),
@@ -128,6 +130,23 @@ describe("Agent thread lifecycle", () => {
         type: "turn-error",
       },
     ]);
+  });
+
+  it("restores context usage before exposing a failed turn", async () => {
+    const agent = new Agent({
+      model: createCallbackModel(() =>
+        Promise.reject(new Error("model unavailable"))
+      ),
+    });
+
+    const events = await collect(await agent.send("fail"));
+    const errorIndex = events.findIndex((event) => event.type === "turn-error");
+    const restored = events[errorIndex - 1];
+
+    expect(restored?.type).toBe("context-usage");
+    if (restored?.type === "context-usage") {
+      expect(restored.currentRequest.total.tokens).toBe(0);
+    }
   });
 
   it("emits whitelisted structured metadata for API call failures", async () => {
@@ -163,7 +182,9 @@ describe("Agent thread lifecycle", () => {
     });
 
     const events = await collect(await agent.send("fail safely"));
-    const turnError = events.at(-1);
+    const turnError = events
+      .filter((event) => event.type !== "context-usage")
+      .at(-1);
 
     expect(turnError).toEqual({
       error: {

@@ -111,7 +111,11 @@ describe("AgentThread durable event replay", () => {
       ({ event }) => event.type === "model-usage"
     )?.event;
 
-    expect(live.map((event) => event.type)).toEqual([
+    expect(
+      live
+        .filter((event) => event.type !== "context-usage")
+        .map((event) => event.type)
+    ).toEqual([
       "user-input",
       "turn-start",
       "step-start",
@@ -163,7 +167,11 @@ describe("AgentThread durable event replay", () => {
 
     expect(failedUsageAppend).toBe(true);
     expect(modelStepHookCalls).toBe(0);
-    expect(live.map((event) => event.type)).toEqual([
+    expect(
+      live
+        .filter((event) => event.type !== "context-usage")
+        .map((event) => event.type)
+    ).toEqual([
       "user-input",
       "turn-start",
       "step-start",
@@ -196,7 +204,9 @@ describe("AgentThread durable event replay", () => {
     const live = await collect(
       await agent.thread("safe-rollback-failure").send("hello")
     );
-    const turnError = live.at(-1);
+    const turnError = live
+      .filter((event) => event.type !== "context-usage")
+      .at(-1);
     const serialized = JSON.stringify(turnError);
 
     expect(turnError).toEqual({

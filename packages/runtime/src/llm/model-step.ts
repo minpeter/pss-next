@@ -4,7 +4,11 @@ import {
   compactionContextForModel,
   type ThreadContextMessage,
 } from "../thread/state/context";
-import { enforceContextGate } from "./context-gate";
+import {
+  defaultModelPromptMeasurementProfile,
+  enforceContextGate,
+  materializeModelPromptTools,
+} from "./context-gate";
 import { ModelToolSelectionError } from "./model-step-error";
 import { resolveModelStepOptions } from "./model-step-preparation";
 import {
@@ -33,10 +37,13 @@ export async function generateModelStep(
   return (await generateModelStepResult(options)).messages;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: provider request lifecycle is intentionally kept in one exception-safe scope.
 export async function generateModelStepResult({
   alwaysActiveTools,
   attachmentStore,
   contextGate,
+  contextTokenMeter,
+  contextTokens,
   diagnostics,
   history,
   model,
@@ -81,10 +88,50 @@ export async function generateModelStepResult({
     prompt.messages,
     attachmentStore
   );
+  const materializedTools =
+    contextTokenMeter || contextGate
+      ? await materializeModelPromptTools(prepared.tools)
+      : {};
+  const visibleTools = materializedTools.promptTools;
+  const promptMeasurement =
+    contextTokenMeter || contextGate
+      ? (
+          contextTokens?.measurementProfile ??
+          defaultModelPromptMeasurementProfile
+        ).measurePrompt({
+          instructions: prompt.instructions,
+          messages,
+          toolChoice: prepared.toolChoice,
+          tools: visibleTools,
+        })
+      : undefined;
+  const provider = configuredProvider(prepared.model);
+  const modelId = configuredModelId(prepared.model);
+  const scope = provider && modelId ? `${provider}\0${modelId}` : undefined;
+  const initialUsage =
+    promptMeasurement &&
+    contextTokenMeter?.begin({
+      attemptId,
+      fixedFingerprint: promptMeasurement.fixedFingerprint,
+      maxInputTokens: contextGate ? contextGate.maxInputTokens : undefined,
+      measurement: promptMeasurement,
+      scope,
+    });
+  if (initialUsage) {
+    onStreamEvent?.({ ...initialUsage, type: "context-usage" });
+  }
   enforceContextGate({
-    contextGate,
+    contextGate:
+      contextGate && contextTokenMeter && !contextGate.estimateTokens
+        ? {
+            ...contextGate,
+            estimateTokens: () => contextTokenMeter.inputUpperBound(),
+          }
+        : contextGate,
     instructions: prompt.instructions,
     messages,
+    promptTools: visibleTools,
+    toolChoice: prepared.toolChoice,
   });
   assertNoUnsupportedToolApproval(prepared.tools);
   const handle = createModelStepStream({
@@ -98,7 +145,11 @@ export async function generateModelStepResult({
     temperature,
     toolChoice: prepared.toolChoice,
     toolOrder: prepared.toolOrder,
-    tools: normalizeToolCallIds(prepared.tools, toolCallIds, toolExecution),
+    tools: normalizeToolCallIds(
+      materializedTools.tools ?? prepared.tools,
+      toolCallIds,
+      toolExecution
+    ),
   });
   prepared.startToolCacheFingerprintReport?.();
   let aborted = false;
@@ -111,6 +162,14 @@ export async function generateModelStepResult({
       const event = mapStreamPartToAgentEvent(part);
       if (event) {
         onStreamEvent?.(event);
+        const delta = streamedTokenText(event);
+        const usageSnapshot =
+          delta === undefined
+            ? undefined
+            : contextTokenMeter?.outputDelta(attemptId, delta);
+        if (usageSnapshot) {
+          onStreamEvent?.({ ...usageSnapshot, type: "context-usage" });
+        }
       }
     }
     if (aborted || signal?.aborted) {
@@ -119,35 +178,63 @@ export async function generateModelStepResult({
     const { finalStep, finishReason, response, responseMessages, usage } =
       await handle.finalize();
 
+    const normalizedUsage = modelUsageEvent({
+      attemptId,
+      durationMs: finalStep?.performance.responseTimeMs,
+      finishReason,
+      modelId: firstSafeTelemetryIdentifier(
+        response?.modelId ?? finalStep?.model.modelId ?? modelId,
+        finalStep?.model.modelId,
+        modelId
+      ),
+      provider: firstSafeTelemetryIdentifier(
+        finalStep?.model.provider,
+        provider
+      ),
+      usage,
+    });
+    const resolvedScope =
+      normalizedUsage.provider && normalizedUsage.modelId
+        ? `${normalizedUsage.provider}\0${normalizedUsage.modelId}`
+        : undefined;
+    const usageSnapshot = contextTokenMeter?.report(
+      attemptId,
+      normalizedUsage,
+      resolvedScope
+    );
     return {
+      ...(usageSnapshot ? { contextUsage: usageSnapshot } : {}),
       messages: responseMessages.map((message) =>
         rewriteMessageToolCallIds(message, toolCallIds)
       ),
-      usage: modelUsageEvent({
-        attemptId,
-        durationMs: finalStep?.performance.responseTimeMs,
-        finishReason,
-        modelId: firstSafeTelemetryIdentifier(
-          response?.modelId ??
-            finalStep?.model.modelId ??
-            configuredModelId(prepared.model),
-          finalStep?.model.modelId,
-          configuredModelId(prepared.model)
-        ),
-        provider: firstSafeTelemetryIdentifier(
-          finalStep?.model.provider,
-          configuredProvider(prepared.model)
-        ),
-        usage,
-      }),
+      usage: normalizedUsage,
     };
   } catch (error) {
+    const usageSnapshot = contextTokenMeter?.abort(attemptId);
+    if (usageSnapshot) {
+      onStreamEvent?.({ ...usageSnapshot, type: "context-usage" });
+    }
     await handle.finalize().then(
       () => undefined,
       () => undefined
     );
     throw error;
   }
+}
+
+function streamedTokenText(
+  event: NonNullable<ReturnType<typeof mapStreamPartToAgentEvent>>
+): string | undefined {
+  if (event.type === "tool-call-input-delta") {
+    return event.inputTextDelta;
+  }
+  if (
+    event.type === "assistant-output-delta" ||
+    event.type === "assistant-reasoning-delta"
+  ) {
+    return event.text;
+  }
+  return;
 }
 
 function mapStreamPartToAgentEvent(part: ModelStepStreamPart) {

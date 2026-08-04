@@ -58,6 +58,7 @@ export async function processQueuedInput({
     turnId,
   });
   const historySnapshot = state.modelSnapshot();
+  const meterCheckpoint = model.contextTokenMeter?.checkpoint();
   let executionRun: ThreadExecutionRun | undefined;
   let pendingDurableInputClaim = durableInputClaim;
   const durableEvents: DurableThreadEventBuffer = [];
@@ -225,6 +226,7 @@ export async function processQueuedInput({
       });
       pendingDurableInputClaim = undefined;
     }
+    restoreContextTokenMeter(model.contextTokenMeter, meterCheckpoint, run);
     await recoverTurnProcessingError({
       durableEvents,
       error,
@@ -248,4 +250,15 @@ export async function processQueuedInput({
     release();
     run.close();
   }
+}
+
+function restoreContextTokenMeter(
+  meter: ProcessQueuedInputOptions["model"]["contextTokenMeter"],
+  checkpoint: ReturnType<NonNullable<typeof meter>["checkpoint"]> | undefined,
+  run: ProcessQueuedInputOptions["item"]["run"]
+): void {
+  if (!(meter && checkpoint)) {
+    return;
+  }
+  run.emit({ ...meter.restore(checkpoint), type: "context-usage" });
 }

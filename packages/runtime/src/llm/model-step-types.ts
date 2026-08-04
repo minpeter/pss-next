@@ -4,6 +4,7 @@ import type { HostAttachmentStore } from "../thread/input/attachments";
 import type { ModelUsage, StreamAgentEvent } from "../thread/protocol/events";
 import type { ThreadContextMessage } from "../thread/state/context";
 import type { ModelContextGateOptions } from "./context-gate";
+import type { ContextTokenMeter, ContextTokenOptions } from "./context-tokens";
 import type {
   PreparedModelToolChoice,
   PrepareModelStep,
@@ -17,6 +18,7 @@ export type ModelStepOutput = Awaited<
 export type ModelStepOutputPart = ModelStepOutput[number];
 
 export interface ModelStepResult {
+  readonly contextUsage?: import("./context-tokens").ContextUsageSnapshot;
   readonly messages: ModelStepOutput;
   readonly usage: ModelUsage;
 }
@@ -25,6 +27,8 @@ export interface ModelGenerationOptions {
   alwaysActiveTools?: readonly string[];
   attachmentStore?: HostAttachmentStore;
   contextGate?: false | ModelContextGateOptions;
+  contextTokenMeter?: ContextTokenMeter;
+  contextTokens?: ContextTokenOptions;
   diagnostics?: RuntimeDiagnosticsSink;
   instructions?: string;
   maxOutputTokens?: number;

@@ -93,6 +93,7 @@ describe("runtime public exports", () => {
     expectTypeOf<StreamAgentEvent["type"]>().toEqualTypeOf<
       | "assistant-output-delta"
       | "assistant-reasoning-delta"
+      | "context-usage"
       | "tool-call-input-delta"
       | "tool-call-input-end"
       | "tool-call-input-start"

@@ -1,6 +1,10 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import {
+  ContextTokenCalibrationRegistry,
+  ContextTokenMeter,
+} from "../../llm/context-tokens";
+import {
   MemoryAttachmentStore,
   MemoryThreadStore,
 } from "../../platform/memory";
@@ -196,6 +200,64 @@ describe("compaction runner concurrency", () => {
       compactThreadBlocking({
         compaction,
         model,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBe(false);
+  });
+
+  it("shares calibrated fixed and marginal costs with compaction", async () => {
+    const state = await stateWithHistory();
+    const registry = new ContextTokenCalibrationRegistry();
+    const contextTokenMeter = new ContextTokenMeter(registry);
+    const measurementProfile = {
+      measureMessages: (messages: readonly ModelMessage[]) =>
+        messages.map(() => 10),
+      measurePrompt: () => ({
+        fixedFingerprint: "fixed",
+        fixedUnits: 10,
+        messageUnits: [10],
+        totalUnits: 20,
+      }),
+    };
+    contextTokenMeter.begin({
+      attemptId: "attempt",
+      fixedFingerprint: "fixed",
+      measurement: measurementProfile.measurePrompt(),
+      scope: "provider\0model",
+    });
+    contextTokenMeter.report("attempt", {
+      attemptId: "attempt",
+      inputTokens: 100,
+      modelId: "model",
+      provider: "provider",
+      type: "model-usage",
+    });
+    const compaction: AgentCompaction = (context) => {
+      expect(context.instructionsTokens).toBe(100);
+      expect(context.estimatedHistoryMessageTokens).toEqual([10, 10, 10]);
+      expect(context.estimatedContextTokens).toBe(130);
+      expect(
+        context.estimateTokens?.([{ content: "wrapper", role: "user" }])
+      ).toBe(10);
+      return;
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compaction,
+        model: {
+          ...model,
+          contextTokenMeter,
+          contextTokens: { measurementProfile },
+        },
+        latestContextTransform: () => ({
+          input: [{ content: "before", role: "user" }],
+          output: [
+            { content: "before", role: "user" },
+            { content: "added", role: "user" },
+          ],
+        }),
         state,
         threadKey: "thread",
       })

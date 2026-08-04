@@ -635,18 +635,13 @@ export interface AgentTUIConfig {
     switchModel(modelId: string): void | Promise<void>;
   };
   onCommandAction?: (action: TuiCommandAction) => void | Promise<void>;
+  onContextUsage?: (
+    snapshot: import("@minpeter/pss-runtime").ContextUsageSnapshot
+  ) => void;
   onExtensionUiReady?: (
     createUi: (hostSignal?: AbortSignal) => CodingAgentExtensionUi
   ) => void | Promise<void>;
-  onModelUsage?: (usage: ModelUsage) => void;
-  /**
-   * Receives streamed output text fragments (assistant text, reasoning,
-   * tool-call input) so the host can estimate token usage live between
-   * authoritative `onModelUsage` calls.
-   */
-  onOutputDelta?: (text: string) => void;
   onSetup?: () => void | Promise<void>;
-  onStreamStart?: () => void | Promise<void>;
   onTurnComplete?: (
     usage: TurnUsage | undefined,
     finishReason?: string
@@ -1101,30 +1096,19 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     try {
       showLoader("Working...");
-      try {
-        await config.onStreamStart?.();
-      } catch (hookError) {
-        console.error("[tui] onStreamStart threw; continuing turn:", hookError);
-      }
-
       const clearStreamingLoader = createStreamingLoaderClearer();
 
       const { finishReason } = await renderAgentStream(
         agentEventStreamParts(run.events(), {
+          onContextUsage: (snapshot) => {
+            config.onContextUsage?.(snapshot);
+            updateHeader();
+          },
           onModelUsage: (usage) => {
             sawModelUsage = true;
             accumulateUsage(turnUsage, usage);
-            config.onModelUsage?.(usage);
             updateHeader();
           },
-          ...(config.onOutputDelta === undefined
-            ? {}
-            : {
-                onOutputDelta: (text: string) => {
-                  config.onOutputDelta?.(text);
-                  updateHeader();
-                },
-              }),
         }),
         {
           showReasoning: true,

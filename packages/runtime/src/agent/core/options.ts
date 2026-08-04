@@ -2,6 +2,7 @@ import type { LanguageModel, ToolSet } from "ai";
 import type { RuntimeDiagnosticsSink } from "../../diagnostics";
 import type { AgentHost } from "../../execution/host/types";
 import type { ModelContextGateOptions } from "../../llm/context-gate";
+import type { ContextTokenOptions } from "../../llm/context-tokens";
 import type { PrepareModelStep } from "../../llm/model-step-preparation";
 import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
@@ -26,6 +27,7 @@ export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
   readonly compaction?: AgentCompaction;
+  readonly contextTokens?: ContextTokenOptions;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
   readonly instructions?: string;
@@ -47,6 +49,7 @@ export type AgentModelOptions = Pick<
   | "alwaysActiveTools"
   | "attachmentStore"
   | "instructions"
+  | "contextTokens"
   | "model"
   | "prepareModelStep"
   | "toolChoice"
@@ -54,6 +57,7 @@ export type AgentModelOptions = Pick<
   | "tools"
 > & {
   readonly contextGate?: false | AgentContextGateOptions;
+  readonly contextTokenMeter?: import("../../llm/context-tokens").ContextTokenMeter;
   readonly diagnostics?: RuntimeDiagnosticsSink;
 };
 

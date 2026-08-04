@@ -28,21 +28,29 @@ export function selectAutoCompactionRange({
   compactions,
   history,
   instructionsTokens = 0,
+  messageTokenCosts,
   policy,
 }: {
   readonly compactions: readonly ThreadCompactionRecord[];
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens?: number;
+  /** Precomputed marginal costs aligned by index with history. */
+  readonly messageTokenCosts?: readonly number[];
   readonly policy: CompactionRangePolicy;
 }): AutoCompactionRange | undefined {
   const estimate = policy.estimateTokens ?? estimateModelMessagesTokens;
+  if (messageTokenCosts && messageTokenCosts.length !== history.length) {
+    throw new TypeError("messageTokenCosts must align with history.");
+  }
   const covered = latestPrefixCompaction(compactions);
   const coveredEnd = covered?.endSeqExclusive ?? 0;
   const summaryTokens = covered
     ? estimate([compactionContextForModel(compactionContextMessage(covered))])
     : 0;
   const suffix = history.slice(coveredEnd);
-  const suffixTokens = suffix.map((message) => estimate([message]));
+  const suffixTokens = messageTokenCosts
+    ? messageTokenCosts.slice(coveredEnd)
+    : suffix.map((message) => estimate([message]));
   const totalTokens =
     instructionsTokens +
     summaryTokens +
