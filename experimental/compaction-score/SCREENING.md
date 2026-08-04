@@ -9,7 +9,7 @@ Clean campaign metadata from the production full-control screen:
 - Frozen production profile hash at screen time:
   `sha256:30a56d748f4162fb9a195a5c48c606a91f3bed7d68d0bd4655151e21c4274dad`
 - Current production profile hash (after retained Senpi control rules in the
-  builder): `sha256:ff99c46efbb488e877c12fefb198c231cd3c8494a76c80a42ee9bd4e626a483e`
+  builder): `sha256:7ea878eb30458a20fb20ed6e41e2987cf91e1f76e2d8fba46c477cd24f86f38c`
 - Sanitized provider tuple: `current-gateway` / `https://codex.nekos.me` /
   `gpt-5.6-luna`
 - Seedless capability result: the seeded probe was rejected; the seedless probe

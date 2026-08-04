@@ -9,6 +9,13 @@ export type ThreadTokenEstimator = (
 
 export type AgentCompactionReason = "completed-turn" | "overflow";
 
+export interface CompactionSummaryOptions {
+  /** Replaces the runtime's default continuation-handoff instructions. */
+  readonly instructions?: string;
+  /** Controls whether raw tool-result evidence is appended after model output. */
+  readonly toolEvidence?: "deterministic" | "omit";
+}
+
 export interface AgentCompactionContext {
   readonly compactions: readonly ThreadCompactionRecord[];
   readonly estimatedContextTokens: number;
@@ -22,7 +29,10 @@ export interface AgentCompactionContext {
   readonly modelContext: readonly ModelMessage[];
   readonly reason: AgentCompactionReason;
   readonly signal: AbortSignal;
-  readonly summarize: (range: AutoCompactionRange) => Promise<string>;
+  readonly summarize: (
+    range: AutoCompactionRange,
+    options?: CompactionSummaryOptions
+  ) => Promise<string>;
   /** Opaque, stable identity owned by the runtime for this ThreadState. */
   readonly threadIdentity: Readonly<object>;
   readonly threadKey: string;
