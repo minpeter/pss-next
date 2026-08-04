@@ -83,6 +83,12 @@ function selectRunRows(
   bindings: readonly unknown[]
 ): unknown[] {
   const prefix = stringBinding(bindings[0]);
+  if (query.includes("thread_key = ?")) {
+    const threadKey = stringBinding(bindings[1]);
+    return state.turns
+      .filter((row) => row.prefix === prefix && row.thread_key === threadKey)
+      .map((row) => ({ run_id: row.run_id }));
+  }
   if (query.includes("run_id = ?")) {
     const runId = stringBinding(bindings[1]);
     return state.turns
@@ -114,6 +120,12 @@ function selectNotificationRows(
   bindings: readonly unknown[]
 ): unknown[] {
   const prefix = stringBinding(bindings[0]);
+  if (query.includes("thread_key = ?")) {
+    const threadKey = stringBinding(bindings[1]);
+    return state.notifications
+      .filter((row) => row.prefix === prefix && row.thread_key === threadKey)
+      .map((row) => ({ idempotency_key: row.idempotency_key }));
+  }
   if (query.includes("idempotency_key = ?")) {
     const idempotencyKey = stringBinding(bindings[1]);
     return state.notifications

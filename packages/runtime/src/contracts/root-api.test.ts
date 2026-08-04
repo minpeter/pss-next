@@ -38,6 +38,8 @@ import type {
 import {
   AgentHookError,
   createAgent,
+  decodeStoredThreadState,
+  encodeThreadSnapshot,
   isStreamAgentEvent,
   ModelToolSelectionError,
   threadStoreKey as runtimeThreadStoreKey,
@@ -71,6 +73,19 @@ const forbiddenChannelRootExports = [
 ] as const;
 
 describe("runtime public exports", () => {
+  it("exports the canonical stored thread codecs", async () => {
+    const runtime = await import("../index");
+
+    expect(runtime).toHaveProperty(
+      "decodeStoredThreadState",
+      decodeStoredThreadState
+    );
+    expect(runtime).toHaveProperty(
+      "encodeThreadSnapshot",
+      encodeThreadSnapshot
+    );
+  });
+
   it("does not expose internal agent loop runner from package root", async () => {
     const runtime = await import("../index");
 

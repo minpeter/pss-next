@@ -3,6 +3,7 @@ import type { HostStore } from "../../execution";
 import {
   appendCheckpoint,
   collectEvents,
+  collectThreadEvents,
   createDeferred,
   createQueuedRun,
 } from "./fixtures";
@@ -101,6 +102,105 @@ export function describeExecutionStoreContract({
       ).rejects.toThrow("transaction failed");
 
       await expect(store.threads.load("thread-1")).resolves.toBeNull();
+    });
+
+    it("deletes aggregate thread execution data when supported", async () => {
+      const store = createStore();
+      if (!store.deleteThread) {
+        return;
+      }
+      await store.threads.commit(
+        "thread-1",
+        { state: { messages: ["delete me"] } },
+        { expectedVersion: null }
+      );
+      await store.turns.create(createQueuedRun());
+      await store.events.append("run-1", { type: "turn-start" });
+      await appendCheckpoint(store, 0);
+      await store.notifications.enqueue({
+        idempotencyKey: "delete-notification",
+        input: { text: "delete", type: "user-input" },
+        notificationId: "delete-notification",
+        runId: "run-1",
+        threadKey: "thread-1",
+        status: "pending",
+      });
+      await store.threadEvents?.append("thread-1", { type: "turn-start" });
+      await store.inputs.admit({
+        input: { text: "delete", type: "user-input" },
+        kind: "send",
+        messageId: "delete-input",
+        threadKey: "thread-1",
+      });
+
+      await store.threads.commit(
+        "thread-2",
+        { state: { messages: ["keep me"] } },
+        { expectedVersion: null }
+      );
+      await store.turns.create({
+        ...createQueuedRun("run-2"),
+        threadKey: "thread-2",
+      });
+      await store.events.append("run-2", { type: "turn-start" });
+      await store.checkpoints.append(
+        {
+          checkpointId: "checkpoint-keep",
+          phase: "before-model",
+          runId: "run-2",
+          runtimeState: {},
+          threadSnapshot: {},
+          version: 1,
+        },
+        { expectedVersion: 0 }
+      );
+      await store.notifications.enqueue({
+        idempotencyKey: "keep-notification",
+        input: { text: "keep", type: "user-input" },
+        notificationId: "keep-notification",
+        runId: "run-2",
+        threadKey: "thread-2",
+        status: "pending",
+      });
+      await store.threadEvents?.append("thread-2", { type: "turn-start" });
+      await store.inputs.admit({
+        input: { text: "keep", type: "user-input" },
+        kind: "send",
+        messageId: "keep-input",
+        threadKey: "thread-2",
+      });
+
+      await store.deleteThread("thread-1");
+      await store.deleteThread("thread-1");
+
+      await expect(store.threads.load("thread-1")).resolves.toBeNull();
+      await expect(store.turns.get("run-1")).resolves.toBeNull();
+      await expect(store.checkpoints.latest("run-1")).resolves.toBeNull();
+      expect(await collectEvents(store.events.read("run-1"))).toEqual([]);
+      await expect(
+        store.notifications.getByIdempotencyKey("delete-notification")
+      ).resolves.toBeNull();
+      await expect(store.threads.load("thread-2")).resolves.toMatchObject({
+        state: { messages: ["keep me"] },
+      });
+      await expect(store.turns.get("run-2")).resolves.toMatchObject({
+        threadKey: "thread-2",
+      });
+      await expect(store.checkpoints.latest("run-2")).resolves.toMatchObject({
+        checkpointId: "checkpoint-keep",
+      });
+      expect(await collectEvents(store.events.read("run-2"))).toHaveLength(1);
+      await expect(
+        store.notifications.getByIdempotencyKey("keep-notification")
+      ).resolves.toMatchObject({ threadKey: "thread-2" });
+      await expect(
+        store.inputs.claimNext("thread-2", "turn-idle")
+      ).resolves.toMatchObject({ messageId: "keep-input" });
+      if (store.threadEvents) {
+        expect(
+          await collectThreadEvents(store.threadEvents.read("thread-2"))
+        ).toHaveLength(1);
+      }
     });
 
     describeThreadInputInboxContract({ createStore });

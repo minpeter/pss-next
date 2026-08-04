@@ -15,7 +15,7 @@ export function writeRunStatement(
     return true;
   }
   if (query.startsWith("delete from pss_run")) {
-    deleteRun(state, bindings);
+    deleteRun(state, query, bindings);
     return true;
   }
   return false;
@@ -35,12 +35,19 @@ function upsertRun(
 
 function deleteRun(
   state: InMemoryDurableObjectSqlState,
+  query: string,
   bindings: readonly unknown[]
 ): void {
   const prefix = stringBinding(bindings[0]);
-  const runId = stringBinding(bindings[1]);
+  const value = stringBinding(bindings[1]);
   state.turns = state.turns.filter(
-    (row) => !(row.prefix === prefix && row.run_id === runId)
+    (row) =>
+      !(
+        row.prefix === prefix &&
+        (query.includes("thread_key = ?")
+          ? row.thread_key === value
+          : row.run_id === value)
+      )
   );
 }
 

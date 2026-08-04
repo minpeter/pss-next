@@ -20,6 +20,22 @@ export class InMemoryDurableObjectSqlStorage implements SqlStorage {
     ...bindings: unknown[]
   ): SqlStorageCursorLike<T> {
     const normalized = normalizeSql(query);
+    if (normalized === "pragma table_info(pss_thread_meta)") {
+      return toCursor<T>(
+        [...this.#state.threadMetaColumns].map((name) => ({ name }))
+      );
+    }
+    if (normalized.startsWith("pragma table_info(pss_")) {
+      return toCursor<T>([{ name: "test-double-column" }]);
+    }
+    if (normalized.startsWith("alter table pss_thread_meta add column ")) {
+      const name = normalized.split(" ")[5];
+      if (!name || this.#state.threadMetaColumns.has(name)) {
+        throw new Error(`duplicate column name: ${name}`);
+      }
+      this.#state.threadMetaColumns.add(name);
+      return toCursor<T>([]);
+    }
     if (isSchemaStatement(normalized) || isTransactionStatement(normalized)) {
       return toCursor<T>([]);
     }

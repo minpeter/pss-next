@@ -1,4 +1,5 @@
 export interface ThreadMetaRow {
+  readonly applied_migrations: string | null;
   readonly message_count: number;
   readonly next_seq: number;
   readonly state_blob: string | null;
@@ -130,6 +131,7 @@ export interface InMemoryDurableObjectSqlState {
   threadMessageChunks: ThreadMessageChunkRow[];
   threadMessages: ThreadMessageRow[];
   threadMeta: Map<string, ThreadMetaRow>;
+  threadMetaColumns: Set<string>;
   turns: RunRow[];
 }
 
@@ -149,6 +151,13 @@ export function createInMemoryDurableObjectSqlState(): InMemoryDurableObjectSqlS
     threadMessageChunks: [],
     threadMessages: [],
     threadMeta: new Map(),
+    threadMetaColumns: new Set([
+      "thread_key",
+      "version",
+      "message_count",
+      "next_seq",
+      "state_blob",
+    ]),
   };
 }
 
@@ -179,5 +188,6 @@ export function cloneInMemoryDurableObjectSqlState(
     threadMeta: new Map(
       [...state.threadMeta].map(([key, value]) => [key, structuredClone(value)])
     ),
+    threadMetaColumns: new Set(state.threadMetaColumns),
   };
 }
