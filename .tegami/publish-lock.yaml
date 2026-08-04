@@ -1,24 +1,32 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Verify coding-agent dependencies before publishing\n\nPack the coding agent and resolve its registry dependencies before Tegami can publish, preventing releases that depend on missing npm packages.\n"
-    filename: 2026-08-04-verify-coding-agent-installability.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the AI SDK\n\nUpdate runtime and consumer packages to AI SDK 7.0.51 for consistent tool types and downstream version alignment.\n"
+    filename: 2026-08-04-update-runtime-ai-sdk.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Harden thread storage lifecycle\n\nMake Durable Object thread schema migration idempotent and add aggregate thread deletion that removes runtime-owned snapshots, events, runs, notifications, scheduled work, and payload chunks.\n"
+    filename: 2026-08-04-thread-storage-upgrade.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-04-verify-coding-agent-installability.md
+      - 2026-08-04-update-runtime-ai-sdk.md
     id: npm:@minpeter/pss-coding-agent
+    updated: true
+  - changelogIds:
+      - 2026-08-04-update-runtime-ai-sdk.md
+    id: npm:@minpeter/pss-extension-web
     updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
-  - id: npm:@minpeter/pss-extension-web
-    updated: false
-  - id: npm:@minpeter/pss-runtime
-    updated: false
+  - changelogIds:
+      - 2026-08-04-thread-storage-upgrade.md
+      - 2026-08-04-update-runtime-ai-sdk.md
+    id: npm:@minpeter/pss-runtime
+    updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
   - distTag: next
-    id: npm:@minpeter/pss-extension-latex
-  - distTag: next
     id: npm:@minpeter/pss-extension-web
+  - distTag: next
+    id: npm:@minpeter/pss-extension-latex
   - distTag: next
     id: npm:@minpeter/pss-runtime
