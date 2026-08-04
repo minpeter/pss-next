@@ -1,3 +1,13 @@
+## @minpeter/pss-coding-agent@0.0.14-next.10 (next)
+
+### Keep private workspaces out of release planning
+
+Exclude every private and experimental workspace from Tegami's dependency graph so benchmark dependency bumps cannot indefinitely block coding-agent publication.
+
+### Prevent private dependent version bumps
+
+Disable Tegami dependency propagation into excluded workspaces so coding-agent releases cannot mutate private benchmark versions or delay publication.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.9 (next)
 
 ### Describe LINE#ID anchors in the edit tool schemas

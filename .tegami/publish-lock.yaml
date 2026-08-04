@@ -1,19 +1,15 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Describe LINE#ID anchors in the edit tool schemas\n\nAdd Zod field descriptions so `read_file` and `edit_file` expose the LINE#ID anchor format in their JSON Schema.\nExport `./instructions` and `./workspace-tools` subpaths for the edit-format benchmark.\n"
-    filename: 2026-08-04-line-id-schema-descriptions.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Keep private workspaces out of release planning\n\nExclude every private and experimental workspace from Tegami's dependency graph so benchmark dependency bumps cannot indefinitely block coding-agent publication.\n"
+    filename: 2026-08-04-exclude-private-release-workspaces.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Prevent private dependent version bumps\n\nDisable Tegami dependency propagation into excluded workspaces so coding-agent releases cannot mutate private benchmark versions or delay publication.\n"
+    filename: 2026-08-04-prevent-private-dependent-bumps.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-04-line-id-schema-descriptions.md
+      - 2026-08-04-exclude-private-release-workspaces.md
+      - 2026-08-04-prevent-private-dependent-bumps.md
     id: npm:@minpeter/pss-coding-agent
-    updated: true
-  - id: npm:@minpeter/pss-bench-shared
-    updated: false
-  - id: npm:@minpeter/pss-benchmark-compaction-score
-    updated: false
-  - id: npm:@minpeter/pss-benchmark-nextjs
-    updated: false
-  - id: npm:@minpeter/pss-edit-format-bench
     updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
@@ -24,21 +20,9 @@ core:packages:
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
-  - id: npm:@minpeter/pss-benchmark-compaction-score
-  - id: npm:@minpeter/pss-edit-format-bench
-  - id: npm:@minpeter/pss-bench-shared
-  - id: npm:@minpeter/pss-benchmark-nextjs
   - distTag: next
     id: npm:@minpeter/pss-extension-latex
   - distTag: next
     id: npm:@minpeter/pss-extension-web
   - distTag: next
     id: npm:@minpeter/pss-runtime
-  - id: npm:@minpeter/pss-worker-agent
-  - id: npm:@minpeter/pss-example-background-subagent
-  - id: npm:@minpeter/pss-example-basic
-  - id: npm:@minpeter/pss-example-evals
-  - id: npm:@minpeter/pss-example-hooks
-  - id: npm:@minpeter/pss-example-sync-subagent
-  - id: npm:@minpeter/pss-example-local-file-agent
-  - id: npm:@minpeter/pss-runtime-edge-image-qa
