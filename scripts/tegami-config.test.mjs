@@ -1,5 +1,41 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+
+const releaseIgnoreBlockPattern = /const releaseIgnore = \[([\s\S]*?)\];/;
+const quotedListItemPattern = /^\s+"([^"]+)",$/gm;
+const workspaceRoots = [
+  "apps",
+  "packages",
+  "examples",
+  "experimental",
+  "extensions",
+];
+
+function readWorkspaceManifests() {
+  const paths = [
+    "package.json",
+    ...workspaceRoots.flatMap((root) =>
+      readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => `${root}/${entry.name}/package.json`)
+        .filter(existsSync)
+    ),
+  ];
+
+  return paths.map((path) => ({
+    manifest: JSON.parse(readFileSync(path, "utf8")),
+    path,
+  }));
+}
+
+function readReleaseIgnore(script) {
+  const block = script.match(releaseIgnoreBlockPattern)?.[1];
+  expect(block).toBeDefined();
+
+  return new Set(
+    [...block.matchAll(quotedListItemPattern)].map((match) => match[1])
+  );
+}
 
 describe("Tegami release configuration", () => {
   it("targets the repository's next prerelease lane", () => {
@@ -20,13 +56,37 @@ describe("Tegami release configuration", () => {
     expect(script).toContain('"@minpeter/pss-extension-web"');
   });
 
-  it("excludes every private workspace from release planning", () => {
+  it("excludes every private and experimental workspace from the graph", () => {
     const script = readFileSync("scripts/tegami.mts", "utf8");
+    const ignored = readReleaseIgnore(script);
+    const expected = readWorkspaceManifests()
+      .filter(
+        ({ manifest, path }) =>
+          manifest.private === true || path.startsWith("experimental/")
+      )
+      .map(({ manifest }) => manifest.name);
 
-    expect(script).toContain('"pss-next"');
-    expect(script).toContain('"@minpeter/pss-worker-agent"');
-    expect(script).toContain('"@minpeter/pss-runtime-edge-image-qa"');
-    expect(script).toContain("/^@minpeter\\/pss-example-/");
+    expect(ignored).toEqual(new Set(expected));
+  });
+
+  it("keeps every public app and package in release planning", () => {
+    const script = readFileSync("scripts/tegami.mts", "utf8");
+    const ignored = readReleaseIgnore(script);
+    const publicAppsAndPackages = readWorkspaceManifests().filter(
+      ({ manifest, path }) =>
+        (path.startsWith("apps/") || path.startsWith("packages/")) &&
+        manifest.private !== true
+    );
+
+    expect(publicAppsAndPackages.map(({ manifest }) => manifest.name)).toEqual(
+      expect.arrayContaining([
+        "@minpeter/pss-coding-agent",
+        "@minpeter/pss-runtime",
+      ])
+    );
+    for (const { manifest } of publicAppsAndPackages) {
+      expect(ignored.has(manifest.name)).toBe(false);
+    }
   });
 
   it("removes Changesets release state", () => {
