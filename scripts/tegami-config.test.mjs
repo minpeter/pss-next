@@ -89,6 +89,16 @@ describe("Tegami release configuration", () => {
     }
   });
 
+  it("does not propagate dependency bumps into excluded workspaces", () => {
+    const script = readFileSync("scripts/tegami.mts", "utf8");
+
+    expect(script).toContain("releaseIgnore.includes(dependent.name)");
+    expect(script).toContain('case "dependencies":');
+    expect(script).toContain('case "optionalDependencies":');
+    expect(script).toContain('case "devDependencies":');
+    expect(script).toContain('case "peerDependencies":');
+  });
+
   it("removes Changesets release state", () => {
     expect(existsSync(".changeset/config.json")).toBe(false);
   });

@@ -26,6 +26,22 @@ const paper = tegami({
   ignore: releaseIgnore,
   npm: {
     client: "pnpm",
+    bumpDep: ({ dependent, kind }) => {
+      if (releaseIgnore.includes(dependent.name)) {
+        return false;
+      }
+      switch (kind) {
+        case "dependencies":
+        case "optionalDependencies":
+          return "patch";
+        case "devDependencies":
+          return false;
+        case "peerDependencies":
+          return "major";
+        default:
+          return false;
+      }
+    },
     trustedPublish: {
       provider: "github",
       workflow: "release.yml",
