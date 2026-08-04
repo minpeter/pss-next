@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@minpeter/opensearch": "0.1.1",
-    "ai": "7.0.45"
+    "ai": "7.0.51"
   },
   "peerDependencies": {
     "@minpeter/pss-coding-agent": "workspace:^"

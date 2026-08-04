@@ -95,7 +95,7 @@
     "@minpeter/pss-extension-web": "workspace:^",
     "@minpeter/pss-runtime": "workspace:^",
     "@t3-oss/env-core": "^0.13.11",
-    "ai": "7.0.45",
+    "ai": "7.0.51",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"
   },
