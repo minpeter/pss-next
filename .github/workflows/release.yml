@@ -60,6 +60,7 @@ jobs:
           install_dir="$RUNNER_TEMP/coding-agent-install"
           mkdir -p "$pack_dir" "$install_dir"
           pnpm --filter @minpeter/pss-runtime pack --pack-destination "$pack_dir"
+          ln -s "$GITHUB_WORKSPACE/apps/coding-agent" extensions/web/node_modules/@minpeter/pss-coding-agent
           pnpm --filter @minpeter/pss-extension-web pack --pack-destination "$pack_dir"
           pnpm --filter @minpeter/pss-coding-agent pack --pack-destination "$pack_dir"
           npm install --package-lock-only --ignore-scripts --prefix "$install_dir" "$pack_dir"/*.tgz
