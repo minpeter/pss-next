@@ -85,11 +85,35 @@ describe("workspace coding tools", () => {
   it("exposes LINE#ID field descriptions on edit_file JSON Schema", async () => {
     const tools = createWorkspaceTools({ workspace });
     const schema = await asSchema(tools.edit_file.inputSchema).jsonSchema;
-    const editFields = schema.properties?.edits?.items?.properties;
-    expect(editFields?.target?.description).toMatch(/LINE#ID/);
-    expect(editFields?.first?.description).toMatch(/LINE#ID/);
-    expect(editFields?.last?.description).toMatch(/LINE#ID/);
-    expect(editFields?.target?.description).toMatch(/never include \|content/i);
+    const edits = schema.properties?.edits;
+    const items =
+      edits !== undefined &&
+      typeof edits === "object" &&
+      "items" in edits &&
+      edits.items !== undefined &&
+      typeof edits.items === "object" &&
+      !Array.isArray(edits.items)
+        ? edits.items
+        : undefined;
+    const editFields =
+      items !== undefined &&
+      "properties" in items &&
+      items.properties !== undefined
+        ? items.properties
+        : undefined;
+    const descriptionOf = (key: string): string | undefined => {
+      const field = editFields?.[key];
+      return field !== undefined &&
+        typeof field === "object" &&
+        "description" in field &&
+        typeof field.description === "string"
+        ? field.description
+        : undefined;
+    };
+    expect(descriptionOf("target")).toMatch(/LINE#ID/);
+    expect(descriptionOf("first")).toMatch(/LINE#ID/);
+    expect(descriptionOf("last")).toMatch(/LINE#ID/);
+    expect(descriptionOf("target")).toMatch(/never include \|content/i);
     expect(tools.edit_file.description).toMatch(/CRITICAL/);
   });
 

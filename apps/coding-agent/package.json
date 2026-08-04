@@ -40,6 +40,16 @@
       "types": "./dist/tools.d.ts",
       "import": "./dist/tools.js"
     },
+    "./instructions": {
+      "@minpeter/pss-source": "./src/instructions.ts",
+      "types": "./dist/instructions.d.ts",
+      "import": "./dist/instructions.js"
+    },
+    "./workspace-tools": {
+      "@minpeter/pss-source": "./src/workspace-tools/index.ts",
+      "types": "./dist/workspace-tools/index.d.ts",
+      "import": "./dist/workspace-tools/index.js"
+    },
     "./tui": {
       "@minpeter/pss-source": "./src/tui/app.ts",
       "types": "./dist/tui/app.d.ts",

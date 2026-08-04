@@ -1,7 +1,6 @@
+import { CODING_AGENT_INSTRUCTIONS } from "@minpeter/pss-coding-agent/instructions";
+import { createWorkspaceTools } from "@minpeter/pss-coding-agent/workspace-tools";
 import type { ToolSet } from "ai";
-// Import production tools without the full coding-agent CLI/extension surface.
-import { CODING_AGENT_INSTRUCTIONS } from "../../../../apps/coding-agent/src/instructions";
-import { createWorkspaceTools } from "../../../../apps/coding-agent/src/workspace-tools";
 import type { EditMethod, MethodToolHooks } from "./types";
 import { wrapMethodTool } from "./wrap";
 
