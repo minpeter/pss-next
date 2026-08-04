@@ -1,15 +1,17 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import {
-  type AgenticAttempt,
-  type AgenticRunOptions,
-  runAgenticAttempt,
-} from "./agentic";
+import { config as loadDotenv } from "dotenv";
 import { buildAgenticReport } from "./agentic-report";
 import { createAgenticTraceWriter } from "./agentic-trace";
+import type { AgenticAttempt } from "./agentic";
+import { pooled } from "./harness/pool";
+import { type MethodAttemptOptions, runMethodAttempt } from "./harness/run-attempt";
+import { resolveEditMethods } from "./methods";
 import { extractFingerprint } from "./stats";
 import { EDIT_TASKS } from "./tasks";
+
+loadDotenv({ override: false, quiet: true });
 
 const DEFAULT_MODEL = "minimaxai/minimax-m3";
 const DEFAULT_RUNS = 10;
@@ -24,6 +26,7 @@ interface OptionState {
   disableThinking: boolean;
   evidenceDir: string;
   maxSteps: number;
+  methods: readonly string[] | undefined;
   model: string;
   requestAttempts: number;
   requestTimeoutMs: number;
@@ -68,6 +71,9 @@ const applyValueOption = (
     case "--tasks":
       options.tasks = value.split(",").map((task) => task.trim());
       return true;
+    case "--methods":
+      options.methods = value.split(",").map((method) => method.trim());
+      return true;
     case "--evidence-dir":
       options.evidenceDir = value;
       return true;
@@ -82,6 +88,7 @@ const parseOptions = (argv: readonly string[]): Options => {
     disableThinking: false,
     evidenceDir: DEFAULT_EVIDENCE_DIR,
     maxSteps: DEFAULT_MAX_STEPS,
+    methods: undefined,
     model: DEFAULT_MODEL,
     requestAttempts: DEFAULT_REQUEST_ATTEMPTS,
     requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
@@ -114,31 +121,6 @@ const parseOptions = (argv: readonly string[]): Options => {
   return options;
 };
 
-const pooled = async <T>(
-  thunks: readonly (() => Promise<T>)[],
-  width: number,
-  onComplete: (value: T) => Promise<void>
-): Promise<readonly T[]> => {
-  const results = new Array<T>(thunks.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < thunks.length) {
-      const index = next;
-      next += 1;
-      const thunk = thunks[index];
-      if (thunk !== undefined) {
-        const result = await thunk();
-        results[index] = result;
-        await onComplete(result);
-      }
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(width, thunks.length) }, worker)
-  );
-  return results;
-};
-
 const main = async (): Promise<void> => {
   const options = parseOptions(process.argv.slice(2));
   const apiKey = process.env.AI_API_KEY;
@@ -146,6 +128,7 @@ const main = async (): Promise<void> => {
   if (apiKey === undefined || baseURL === undefined) {
     throw new Error("AI_API_KEY and AI_BASE_URL are required");
   }
+  const methods = resolveEditMethods(options.methods);
   const tasks = EDIT_TASKS.filter(
     (task) => options.tasks === undefined || options.tasks.includes(task.id)
   );
@@ -173,29 +156,36 @@ const main = async (): Promise<void> => {
     dirname(import.meta.filename),
     options.evidenceDir
   );
-  const transcriptPath = resolve(evidenceDir, "agentic-m3-pss-runs10.jsonl");
+  const methodLabel = methods.map((method) => method.id).join("+");
+  const transcriptPath = resolve(
+    evidenceDir,
+    `agentic-${options.model.replaceAll("/", "_")}-${methodLabel}.jsonl`
+  );
   await mkdir(evidenceDir, { recursive: true });
   await writeFile(transcriptPath, "", "utf8");
   const writeTrace = createAgenticTraceWriter(transcriptPath);
   const pending: Array<() => Promise<AgenticAttempt>> = [];
-  for (const task of tasks) {
-    for (let run = 1; run <= options.runs; run += 1) {
-      const runOptions: AgenticRunOptions = {
-        disableThinking: options.disableThinking,
-        maxSteps: options.maxSteps,
-        model: options.model,
-        provider,
-        requestAttempts: options.requestAttempts,
-        requestTimeoutMs: options.requestTimeoutMs,
-        run,
-        task,
-        trace: writeTrace,
-      };
-      pending.push(() => runAgenticAttempt(runOptions));
+  for (const method of methods) {
+    for (const task of tasks) {
+      for (let run = 1; run <= options.runs; run += 1) {
+        const runOptions: MethodAttemptOptions = {
+          disableThinking: options.disableThinking,
+          maxSteps: options.maxSteps,
+          method,
+          model: options.model,
+          provider,
+          requestAttempts: options.requestAttempts,
+          requestTimeoutMs: options.requestTimeoutMs,
+          run,
+          task,
+          trace: writeTrace,
+        };
+        pending.push(() => runMethodAttempt(runOptions));
+      }
     }
   }
   process.stdout.write(
-    `Running ${pending.length} agentic attempts: ${options.model} x pss-json x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, max steps ${options.maxSteps})\n`
+    `Running ${pending.length} agentic attempts: ${options.model} x [${methods.map((m) => m.id).join(", ")}] x ${tasks.length} tasks x ${options.runs} runs (concurrency ${options.concurrency}, max steps ${options.maxSteps})\n`
   );
   let completed = 0;
   let transcriptWrites = Promise.resolve();
@@ -213,13 +203,13 @@ const main = async (): Promise<void> => {
       await transcriptWrites;
       completed += 1;
       process.stdout.write(
-        `[${completed}/${pending.length}] ${attempt.task}#${attempt.run} ${attempt.passed ? "PASS" : "FAIL"} reads=${attempt.readCalls} edits=${attempt.editCalls} steps=${attempt.steps} retries=${attempt.retryFailures.length}\n`
+        `[${completed}/${pending.length}] ${attempt.format} ${attempt.task}#${attempt.run} ${attempt.passed ? "PASS" : "FAIL"} reads=${attempt.readCalls} edits=${attempt.editCalls} steps=${attempt.steps} retries=${attempt.retryFailures.length}\n`
       );
     }
   );
   const report = buildAgenticReport(attempts);
   await writeFile(
-    resolve(evidenceDir, "agentic-m3-pss-runs10.md"),
+    resolve(evidenceDir, `agentic-${options.model.replaceAll("/", "_")}-${methodLabel}.md`),
     `${report}\n`,
     "utf8"
   );

@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolExecutionOptions } from "ai";
+import { asSchema, type ToolExecutionOptions } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorkspaceTools } from "./index";
 import { truncateToolOutput } from "./output";
@@ -80,6 +80,17 @@ describe("workspace coding tools", () => {
       rm(workspace, { recursive: true, force: true }),
       rm(outside, { recursive: true, force: true }),
     ]);
+  });
+
+  it("exposes LINE#ID field descriptions on edit_file JSON Schema", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const schema = await asSchema(tools.edit_file.inputSchema).jsonSchema;
+    const editFields = schema.properties?.edits?.items?.properties;
+    expect(editFields?.target?.description).toMatch(/LINE#ID/);
+    expect(editFields?.first?.description).toMatch(/LINE#ID/);
+    expect(editFields?.last?.description).toMatch(/LINE#ID/);
+    expect(editFields?.target?.description).toMatch(/never include \|content/i);
+    expect(tools.edit_file.description).toMatch(/CRITICAL/);
   });
 
   it("reads hashline anchors and applies deterministic edits", async () => {

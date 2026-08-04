@@ -5,10 +5,10 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import {
   type AgenticToolEvent,
   buildAgenticPrompt,
-  buildAgenticSystemPrompt,
   summarizeToolEvents,
 } from "./agentic";
 import { createAgenticTraceWriter } from "./agentic-trace";
+import { pssMethod } from "./methods/pss";
 import { EDIT_TASKS } from "./tasks";
 
 const task = EDIT_TASKS.find((item) => item.id === "single-line-to-two");
@@ -27,7 +27,7 @@ describe("agentic pss harness", () => {
   });
 
   it("instructs the model to call tools instead of printing JSON", () => {
-    const system = buildAgenticSystemPrompt();
+    const system = pssMethod.instructions;
 
     expect(system).toContain("Use read_file and edit_file as actual tools");
     expect(system).toContain("never print edit JSON as plain text");

@@ -10,24 +10,68 @@ import { truncateToolOutput } from "./output";
 import { resolveWorkspacePath, workspaceRelativePath } from "./path-safety";
 import { atomicWrite } from "./write-file";
 
+// Field descriptions ship into the model-facing JSON Schema (JSDoc does not).
+// Phrasing follows oh-my-pi's structured hashline era (target/first/last/new_content).
 const editSchema = z
   .object({
-    op: z.enum(["replace", "append", "prepend"]),
-    /** Single-line replace anchor, and the insertion point for append/prepend. */
-    target: z.string().optional(),
-    /** Inclusive range start for replace. Pair with `last`. */
-    first: z.string().optional(),
-    /** Inclusive range end for replace. Pair with `first`. */
-    last: z.string().optional(),
-    new_content: z.union([z.string().min(1), z.array(z.string()).min(1)]),
+    op: z
+      .enum(["replace", "append", "prepend"])
+      .describe(
+        "replace/append/prepend. Anchors are LINE#ID from read_file (e.g. 5#a3f2); never include |content."
+      ),
+    target: z
+      .string()
+      .optional()
+      .describe(
+        'Line reference "LINE#ID" for one-line replace, or the insert point for append/prepend. Copy from read_file (e.g. "5#a3f2"); never include |content.'
+      ),
+    first: z
+      .string()
+      .optional()
+      .describe(
+        'Start line ref "LINE#ID" for an inclusive replace range. Pair with last; do not combine with target.'
+      ),
+    last: z
+      .string()
+      .optional()
+      .describe(
+        'End line ref "LINE#ID" for an inclusive replace range. Pair with first; do not combine with target.'
+      ),
+    new_content: z
+      .union([
+        z
+          .string()
+          .min(1)
+          .describe("Replacement text; newlines split into lines."),
+        z
+          .array(z.string())
+          .min(1)
+          .describe("Replacement lines as a non-empty array."),
+      ])
+      .describe(
+        "Replacement or inserted lines. Non-empty string (\\n-delimited) or string array."
+      ),
   })
   .strict();
 const END_OF_LINE_PATTERN = /\r?\n/u;
 const inputSchema = z
   .object({
-    path: z.string().min(1),
-    expected_file_hash: z.string().length(8).optional(),
-    edits: z.array(editSchema).min(1).max(100),
+    path: z
+      .string()
+      .min(1)
+      .describe("File path (relative to workspace or absolute under it)."),
+    expected_file_hash: z
+      .string()
+      .length(8)
+      .optional()
+      .describe(
+        "Optional 8-hex file_hash from the latest read_file of this path; rejects stale files."
+      ),
+    edits: z
+      .array(editSchema)
+      .min(1)
+      .max(100)
+      .describe("Array of hashline edit operations."),
   })
   .strict();
 
@@ -223,7 +267,7 @@ export function createEditFileTool(
 ): Tool<z.infer<typeof inputSchema>, string> {
   return tool({
     description:
-      "Apply deterministic plugsuits-style hashline edits. Re-read the file, then use LINE#ID anchors. replace addresses one line with target, or an inclusive range with first+last; append/prepend insert relative to an optional target.",
+      'Apply deterministic plugsuits-style hashline edits. CRITICAL: anchors are LINE#ID only (e.g. "5#a3f2") copied from read_file; never include |content or invent hashes. replace uses target for one line, or first+last for an inclusive range (never both); append/prepend insert relative to an optional target. Re-read after edits before another call on the same path.',
     inputSchema,
     execute: async ({ path, expected_file_hash: expectedHash, edits }) => {
       for (const edit of edits) {

@@ -379,6 +379,9 @@ importers:
       '@minpeter/pss-coding-agent':
         specifier: workspace:*
         version: link:../../apps/coding-agent
+      '@minpeter/pss-runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@oh-my-pi/hashline':
         specifier: 17.1.0
         version: 17.1.0
@@ -3311,9 +3314,6 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
-  jose@6.2.4:
-    resolution: {integrity: sha512-N8acGzVsQy6M/fjFcxtysNc4Q379TcM5dM/qKkNtsHFji88yANnXTr7BLeP75iPnFwBfQzM/jg2BZ9+HZrHCZA==}
-
   jose@6.2.7:
     resolution: {integrity: sha512-hq1OB1bALKfydZNoViyg6hPVGV4i93ny9Op+n4zP5RSf7SCZEXa/TsG2O3IEr7+WlHRTPnpqDmHfMH6qXAD60w==}
 
@@ -5465,7 +5465,7 @@ snapshots:
       cross-spawn: 7.0.6
       eventsource: 3.0.7
       eventsource-parser: 3.1.0
-      jose: 6.2.4
+      jose: 6.2.7
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
@@ -7235,8 +7235,6 @@ snapshots:
       '@isaacs/cliui': 9.0.0
 
   jiti@2.7.0: {}
-
-  jose@6.2.4: {}
 
   jose@6.2.7: {}
 

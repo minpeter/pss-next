@@ -21,7 +21,7 @@ export const buildAgenticReport = (
   const sections = [
     "# Agentic edit benchmark",
     "",
-    "Exact workspace bytes are the primary score. Infrastructure retries and semantic recovery are reported separately.",
+    "Exact workspace bytes are the primary score. Runs use createAgent + method-specific read/edit tools.",
     "",
     "## Outcome",
     "",
@@ -34,8 +34,10 @@ export const buildAgenticReport = (
     `| transport failures | ${transportFailures} |`,
     `| tool failures | ${toolFailures} |`,
     `| verification failures | ${verificationFailures} |`,
-    `| input tokens | ${attempts.reduce((total, attempt) => total + (attempt.inputTokens ?? 0), 0)} |`,
-    `| output tokens | ${attempts.reduce((total, attempt) => total + (attempt.outputTokens ?? 0), 0)} |`,
+    `| input tokens | ${attempts.reduce((sum, attempt) => sum + (attempt.inputTokens ?? 0), 0)} |`,
+    `| output tokens | ${attempts.reduce((sum, attempt) => sum + (attempt.outputTokens ?? 0), 0)} |`,
+    "",
+    renderMethodSlice(attempts),
     "",
     renderSlice("language", attempts, (task) => task.metadata.language),
     "",
@@ -47,6 +49,37 @@ export const buildAgenticReport = (
 };
 
 const tasksById = new Map(EDIT_TASKS.map((task) => [task.id, task]));
+
+const groupRows = (groups: Map<string, AgenticAttempt[]>): string[] =>
+  [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([value, group]) => {
+      const passed = group.filter((attempt) => attempt.passed).length;
+      const passAtOne = group.filter(
+        (attempt) => attempt.firstEditPassed
+      ).length;
+      const recovered = group.filter((attempt) => attempt.recovered).length;
+      const transportFailures = group.filter(
+        (attempt) => attempt.transportStatus === "failed"
+      ).length;
+      return `| ${value} | ${passed}/${group.length} | ${passAtOne}/${group.length} | ${recovered} | ${transportFailures} |`;
+    });
+
+const renderMethodSlice = (attempts: readonly AgenticAttempt[]): string => {
+  const groups = new Map<string, AgenticAttempt[]>();
+  for (const attempt of attempts) {
+    const group = groups.get(attempt.format) ?? [];
+    group.push(attempt);
+    groups.set(attempt.format, group);
+  }
+  return [
+    "## By method",
+    "",
+    "| method | exact pass | pass@1 | recovered | transport failures |",
+    "|---|---:|---:|---:|---:|",
+    ...groupRows(groups),
+  ].join("\n");
+};
 
 const renderSlice = (
   name: "difficulty" | "kind" | "language",
@@ -61,24 +94,11 @@ const renderSlice = (
     group.push(attempt);
     groups.set(value, group);
   }
-  const rows = [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([value, group]) => {
-      const passed = group.filter((attempt) => attempt.passed).length;
-      const passAtOne = group.filter(
-        (attempt) => attempt.firstEditPassed
-      ).length;
-      const recovered = group.filter((attempt) => attempt.recovered).length;
-      const transportFailures = group.filter(
-        (attempt) => attempt.transportStatus === "failed"
-      ).length;
-      return `| ${value} | ${passed}/${group.length} | ${passAtOne}/${group.length} | ${recovered} | ${transportFailures} |`;
-    });
   return [
     `## By ${name}`,
     "",
     `| ${name} | exact pass | pass@1 | recovered | transport failures |`,
     "|---|---:|---:|---:|---:|",
-    ...rows,
+    ...groupRows(groups),
   ].join("\n");
 };

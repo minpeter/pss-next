@@ -60,6 +60,7 @@ describe("agentic benchmark report", () => {
     expect(report).toContain("| pass@1 | 1/3 |");
     expect(report).toContain("| transport failures | 1 |");
     expect(report).toContain("| tool failures | 1 |");
+    expect(report).toContain("## By method");
     expect(report).toContain("## By language");
     expect(report).toContain("## By kind");
     expect(report).toContain("## By difficulty");
