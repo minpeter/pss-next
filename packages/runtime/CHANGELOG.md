@@ -1,3 +1,13 @@
+## @minpeter/pss-runtime@0.3.0-next.7 (next)
+
+### Harden thread storage lifecycle
+
+Make Durable Object thread schema migration idempotent and add aggregate thread deletion that removes runtime-owned snapshots, events, runs, notifications, scheduled work, and payload chunks.
+
+### Update the AI SDK
+
+Update runtime and consumer packages to AI SDK 7.0.51 for consistent tool types and downstream version alignment.
+
 ## @minpeter/pss-runtime@0.3.0-next.6 (next)
 
 ### Add speculative background compaction

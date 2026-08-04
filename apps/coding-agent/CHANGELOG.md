@@ -1,3 +1,9 @@
+## @minpeter/pss-coding-agent@0.0.14-next.12 (next)
+
+### Update the AI SDK
+
+Update runtime and consumer packages to AI SDK 7.0.51 for consistent tool types and downstream version alignment.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.11 (next)
 
 ### Verify coding-agent dependencies before publishing
