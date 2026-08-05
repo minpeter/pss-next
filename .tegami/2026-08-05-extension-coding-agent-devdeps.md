@@ -1,11 +1,14 @@
 ---
 packages:
   npm:@minpeter/pss-extension-latex:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-extension-latex)
   npm:@minpeter/pss-extension-mermaid:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-extension-mermaid)
   npm:@minpeter/pss-extension-web:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-extension-web)
 ---
 
 ## Declare the coding agent dependency in extensions

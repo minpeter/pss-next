@@ -1,3 +1,9 @@
+## @minpeter/pss-extension-web@0.0.1-next.2 (next)
+
+### Declare the coding agent dependency in extensions
+
+Add @minpeter/pss-coding-agent as a dev dependency of the LaTeX, Mermaid, and web extensions so Turborepo 2.10.8 boundaries accepts the /extension imports.
+
 ## @minpeter/pss-extension-web@0.0.1-next.1 (next)
 
 ### Update the AI SDK
