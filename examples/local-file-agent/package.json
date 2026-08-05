@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.16",
+    "@ai-sdk/openai-compatible": "3.0.20",
     "@minpeter/pss-runtime": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "dotenv": "^17.4.2",
