@@ -28,18 +28,44 @@ export const withDefaultCodingAgentExtensions = (
   extensions: readonly CodingAgentExtensionInput[],
   options: DefaultCodingAgentExtensionsOptions = {}
 ): readonly CodingAgentExtensionInput[] => {
-  const webModule: CodingAgentExtensionModule | undefined =
+  // An installed extension with a bundled default's id replaces the bundled
+  // copy in its original slot, mirroring how CLI extensions replace
+  // configured ones by id. Replacing in place keeps registration order —
+  // and with it renderer priority — identical to the bundled defaults. Only
+  // the first provided extension with a given id is consumed here, so a
+  // second one still reaches the host's duplicate-id validation.
+  const consumed = new Set<number>();
+  const takeReplacement = (
+    id: string
+  ): CodingAgentExtensionInput | undefined => {
+    const index = extensions.findIndex(
+      (extension, extensionIndex) =>
+        extension.id === id && !consumed.has(extensionIndex)
+    );
+    if (index === -1) {
+      return;
+    }
+    consumed.add(index);
+    return extensions[index];
+  };
+  const latexReplacement = takeReplacement(latexModule.id);
+  const mermaidReplacement = takeReplacement(mermaidModule.id);
+  const webReplacement =
     options.web === false
       ? undefined
-      : {
+      : takeReplacement("@minpeter/pss-extension-web");
+  const webModule: CodingAgentExtensionInput | undefined =
+    options.web === false
+      ? undefined
+      : (webReplacement ?? {
           default: createWebExtension(options.web),
           id: "@minpeter/pss-extension-web",
-        };
+        });
   return [
-    latexModule,
-    mermaidModule,
+    latexReplacement ?? latexModule,
+    mermaidReplacement ?? mermaidModule,
     ...(webModule === undefined ? [] : [webModule]),
-    ...extensions,
+    ...extensions.filter((_, index) => !consumed.has(index)),
   ];
 };
 
