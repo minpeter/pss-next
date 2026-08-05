@@ -1,8 +1,7 @@
 ---
 packages:
   npm:@minpeter/pss-coding-agent:
-    replay:
-      - exit-prerelease(npm:@minpeter/pss-coding-agent)
+    type: patch
 ---
 
 ## Add a compact pixel wordmark to the coding-agent TUI
