@@ -164,6 +164,39 @@ describe("default coding-agent extensions", () => {
     await host.dispose();
   });
 
+  it("keeps duplicate same-id inputs visible to host validation", () => {
+    const duplicate: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-latex",
+    };
+
+    const merged = withDefaultCodingAgentExtensions([duplicate, duplicate]);
+
+    expect(merged.filter((extension) => extension === duplicate)).toHaveLength(
+      2
+    );
+  });
+
+  it("replaces a shadowed mermaid default in its original slot", () => {
+    const shadowMermaid: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-mermaid",
+    };
+
+    const merged = withDefaultCodingAgentExtensions([shadowMermaid]);
+
+    expect(merged.map((extension) => extension.id)).toStrictEqual([
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+      "@minpeter/pss-extension-web",
+    ]);
+    expect(merged[1]).toBe(shadowMermaid);
+  });
+
   it("restores the default fallback after an override is removed", async () => {
     const overrideRenderer = () => ({
       invalidate() {

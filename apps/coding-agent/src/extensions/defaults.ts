@@ -34,17 +34,19 @@ export const withDefaultCodingAgentExtensions = (
   // and with it renderer priority — identical to the bundled defaults. Only
   // the first provided extension with a given id is consumed here, so a
   // second one still reaches the host's duplicate-id validation.
-  const consumed = new Set<CodingAgentExtensionInput>();
+  const consumed = new Set<number>();
   const takeReplacement = (
     id: string
   ): CodingAgentExtensionInput | undefined => {
-    const replacement = extensions.find(
-      (extension) => extension.id === id && !consumed.has(extension)
+    const index = extensions.findIndex(
+      (extension, extensionIndex) =>
+        extension.id === id && !consumed.has(extensionIndex)
     );
-    if (replacement !== undefined) {
-      consumed.add(replacement);
+    if (index === -1) {
+      return;
     }
-    return replacement;
+    consumed.add(index);
+    return extensions[index];
   };
   const latexReplacement = takeReplacement(latexModule.id);
   const mermaidReplacement = takeReplacement(mermaidModule.id);
@@ -63,7 +65,7 @@ export const withDefaultCodingAgentExtensions = (
     latexReplacement ?? latexModule,
     mermaidReplacement ?? mermaidModule,
     ...(webModule === undefined ? [] : [webModule]),
-    ...extensions.filter((extension) => !consumed.has(extension)),
+    ...extensions.filter((_, index) => !consumed.has(index)),
   ];
 };
 
