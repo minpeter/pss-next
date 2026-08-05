@@ -85,6 +85,7 @@ interface StartTuiDependencies {
 }
 
 const RECOVERY_ACTIVATION_TIMEOUT_MS = 60_000;
+const PSS_PIXEL_WORDMARK = ["█▀▙ ▟▀▘ ▟▀▘", "█▀▘ ▄▄▛ ▄▄▛"].join("\n");
 
 const selectedThreadConfig = async (
   config: ReturnType<typeof resolveCodingAgentThreadConfig>,
@@ -346,7 +347,7 @@ export async function startTui(
         ? base
         : `${base}\nsession: ${currentSession.name}`;
     };
-    const header = { title: "pss", subtitle: buildSubtitle() };
+    const header = { title: PSS_PIXEL_WORDMARK, subtitle: buildSubtitle() };
 
     const currentInstructions = (): string =>
       [
