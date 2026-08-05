@@ -1,3 +1,13 @@
+## @minpeter/pss-coding-agent@0.0.14-next.13 (next)
+
+### Update the OpenAI-compatible AI SDK provider
+
+Bump @ai-sdk/openai-compatible from 3.0.16 to 3.0.20 in the coding agent and example workspaces.
+
+### Update the pi-tui renderer dependency
+
+Bump @earendil-works/pi-tui from 0.82.1 to 0.83.0 in the coding agent and the LaTeX and Mermaid extensions.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.12 (next)
 
 ### Update the AI SDK

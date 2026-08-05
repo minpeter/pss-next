@@ -1,3 +1,39 @@
+## @minpeter/pss-runtime@0.3.0-next.8 (next)
+
+### Update the agents SDK
+
+Bump the Cloudflare agents SDK from 0.20.0 to 0.20.1 in the runtime and worker agent.
+
+### Update the chat adapter stack
+
+Bump chat, @chat-adapter/telegram, and @chat-adapter/state-memory to 4.36.0 together so the worker agent adapter types stay aligned.
+
+### Update Cloudflare Workers type definitions
+
+Refresh the worker agent and edge QA projects to Cloudflare Workers types 5.20260801.1.
+
+### Update the hashline edit format
+
+Bump @oh-my-pi/hashline to 17.2.4 and update the edit-format bench for the renamed DSL operations (PUT/CUT).
+
+### Update the pnpm setup GitHub Action
+
+Bump pnpm/action-setup from 6 to 6.0.9 across the CI and release workflows.
+
+### Update the React dev dependency
+
+Bump the workspace React dev dependency from 19.2.7 to 19.2.8.
+
+### Pack all extensions in the release dependency check
+
+Pack the latex and mermaid extensions alongside web in the release
+workflow's coding-agent dependency resolution check, fixing the npm E404
+on the never-published @minpeter/pss-extension-mermaid.
+
+### Update wrangler
+
+Bump the wrangler dev dependency from 4.114.0 to 4.118.0 in the worker agent and edge QA projects.
+
 ## @minpeter/pss-runtime@0.3.0-next.7 (next)
 
 ### Harden thread storage lifecycle

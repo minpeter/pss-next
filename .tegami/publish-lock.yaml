@@ -1,32 +1,76 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the AI SDK\n\nUpdate runtime and consumer packages to AI SDK 7.0.51 for consistent tool types and downstream version alignment.\n"
-    filename: 2026-08-04-update-runtime-ai-sdk.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Update the OpenAI-compatible AI SDK provider\n\nBump @ai-sdk/openai-compatible from 3.0.16 to 3.0.20 in the coding agent and example workspaces.\n"
+    filename: 2026-08-05-openai-compatible-3-0-20.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Harden thread storage lifecycle\n\nMake Durable Object thread schema migration idempotent and add aggregate thread deletion that removes runtime-owned snapshots, events, runs, notifications, scheduled work, and payload chunks.\n"
-    filename: 2026-08-04-thread-storage-upgrade.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n---\n\n## Update the pi-tui renderer dependency\n\nBump @earendil-works/pi-tui from 0.82.1 to 0.83.0 in the coding agent and the LaTeX and Mermaid extensions.\n"
+    filename: 2026-08-05-pi-tui-0-83.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Declare the coding agent dependency in extensions\n\nAdd @minpeter/pss-coding-agent as a dev dependency of the LaTeX, Mermaid, and web extensions so Turborepo 2.10.8 boundaries accepts the /extension imports.\n"
+    filename: 2026-08-05-extension-coding-agent-devdeps.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the agents SDK\n\nBump the Cloudflare agents SDK from 0.20.0 to 0.20.1 in the runtime and worker agent.\n"
+    filename: 2026-08-05-agents-0-20-1.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the chat adapter stack\n\nBump chat, @chat-adapter/telegram, and @chat-adapter/state-memory to 4.36.0 together so the worker agent adapter types stay aligned.\n"
+    filename: 2026-08-05-chat-adapter-4-36.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update Cloudflare Workers type definitions\n\nRefresh the worker agent and edge QA projects to Cloudflare Workers types 5.20260801.1.\n"
+    filename: 2026-08-05-cloudflare-workers-types.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the hashline edit format\n\nBump @oh-my-pi/hashline to 17.2.4 and update the edit-format bench for the renamed DSL operations (PUT/CUT).\n"
+    filename: 2026-08-05-hashline-17-2.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the pnpm setup GitHub Action\n\nBump pnpm/action-setup from 6 to 6.0.9 across the CI and release workflows.\n"
+    filename: 2026-08-05-pnpm-action-setup.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update the React dev dependency\n\nBump the workspace React dev dependency from 19.2.7 to 19.2.8.\n"
+    filename: 2026-08-05-react-19-2-8.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Pack all extensions in the release dependency check\n\nPack the latex and mermaid extensions alongside web in the release\nworkflow's coding-agent dependency resolution check, fixing the npm E404\non the never-published @minpeter/pss-extension-mermaid.\n"
+    filename: 2026-08-05-release-verify-pack-extensions.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Update wrangler\n\nBump the wrangler dev dependency from 4.114.0 to 4.118.0 in the worker agent and edge QA projects.\n"
+    filename: 2026-08-05-wrangler-4-118.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-04-update-runtime-ai-sdk.md
+      - 2026-08-05-openai-compatible-3-0-20.md
+      - 2026-08-05-pi-tui-0-83.md
     id: npm:@minpeter/pss-coding-agent
     updated: true
   - changelogIds:
-      - 2026-08-04-update-runtime-ai-sdk.md
+      - 2026-08-05-extension-coding-agent-devdeps.md
+      - 2026-08-05-pi-tui-0-83.md
+    id: npm:@minpeter/pss-extension-latex
+    updated: true
+  - changelogIds:
+      - 2026-08-05-extension-coding-agent-devdeps.md
+      - 2026-08-05-pi-tui-0-83.md
+    id: npm:@minpeter/pss-extension-mermaid
+    updated: true
+  - changelogIds:
+      - 2026-08-05-extension-coding-agent-devdeps.md
     id: npm:@minpeter/pss-extension-web
     updated: true
-  - id: npm:@minpeter/pss-extension-latex
-    updated: false
   - changelogIds:
-      - 2026-08-04-thread-storage-upgrade.md
-      - 2026-08-04-update-runtime-ai-sdk.md
+      - 2026-08-05-agents-0-20-1.md
+      - 2026-08-05-chat-adapter-4-36.md
+      - 2026-08-05-cloudflare-workers-types.md
+      - 2026-08-05-hashline-17-2.md
+      - 2026-08-05-pnpm-action-setup.md
+      - 2026-08-05-react-19-2-8.md
+      - 2026-08-05-release-verify-pack-extensions.md
+      - 2026-08-05-wrangler-4-118.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
   - distTag: next
-    id: npm:@minpeter/pss-extension-web
-  - distTag: next
     id: npm:@minpeter/pss-extension-latex
+  - distTag: next
+    id: npm:@minpeter/pss-extension-mermaid
+  - distTag: next
+    id: npm:@minpeter/pss-extension-web
   - distTag: next
     id: npm:@minpeter/pss-runtime

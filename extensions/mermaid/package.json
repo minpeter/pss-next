@@ -1,6 +1,6 @@
 {
   "name": "@minpeter/pss-extension-mermaid",
-  "version": "0.0.1-next.0",
+  "version": "0.0.1-next.1",
   "description": "Self-contained Mermaid diagram rendering for the PSS coding-agent TUI.",
   "type": "module",
   "engines": {
