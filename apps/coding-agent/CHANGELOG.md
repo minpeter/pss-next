@@ -1,3 +1,16 @@
+## @minpeter/pss-coding-agent@0.0.14-next.14 (next)
+
+### Bundle built-in extensions into the coding agent
+
+Ship the LaTeX, Mermaid, and web extensions inside the coding-agent tarball
+via tsdown alwaysBundle instead of publishing them as separate npm packages,
+so adding a built-in extension no longer requires a new published package.
+Only pss-runtime and pss-coding-agent remain published.
+
+### Add a compact pixel wordmark to the coding-agent TUI
+
+Render the startup `pss` title as a low-profile orange bitmap wordmark while preserving the existing model and workspace subtitle.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.13 (next)
 
 ### Update the OpenAI-compatible AI SDK provider
