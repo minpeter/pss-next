@@ -1,3 +1,9 @@
+## @minpeter/pss-extension-latex@0.0.1-next.4
+
+### Publish built-in extensions to the latest dist-tag
+
+The extension manager resolves tagless installs through `latest`, so the built-in extensions now publish there instead of `next`; this release also moves `latest` off the stale pre-#335 builds.
+
 ## @minpeter/pss-extension-latex@0.0.1-next.3 (next)
 
 ### Publish built-in extensions as installable packages

@@ -1,25 +1,20 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Shadow bundled extensions with installed ones\n\nAn installed extension whose id matches a bundled default (latex, mermaid, web) now replaces the bundled copy instead of crashing host creation with a duplicate-id error. The three built-in extension packages are publishable, so `pss extension install`/`update` can deliver them between coding-agent releases.\n"
-    filename: 2026-08-05-shadow-bundled-extensions.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Publish built-in extensions as installable packages\n\nFirst publish of the three built-in extensions with their publishable manifests (no private flag, concrete peer ranges), enabling `pss extension install`/`update` to deliver them between coding-agent releases.\n"
-    filename: 2026-08-05-publish-builtin-extensions.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Publish built-in extensions to the latest dist-tag\n\nThe extension manager resolves tagless installs through `latest`, so the built-in extensions now publish there instead of `next`; this release also moves `latest` off the stale pre-#335 builds.\n"
+    filename: 2026-08-05-extension-latest-dist-tag.md
     v: 0.0.0
 core:packages:
+  - id: npm:@minpeter/pss-coding-agent
+    updated: false
   - changelogIds:
-      - 2026-08-05-shadow-bundled-extensions.md
-    id: npm:@minpeter/pss-coding-agent
-    updated: true
-  - changelogIds:
-      - 2026-08-05-publish-builtin-extensions.md
+      - 2026-08-05-extension-latest-dist-tag.md
     id: npm:@minpeter/pss-extension-latex
     updated: true
   - changelogIds:
-      - 2026-08-05-publish-builtin-extensions.md
+      - 2026-08-05-extension-latest-dist-tag.md
     id: npm:@minpeter/pss-extension-mermaid
     updated: true
   - changelogIds:
-      - 2026-08-05-publish-builtin-extensions.md
+      - 2026-08-05-extension-latest-dist-tag.md
     id: npm:@minpeter/pss-extension-web
     updated: true
   - id: npm:@minpeter/pss-runtime
@@ -27,11 +22,11 @@ core:packages:
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
-  - distTag: next
+  - distTag: latest
     id: npm:@minpeter/pss-extension-latex
-  - distTag: next
+  - distTag: latest
     id: npm:@minpeter/pss-extension-mermaid
-  - distTag: next
+  - distTag: latest
     id: npm:@minpeter/pss-extension-web
   - distTag: next
     id: npm:@minpeter/pss-runtime
