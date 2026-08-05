@@ -2,7 +2,9 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import {
+  findBundledExtensionImportLeaks,
   findExtensionlessRelativeImports,
+  findMissingBundledExtensionWorkers,
   findPackageBinEntrypointErrors,
   findPublishedTestArtifacts,
   requirePackageDists,
@@ -51,6 +53,8 @@ export function verifyReleaseArtifacts(options) {
     ...findExtensionlessRelativeImports(options),
     ...findPublishedTestArtifacts(options),
     ...findRuntimeDeclarationLeaks(options),
+    ...findMissingBundledExtensionWorkers(options),
+    ...findBundledExtensionImportLeaks(options),
   ];
 }
 

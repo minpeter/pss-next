@@ -383,21 +383,15 @@ speculative guidance.
 
 ### LaTeX display math in the TUI
 
-LaTeX support is implemented by the official
-`@minpeter/pss-extension-latex` package. The coding-agent includes it by
-default and owns the generic assistant-renderer capability plus the ordinary
-Markdown fallback; each extension package owns its own parsing, rendering,
-caching, instructions, and dependency notices. Bundled fallback renderers
+LaTeX support is a built-in extension that ships inside the coding-agent
+package. The coding-agent includes it by default and owns the generic
+assistant-renderer capability plus the ordinary Markdown fallback; each
+built-in extension owns its own parsing, rendering, caching, instructions,
+and dependency notices. Bundled fallback renderers
 compose into an ordered chain: each renderer handles the fragments it owns
 and delegates everything else inward, and the plain Markdown view sits at the
 bottom. This uses the same extension registration, conflict attribution, and
 `/reload` lifecycle as third-party extensions.
-
-The extension is independently importable:
-
-```ts
-import createLatexExtension from "@minpeter/pss-extension-latex";
-```
 
 Bundled LaTeX and Mermaid register as fallback assistant renderers; later
 registrations delegate unhandled Markdown to earlier ones. A third-party
@@ -463,14 +457,9 @@ hard CPU or OS address-space limits.
 
 ### Mermaid diagrams in the TUI
 
-Mermaid support is implemented by the official
-`@minpeter/pss-extension-mermaid` package, included by default and registered
-as the outermost fallback assistant renderer after LaTeX. The extension is
-independently importable:
-
-```ts
-import createMermaidExtension from "@minpeter/pss-extension-mermaid";
-```
+Mermaid support is a built-in extension that ships inside the
+coding-agent package, included by default and registered
+as the outermost fallback assistant renderer after LaTeX.
 
 Complete ```` ```mermaid ```` fenced blocks keep their original source visible
 and get a Unicode box-art rendering appended directly below, following the pi

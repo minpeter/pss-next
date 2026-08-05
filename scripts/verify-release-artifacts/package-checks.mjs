@@ -19,6 +19,15 @@ const REQUIRED_PACKAGE_BINS = {
     "pss-coding-agent": "./bin/pss.js",
   },
 };
+// Built-in extensions are inlined into the coding-agent bundle, but their
+// worker entrypoints are spawned by URL at runtime, so the bundler cannot
+// see them; tsdown copy entries must ship them at these dist paths.
+const REQUIRED_BUNDLED_WORKERS = {
+  "coding-agent": [
+    "extensions/latex/dist/mathjax-worker.js",
+    "extensions/mermaid/dist/mermaid-art-worker.js",
+  ],
+};
 const RELATIVE_IMPORT_RE =
   /(?:from\s+["']|import\s*(?:\(\s*)?["'])(\.\.?\/[^"']+)(?:["'])/g;
 const TEST_ARTIFACT_RE =
@@ -34,6 +43,54 @@ export function requirePackageDists({ cwd, packages }) {
       errors.push(
         `${relativeToCwd(cwd, distPath)} is missing; run the package build first`
       );
+    }
+  }
+
+  return errors;
+}
+
+export function findMissingBundledExtensionWorkers({ cwd, packages }) {
+  const errors = [];
+
+  for (const packageName of packages) {
+    const workers = REQUIRED_BUNDLED_WORKERS[packageName] ?? [];
+    for (const worker of workers) {
+      const workerPath = join(packageDistPath(cwd, packageName), worker);
+      if (!existsSync(workerPath)) {
+        errors.push(
+          `${relativeToCwd(cwd, workerPath)} is missing; runtime-spawned extension workers must be copied into the bundle`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+// The published coding-agent bundle must not reference the private extension
+// packages; tsdown deps.alwaysBundle inlines them.
+const BUNDLED_EXTENSION_IMPORT_RE =
+  /(?:from\s+|import\s*\(\s*)["']@minpeter\/pss-extension-/;
+
+export function findBundledExtensionImportLeaks({ cwd, packages }) {
+  const errors = [];
+
+  for (const packageName of packages) {
+    if (packageName !== "coding-agent") {
+      continue;
+    }
+    const distPath = packageDistPath(cwd, packageName);
+    const jsFiles = listFiles(distPath, (file) =>
+      JAVASCRIPT_ARTIFACT_RE.test(file)
+    );
+
+    for (const file of jsFiles) {
+      const text = readFileSync(file, "utf8");
+      if (BUNDLED_EXTENSION_IMPORT_RE.test(text)) {
+        errors.push(
+          `${relativeToCwd(cwd, file)} imports a private extension package; built-in extensions must be inlined via tsdown deps.alwaysBundle`
+        );
+      }
     }
   }
 

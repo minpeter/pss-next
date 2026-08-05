@@ -3,6 +3,7 @@
   "version": "0.0.1-next.1",
   "description": "Self-contained Mermaid diagram rendering for the PSS coding-agent TUI.",
   "type": "module",
+  "private": true,
   "engines": {
     "node": ">=24"
   },
@@ -23,10 +24,6 @@
     "type": "git",
     "url": "git+https://github.com/minpeter/pss-runtime.git",
     "directory": "extensions/mermaid"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   },
   "scripts": {
     "build": "tsdown",

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-export const DEFAULT_PACKAGES = ["runtime", "extension-latex", "coding-agent"];
+export const DEFAULT_PACKAGES = ["runtime", "coding-agent"];
 const PACKAGE_ROOTS = {
   "coding-agent": "apps/coding-agent",
   "extension-latex": "extensions/latex",

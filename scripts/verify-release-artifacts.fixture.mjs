@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const cliBinReadFailurePattern =
   /^apps\/coding-agent\/bin\/pss\.js: cannot read CLI bin target /;
@@ -135,6 +135,14 @@ function writePackageDeclarationFixtures(cwd, packageName, packageRoot) {
     join(packageRoot, "dist", "tui.js"),
     "export const ok = true;\n"
   );
+  for (const worker of [
+    join("extensions", "latex", "dist", "mathjax-worker.js"),
+    join("extensions", "mermaid", "dist", "mermaid-art-worker.js"),
+  ]) {
+    const workerPath = join(packageRoot, "dist", worker);
+    mkdirSync(dirname(workerPath), { recursive: true });
+    writeFileSync(workerPath, "export const ok = true;\n");
+  }
 }
 
 function writeRuntimeDeclarationFixtures(cwd, packageName) {

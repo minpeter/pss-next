@@ -1,0 +1,3 @@
+# The repo-root .gitignore has an unanchored `dist` rule; without this file
+# pnpm/npm pack applies it and drops the bundled built-in extension chunks
+# under dist/extensions/*/dist/. `files` in package.json is the allowlist.
