@@ -28,23 +28,43 @@ export const withDefaultCodingAgentExtensions = (
   extensions: readonly CodingAgentExtensionInput[],
   options: DefaultCodingAgentExtensionsOptions = {}
 ): readonly CodingAgentExtensionInput[] => {
-  const webModule: CodingAgentExtensionModule | undefined =
+  // An installed extension with a bundled default's id replaces the bundled
+  // copy in its original slot, mirroring how CLI extensions replace
+  // configured ones by id. Replacing in place keeps registration order —
+  // and with it renderer priority — identical to the bundled defaults. Only
+  // the first provided extension with a given id is consumed here, so a
+  // second one still reaches the host's duplicate-id validation.
+  const consumed = new Set<CodingAgentExtensionInput>();
+  const takeReplacement = (
+    id: string
+  ): CodingAgentExtensionInput | undefined => {
+    const replacement = extensions.find(
+      (extension) => extension.id === id && !consumed.has(extension)
+    );
+    if (replacement !== undefined) {
+      consumed.add(replacement);
+    }
+    return replacement;
+  };
+  const latexReplacement = takeReplacement(latexModule.id);
+  const mermaidReplacement = takeReplacement(mermaidModule.id);
+  const webReplacement =
     options.web === false
       ? undefined
-      : {
+      : takeReplacement("@minpeter/pss-extension-web");
+  const webModule: CodingAgentExtensionInput | undefined =
+    options.web === false
+      ? undefined
+      : (webReplacement ?? {
           default: createWebExtension(options.web),
           id: "@minpeter/pss-extension-web",
-        };
-  // An installed extension with a bundled default's id replaces the bundled
-  // copy, mirroring how CLI extensions replace configured ones by id. This
-  // keeps independently updated extension packages from colliding with the
-  // bundled defaults at host creation.
-  const providedIds = new Set(extensions.map((extension) => extension.id));
-  const bundledModules = [latexModule, mermaidModule, webModule].filter(
-    (module): module is CodingAgentExtensionModule =>
-      module !== undefined && !providedIds.has(module.id)
-  );
-  return [...bundledModules, ...extensions];
+        });
+  return [
+    latexReplacement ?? latexModule,
+    mermaidReplacement ?? mermaidModule,
+    ...(webModule === undefined ? [] : [webModule]),
+    ...extensions.filter((extension) => !consumed.has(extension)),
+  ];
 };
 
 export const createCodingAgentExtensionHostWithDefaults = (

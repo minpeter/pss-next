@@ -111,6 +111,59 @@ describe("default coding-agent extensions", () => {
     ]);
   });
 
+  it("replaces a shadowed bundled default in its original slot", () => {
+    const shadowLatex: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-latex",
+    };
+
+    const merged = withDefaultCodingAgentExtensions([shadowLatex]);
+
+    expect(merged.map((extension) => extension.id)).toStrictEqual([
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+      "@minpeter/pss-extension-web",
+    ]);
+    expect(merged[0]).toBe(shadowLatex);
+  });
+
+  it("keeps the mermaid renderer owner when latex is shadowed", async () => {
+    const shadowRenderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["shadow"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const shadowLatex: CodingAgentExtensionInput = {
+      configure(registry) {
+        registry.tui.registerAssistantRenderer(shadowRenderer, {
+          fallback: true,
+        });
+      },
+      id: "@minpeter/pss-extension-latex",
+    };
+
+    const host = await createCodingAgentExtensionHostWithDefaults([
+      shadowLatex,
+    ]);
+
+    expect(host.getAssistantRendererOwner()).toBe(
+      "@minpeter/pss-extension-mermaid"
+    );
+    expect(host.getAssistantRendererChainOwners()).toEqual([
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+    ]);
+    await host.dispose();
+  });
+
   it("restores the default fallback after an override is removed", async () => {
     const overrideRenderer = () => ({
       invalidate() {
