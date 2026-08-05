@@ -1,0 +1,6 @@
+{
+  "extends": ["//"],
+  "boundaries": {
+    "implicitDependencies": ["@minpeter/pss-coding-agent"]
+  }
+}
