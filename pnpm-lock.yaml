@@ -130,8 +130,8 @@ importers:
         specifier: 4.35.0
         version: 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       '@chat-adapter/telegram':
-        specifier: 4.35.0
-        version: 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+        specifier: 4.36.0
+        version: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       '@minpeter/pss-runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -152,7 +152,7 @@ importers:
         version: 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       evlog:
         specifier: ^2.22.4
-        version: 2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.12.34)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+        version: 2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.0)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -561,7 +561,7 @@ importers:
     devDependencies:
       agents:
         specifier: 0.20.0
-        version: 0.20.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0-beta.5)(ai@7.0.51(zod@4.4.3))(chat@4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))(zod@4.4.3)
+        version: 0.20.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0-beta.5)(ai@7.0.51(zod@4.4.3))(chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))(zod@4.4.3)
       tsdown:
         specifier: ^0.22.14
         version: 0.22.14(tsx@4.23.1)(typescript@7.0.2)
@@ -831,16 +831,16 @@ packages:
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
 
-  '@chat-adapter/shared@4.35.0':
-    resolution: {integrity: sha512-C0GvfiSk6JMdLlydbLIOmT9frMicFic++HBaD69JqmgyaT/CUvOII83Tsq+Yf5DKp53BXbK1NswKg5CId0PW9A==}
+  '@chat-adapter/shared@4.36.0':
+    resolution: {integrity: sha512-6w3GhiJiu6cEnO7c/j5Pu17x37mAKhcVosSo05k5z1CaaB6SoYps/rwbd02qqqxbzrS8usJ3/yhK+N4tazJjSA==}
     engines: {node: '>=20'}
 
   '@chat-adapter/state-memory@4.35.0':
     resolution: {integrity: sha512-qfSdR34Nox1Fcv8J6GLAX03VOuS3jka6ikFdVYBIOssh9OWL/NvjGGmuGwLI8/zmrPBjz0ZUStOxiyJAc1EqZw==}
     engines: {node: '>=20'}
 
-  '@chat-adapter/telegram@4.35.0':
-    resolution: {integrity: sha512-QqEoFDbXa1o+AnXCMMoLG7Y2FyabJ3dZsNPXjWfHU/hjoiQ8Noofp12SnckIF2OPWF8zgDgDZuq76hrKGsxFsQ==}
+  '@chat-adapter/telegram@4.36.0':
+    resolution: {integrity: sha512-DmL1lNu7O0GH8fZC/osN9yDAKactwPc2Z+M2iyhl6ohFOzhL+5zSz4EwsZhJclau4ABw9U+Jv5fNLWa7NWJo/Q==}
     engines: {node: '>=20'}
 
   '@clack/core@1.4.3':
@@ -2500,6 +2500,21 @@ packages:
       zod:
         optional: true
 
+  chat@4.36.0:
+    resolution: {integrity: sha512-3A5HjnjilStMazAgY2PESloyT8g+GsoEf5uvqzPtvpGJrNh9oGWQ7IRZzw4+pFFTbUnCEtsclEAc2KMloRRZRQ==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      ai: ^6.0.182 || ^7.0.0
+      workflow: ^5.0.0-beta.35
+      zod: ^3.0.0 || ^4.0.0
+    peerDependenciesMeta:
+      ai:
+        optional: true
+      workflow:
+        optional: true
+      zod:
+        optional: true
+
   cheerio-select@2.1.0:
     resolution: {integrity: sha512-9v9kG0LvzrlcungtnJtpGNxY+fzECQKhK4EGJX2vByejiMX84MFNQw4UxPJl3bFbTMw+Dfs37XaIkCwTZfLh4g==}
 
@@ -3146,8 +3161,8 @@ packages:
     resolution: {integrity: sha512-0fB3O3WMk38+PScbHLVp66jcNhsZ/ErtQ6u2lMYu/YxXgbBtl+oKOhGQHa4RpvE68k8IzbWkABzHnyAIjR758A==}
     engines: {node: '>=8.0.0'}
 
-  hono@4.12.34:
-    resolution: {integrity: sha512-GqXJqY/xJkJmuloTrnV1ZEXG3fqte+VjkUqoRNZXcrUidiUOP4fMSIHHY4tsqZBK++kVyWmt/AAfSUuy57/eSA==}
+  hono@4.13.0:
+    resolution: {integrity: sha512-jhunvfHWxd7J5EFfSgH4xsYJzSe/lfqbUCxiyyeaQasUsXeEHXtzVid+7EOGByc5JnFa23SSFL3Y2RV/z1T+eQ==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.1:
@@ -5064,9 +5079,9 @@ snapshots:
 
   '@cfworker/json-schema@4.1.1': {}
 
-  '@chat-adapter/shared@4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/shared@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      chat: 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -5082,10 +5097,10 @@ snapshots:
       - workflow
       - zod
 
-  '@chat-adapter/telegram@4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/telegram@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      '@chat-adapter/shared': 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
-      chat: 4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -5338,9 +5353,9 @@ snapshots:
       protobufjs: 7.6.5
       yargs: 17.7.3
 
-  '@hono/node-server@1.19.17(hono@4.12.34)':
+  '@hono/node-server@1.19.17(hono@4.13.0)':
     dependencies:
-      hono: 4.12.34
+      hono: 4.13.0
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -5536,7 +5551,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 1.19.17(hono@4.12.34)
+      '@hono/node-server': 1.19.17(hono@4.13.0)
       ajv: 8.20.0
       ajv-formats: 3.0.1
       content-type: 1.0.5
@@ -5546,7 +5561,7 @@ snapshots:
       eventsource-parser: 3.1.0
       express: 5.2.1
       express-rate-limit: 8.6.1(express@5.2.1)
-      hono: 4.12.34
+      hono: 4.13.0
       jose: 6.2.8
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -6148,6 +6163,35 @@ snapshots:
       - '@cloudflare/workers-types'
       - rolldown
 
+  agents@0.20.0(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0-beta.5)(ai@7.0.51(zod@4.4.3))(chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))(zod@4.4.3):
+    dependencies:
+      '@babel/plugin-proposal-decorators': 8.0.2(@babel/core@8.0.1)
+      '@cfworker/json-schema': 4.1.1
+      '@modelcontextprotocol/client': 2.0.0-beta.5
+      '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
+      '@modelcontextprotocol/server': 2.0.0-beta.5
+      '@rolldown/plugin-babel': 0.2.3(@babel/core@8.0.1)(@babel/runtime@7.29.7)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+      cron-schedule: 6.0.0
+      esbuild: 0.28.1
+      mimetext: 3.0.28
+      nanoid: 5.1.16
+      partyserver: 0.5.8(@cloudflare/workers-types@5.20260804.1)
+      partysocket: 1.3.0(react@19.2.8)
+      react: 19.2.8
+      yaml: 2.9.0
+      yargs: 18.1.0
+      zod: 4.4.3
+    optionalDependencies:
+      ai: 7.0.51(zod@4.4.3)
+      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      vite: 8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
+    transitivePeerDependencies:
+      - '@babel/core'
+      - '@babel/plugin-transform-runtime'
+      - '@babel/runtime'
+      - '@cloudflare/workers-types'
+      - rolldown
+
   ai@5.0.225(zod@3.25.76):
     dependencies:
       '@ai-sdk/gateway': 2.0.124(zod@3.25.76)
@@ -6373,6 +6417,21 @@ snapshots:
   character-entities@2.0.2: {}
 
   chat@4.35.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3):
+    dependencies:
+      '@workflow/serde': 4.1.0-beta.2
+      mdast-util-to-string: 4.0.0
+      remark-gfm: 4.0.1
+      remark-parse: 11.0.0
+      remark-stringify: 11.0.0
+      remend: 1.3.0
+      unified: 11.0.5
+    optionalDependencies:
+      ai: 7.0.51(zod@4.4.3)
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+
+  chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
@@ -6874,11 +6933,11 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.0
 
-  evlog@2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.12.34)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)):
+  evlog@2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.0)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)):
     optionalDependencies:
       ai: 7.0.51(zod@4.4.3)
       express: 5.2.1
-      hono: 4.12.34
+      hono: 4.13.0
       react: 19.2.8
       vite: 8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
 
@@ -7109,7 +7168,7 @@ snapshots:
     dependencies:
       libheif-js: 1.19.8
 
-  hono@4.12.34: {}
+  hono@4.13.0: {}
 
   hookable@6.1.1: {}
 
