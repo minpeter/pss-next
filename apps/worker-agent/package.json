@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
-    "@chat-adapter/state-memory": "4.35.0",
+    "@chat-adapter/state-memory": "4.36.0",
     "@chat-adapter/telegram": "4.35.0",
     "@minpeter/pss-runtime": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
