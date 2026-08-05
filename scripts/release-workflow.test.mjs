@@ -33,6 +33,12 @@ describe("release workflow", () => {
     expect(workflow).toContain(
       "pnpm --filter @minpeter/pss-extension-web pack"
     );
+    expect(workflow).toContain(
+      "pnpm --filter @minpeter/pss-extension-latex pack"
+    );
+    expect(workflow).toContain(
+      "pnpm --filter @minpeter/pss-extension-mermaid pack"
+    );
     expect(workflow).toContain("pnpm --filter @minpeter/pss-coding-agent pack");
     expect(workflow).toContain(
       "npm install --package-lock-only --ignore-scripts"
