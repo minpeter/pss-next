@@ -2,17 +2,21 @@ import { tegami } from "tegami";
 import { runCli } from "tegami/cli";
 import { github } from "tegami/plugins/github";
 
+// Built-in extensions publish on their own so `pss extension install/update`
+// can deliver them between coding-agent releases; the coding-agent bundle
+// still inlines them as the default fallback.
+const builtinExtensions = new Set([
+  "@minpeter/pss-extension-latex",
+  "@minpeter/pss-extension-mermaid",
+  "@minpeter/pss-extension-web",
+]);
+
 // Tegami propagates dependency bumps through private packages unless they are
 // removed from its graph. Keep every non-release workspace explicit here; the
 // config test derives the expected list from package manifests and fails when a
 // new private or experimental workspace is not added.
 const releaseIgnore = [
   "pss-next",
-  // Built-in extensions are bundled into the coding-agent build instead of
-  // being published on their own.
-  "@minpeter/pss-extension-latex",
-  "@minpeter/pss-extension-mermaid",
-  "@minpeter/pss-extension-web",
   "@minpeter/pss-worker-agent",
   "@minpeter/pss-bench-shared",
   "@minpeter/pss-benchmark-compaction-score",
@@ -34,6 +38,14 @@ const paper = tegami({
     bumpDep: ({ dependent, kind }) => {
       if (releaseIgnore.includes(dependent.name)) {
         return false;
+      }
+      // Built-in extensions peer-depend on the coding agent; a coding-agent
+      // release must refresh their peer range with a patch, never a major.
+      if (
+        kind === "peerDependencies" &&
+        builtinExtensions.has(dependent.name)
+      ) {
+        return "patch";
       }
       switch (kind) {
         case "dependencies":
@@ -60,6 +72,24 @@ const paper = tegami({
       },
     },
     "@minpeter/pss-coding-agent": {
+      prerelease: "next",
+      npm: {
+        distTag: "next",
+      },
+    },
+    "@minpeter/pss-extension-latex": {
+      prerelease: "next",
+      npm: {
+        distTag: "next",
+      },
+    },
+    "@minpeter/pss-extension-mermaid": {
+      prerelease: "next",
+      npm: {
+        distTag: "next",
+      },
+    },
+    "@minpeter/pss-extension-web": {
       prerelease: "next",
       npm: {
         distTag: "next",
