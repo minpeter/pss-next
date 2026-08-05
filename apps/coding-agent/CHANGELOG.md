@@ -1,3 +1,9 @@
+## @minpeter/pss-coding-agent@0.0.14-next.15 (next)
+
+### Shadow bundled extensions with installed ones
+
+An installed extension whose id matches a bundled default (latex, mermaid, web) now replaces the bundled copy instead of crashing host creation with a duplicate-id error. The three built-in extension packages are publishable, so `pss extension install`/`update` can deliver them between coding-agent releases.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.14 (next)
 
 ### Bundle built-in extensions into the coding agent
