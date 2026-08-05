@@ -11,13 +11,47 @@ const END_OF_LINE_PATTERN = /\r?\n/u;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const inputSchema = z
   .object({
-    pattern: z.string().min(1),
-    path: z.string().min(1).optional(),
-    include: z.string().min(1).optional(),
-    fixed_strings: z.boolean().optional(),
-    case_sensitive: z.boolean().optional(),
-    include_ignored: z.boolean().optional(),
-    max_results: z.number().int().positive().max(1000).optional(),
+    pattern: z
+      .string()
+      .min(1)
+      .describe(
+        "Regular expression to search for, or literal text when fixed_strings=true."
+      ),
+    path: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Workspace directory to search from (default workspace root)."),
+    include: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'File glob filter matched against paths and basenames (e.g. "*.ts").'
+      ),
+    fixed_strings: z
+      .boolean()
+      .optional()
+      .describe(
+        "Treat pattern as literal text instead of a regular expression (default false)."
+      ),
+    case_sensitive: z
+      .boolean()
+      .optional()
+      .describe("Use case-sensitive matching (default true)."),
+    include_ignored: z
+      .boolean()
+      .optional()
+      .describe(
+        "Include normally skipped directories such as .git, node_modules, dist, and coverage (default false)."
+      ),
+    max_results: z
+      .number()
+      .int()
+      .positive()
+      .max(1000)
+      .optional()
+      .describe("Maximum matching lines to return (default 200, max 1000)."),
   })
   .strict();
 

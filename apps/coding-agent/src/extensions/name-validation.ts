@@ -1,7 +1,7 @@
 import { requiredString } from "./data-validation";
 
 const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const RESERVED_COMMAND_NAMES = new Set([
   "clear",
   "fork",

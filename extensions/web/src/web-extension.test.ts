@@ -3,7 +3,7 @@ import type {
   ToolRendererMap,
 } from "@minpeter/pss-coding-agent/extension";
 import { createCodingAgentExtensionHost } from "@minpeter/pss-coding-agent/extension";
-import type { ToolExecutionOptions } from "ai";
+import { asSchema, type ToolExecutionOptions } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CodingAgentToolsConfigError,
@@ -91,6 +91,25 @@ describe("web extension tools", () => {
     expect(client.fetch).toHaveBeenCalledWith(["https://example.com/"], {
       maxCharacters: 8000,
     });
+  });
+
+  it("rejects invalid model inputs before calling the client", async () => {
+    const client = createStubClient();
+    const definitions = createCodingAgentTools({ client });
+    const searchSchema = asSchema(definitions.web_search.inputSchema);
+    const fetchSchema = asSchema(definitions.web_fetch.inputSchema);
+
+    await expect(
+      searchSchema.validate?.({ numResults: 99, query: "" })
+    ).resolves.toMatchObject({ success: false });
+    await expect(
+      fetchSchema.validate?.({ maxCharacters: -1, urls: [] })
+    ).resolves.toMatchObject({ success: false });
+    await expect(
+      fetchSchema.validate?.({ urls: ["file:///etc/passwd"] })
+    ).resolves.toMatchObject({ success: false });
+    expect(client.search).not.toHaveBeenCalled();
+    expect(client.fetch).not.toHaveBeenCalled();
   });
 
   it("rejects conflicting client configuration", () => {

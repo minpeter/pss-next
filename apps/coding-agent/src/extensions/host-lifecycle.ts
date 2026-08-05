@@ -1,6 +1,7 @@
 import type { Agent } from "@minpeter/pss-runtime";
 import { Fsm } from "@minpeter/pss-runtime/fsm";
 import type { TuiCommandContext } from "../tui/command";
+import { validateExtensionToolSchemas } from "./capability-validation";
 import { CodingAgentExtensionError } from "./error";
 import { ExtensionHostEventBus } from "./event-bus";
 import { runExtensionOperation } from "./host-operation";
@@ -163,6 +164,7 @@ export class ExtensionHostLifecycle {
             signal: this.#controller.signal,
           });
           assertOpen();
+          await validateExtensionToolSchemas(staged.tools, extension.id);
           commitExtensionRegistryCollections(
             this.#collections,
             staged,

@@ -10,9 +10,25 @@ import {
 
 const inputSchema = z
   .object({
-    path: z.string().min(1),
-    recursive: z.boolean().optional(),
-    expected_file_hash: z.string().length(8).optional(),
+    path: z
+      .string()
+      .min(1)
+      .describe(
+        "File or directory path relative to the workspace, or an absolute path under it."
+      ),
+    recursive: z
+      .boolean()
+      .optional()
+      .describe(
+        "Required as true to delete a directory; omit or false for files."
+      ),
+    expected_file_hash: z
+      .string()
+      .length(8)
+      .optional()
+      .describe(
+        "8-hex file_hash from the latest read_file; valid only for files and rejects stale content."
+      ),
   })
   .strict();
 

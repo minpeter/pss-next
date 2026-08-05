@@ -563,6 +563,9 @@ importers:
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.4.3)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       tsdown:
         specifier: ^0.22.14
@@ -5483,6 +5486,8 @@ snapshots:
     optional: true
 
   '@img/sharp-wasm32@0.35.2':
+    dependencies:
+      '@emnapi/runtime': 1.11.2
     optional: true
 
   '@img/sharp-webcontainers-wasm32@0.35.2':
