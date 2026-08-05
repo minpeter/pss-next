@@ -49,6 +49,36 @@ describe("verifyReleaseArtifacts package checks", () => {
     ]);
   });
 
+  it("requires runtime-spawned extension workers in the coding-agent bundle", () => {
+    const cwd = createFixture();
+    rmSync(
+      resolve(
+        cwd,
+        "apps/coding-agent/dist/extensions/mermaid/dist/mermaid-art-worker.js"
+      )
+    );
+
+    expect(verifyReleaseArtifacts({ cwd, packages: ["coding-agent"] })).toEqual(
+      [
+        "apps/coding-agent/dist/extensions/mermaid/dist/mermaid-art-worker.js is missing; runtime-spawned extension workers must be copied into the bundle",
+      ]
+    );
+  });
+
+  it("rejects private extension imports leaking into the coding-agent bundle", () => {
+    const cwd = createFixture();
+    writeFileSync(
+      resolve(cwd, "apps/coding-agent/dist/leaky.js"),
+      'import createLatex from "@minpeter/pss-extension-latex";\nexport default createLatex;\n'
+    );
+
+    expect(verifyReleaseArtifacts({ cwd, packages: ["coding-agent"] })).toEqual(
+      [
+        "apps/coding-agent/dist/leaky.js imports a private extension package; built-in extensions must be inlined via tsdown deps.alwaysBundle",
+      ]
+    );
+  });
+
   it("rejects extensionless relative imports that would break Node ESM", () => {
     const cwd = createFixture();
     writeFileSync(

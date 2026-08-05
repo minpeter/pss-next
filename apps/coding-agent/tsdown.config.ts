@@ -35,7 +35,28 @@ export default defineConfig({
     "src/workspace-tools/index.ts",
   ],
   unbundle: true,
+  // Built-in extensions are private workspace packages; inline them so the
+  // published coding-agent tarball does not depend on unpublished code.
+  deps: {
+    alwaysBundle: [
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+      "@minpeter/pss-extension-web",
+    ],
+  },
   root: "src",
+  // Worker entrypoints are spawned by URL at runtime, so the bundler cannot
+  // see them; ship them next to the inlined extension chunks.
+  copy: [
+    {
+      from: "../../extensions/latex/dist/mathjax-worker.js",
+      to: "dist/extensions/latex/dist",
+    },
+    {
+      from: "../../extensions/mermaid/dist/mermaid-art-worker.js",
+      to: "dist/extensions/mermaid/dist",
+    },
+  ],
   fixedExtension: false,
   sourcemap: true,
   dts: true,

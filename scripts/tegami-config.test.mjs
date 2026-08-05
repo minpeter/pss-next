@@ -48,13 +48,10 @@ describe("Tegami release configuration", () => {
     expect(script).toContain('repo: "minpeter/pss-runtime"');
     expect(script).toContain('base: "main"');
     expect(script).toContain('workflow: "release.yml"');
-    expect(script.match(/prerelease: "next"/g)).toHaveLength(5);
-    expect(script.match(/distTag: "next"/g)).toHaveLength(5);
+    expect(script.match(/prerelease: "next"/g)).toHaveLength(2);
+    expect(script.match(/distTag: "next"/g)).toHaveLength(2);
     expect(script).toContain('"@minpeter/pss-runtime"');
     expect(script).toContain('"@minpeter/pss-coding-agent"');
-    expect(script).toContain('"@minpeter/pss-extension-latex"');
-    expect(script).toContain('"@minpeter/pss-extension-mermaid"');
-    expect(script).toContain('"@minpeter/pss-extension-web"');
   });
 
   it("excludes every private and experimental workspace from the graph", () => {
