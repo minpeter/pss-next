@@ -56,6 +56,61 @@ describe("default coding-agent extensions", () => {
     await host.dispose();
   });
 
+  it("lets an installed extension shadow a bundled default with the same id", () => {
+    const shadowLatex: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-latex",
+    };
+    const shadowMermaid: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-mermaid",
+    };
+    const shadowWeb: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "@minpeter/pss-extension-web",
+    };
+
+    const withShadows = withDefaultCodingAgentExtensions([
+      shadowLatex,
+      shadowMermaid,
+      shadowWeb,
+    ]);
+    const byId = new Map(
+      withShadows.map((extension) => [extension.id, extension])
+    );
+
+    expect(withShadows).toHaveLength(3);
+    expect(byId.get("@minpeter/pss-extension-latex")).toBe(shadowLatex);
+    expect(byId.get("@minpeter/pss-extension-mermaid")).toBe(shadowMermaid);
+    expect(byId.get("@minpeter/pss-extension-web")).toBe(shadowWeb);
+  });
+
+  it("keeps every bundled default when no installed id collides", () => {
+    const extra: CodingAgentExtensionInput = {
+      configure() {
+        return;
+      },
+      id: "extra-extension",
+    };
+
+    const ids = withDefaultCodingAgentExtensions([extra]).map(
+      (extension) => extension.id
+    );
+
+    expect(ids).toStrictEqual([
+      "@minpeter/pss-extension-latex",
+      "@minpeter/pss-extension-mermaid",
+      "@minpeter/pss-extension-web",
+      "extra-extension",
+    ]);
+  });
+
   it("restores the default fallback after an override is removed", async () => {
     const overrideRenderer = () => ({
       invalidate() {
