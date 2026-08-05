@@ -582,13 +582,13 @@ export const ompFormat: EditFormat = {
         "Line numbers refer to the ORIGINAL file and never shift as hunks apply.",
         "",
         "Operations:",
-        "SWAP N.=M: — replace original lines N through M inclusive with the body rows below.",
-        "DEL N.=M — delete original lines N through M inclusive. No body.",
-        "INS.PRE N: — insert the body rows immediately before line N.",
-        "INS.POST N: — insert the body rows immediately after line N.",
-        "INS.HEAD: — insert the body rows at the very start of the file.",
-        "INS.TAIL: — insert the body rows at the very end of the file.",
-        "Single line: SWAP N.=N: or DEL N.",
+        "PUT N.=M: — replace original lines N through M inclusive with the body rows below.",
+        "CUT N.=M — delete original lines N through M inclusive. No body.",
+        "PUT <N: — insert the body rows immediately before line N.",
+        "PUT >N: — insert the body rows immediately after line N.",
+        "PUT <1: — insert the body rows at the very start of the file.",
+        "PUT >$: — insert the body rows at the very end of the file.",
+        "Single line: PUT N.=N: or CUT N.=N.",
         "",
         "Body rows appear only under a header ending in ':'. Every body row is +TEXT,",
         "adding one literal line TEXT with leading whitespace kept. '+' alone adds a",
@@ -746,45 +746,45 @@ const ompJsonToDsl = (call: z.infer<typeof ompJsonCallSchema>): string => {
     switch (hunk.op) {
       case "swap":
         rows.push(
-          `SWAP ${hunk.first as number}.=${hunk.last as number}:`,
+          `PUT ${hunk.first as number}.=${hunk.last as number}:`,
           ...body(hunk.content as string)
         );
         break;
       case "swap_block":
         rows.push(
-          `SWAP.BLK ${hunk.line as number}:`,
+          `PUT ${hunk.line as number}*:`,
           ...body(hunk.content as string)
         );
         break;
       case "insert_pre":
         rows.push(
-          `INS.PRE ${hunk.line as number}:`,
+          `PUT <${hunk.line as number}:`,
           ...body(hunk.content as string)
         );
         break;
       case "insert_post":
         rows.push(
-          `INS.POST ${hunk.line as number}:`,
+          `PUT >${hunk.line as number}:`,
           ...body(hunk.content as string)
         );
         break;
       case "insert_head":
-        rows.push("INS.HEAD:", ...body(hunk.content as string));
+        rows.push("PUT <1:", ...body(hunk.content as string));
         break;
       case "insert_tail":
-        rows.push("INS.TAIL:", ...body(hunk.content as string));
+        rows.push("PUT >$:", ...body(hunk.content as string));
         break;
       case "insert_block_after":
         rows.push(
-          `INS.BLK.POST ${hunk.line as number}:`,
+          `PUT >${hunk.line as number}*:`,
           ...body(hunk.content as string)
         );
         break;
       case "delete":
-        rows.push(`DEL ${hunk.first as number}.=${hunk.last as number}`);
+        rows.push(`CUT ${hunk.first as number}.=${hunk.last as number}`);
         break;
       case "delete_block":
-        rows.push(`DEL.BLK ${hunk.line as number}`);
+        rows.push(`CUT ${hunk.line as number}*`);
         break;
       case "remove":
         rows.push("REM");

@@ -157,7 +157,7 @@ export const ompDslMethodOptions = {
   instructionsExtra: [
     "read_file shows [PATH#TAG] and N:content lines.",
     "edit_file takes { path, patch } where patch is the full DSL body starting with [PATH#TAG].",
-    "Ops: SWAP N.=M:, DEL N.=M, INS.PRE N:, INS.POST N:, INS.HEAD:, INS.TAIL:, plus block variants.",
+    "Ops: PUT N.=M:, CUT N.=M, PUT <N:, PUT >N:, PUT <1:, PUT >$:, plus block variants.",
   ].join("\n"),
   toReply: (input: unknown) => {
     const parsed = ompDslEditSchema.parse(input);

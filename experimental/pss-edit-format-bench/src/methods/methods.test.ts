@@ -89,7 +89,7 @@ describe("edit methods write the filesystem", () => {
     const tools = method.createTools(root, emptyHooks());
     const patch = [
       `[${task.path}#A1B2]`,
-      "SWAP 2.=2:",
+      "PUT 2.=2:",
       '+    greeting = "Hi"',
       '+    msg = f"{greeting}, {name}"',
     ].join("\n");
