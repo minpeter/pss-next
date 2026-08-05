@@ -134,25 +134,25 @@ describe("pss-json adapter", () => {
 });
 
 describe("omp-dsl adapter", () => {
-  it("applies SWAP over an inclusive range", () => {
+  it("applies PUT over an inclusive range", () => {
     const task = taskById("single-line-to-two");
-    const reply = `[greet.py#A1B2]\nSWAP 2.=2:\n+    greeting = "Hi"\n+    msg = f"{greeting}, {name}"\n`;
+    const reply = `[greet.py#A1B2]\nPUT 2.=2:\n+    greeting = "Hi"\n+    msg = f"{greeting}, {name}"\n`;
 
     expect(ompFormat.apply(reply, task.initial).text).toBe(task.expected);
   });
 
-  it("applies DEL without a body", () => {
+  it("applies CUT without a body", () => {
     const task = taskById("delete-middle-line");
-    const reply = "[greet.py#A1B2]\nDEL 2\n";
+    const reply = "[greet.py#A1B2]\nCUT 2.=2\n";
 
     expect(ompFormat.apply(reply, task.initial).text).toBe(task.expected);
   });
 
-  it("applies INS.HEAD and INS.TAIL", () => {
+  it("applies PUT at head and tail", () => {
     const prepend = taskById("prepend-header");
     expect(
       ompFormat.apply(
-        "[greet.py#A1B2]\nINS.HEAD:\n+# generated header\n",
+        "[greet.py#A1B2]\nPUT <1:\n+# generated header\n",
         prepend.initial
       ).text
     ).toBe(prepend.expected);
@@ -160,7 +160,7 @@ describe("omp-dsl adapter", () => {
     const append = taskById("append-call");
     expect(
       ompFormat.apply(
-        '[greet.py#A1B2]\nINS.TAIL:\n+greet("everyone")\n',
+        '[greet.py#A1B2]\nPUT >$:\n+greet("everyone")\n',
         append.initial
       ).text
     ).toBe(append.expected);

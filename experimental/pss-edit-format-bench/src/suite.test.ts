@@ -76,7 +76,7 @@ const CANONICAL: Record<
         new_content: ["console.log(tokenize(out));"],
       },
     ],
-    omp: "SWAP 1.=5:\n+function tokenize(input) {\n+  return input.trim();\n+}\n+const out = tokenize(raw);\n+console.log(tokenize(out));",
+    omp: "PUT 1.=5:\n+function tokenize(input) {\n+  return input.trim();\n+}\n+const out = tokenize(raw);\n+console.log(tokenize(out));",
   },
   "move-block-up": {
     pss: [
@@ -87,31 +87,31 @@ const CANONICAL: Record<
         new_content: ['    print("done")', "    return acc"],
       },
     ],
-    omp: 'SWAP 5.=6:\n+    print("done")\n+    return acc',
+    omp: 'PUT 5.=6:\n+    print("done")\n+    return acc',
   },
   "tab-indent-replace": {
     pss: [{ op: "replace", target: 4, new_content: ["\treturn a + b"] }],
-    omp: "SWAP 4.=4:\n+\treturn a + b",
+    omp: "PUT 4.=4:\n+\treturn a + b",
   },
   "trailing-ws-preserve": {
     pss: [{ op: "replace", target: 1, new_content: ["# header v2"] }],
-    omp: "SWAP 1.=1:\n+# header v2",
+    omp: "PUT 1.=1:\n+# header v2",
   },
   "unicode-string-replace": {
     pss: [
       { op: "replace", target: 1, new_content: ['GREETING = "Hello, 세계"'] },
     ],
-    omp: 'SWAP 1.=1:\n+GREETING = "Hello, 세계"',
+    omp: 'PUT 1.=1:\n+GREETING = "Hello, 세계"',
   },
   "anchor-text-trap": {
     pss: [{ op: "replace", target: 2, new_content: ["const enabled = true;"] }],
-    omp: "SWAP 2.=2:\n+const enabled = true;",
+    omp: "PUT 2.=2:\n+const enabled = true;",
   },
   "large-mid-replace": {
     pss: [
       { op: "replace", target: 27, new_content: ["export const value27 = 0;"] },
     ],
-    omp: "SWAP 27.=27:\n+export const value27 = 0;",
+    omp: "PUT 27.=27:\n+export const value27 = 0;",
   },
   "large-range-replace": {
     pss: [
@@ -122,11 +122,11 @@ const CANONICAL: Record<
         new_content: ["export const condensed = 1;"],
       },
     ],
-    omp: "SWAP 30.=38:\n+export const condensed = 1;",
+    omp: "PUT 30.=38:\n+export const condensed = 1;",
   },
   "json-key-rename": {
     pss: [{ op: "replace", target: 3, new_content: ['  "release": "1.0.0",'] }],
-    omp: 'SWAP 3.=3:\n+  "release": "1.0.0",',
+    omp: 'PUT 3.=3:\n+  "release": "1.0.0",',
   },
   "py-dedent-block": {
     pss: [
@@ -143,7 +143,7 @@ const CANONICAL: Record<
         ],
       },
     ],
-    omp: "SWAP 2.=5:\n+    if not xs:\n+        return 0\n+    total = 0\n+    for x in xs:\n+        total += x",
+    omp: "PUT 2.=5:\n+    if not xs:\n+        return 0\n+    total = 0\n+    for x in xs:\n+        total += x",
   },
   "py-append-method": {
     pss: [
@@ -152,7 +152,7 @@ const CANONICAL: Record<
         new_content: ["    def total(self):", "        return sum(self.items)"],
       },
     ],
-    omp: "INS.TAIL:\n+    def total(self):\n+        return sum(self.items)",
+    omp: "PUT >$:\n+    def total(self):\n+        return sum(self.items)",
   },
   "go-line-replace": {
     pss: [
@@ -162,7 +162,7 @@ const CANONICAL: Record<
         new_content: ['\tfmt.Printf("sum=%d\\n", total)'],
       },
     ],
-    omp: 'SWAP 6.=6:\n+\tfmt.Printf("sum=%d\\n", total)',
+    omp: 'PUT 6.=6:\n+\tfmt.Printf("sum=%d\\n", total)',
   },
   "rust-fn-rename": {
     pss: [
@@ -173,22 +173,22 @@ const CANONICAL: Record<
       },
       { op: "replace", target: 6, new_content: ["    compute(21)"] },
     ],
-    omp: "SWAP 1.=1:\n+fn compute(x: i32) -> i32 {\nSWAP 6.=6:\n+    compute(21)",
+    omp: "PUT 1.=1:\n+fn compute(x: i32) -> i32 {\nPUT 6.=6:\n+    compute(21)",
   },
   "md-bullet-insert": {
     pss: [{ op: "append", target: 4, new_content: ["- third item"] }],
-    omp: "INS.POST 4:\n+- third item",
+    omp: "PUT >4:\n+- third item",
   },
   "delete-first-line": {
     // The real edit_file tool has no delete op and requires non-empty
     // new_content, so a pure line removal is not expressible through pss-json.
     // Only omp-dsl can encode this task; the pss solvable test below asserts
     // the limitation instead of demanding a pass.
-    omp: "DEL 1",
+    omp: "CUT 1.=1",
   },
   "insert-after-blank": {
     pss: [{ op: "prepend", target: 3, new_content: ["const b = 2;"] }],
-    omp: "INS.POST 2:\n+const b = 2;",
+    omp: "PUT >2:\n+const b = 2;",
   },
 };
 
