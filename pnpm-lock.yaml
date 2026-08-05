@@ -24,8 +24,8 @@ importers:
         specifier: 2.5.5
         version: 2.5.5
       '@earendil-works/pi-tui':
-        specifier: ^0.82.1
-        version: 0.82.1
+        specifier: ^0.83.0
+        version: 0.83.0
       '@minpeter/pss-coding-agent':
         specifier: workspace:*
         version: link:apps/coding-agent
@@ -84,8 +84,8 @@ importers:
         specifier: 3.0.20
         version: 3.0.20(zod@4.4.3)
       '@earendil-works/pi-tui':
-        specifier: ^0.82.1
-        version: 0.82.1
+        specifier: ^0.83.0
+        version: 0.83.0
       '@minpeter/pss-extension-latex':
         specifier: workspace:^
         version: link:../../extensions/latex
@@ -937,8 +937,8 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
-  '@earendil-works/pi-tui@0.82.1':
-    resolution: {integrity: sha512-9yN8hALfKaxZq7n54EMxqhFCWnMi6LHkraMJ/1YjHiATq75XrI6XDMVppn9EDtiK7Fks8hUe1SDXUTrIvwRWfQ==}
+  '@earendil-works/pi-tui@0.83.0':
+    resolution: {integrity: sha512-IoYrb0rORjELmEpNtoCA/U8je3KopMkRAVJRdSzvXRvgb+Huo1gNh8Q5CSZvNOiYtDxJdj2tYZZHZ4B3+IN3hA==}
     engines: {node: '>=22.19.0'}
 
   '@emnapi/core@1.11.1':
@@ -5157,7 +5157,7 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@earendil-works/pi-tui@0.82.1':
+  '@earendil-works/pi-tui@0.83.0':
     dependencies:
       get-east-asian-width: 1.6.0
       marked: 18.0.5
