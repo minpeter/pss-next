@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import type { ThreadStateMigration } from "@minpeter/pss-runtime";
-import type { ToolSet } from "ai";
+import { asSchema, type ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
 import type { AssistantRenderer } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
@@ -348,11 +348,95 @@ export function snapshotToolEntry(
   definition: unknown
 ): readonly [string, ToolSet[string]] {
   const name = snapshotToolName(nameValue);
-  if (
-    (typeof definition !== "object" || definition === null) &&
-    typeof definition !== "function"
-  ) {
+  if (typeof definition !== "object" || definition === null) {
     throw new TypeError(`Tool "${name}" must be an object`);
   }
+  if (!("type" in definition && definition.type === "provider")) {
+    if (
+      !("description" in definition) ||
+      (typeof definition.description !== "function" &&
+        (typeof definition.description !== "string" ||
+          definition.description.trim().length === 0))
+    ) {
+      throw new TypeError(`Tool "${name}" must have a non-empty description`);
+    }
+    if (
+      !("inputSchema" in definition) ||
+      definition.inputSchema === undefined
+    ) {
+      throw new TypeError(`Tool "${name}" must have an input schema`);
+    }
+  }
   return Object.freeze([name, definition as ToolSet[string]] as const);
+}
+
+export async function validateExtensionToolSchemas(
+  entries: Readonly<Record<string, ToolSet[string]>>,
+  extensionId: string
+): Promise<void> {
+  for (const [name, definition] of Object.entries(entries)) {
+    if (definition.type === "provider") {
+      continue;
+    }
+    try {
+      const schema = await asSchema(definition.inputSchema).jsonSchema;
+      assertToolInputSchema(schema, "inputSchema", true);
+    } catch (error) {
+      const detail = error instanceof Error ? `: ${error.message}` : "";
+      throw new TypeError(
+        `Extension "${extensionId}" tool "${name}" has an invalid input schema${detail}`,
+        { cause: error }
+      );
+    }
+  }
+}
+
+function assertToolInputSchema(
+  value: unknown,
+  path: string,
+  root = false
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${path} must be a JSON Schema object`);
+  }
+  const schema = value as Record<string, unknown>;
+  if (root && schema.type !== "object") {
+    throw new TypeError(`${path} root type must be object`);
+  }
+  for (const keyword of ["allOf", "oneOf", "not"] as const) {
+    if (keyword in schema) {
+      throw new TypeError(`${path} must not use ${keyword}`);
+    }
+  }
+  if (schema.type === "array") {
+    if (!("items" in schema)) {
+      throw new TypeError(`${path} arrays must define items`);
+    }
+    assertToolInputSchema(schema.items, `${path}.items`);
+  }
+  if ("properties" in schema) {
+    if (
+      typeof schema.properties !== "object" ||
+      schema.properties === null ||
+      Array.isArray(schema.properties)
+    ) {
+      throw new TypeError(`${path}.properties must be an object`);
+    }
+    for (const [name, property] of Object.entries(schema.properties)) {
+      assertToolInputSchema(property, `${path}.properties.${name}`);
+    }
+  }
+  assertAnyOf(schema, path);
+}
+
+function assertAnyOf(schema: Record<string, unknown>, path: string): void {
+  if (!("anyOf" in schema)) {
+    return;
+  }
+  if (!Array.isArray(schema.anyOf) || schema.anyOf.length === 0) {
+    throw new TypeError(`${path}.anyOf must be a non-empty array`);
+  }
+  for (const [index, option] of schema.anyOf.entries()) {
+    assertToolInputSchema(option, `${path}.anyOf[${index}]`);
+  }
 }

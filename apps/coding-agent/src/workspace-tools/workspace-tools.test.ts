@@ -120,6 +120,46 @@ describe("workspace coding tools", () => {
     expect(tools.edit_file.description).toMatch(criticalPattern);
   });
 
+  it("describes every built-in input field and keeps schema surfaces stable", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const expectedProperties: Readonly<Record<string, readonly string[]>> = {
+      delete_file: ["expected_file_hash", "path", "recursive"],
+      edit_file: ["edits", "expected_file_hash", "path"],
+      glob_files: ["include_ignored", "max_results", "path", "pattern"],
+      grep_files: [
+        "case_sensitive",
+        "fixed_strings",
+        "include",
+        "include_ignored",
+        "max_results",
+        "path",
+        "pattern",
+      ],
+      read_file: ["limit", "offset", "path"],
+      shell_execute: ["command", "timeout_seconds"],
+      write_file: ["content", "expected_file_hash", "path"],
+    };
+
+    expect(Object.keys(tools).sort()).toStrictEqual(
+      Object.keys(expectedProperties).sort()
+    );
+    for (const [name, expected] of Object.entries(expectedProperties)) {
+      const definition = tools[name];
+      if (definition?.type === "provider") {
+        throw new TypeError(`Expected function tool: ${name}`);
+      }
+      const schema = await asSchema(definition?.inputSchema).jsonSchema;
+      expect(schema.type).toBe("object");
+      expect(schema.additionalProperties).toBe(false);
+      expect(Object.keys(schema.properties ?? {}).sort()).toStrictEqual(
+        expected
+      );
+      for (const property of Object.values(schema.properties ?? {})) {
+        expect(property).toMatchObject({ description: expect.any(String) });
+      }
+    }
+  });
+
   it("reads hashline anchors and applies deterministic edits", async () => {
     const tools = createWorkspaceTools({ workspace });
     const read = executableTool(tools, "read_file");
@@ -821,6 +861,18 @@ describe("workspace coding tools", () => {
     expect(output).toContain("timed out");
     expect(Date.now() - startedAt).toBeLessThan(15_000);
   }, 20_000);
+
+  it("reports a non-zero shell exit as an error", async () => {
+    const tools = createWorkspaceTools({ workspace });
+    const shell = executableTool(tools, "shell_execute");
+    const output = String(
+      await shell({ command: "printf failure >&2; exit 7" }, executionOptions)
+    );
+
+    expect(output).toContain("ERROR - command failed");
+    expect(output).toContain("exit_code: 7");
+    expect(output).not.toContain("OK - command finished");
+  });
 
   it("withholds provider API keys from shell commands", async () => {
     process.env.AI_API_KEY = "pss-test-secret";

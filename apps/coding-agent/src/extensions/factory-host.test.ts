@@ -153,6 +153,65 @@ describe("default-export coding agent extensions", () => {
     });
   });
 
+  it("rejects non-portable and oversized tool names", async () => {
+    const definition = tool({
+      description: "Portable name fixture",
+      inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+    });
+    for (const name of ["service.lookup", `t${"x".repeat(64)}`]) {
+      await expect(
+        createCodingAgentExtensionHost([
+          {
+            default(pss) {
+              pss.provide(tools({ [name]: definition }));
+            },
+            id: "invalid-tool-name-provider",
+          },
+        ])
+      ).rejects.toMatchObject({
+        cause: { message: `Invalid tool name "${name}"` },
+      });
+    }
+  });
+
+  it("rejects malformed extension tool definitions during configuration", async () => {
+    const cases = [
+      {
+        definition: {
+          inputSchema: jsonSchema({ type: "object" }),
+        },
+        message: 'Tool "invalid_tool" must have a non-empty description',
+      },
+      {
+        definition: {
+          description: "Missing schema",
+        },
+        message: 'Tool "invalid_tool" must have an input schema',
+      },
+      {
+        definition: tool({
+          description: "Array-root schema",
+          inputSchema: jsonSchema({ items: { type: "string" }, type: "array" }),
+        }),
+        message:
+          'Extension "invalid-tool-provider" tool "invalid_tool" has an invalid input schema: inputSchema root type must be object',
+      },
+    ] as const;
+
+    for (const { definition, message } of cases) {
+      await expect(
+        createCodingAgentExtensionHost([
+          {
+            default(pss) {
+              pss.provide(tools({ invalid_tool: definition as never }));
+            },
+            id: "invalid-tool-provider",
+          },
+        ])
+      ).rejects.toMatchObject({ cause: { message } });
+    }
+  });
+
   it("rejects unknown capability kinds", async () => {
     await expect(
       createCodingAgentExtensionHost([

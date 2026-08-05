@@ -5,8 +5,19 @@ import { truncateToolOutput } from "./output";
 
 const inputSchema = z
   .object({
-    command: z.string().min(1),
-    timeout_seconds: z.number().int().positive().max(600).optional(),
+    command: z
+      .string()
+      .min(1)
+      .describe(
+        "Non-interactive Bash command executed from the workspace directory."
+      ),
+    timeout_seconds: z
+      .number()
+      .int()
+      .positive()
+      .max(600)
+      .optional()
+      .describe("Timeout in seconds (default 120, max 600)."),
   })
   .strict();
 
@@ -16,6 +27,16 @@ interface CommandResult {
   readonly stderr: string;
   readonly stdout: string;
   readonly timedOut: boolean;
+}
+
+function commandStatus(result: CommandResult): string {
+  if (result.timedOut) {
+    return "ERROR - command timed out";
+  }
+  if (result.exitCode !== 0 || result.signal !== null) {
+    return "ERROR - command failed";
+  }
+  return "OK - command finished";
 }
 
 function appendBounded(current: string, chunk: string): string {
@@ -110,9 +131,7 @@ export function createShellExecuteTool(
       );
       return truncateToolOutput(
         [
-          result.timedOut
-            ? "ERROR - command timed out"
-            : "OK - command finished",
+          commandStatus(result),
           `exit_code: ${result.exitCode ?? "null"}`,
           `signal: ${result.signal ?? "none"}`,
           "stdout:",
