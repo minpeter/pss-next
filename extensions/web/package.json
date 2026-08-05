@@ -44,7 +44,6 @@
   "devDependencies": {
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
-    "@minpeter/pss-coding-agent": "workspace:^"
+    "vitest": "^4.1.10"
   }
 }
