@@ -17,8 +17,9 @@ export const createLatexExtension: CodingAgentExtensionFactory = (pss) => {
   pss.provide(instructions(LATEX_OUTPUT_INSTRUCTIONS));
   pss.provide(
     assistantRenderer(
-      ({ foregroundColor, markdownTheme, requestRender, signal }) =>
+      ({ delegate, foregroundColor, markdownTheme, requestRender, signal }) =>
         new LatexMarkdown("", 1, 0, markdownTheme, {
+          delegate,
           foregroundColor,
           requestRender,
           signal,

@@ -202,6 +202,159 @@ describe("coding-agent extension capabilities", () => {
     });
   });
 
+  it("composes fallback assistant renderers in registration order", async () => {
+    const wrapRenderer =
+      (name: string) =>
+      ({
+        delegate,
+      }: {
+        delegate?: (text: string) => { render(width: number): string[] };
+      }) => {
+        let text = "";
+        return {
+          invalidate() {
+            return;
+          },
+          render(width: number) {
+            const inner = delegate?.(`${name}(${text})`);
+            return inner === undefined
+              ? [`${name}(${text})`]
+              : inner.render(width);
+          },
+          setText(value: string) {
+            text = value;
+          },
+        };
+      };
+    const host = await createCodingAgentExtensionHost([
+      {
+        default(pss) {
+          pss.provide(
+            assistantRenderer(wrapRenderer("first"), { fallback: true })
+          );
+        },
+        id: "first-fallback",
+      },
+      {
+        default(pss) {
+          pss.provide(
+            assistantRenderer(wrapRenderer("second"), { fallback: true })
+          );
+        },
+        id: "second-fallback",
+      },
+    ]);
+
+    expect(host.getAssistantRendererChainOwners()).toEqual([
+      "first-fallback",
+      "second-fallback",
+    ]);
+    expect(host.getAssistantRendererOwner()).toBe("second-fallback");
+
+    const markdownTheme = new Proxy(
+      {},
+      { get: () => (text: string) => text }
+    ) as never;
+    const view = host.assistantRenderer?.({
+      markdownTheme,
+      notify: () => undefined,
+      notifyOnce: () => undefined,
+      requestRender: () => undefined,
+      signal: new AbortController().signal,
+    });
+    view?.setText("hello");
+    // The last registered fallback ("second") is outermost: it processes the
+    // raw text first, then "first" wraps the result.
+    expect(view?.render(80).join("\n")).toContain("first(second(hello))");
+    await host.dispose();
+  });
+
+  it("rejects a fallback once an override owns the renderer slot", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+
+    await expect(
+      createCodingAgentExtensionHost([
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer, { override: true }));
+          },
+          id: "override-owner",
+        },
+        {
+          default(pss) {
+            pss.provide(assistantRenderer(renderer, { fallback: true }));
+          },
+          id: "late-fallback",
+        },
+      ])
+    ).rejects.toMatchObject({
+      cause: {
+        message:
+          'Assistant renderer from extension "late-fallback" conflicts with extension "override-owner"',
+      },
+    });
+  });
+
+  it("lets an override replace a composed fallback chain", async () => {
+    const fallback = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["fallback"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const preferred = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return ["preferred"];
+      },
+      setText() {
+        return;
+      },
+    });
+    const host = await createCodingAgentExtensionHost([
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(fallback, { fallback: true }));
+        },
+        id: "first-fallback",
+      },
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(fallback, { fallback: true }));
+        },
+        id: "second-fallback",
+      },
+      {
+        default(pss) {
+          pss.provide(assistantRenderer(preferred, { override: true }));
+        },
+        id: "preferred-renderer",
+      },
+    ]);
+
+    expect(host.assistantRenderer).toBe(preferred);
+    expect(host.getAssistantRendererOwner()).toBe("preferred-renderer");
+    expect(host.getAssistantRendererChainOwners()).toEqual([]);
+    await host.dispose();
+  });
+
   it("exposes only the three factory composition methods", async () => {
     let keys: string[] = [];
     const host = await createCodingAgentExtensionHost([

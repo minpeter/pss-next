@@ -1,4 +1,5 @@
 import latexExtension from "@minpeter/pss-extension-latex";
+import mermaidExtension from "@minpeter/pss-extension-mermaid";
 import {
   type CreateCodingAgentToolsOptions,
   createWebExtension,
@@ -12,6 +13,11 @@ import type {
 const latexModule: CodingAgentExtensionModule = {
   default: latexExtension,
   id: "@minpeter/pss-extension-latex",
+};
+
+const mermaidModule: CodingAgentExtensionModule = {
+  default: mermaidExtension,
+  id: "@minpeter/pss-extension-mermaid",
 };
 
 export interface DefaultCodingAgentExtensionsOptions {
@@ -31,6 +37,7 @@ export const withDefaultCodingAgentExtensions = (
         };
   return [
     latexModule,
+    mermaidModule,
     ...(webModule === undefined ? [] : [webModule]),
     ...extensions,
   ];

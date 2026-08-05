@@ -20,7 +20,10 @@ export interface RegisteredAssistantRenderer {
 }
 
 export interface ExtensionRegistryCollections {
+  /** Exclusive or override renderer; mutually exclusive with the chain. */
   assistantRenderer?: RegisteredAssistantRenderer;
+  /** Fallback renderers in registration order; the last entry is outermost. */
+  readonly assistantRendererChain: RegisteredAssistantRenderer[];
   readonly commands: TuiCommand[];
   readonly events: RegisteredCodingAgentExtensionEvent[];
   readonly hooks: RegisteredAgentHooks[];
@@ -36,6 +39,8 @@ export interface ExtensionRegistryCollections {
 
 interface ExtensionContributionOwners {
   assistantRenderer?: string;
+  /** Owner per fallback chain entry, parallel to `assistantRendererChain`. */
+  readonly assistantRendererChain: string[];
   readonly commands: Map<string, string>;
   readonly migrations: Map<string, string>;
   readonly modelProviders: Map<string, string>;
@@ -45,6 +50,7 @@ interface ExtensionContributionOwners {
 
 export function createExtensionRegistryCollections(): ExtensionRegistryCollections {
   return {
+    assistantRendererChain: [],
     commands: [],
     events: [],
     hooks: [],
@@ -52,6 +58,7 @@ export function createExtensionRegistryCollections(): ExtensionRegistryCollectio
     migrations: [],
     modelProviders: new Map(),
     owners: {
+      assistantRendererChain: [],
       commands: new Map(),
       migrations: new Map(),
       modelProviders: new Map(),
@@ -65,27 +72,48 @@ export function createExtensionRegistryCollections(): ExtensionRegistryCollectio
   };
 }
 
+const OVERRIDE_HINT =
+  "; register with { override: true } to replace the fallback";
+
+/**
+ * Validate assistant-renderer contributions across extensions. Fallback
+ * renderers compose into a chain; an override replaces the chain; an
+ * exclusive renderer requires an empty slot. Mutations happen in the main
+ * commit path after every conflict check has passed.
+ */
+function commitAssistantRenderer(
+  target: ExtensionRegistryCollections,
+  staged: ExtensionRegistryCollections,
+  extensionId: string
+): void {
+  const conflict = (owner: string | undefined, hint = ""): never => {
+    throw new Error(
+      `Assistant renderer from extension "${extensionId}" conflicts with extension "${owner ?? extensionId}"${hint}`
+    );
+  };
+  const incoming = staged.assistantRenderer;
+  if (incoming !== undefined) {
+    if (target.assistantRenderer !== undefined) {
+      conflict(target.owners.assistantRenderer);
+    }
+    if (!incoming.override && target.assistantRendererChain.length > 0) {
+      conflict(target.owners.assistantRendererChain.at(-1), OVERRIDE_HINT);
+    }
+  }
+  if (
+    staged.assistantRendererChain.length > 0 &&
+    target.assistantRenderer !== undefined
+  ) {
+    conflict(target.owners.assistantRenderer);
+  }
+}
+
 export function commitExtensionRegistryCollections(
   target: ExtensionRegistryCollections,
   staged: ExtensionRegistryCollections,
   extensionId: string
 ): void {
-  const existingAssistantRenderer = target.assistantRenderer;
-  const incomingAssistantRenderer = staged.assistantRenderer;
-  if (
-    existingAssistantRenderer !== undefined &&
-    incomingAssistantRenderer !== undefined &&
-    !(existingAssistantRenderer.fallback && incomingAssistantRenderer.override)
-  ) {
-    const existingOwner = target.owners.assistantRenderer ?? extensionId;
-    const overrideHint =
-      existingAssistantRenderer.fallback && !incomingAssistantRenderer.override
-        ? "; register with { override: true } to replace the fallback"
-        : "";
-    throw new Error(
-      `Assistant renderer from extension "${extensionId}" conflicts with extension "${existingOwner}"${overrideHint}`
-    );
-  }
+  commitAssistantRenderer(target, staged, extensionId);
   assertNoCommandConflicts(
     target.commands,
     staged.commands,
@@ -131,10 +159,19 @@ export function commitExtensionRegistryCollections(
   target.resourceRoots.prompts.push(...staged.resourceRoots.prompts);
   target.resourceRoots.skills.push(...staged.resourceRoots.skills);
   target.sessionGuards.push(...staged.sessionGuards);
-  if (incomingAssistantRenderer !== undefined) {
-    target.assistantRenderer = incomingAssistantRenderer;
+  if (staged.assistantRenderer !== undefined) {
+    if (staged.assistantRenderer.override) {
+      // An explicit override replaces the whole fallback chain.
+      target.assistantRendererChain.length = 0;
+      target.owners.assistantRendererChain.length = 0;
+    }
+    target.assistantRenderer = staged.assistantRenderer;
     target.owners.assistantRenderer = extensionId;
   }
+  target.assistantRendererChain.push(...staged.assistantRendererChain);
+  target.owners.assistantRendererChain.push(
+    ...staged.assistantRendererChain.map(() => extensionId)
+  );
   for (const [id, provider] of staged.modelProviders) {
     target.modelProviders.set(id, provider);
     target.owners.modelProviders.set(id, extensionId);
