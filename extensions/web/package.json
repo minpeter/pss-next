@@ -1,6 +1,6 @@
 {
   "name": "@minpeter/pss-extension-web",
-  "version": "0.0.1-next.2",
+  "version": "0.0.1-next.3",
   "description": "OpenSearch-backed web tools for the PSS coding agent.",
   "type": "module",
   "engines": {

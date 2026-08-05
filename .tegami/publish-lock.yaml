@@ -1,20 +1,37 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Bundle built-in extensions into the coding agent\n\nShip the LaTeX, Mermaid, and web extensions inside the coding-agent tarball\nvia tsdown alwaysBundle instead of publishing them as separate npm packages,\nso adding a built-in extension no longer requires a new published package.\nOnly pss-runtime and pss-coding-agent remain published.\n"
-    filename: 2026-08-05-bundle-built-in-extensions.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Shadow bundled extensions with installed ones\n\nAn installed extension whose id matches a bundled default (latex, mermaid, web) now replaces the bundled copy instead of crashing host creation with a duplicate-id error. The three built-in extension packages are publishable, so `pss extension install`/`update` can deliver them between coding-agent releases.\n"
+    filename: 2026-08-05-shadow-bundled-extensions.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add a compact pixel wordmark to the coding-agent TUI\n\nRender the startup `pss` title as a low-profile orange bitmap wordmark while preserving the existing model and workspace subtitle.\n"
-    filename: 2026-08-05-coding-agent-pixel-wordmark.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Publish built-in extensions as installable packages\n\nFirst publish of the three built-in extensions with their publishable manifests (no private flag, concrete peer ranges), enabling `pss extension install`/`update` to deliver them between coding-agent releases.\n"
+    filename: 2026-08-05-publish-builtin-extensions.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-08-05-bundle-built-in-extensions.md
-      - 2026-08-05-coding-agent-pixel-wordmark.md
+      - 2026-08-05-shadow-bundled-extensions.md
     id: npm:@minpeter/pss-coding-agent
+    updated: true
+  - changelogIds:
+      - 2026-08-05-publish-builtin-extensions.md
+    id: npm:@minpeter/pss-extension-latex
+    updated: true
+  - changelogIds:
+      - 2026-08-05-publish-builtin-extensions.md
+    id: npm:@minpeter/pss-extension-mermaid
+    updated: true
+  - changelogIds:
+      - 2026-08-05-publish-builtin-extensions.md
+    id: npm:@minpeter/pss-extension-web
     updated: true
   - id: npm:@minpeter/pss-runtime
     updated: false
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
+  - distTag: next
+    id: npm:@minpeter/pss-extension-latex
+  - distTag: next
+    id: npm:@minpeter/pss-extension-mermaid
+  - distTag: next
+    id: npm:@minpeter/pss-extension-web
   - distTag: next
     id: npm:@minpeter/pss-runtime

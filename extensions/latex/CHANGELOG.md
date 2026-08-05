@@ -1,3 +1,9 @@
+## @minpeter/pss-extension-latex@0.0.1-next.3 (next)
+
+### Publish built-in extensions as installable packages
+
+First publish of the three built-in extensions with their publishable manifests (no private flag, concrete peer ranges), enabling `pss extension install`/`update` to deliver them between coding-agent releases.
+
 ## @minpeter/pss-extension-latex@0.0.1-next.2 (next)
 
 ### Declare the coding agent dependency in extensions
