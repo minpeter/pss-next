@@ -90,7 +90,7 @@
     "preview:assistant": "tsx --conditions=@minpeter/pss-source scripts/preview-assistant-render.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.16",
+    "@ai-sdk/openai-compatible": "3.0.20",
     "@earendil-works/pi-tui": "^0.82.1",
     "@minpeter/pss-extension-latex": "workspace:^",
     "@minpeter/pss-extension-mermaid": "workspace:^",
