@@ -4,7 +4,10 @@ import { github } from "tegami/plugins/github";
 
 // Built-in extensions publish on their own so `pss extension install/update`
 // can deliver them between coding-agent releases; the coding-agent bundle
-// still inlines them as the default fallback.
+// still inlines them as the default fallback. They publish to `latest`
+// (not `next`) because the extension manager resolves tagless installs
+// through the latest dist-tag, and the extensions have no stable line to
+// keep separate.
 const builtinExtensions = new Set([
   "@minpeter/pss-extension-latex",
   "@minpeter/pss-extension-mermaid",
@@ -80,19 +83,19 @@ const paper = tegami({
     "@minpeter/pss-extension-latex": {
       prerelease: "next",
       npm: {
-        distTag: "next",
+        distTag: "latest",
       },
     },
     "@minpeter/pss-extension-mermaid": {
       prerelease: "next",
       npm: {
-        distTag: "next",
+        distTag: "latest",
       },
     },
     "@minpeter/pss-extension-web": {
       prerelease: "next",
       npm: {
-        distTag: "next",
+        distTag: "latest",
       },
     },
   },
