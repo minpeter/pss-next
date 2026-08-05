@@ -49,7 +49,8 @@ describe("Tegami release configuration", () => {
     expect(script).toContain('base: "main"');
     expect(script).toContain('workflow: "release.yml"');
     expect(script.match(/prerelease: "next"/g)).toHaveLength(5);
-    expect(script.match(/distTag: "next"/g)).toHaveLength(5);
+    expect(script.match(/distTag: "next"/g)).toHaveLength(2);
+    expect(script.match(/distTag: "latest"/g)).toHaveLength(3);
     expect(script).toContain('"@minpeter/pss-runtime"');
     expect(script).toContain('"@minpeter/pss-coding-agent"');
   });
