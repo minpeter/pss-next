@@ -79,6 +79,7 @@ const ANSI_BG_GRAY = "\x1b[100m";
 const ANSI_CYAN = "\x1b[36m";
 const ANSI_BRIGHT_CYAN = "\x1b[96m";
 const ANSI_GRAY = "\x1b[90m";
+const ANSI_ORANGE = "\x1b[38;5;208m";
 const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
 const CTRL_C_ETX = "\u0003";
@@ -726,8 +727,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const footer = sanitizeTerminalText(config.footer?.text ?? "").trim();
     title.setText(
       subtitle
-        ? `${style(`${ANSI_BOLD}${ANSI_BRIGHT_CYAN}`, headerTitle)}\n${style(ANSI_DIM, subtitle)}`
-        : style(`${ANSI_BOLD}${ANSI_BRIGHT_CYAN}`, headerTitle)
+        ? `${style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)}\n${style(ANSI_DIM, subtitle)}`
+        : style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)
     );
     footerStatusBar.setRightText(footer);
     tui.requestRender();

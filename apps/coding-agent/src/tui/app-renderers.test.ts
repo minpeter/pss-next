@@ -58,6 +58,24 @@ const withIsolatedTuiEnvironment = async (
 };
 
 describe("TUI extension renderer merging", () => {
+  it("renders the pss startup title as a pixel wordmark", async () => {
+    await withIsolatedTuiEnvironment(async () => {
+      const exitCode = await startTui(
+        { model },
+        {
+          createTui: (config) => {
+            expect(config.header?.title).toBe(
+              ["█▀▙ ▟▀▘ ▟▀▘", "█▀▘ ▄▄▛ ▄▄▛"].join("\n")
+            );
+            return Promise.resolve();
+          },
+        }
+      );
+
+      expect(exitCode).toBe(0);
+    });
+  });
+
   it("prints the command for resuming the exited session", async () => {
     await withIsolatedTuiEnvironment(async () => {
       const output: string[] = [];
