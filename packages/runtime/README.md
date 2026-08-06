@@ -1350,6 +1350,7 @@ stop the current session's in-process work; durable hosts remain responsible for
 any app-owned background run cancellation, cleanup, and notification policy.
 
 
+
 ## SQL + durable queue host
 
 `@minpeter/pss-runtime/platform/sql-queue` is a platform-neutral integration
@@ -1442,3 +1443,12 @@ adapter using `InMemoryExecutionStore` and a leased-map reference queue, plus
 consumer/reconciliation behavior tests. These prove adapter delegation and
 queue semantics, **not PostgreSQL SQL correctness**. Production database
 implementations and integration tests remain application-owned.
+
+## JSONL protocol client
+
+`@minpeter/pss-runtime/protocol` exports the transport-neutral `pss/1` JSONL
+codec, concurrent server, and `PssProtocolClient`. Node applications can use
+`spawnPssClient` from `@minpeter/pss-runtime/protocol/node` to launch a `pss rpc`
+child and call `prompt`, `steer`, `abort`, and `state`. Each stdout line is one
+protocol frame; child diagnostics are inherited on stderr.
+

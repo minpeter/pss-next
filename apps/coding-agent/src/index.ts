@@ -34,6 +34,8 @@ export {
   createCodingModelSession,
   createCodingModelSessionFromEnv,
 } from "./model";
+export { type CodingAgentRpcSession, createCodingAgentRpcSession } from "./rpc";
+export { formatRpcUsage, runRpcCli } from "./rpc-cli";
 export type { CodingAgentThreadConfig } from "./thread-config";
 export { resolveCodingAgentThreadConfig } from "./thread-config";
 export type {

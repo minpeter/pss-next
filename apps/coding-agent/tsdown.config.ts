@@ -30,6 +30,8 @@ export default defineConfig({
     "src/instructions.ts",
     "src/model.ts",
     "src/provider-registry.ts",
+    "src/rpc.ts",
+    "src/rpc-cli.ts",
     "src/thread-config.ts",
     "src/thread-inspect.ts",
     "src/tools.ts",

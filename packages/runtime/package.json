@@ -74,6 +74,17 @@
       "@minpeter/pss-source": "./src/platform/sql-queue/index.ts",
       "types": "./dist/platform/sql-queue/index.d.ts",
       "import": "./dist/platform/sql-queue/index.js"
+    },
+    "./protocol": {
+      "@minpeter/pss-source": "./src/protocol/index.ts",
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js"
+    },
+    "./protocol/node": {
+      "@minpeter/pss-source": "./src/protocol/node/index.ts",
+      "types": "./dist/protocol/node/index.d.ts",
+      "import": "./dist/protocol/node/index.js"
+
     }
   },
   "bin": {

@@ -671,3 +671,10 @@ PSS_THREAD_KEY=workspace:demo pss inspect-thread
 ```sh
 pnpm dev:tui
 ```
+
+## JSONL RPC mode
+
+Run `pss rpc [--workspace <dir>] [--session <key>]` to serve the versioned
+`pss/1` protocol over stdin/stdout. The mode accepts concurrent JSON-RPC-style
+`prompt`, `steer`, `abort`, and `state` requests and streams agent events as
+correlated notifications. Stdout is reserved exclusively for JSONL frames.
