@@ -9,6 +9,7 @@ import { hydrateRuntimeAttachments } from "../input/attachments";
 import { compactionContextForModel } from "../state/context";
 import type { ThreadState } from "../state/thread-state";
 import {
+  buildCompactionSummaryInstructions,
   summarizeCompactionRange,
   summaryHistoryForRange,
 } from "./auto-compaction-summary";
@@ -68,10 +69,36 @@ export async function compactThreadBlocking(
   return await runSingleFlight({ ...options, reason: "overflow" });
 }
 
+/** Force a compaction through the same snapshot, transform, and freshness
+ * pipeline used by automatic compaction. */
+export async function compactThreadManually(
+  options: Omit<RunOptions, "compaction" | "reason"> & {
+    readonly summaryOptions?: CompactionSummaryOptions;
+  }
+): Promise<boolean> {
+  return await runSingleFlight({
+    ...options,
+    compaction: async (context) => {
+      if (context.history.length === 0) {
+        return;
+      }
+      const range = { endSeqExclusive: context.history.length, startSeq: 0 };
+      return {
+        ...range,
+        summary: await context.summarize(range, options.summaryOptions),
+      };
+    },
+    reason: "manual",
+  });
+}
+
 function runSingleFlight(options: RunOptions): Promise<boolean> {
   const existing = activeCompactions.get(options.state);
   if (existing) {
-    if (options.reason === "overflow" && existing.reason === "completed-turn") {
+    if (
+      options.reason !== "completed-turn" &&
+      existing.reason === "completed-turn"
+    ) {
       return existing.promise
         .catch(() => false)
         .then(
@@ -171,7 +198,13 @@ async function compactThreadOnce(options: RunOptions): Promise<boolean> {
       history: summaryHistory,
       model: { ...options.model, temperature: 0 },
       signal,
-      summaryInstructions: summaryOptions.instructions,
+      summaryInstructions:
+        summaryOptions.instructions === undefined
+          ? undefined
+          : `${buildCompactionSummaryInstructions()}
+
+## Additional focus
+${summaryOptions.instructions}`,
       toolEvidence: summaryOptions.toolEvidence,
       transformModelContext: options.transformModelContext,
     });

@@ -327,6 +327,9 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
 `sessions.json` next to the thread files:
 
 - `/new [name]` — start a new empty session
+- `/session` — show the current session key, name, timestamps, parent, reconciled
+  per-role message counts, and tool call/result activity. Durable token-usage
+  totals are reported as unavailable because they are not retained
 - `/resume` — interactive picker (switch, rename, or delete a session;
   deleting the live session is blocked — switch away first);
   `/resume <key|name>` switches directly (with completions)
@@ -338,6 +341,11 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
   state under that name. Applied thread migrations carry over so they
   never re-run on the fork, and the parent thread key is recorded
 - `/clear` — wipe the current session in place (legacy behavior)
+- `/compact [custom instructions]` — summarize the current durable conversation
+  through the runtime's compaction pipeline and replace its model-facing
+  context with the smaller continuation handoff; full history remains available
+  for replay and inspection. Compaction is idle-only and reports an explicit
+  error if requested while a turn is active
 
 Session recency updates on every completed turn, so the `/resume` picker
 sorts by actual use.

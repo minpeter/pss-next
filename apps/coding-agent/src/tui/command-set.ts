@@ -46,3 +46,13 @@ export const createReloadCommand = (): TuiCommand => ({
     success: true,
   }),
 });
+
+export function resolveTuiCommand(
+  commandSet: TuiCommandSet,
+  name: string
+): TuiCommand | undefined {
+  const normalizedName = name.toLowerCase();
+  const resolvedName =
+    commandSet.commandAliasLookup.get(normalizedName) ?? normalizedName;
+  return commandSet.commandLookup.get(resolvedName);
+}

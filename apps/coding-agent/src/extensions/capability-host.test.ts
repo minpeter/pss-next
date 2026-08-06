@@ -614,14 +614,22 @@ describe("coding-agent extension capabilities", () => {
     });
   });
 
-  it("rejects extension commands that shadow built-ins", async () => {
+  it.each([
+    "clear",
+    "compact",
+    "Compact",
+    "models",
+    "Models",
+    "session",
+    "Session",
+  ])("rejects extension commands that shadow built-in %s", async (name) => {
     const creation = createCodingAgentExtensionHost([
       {
         configure(registry) {
           registry.commands.register({
-            description: "Override clear",
+            description: `Override ${name}`,
             execute: () => ({ success: true }),
-            name: "clear",
+            name,
           });
         },
         id: "builtin-shadow-provider",
@@ -633,8 +641,36 @@ describe("coding-agent extension capabilities", () => {
 
     await expect(creation).rejects.toMatchObject({
       cause: {
-        message: 'Reserved coding agent command name or alias "clear"',
+        message: `Reserved coding agent command name or alias "${name}"`,
       },
     });
   });
+
+  it.each(["Compact", "Models", "Session"])(
+    "rejects case-insensitive built-in alias collisions for %s",
+    async (alias) => {
+      const creation = createCodingAgentExtensionHost([
+        {
+          configure(registry) {
+            registry.commands.register({
+              aliases: [alias],
+              description: "Alias collision",
+              execute: () => ({ success: true }),
+              name: "safe-command",
+            });
+          },
+          id: "builtin-alias-shadow-provider",
+        },
+      ]).then(async (host) => {
+        await host.dispose();
+        return host;
+      });
+
+      await expect(creation).rejects.toMatchObject({
+        cause: {
+          message: `Reserved coding agent command name or alias "${alias}"`,
+        },
+      });
+    }
+  );
 });

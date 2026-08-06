@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TuiCommand } from "./command";
-import { buildTuiCommandSet } from "./command-set";
+import { buildTuiCommandSet, resolveTuiCommand } from "./command-set";
 
 describe("buildTuiCommandSet", () => {
   it("keeps only the provided commands without injecting /help", () => {
@@ -57,5 +57,29 @@ describe("buildTuiCommandSet", () => {
     expect(commandSet.commandLookup.get("clear")?.description).toBe(
       "Start a new session"
     );
+  });
+
+  it("derives active-turn eligibility from resolved command metadata", () => {
+    const commandSet = buildTuiCommandSet([
+      {
+        aliases: ["shrink"],
+        allowDuringActiveTurn: true,
+        description: "Compact context",
+        execute: () => ({ success: true }),
+        name: "compact",
+      },
+      {
+        description: "Rename",
+        execute: () => ({ success: true }),
+        name: "name",
+      },
+    ]);
+
+    expect(resolveTuiCommand(commandSet, "SHRINK")?.allowDuringActiveTurn).toBe(
+      true
+    );
+    expect(
+      resolveTuiCommand(commandSet, "name")?.allowDuringActiveTurn
+    ).not.toBe(true);
   });
 });

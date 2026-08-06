@@ -34,7 +34,7 @@ import {
   type TuiCommandAction,
   type TuiCommandResult,
 } from "./command";
-import { buildTuiCommandSet } from "./command-set";
+import { buildTuiCommandSet, resolveTuiCommand } from "./command-set";
 import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
@@ -1161,10 +1161,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return null;
     }
 
-    const normalizedName = parsed.name.toLowerCase();
-    const resolvedName =
-      commandSet.commandAliasLookup.get(normalizedName) ?? normalizedName;
-    const command = commandSet.commandLookup.get(resolvedName);
+    const command = resolveTuiCommand(commandSet, parsed.name);
     if (!command) {
       return null;
     }
@@ -1597,15 +1594,32 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const steeringTurn = session.activeTurn;
     if (steeringTurn !== undefined) {
       if (trimmed.length > 0) {
-        processSteeringInput(trimmed, steeringTurn.run).catch(
-          (error: unknown) => {
-            clearStatus();
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            addSystemMessage(chatContainer, `Error: ${errorMessage}`);
-            tui.requestRender();
-          }
-        );
+        const parsed = parseCommand(trimmed);
+        const activeCommand =
+          parsed === null
+            ? undefined
+            : resolveTuiCommand(commandSet, parsed.name);
+        const operation =
+          activeCommand?.allowDuringActiveTurn === true
+            ? (async () => {
+                editor.disableSubmit = true;
+                editor.setText("");
+                try {
+                  await processCommandInput(trimmed);
+                } finally {
+                  editor.disableSubmit = false;
+                  tui.setFocus(composerLayer);
+                  tui.requestRender();
+                }
+              })()
+            : processSteeringInput(trimmed, steeringTurn.run);
+        operation.catch((error: unknown) => {
+          clearStatus();
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+          tui.requestRender();
+        });
       }
       return;
     }

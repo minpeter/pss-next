@@ -4,13 +4,16 @@ const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const TOOL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const RESERVED_COMMAND_NAMES = new Set([
   "clear",
+  "compact",
   "fork",
   "help",
   "model",
+  "models",
   "name",
   "new",
   "reload",
   "resume",
+  "session",
 ]);
 const UNSAFE_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 

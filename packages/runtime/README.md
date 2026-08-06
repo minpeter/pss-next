@@ -1184,6 +1184,23 @@ const agent = await createAgent({
 });
 ```
 
+Force runtime-owned compaction on an idle thread with `thread.compact()`. The
+manual path shares automatic compaction's attachment hydration, model-context
+transforms, prior-summary handling, hooks, single-flight, and freshness checks.
+Optional instructions append an `Additional focus` section while preserving the
+default continuation-handoff safety rules and required sections:
+
+```ts
+const thread = agent.thread("default");
+await thread.compact({ instructions: "Prioritize unresolved decisions." });
+```
+
+Manual compaction returns a `compacted`, `empty`, or `skipped` status and rejects
+while a turn is active. `skipped` distinguishes a hook cancellation or freshness
+race from empty history. Passing an explicit `ThreadCompactionInput` remains
+available for hosts that already produced a validated summary and returns the
+hook dispatcher's boolean commit decision.
+
 The context gate estimates the prompt immediately before `generateText`. With
 `onOverflow: "error"`, the turn fails before the provider is called. With
 `onOverflow: "compact"` (the default), the runtime runs blocking compaction and

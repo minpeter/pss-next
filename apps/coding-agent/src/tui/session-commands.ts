@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import {
   sessionDisplayKey,
@@ -53,6 +54,7 @@ export function createSessionCommands(
 ): TuiCommand[] {
   return [
     createNewCommand(context),
+    createSessionInfoCommand(context),
     createResumeCommand(context),
     createForkCommand(context),
     createNameCommand(context),
@@ -139,6 +141,27 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
       return completions;
     },
     name: "resume",
+  };
+}
+
+function createSessionInfoCommand(context: SessionCommandContext): TuiCommand {
+  return {
+    description: "Show current session metadata and retained message activity",
+    execute: (input) =>
+      runSessionCommand(async () => {
+        if (input.args.length > 0) {
+          return { message: "Usage: /session", success: false };
+        }
+        const current = context.currentSession();
+        const session =
+          (await context.manager.getSession(current.key)) ?? current;
+        const history = await context.manager.loadSessionHistory(session.key);
+        return {
+          message: formatCurrentSessionInfo(session, history),
+          success: true,
+        };
+      }),
+    name: "session",
   };
 }
 
@@ -279,4 +302,40 @@ async function runSessionCommand(
 function optionalName(args: readonly string[]): string | undefined {
   const name = args.join(" ").trim();
   return name.length === 0 ? undefined : name;
+}
+
+function formatCurrentSessionInfo(
+  session: SessionIndexEntry,
+  history: readonly ModelMessage[]
+): string {
+  const count = (role: ModelMessage["role"]): number =>
+    history.filter((message) => message.role === role).length;
+  const userMessages = count("user");
+  const assistantMessages = count("assistant");
+  const toolMessages = count("tool");
+  const otherMessages =
+    history.length - userMessages - assistantMessages - toolMessages;
+  const assistantToolCalls = history
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) =>
+      Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === "tool-call")
+        : []
+    ).length;
+  const toolResults = history
+    .filter((message) => message.role === "tool")
+    .flatMap((message) => message.content)
+    .filter((part) => part.type === "tool-result").length;
+  return [
+    `Session: ${session.name ?? "untitled"}`,
+    `Key: ${session.key}`,
+    ...(session.parentKey === undefined
+      ? []
+      : [`Parent: ${session.parentKey}`]),
+    `Messages: ${history.length} total (${userMessages} user, ${assistantMessages} assistant, ${toolMessages} tool, ${otherMessages} other)`,
+    `Tool activity: ${assistantToolCalls} calls, ${toolResults} results across ${toolMessages} tool messages`,
+    "Durable token usage: unavailable (usage totals are not retained)",
+    `Created: ${session.createdAt}`,
+    `Updated: ${session.updatedAt}`,
+  ].join("\n");
 }
