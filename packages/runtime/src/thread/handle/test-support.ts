@@ -62,23 +62,6 @@ export class SpyStore implements ThreadStore {
   }
 }
 
-export class ConflictOnceStore extends SpyStore {
-  conflictNextCommit = true;
-
-  override commit(
-    key: string,
-    next: ThreadStoreCommit,
-    options: { expectedVersion: string | null }
-  ): Promise<CommitResult> {
-    if (this.conflictNextCommit) {
-      this.conflictNextCommit = false;
-      return Promise.resolve({ ok: false, reason: "conflict" });
-    }
-
-    return super.commit(key, next, options);
-  }
-}
-
 export class ConflictOnCommitStore extends SpyStore {
   commitCount = 0;
   conflictOnCommit = 1;

@@ -52,5 +52,3 @@ export function threadStoreKey(thread: ThreadKey): string {
     thread.key
   )}`;
 }
-
-export const normalizeThreadKey = threadStoreKey;

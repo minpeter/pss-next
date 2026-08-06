@@ -3,7 +3,6 @@ import { isRecord as isObjectRecord } from "../internal/guards";
 import { ModelToolSelectionError } from "./model-step-error";
 import type {
   PreparedModelToolChoice,
-  PrepareModelStep,
   PrepareModelStepResult,
 } from "./model-step-preparation-types";
 import {
@@ -18,27 +17,6 @@ import {
 import { snapshotToolNames } from "./tool-registry-snapshot";
 
 const PREPARED_RESULT_KEYS = new Set(["activeTools", "model", "toolChoice"]);
-
-export function mapPrepareModelStepModel(
-  prepareModelStep: PrepareModelStep,
-  mapModel: (
-    model: Exclude<LanguageModel, string>
-  ) => Exclude<LanguageModel, string>
-): PrepareModelStep {
-  return async (input) => {
-    const prepared = parsePrepareModelStepResult(
-      await prepareModelStep(input),
-      Object.keys(input.tools).length
-    );
-    if (prepared?.model === undefined) {
-      return prepared;
-    }
-    return {
-      ...prepared,
-      model: mapModel(prepared.model),
-    };
-  };
-}
 
 export function parsePrepareModelStepResult(
   value: unknown,

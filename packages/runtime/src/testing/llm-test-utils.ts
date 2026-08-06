@@ -98,13 +98,6 @@ export async function collectRun(run: { events(): AsyncIterable<AgentEvent> }) {
   return events;
 }
 
-export function lastGenerateTextTools(): ToolSet {
-  const call = generateTextMock.mock.calls.at(-1)?.[0] as
-    | { tools?: ToolSet }
-    | undefined;
-  return call?.tools ?? {};
-}
-
 export function executableTool(tools: ToolSet, name: string): Tool {
   const candidate = tools[name];
   expect(candidate).toBeDefined();
