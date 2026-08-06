@@ -14,7 +14,7 @@ import type {
   SqlQueuePort,
   SqlQueueWork,
 } from "./queue";
-import { reconcileSqlQueuedRuns } from "./reconciliation";
+import { reconcileSqlQueuedWork } from "./reconciliation";
 import { SqlHostStore } from "./store";
 
 describeExecutionStoreContract({
@@ -287,24 +287,65 @@ describe("SQL queue consumer contract", () => {
 });
 
 describe("SQL queue reconciliation", () => {
-  it("recreates queue work for a durable orphaned queued run", async () => {
-    const queue = new ReferenceQueue();
-    const runs = {
-      async *listQueuedRuns() {
-        await Promise.resolve();
-        yield { dueAtMs: 500, runId: "orphan-run" };
-      },
-    };
+  const runWork: SqlQueueWork = {
+    dueAtMs: 500,
+    kind: "run",
+    runId: "orphan-run",
+    workId: "run:orphan-run",
+  };
+  const notificationPrompt: ScheduledThreadPrompt = {
+    idempotencyKey: "notify-idem",
+    notificationId: "notification-1",
+    runId: "notification-run",
+    threadKey: "thread-1",
+  };
+  const promptWork: SqlQueueWork = {
+    dueAtMs: 700,
+    kind: "thread-prompt",
+    prompt: notificationPrompt,
+    workId: `thread-prompt:${threadPromptScheduledWorkId(notificationPrompt)}`,
+  };
 
-    await expect(reconcileSqlQueuedRuns({ queue, runs })).resolves.toEqual({
-      enqueued: 1,
+  const sourceFor = (...items: readonly SqlQueueWork[]) => ({
+    async *listQueuedWork() {
+      await Promise.resolve();
+      yield* items;
+    },
+  });
+
+  it("recreates exact run work for a durable orphan", async () => {
+    const queue = new ReferenceQueue();
+
+    await expect(
+      reconcileSqlQueuedWork({ queue, source: sourceFor(runWork) })
+    ).resolves.toEqual({ enqueued: 1 });
+    expect(queue.work.get(runWork.workId)).toEqual(runWork);
+  });
+
+  it("recreates an exact missed thread prompt without converting it to run work", async () => {
+    const queue = new ReferenceQueue();
+
+    await reconcileSqlQueuedWork({
+      queue,
+      source: sourceFor(promptWork),
     });
-    expect(queue.work.get("run:orphan-run")).toEqual({
-      dueAtMs: 500,
-      kind: "run",
-      runId: "orphan-run",
-      workId: "run:orphan-run",
-    });
+
+    expect(queue.work.get(promptWork.workId)).toEqual(promptWork);
+    expect(queue.work.has("run:notification-run")).toBe(false);
+    expect(queue.work.size).toBe(1);
+  });
+
+  it("keeps an existing notification row singular across racing reconciliation", async () => {
+    const queue = new ReferenceQueue();
+    await queue.enqueue(promptWork);
+
+    await Promise.all([
+      reconcileSqlQueuedWork({ queue, source: sourceFor(promptWork) }),
+      reconcileSqlQueuedWork({ queue, source: sourceFor(promptWork) }),
+    ]);
+
+    expect([...queue.work.values()]).toEqual([promptWork]);
+    expect(queue.work.has("run:notification-run")).toBe(false);
   });
 
   it("can retry reconciliation after enqueue fails", async () => {
@@ -319,20 +360,14 @@ describe("SQL queue reconciliation", () => {
         await durableQueue.enqueue(work);
       },
     };
-    const runs = {
-      async *listQueuedRuns() {
-        await Promise.resolve();
-        yield { runId: "run-1" };
-      },
-    };
 
     await expect(
-      reconcileSqlQueuedRuns({ clock: () => 100, queue, runs })
+      reconcileSqlQueuedWork({ queue, source: sourceFor(runWork) })
     ).rejects.toThrow("queue unavailable");
     expect(durableQueue.work.size).toBe(0);
     await expect(
-      reconcileSqlQueuedRuns({ clock: () => 100, queue, runs })
+      reconcileSqlQueuedWork({ queue, source: sourceFor(runWork) })
     ).resolves.toEqual({ enqueued: 1 });
-    expect(durableQueue.work.has("run:run-1")).toBe(true);
+    expect(durableQueue.work.get(runWork.workId)).toEqual(runWork);
   });
 });

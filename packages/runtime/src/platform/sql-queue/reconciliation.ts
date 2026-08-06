@@ -1,19 +1,17 @@
-import type { SqlQueueProducerPort, SqlQueueRunWork } from "./queue";
+import type { SqlQueueProducerPort, SqlQueueWork } from "./queue";
 
-export interface SqlQueuedRunCandidate {
-  readonly dueAtMs?: number;
-  readonly runId: string;
-}
-
-/** Database query boundary for durable runs which should have queue work. */
-export interface SqlQueuedRunSource {
-  listQueuedRuns(): AsyncIterable<SqlQueuedRunCandidate>;
+/**
+ * Database/outbox query boundary for exact durable work which should exist in
+ * the queue. Sources must preserve the original kind, payload, due time, and
+ * stable work ID; a run record alone is insufficient for thread prompts.
+ */
+export interface SqlQueuedWorkSource {
+  listQueuedWork(): AsyncIterable<SqlQueueWork>;
 }
 
 export interface SqlQueueReconciliationOptions {
-  readonly clock?: () => number;
   readonly queue: SqlQueueProducerPort;
-  readonly runs: SqlQueuedRunSource;
+  readonly source: SqlQueuedWorkSource;
   readonly wake?: (dueAtMs: number) => Promise<void> | void;
 }
 
@@ -22,26 +20,19 @@ export interface SqlQueueReconciliationResult {
 }
 
 /**
- * Idempotently recreates queue work for durable queued runs.
+ * Idempotently restores exact queue work from a durable source or outbox.
  *
  * Run this periodically to close the crash gap between a committed HostStore
- * transaction and scheduling. The source should query all runnable queued
- * turns; unique work IDs make replay safe even when work already exists.
+ * transaction and scheduling. Stable work IDs make replay safe when an item
+ * already exists or concurrent reconcilers race.
  */
-export async function reconcileSqlQueuedRuns({
-  clock = Date.now,
+export async function reconcileSqlQueuedWork({
   queue,
-  runs,
+  source,
   wake,
 }: SqlQueueReconciliationOptions): Promise<SqlQueueReconciliationResult> {
   let enqueued = 0;
-  for await (const candidate of runs.listQueuedRuns()) {
-    const work: SqlQueueRunWork = {
-      dueAtMs: candidate.dueAtMs ?? clock(),
-      kind: "run",
-      runId: candidate.runId,
-      workId: `run:${candidate.runId}`,
-    };
+  for await (const work of source.listQueuedWork()) {
     await queue.enqueue(work);
     await wake?.(work.dueAtMs);
     enqueued += 1;

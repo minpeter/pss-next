@@ -1320,7 +1320,7 @@ a SQL client, schema, queue vendor, or migration framework:
 import {
   createSqlQueueHost,
   drainSqlQueue,
-  reconcileSqlQueuedRuns,
+  reconcileSqlQueuedWork,
 } from "@minpeter/pss-runtime/platform/sql-queue";
 
 const host = createSqlQueueHost({
@@ -1336,9 +1336,9 @@ await drainSqlQueue({
 });
 
 // Run periodically as well as at worker startup.
-await reconcileSqlQueuedRuns({
+await reconcileSqlQueuedWork({
   queue: postgresQueuePort,
-  runs: postgresQueuedRunQuery,
+  source: postgresQueuedWorkOutbox,
   wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
 });
 ```
@@ -1365,15 +1365,18 @@ retry is safe and expected.
 
 ### Store-to-queue crash recovery
 
-Creating a queued turn and calling `HostScheduler.enqueueRun` are not one
-atomic operation. A process can crash after the store transaction commits but
+Committing durable scheduling state and calling `HostScheduler.enqueueRun` or
+`HostScheduler.resumeThread` are not one atomic operation. A process can crash after the store transaction commits but
 before queue insertion. Deployments must either implement a transactional
-outbox in their SQL port or run `reconcileSqlQueuedRuns` periodically. Its
-`SqlQueuedRunSource` should query every durable, runnable queued turn (including
-recovery statuses selected by the deployment). Reconciliation recreates the
-stable `run:<runId>` work item idempotently, so existing queue rows are safe and
-orphaned turns are repaired. An enqueue failure stops the pass without changing
-the durable turn; a later pass retries it.
+outbox in their SQL port or run `reconcileSqlQueuedWork` periodically. Its
+`SqlQueuedWorkSource` must return the exact original `SqlQueueWork`, including
+kind, due time, payload, and stable ID. This is naturally an outbox query; a
+reconstruction query must join notification data so thread prompts keep their
+thread and idempotency context. A turn row by itself is not sufficient because
+notification work must remain `thread-prompt`, not become `run:<runId>`.
+Reconciliation inserts exact work idempotently, so existing rows and concurrent
+passes remain safe. An enqueue failure stops the pass without changing the
+durable source; a later pass retries it.
 
 The package runs the shared `HostStore` and `HostScheduler` suites through the
 adapter using `InMemoryExecutionStore` and a leased-map reference queue, plus

@@ -22,9 +22,8 @@ export type {
   SqlQueueWork,
 } from "./queue";
 export {
-  reconcileSqlQueuedRuns,
-  type SqlQueuedRunCandidate,
-  type SqlQueuedRunSource,
+  reconcileSqlQueuedWork,
+  type SqlQueuedWorkSource,
   type SqlQueueReconciliationOptions,
   type SqlQueueReconciliationResult,
 } from "./reconciliation";
