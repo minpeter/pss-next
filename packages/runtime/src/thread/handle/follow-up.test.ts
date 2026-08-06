@@ -269,9 +269,11 @@ describe("AgentThread follow-up queue", () => {
     const queued = await thread.followUp("queued");
 
     failTransactions = true;
+    const firstKill = thread.kill();
+    holdModel.resolve();
     await expect(
       Promise.race([
-        thread.kill(),
+        firstKill,
         new Promise<never>((_resolve, reject) =>
           setTimeout(() => reject(new Error("kill timed out")), 1000)
         ),
@@ -324,9 +326,11 @@ describe("AgentThread follow-up queue", () => {
     const queued = await thread.followUp("queued");
 
     failTransactions = true;
+    const firstDelete = thread.delete();
+    holdModel.resolve();
     await expect(
       Promise.race([
-        thread.delete(),
+        firstDelete,
         new Promise<never>((_resolve, reject) =>
           setTimeout(() => reject(new Error("delete timed out")), 1000)
         ),
