@@ -1,5 +1,6 @@
 import { deferred } from "../../internal/deferred";
 import { closeRuntimeInput } from "../input/runtime-input";
+import { cancelQueuedDurableThreadInputs } from "../runtime/durable-input-cancellation";
 import { unregisterLiveThreadInput } from "../runtime/live-input-ownership";
 import type { AgentThreadContext } from "./agent-thread-context";
 import { assertThreadMachineInvariants } from "./agent-thread-machines";
@@ -113,7 +114,7 @@ async function restartReleasedThreadDrain(
 /** @internal exported for retry/observability regression tests. */
 export async function retryReleasedThreadDrain(
   drain: () => Promise<void>,
-  onPermanentFailure: (failure: unknown) => void,
+  onPermanentFailure: (failure: unknown) => Promise<void> | void,
   retryLimit = RELEASED_DRAIN_RETRY_LIMIT
 ): Promise<void> {
   let failure: unknown;
@@ -126,15 +127,33 @@ export async function retryReleasedThreadDrain(
       await Promise.resolve();
     }
   }
-  onPermanentFailure(failure);
+  await onPermanentFailure(failure);
 }
 
-function settleInputsAfterRestartFailure(
+async function settleInputsAfterRestartFailure(
   context: AgentThreadContext,
   failure: unknown
-): void {
+): Promise<void> {
+  const items = [...context.inputQueue];
   const message = `Thread drain restart failed after ${RELEASED_DRAIN_RETRY_LIMIT} attempts: ${errorMessage(failure)}`;
-  for (const item of context.inputQueue.splice(0)) {
+  try {
+    await cancelQueuedDurableThreadInputs({
+      executionHost: context.execution.executionHost,
+      items,
+      threadKey: context.threadKey,
+    });
+  } catch (cancellationFailure) {
+    const recoveryMessage = `${message}; durable cancellation failed and requires recovery: ${errorMessage(cancellationFailure)}`;
+    // Keep callers and protective live ownership open: closing/unregistering
+    // here could allow the durable record to execute after its caller ended.
+    for (const item of items) {
+      item.run.emit({ message: recoveryMessage, type: "turn-error" });
+    }
+    return;
+  }
+
+  context.inputQueue.splice(0, items.length);
+  for (const item of items) {
     if (item.durableMessageId) {
       unregisterLiveThreadInput(
         context.execution.executionHost,

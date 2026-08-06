@@ -142,5 +142,8 @@ describe("live durable input ownership", () => {
     expect(
       isLiveThreadInputOwnedByOther(host, "claim-race", messageId, other)
     ).toBe(false);
+    await expect(
+      host.store.inputs.claimNext("claim-race", "turn-idle", { messageId })
+    ).resolves.toBeNull();
   });
 });
