@@ -35,6 +35,8 @@
     "format": "ultracite fix .",
     "tegami": "node scripts/tegami.mts",
     "verify:release": "node scripts/verify-release-artifacts.mjs",
+    "api:check": "node scripts/runtime-public-api.mjs check",
+    "api:update": "pnpm --filter @minpeter/pss-runtime build && node scripts/runtime-public-api.mjs update",
     "boundaries": "node scripts/prepare-boundaries.mjs && turbo boundaries",
     "repo:packages": "turbo query ls --output json",
     "repo:affected": "turbo query affected",
@@ -43,6 +45,7 @@
   "devDependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
     "@babel/core": "8.0.1",
+    "@babel/parser": "8.0.4",
     "@biomejs/biome": "2.5.5",
     "@earendil-works/pi-tui": "^0.83.0",
     "@minpeter/pss-coding-agent": "workspace:*",

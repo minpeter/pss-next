@@ -67,5 +67,8 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Check runtime public API snapshot
+        run: pnpm api:check
+
       - name: Verify release artifacts
         run: pnpm verify:release
