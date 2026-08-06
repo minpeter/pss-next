@@ -29,7 +29,7 @@
     "format": "ultracite fix .",
     "tegami": "node scripts/tegami.mts",
     "verify:release": "node scripts/verify-release-artifacts.mjs",
-    "boundaries": "turbo boundaries",
+    "boundaries": "turbo boundaries --filter=!@minpeter/pss-benchmark-nextjs",
     "repo:packages": "turbo query ls --output json",
     "repo:affected": "turbo query affected"
   },
