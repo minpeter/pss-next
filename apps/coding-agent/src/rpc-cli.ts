@@ -1,10 +1,13 @@
+import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { createFileHost } from "@minpeter/pss-runtime/platform/file";
 import { servePssProtocol } from "@minpeter/pss-runtime/protocol";
 import { config } from "dotenv";
 import { createCodingAgent } from "./coding-agent";
 import type { CodingAgentRuntimeEnv } from "./env";
 import { createOpenAICompatibleModelFromEnv } from "./model";
 import { createCodingAgentRpcSession } from "./rpc";
+import { resolveCodingAgentThreadConfig } from "./thread-config";
 
 interface RunRpcCliOptions {
   readonly argv: readonly string[];
@@ -34,12 +37,20 @@ export async function runRpcCli({
     ...(args.baseUrl ? { AI_BASE_URL: args.baseUrl } : {}),
     ...(args.model ? { AI_MODEL: args.model } : {}),
   };
+  const threadConfig = resolveCodingAgentThreadConfig(
+    runtimeEnv,
+    args.workspace,
+    homedir()
+  );
+  const threadKey = args.session ?? threadConfig.key;
   const agent = await createCodingAgent({
+    compaction: threadConfig.compaction,
+    host: createFileHost({ directory: threadConfig.directory }),
     model: createOpenAICompatibleModelFromEnv({ runtimeEnv }),
     workspace: args.workspace,
   });
-  const session = createCodingAgentRpcSession(agent.thread(args.session), {
-    threadKey: args.session,
+  const session = createCodingAgentRpcSession(agent.thread(threadKey), {
+    threadKey,
   });
   try {
     await servePssProtocol(
@@ -65,16 +76,16 @@ function parseRpcArguments(
   baseUrl?: string;
   help: boolean;
   model?: string;
-  session: string;
+  session?: string;
   workspace: string;
 } {
   const result: {
     baseUrl?: string;
     help: boolean;
     model?: string;
-    session: string;
+    session?: string;
     workspace: string;
-  } = { help: false, session: "rpc", workspace: cwd };
+  } = { help: false, workspace: cwd };
   let index = 0;
   while (index < argv.length) {
     const flag = argv[index];
