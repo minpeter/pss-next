@@ -662,4 +662,127 @@ describe("PSS protocol", () => {
     });
     expect(JSON.parse(output[0] ?? "null").error).not.toHaveProperty("data");
   });
+
+  it("snapshots stateful RPC code and message getters exactly once", async () => {
+    let codeReads = 0;
+    let messageReads = 0;
+    const error = new Error("fallback");
+    Object.defineProperties(error, {
+      code: {
+        get() {
+          codeReads += 1;
+          return codeReads === 1 ? -32_050 : Number.NaN;
+        },
+      },
+      message: {
+        get() {
+          messageReads += 1;
+          return messageReads === 1 ? "snapshot" : () => undefined;
+        },
+      },
+    });
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      { handle: () => Promise.reject(error) }
+    );
+    expect(codeReads).toBe(1);
+    expect(messageReads).toBe(1);
+    expect(JSON.parse(output[0] ?? "null")).toMatchObject({
+      error: { code: -32_050, message: "snapshot" },
+      id: 1,
+    });
+  });
+
+  it("returns safe errors for throwing code/message getters", async () => {
+    const reads = { code: 0, message: 0 };
+    const codeError = new Error("fallback");
+    Object.defineProperty(codeError, "code", {
+      get() {
+        reads.code += 1;
+        throw new Error("code getter failed");
+      },
+    });
+    const messageError = new Error("fallback");
+    Object.defineProperties(messageError, {
+      code: { value: -32_050 },
+      message: {
+        get() {
+          reads.message += 1;
+          throw new Error("message getter failed");
+        },
+      },
+    });
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      {
+        handle(_method, _params, context) {
+          return Promise.reject(
+            context.requestId === 1 ? codeError : messageError
+          );
+        },
+      }
+    );
+    expect(reads).toEqual({ code: 1, message: 1 });
+    expect(output).toHaveLength(2);
+    for (const frame of output) {
+      expect(JSON.parse(frame).error).toEqual({
+        code: -32_603,
+        message: "Internal protocol error",
+      });
+    }
+  });
+
+  it("returns frames for hostile has and toString traps", async () => {
+    const hostileHas = new Proxy(new Error("fallback"), {
+      has() {
+        throw new Error("has trap failed");
+      },
+    });
+    const hostileString = {
+      toString() {
+        throw new Error("toString failed");
+      },
+    };
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      {
+        handle(_method, _params, context) {
+          return Promise.reject(
+            context.requestId === 1 ? hostileHas : hostileString
+          );
+        },
+      }
+    );
+    expect(output).toHaveLength(2);
+    for (const frame of output) {
+      expect(JSON.parse(frame).error).toEqual({
+        code: -32_603,
+        message: "Internal protocol error",
+      });
+    }
+  });
 });

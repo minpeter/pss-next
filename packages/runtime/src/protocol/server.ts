@@ -167,32 +167,47 @@ function isMethod(value: unknown): value is ProtocolMethod {
     value === "state"
   );
 }
+const INTERNAL_ERROR_MESSAGE = "Internal protocol error";
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  try {
+    if (error instanceof Error) {
+      const message = error.message;
+      return typeof message === "string" ? message : INTERNAL_ERROR_MESSAGE;
+    }
+    return String(error);
+  } catch {
+    return INTERNAL_ERROR_MESSAGE;
+  }
 }
 function rpcError(error: unknown): ProtocolError {
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    "message" in error
-  ) {
-    const value = error as { code: unknown; data?: unknown; message: unknown };
-    if (
-      typeof value.code === "number" &&
-      Number.isInteger(value.code) &&
-      Number.isFinite(value.code) &&
-      typeof value.message === "string"
-    ) {
-      const data = snapshotJsonData(value);
-      return {
-        code: value.code,
-        message: value.message,
-        ...(data ? { data: data.value } : {}),
-      };
-    }
+  if (!(error && typeof error === "object")) {
+    return { code: -32_603, message: errorMessage(error) };
   }
-  return { code: -32_603, message: errorMessage(error) };
+  try {
+    if (!("code" in error && "message" in error)) {
+      return { code: -32_603, message: errorMessage(error) };
+    }
+    const value = error as { code: unknown; data?: unknown; message: unknown };
+    const code = value.code;
+    const message = value.message;
+    if (
+      typeof code !== "number" ||
+      !Number.isInteger(code) ||
+      !Number.isFinite(code) ||
+      typeof message !== "string"
+    ) {
+      return { code: -32_603, message: INTERNAL_ERROR_MESSAGE };
+    }
+    const data = snapshotJsonData(value);
+    return {
+      code,
+      message,
+      ...(data ? { data: data.value } : {}),
+    };
+  } catch {
+    return { code: -32_603, message: INTERNAL_ERROR_MESSAGE };
+  }
 }
 
 function snapshotJsonData(source: {
