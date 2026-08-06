@@ -25,23 +25,24 @@ export async function closeKilledRuntimeInputs({
   runToClose,
   threadKey,
 }: CloseKilledRuntimeInputsOptions): Promise<void> {
+  closeRuntimeInput(activeRuntimeInput, message);
+  runToClose?.emit({ type: "turn-error", message });
+  runToClose?.close();
+
   const queuedItems = [...inputQueue];
   const nonDurableRuns = queuedItems.filter(
     (item) => item.durableMessageId === undefined
   );
 
-  // Durable cancellation must succeed before local callers are terminalized:
-  // on failure kill remains retryable and live ownership continues protecting
-  // the records from orphan recovery.
+  // Durable cancellation must succeed before queued callers are terminalized.
+  // Active callers close promptly on abort, while queued ownership remains
+  // protective and retryable if cancellation fails.
   await cancelQueuedDurableThreadInputs({
     executionHost,
     items: queuedItems,
     threadKey,
   });
 
-  closeRuntimeInput(activeRuntimeInput, message);
-  runToClose?.emit({ type: "turn-error", message });
-  runToClose?.close();
   for (const item of inputQueue.splice(0)) {
     closeRuntimeInput(item.runtimeInput, message);
     item.run.emit({ type: "turn-error", message });

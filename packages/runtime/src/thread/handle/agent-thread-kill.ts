@@ -7,7 +7,6 @@ import {
   turnAbort,
   turnRunToClose,
 } from "./agent-thread-machines";
-import { withThreadDrainOwnership } from "./thread-drain-coordinator";
 
 export function killAgentThread(context: AgentThreadContext): Promise<void> {
   const current = context.terminal.state;
@@ -28,30 +27,23 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
   context.pendingRuntimeInputs.length = 0;
   turnAbort(context.turn)?.abort();
   const close = async (): Promise<void> => {
-    await withThreadDrainOwnership(
-      context.execution.executionHost,
-      context.threadKey,
-      context,
-      async () => {
-        await closeKilledRuntimeInputs({
-          activeRuntimeInput: activeTurnRuntimeInput(context.turn),
-          executionHost: context.execution.executionHost,
-          inputQueue: context.inputQueue,
-          message: killedError.message,
-          runToClose: turnRunToClose(context.turn),
-          threadKey: context.threadKey,
-        });
-        await context.inputAdmissionQueue;
-        await closeKilledRuntimeInputs({
-          activeRuntimeInput: undefined,
-          executionHost: context.execution.executionHost,
-          inputQueue: context.inputQueue,
-          message: killedError.message,
-          runToClose: undefined,
-          threadKey: context.threadKey,
-        });
-      }
-    );
+    await closeKilledRuntimeInputs({
+      activeRuntimeInput: activeTurnRuntimeInput(context.turn),
+      executionHost: context.execution.executionHost,
+      inputQueue: context.inputQueue,
+      message: killedError.message,
+      runToClose: turnRunToClose(context.turn),
+      threadKey: context.threadKey,
+    });
+    await context.inputAdmissionQueue;
+    await closeKilledRuntimeInputs({
+      activeRuntimeInput: undefined,
+      executionHost: context.execution.executionHost,
+      inputQueue: context.inputQueue,
+      message: killedError.message,
+      runToClose: undefined,
+      threadKey: context.threadKey,
+    });
   };
   close().then(
     () => settled.resolve(),
