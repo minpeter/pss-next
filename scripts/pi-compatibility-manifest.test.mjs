@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -79,6 +79,36 @@ describe("Pi compatibility manifest", () => {
     );
   });
 
+  it("rejects absolute, traversal, and symlink-escaping local evidence", () => {
+    for (const path of [
+      join(tmpdir(), "absolute-evidence"),
+      "../outside-repository",
+    ]) {
+      const files = readCompatibilityFiles();
+      files.manifest.surfaces[0].evidence.local = [path];
+      expect(() => validateCompatibilityManifest(files)).toThrow(
+        "local evidence escapes repository root"
+      );
+    }
+
+    const evidenceRoot = mkdtempSync(join(tmpdir(), "pss-evidence-root-"));
+    const outsideRoot = mkdtempSync(join(tmpdir(), "pss-evidence-outside-"));
+    try {
+      writeFileSync(join(outsideRoot, "evidence.ts"), "outside");
+      symlinkSync(outsideRoot, join(evidenceRoot, "escape"), "dir");
+      const files = readCompatibilityFiles();
+      files.evidenceRoot = evidenceRoot;
+      files.manifest.surfaces[0].evidence.local = ["escape/evidence.ts"];
+
+      expect(() => validateCompatibilityManifest(files)).toThrow(
+        "escapes repository root through a symlink"
+      );
+    } finally {
+      rmSync(evidenceRoot, { force: true, recursive: true });
+      rmSync(outsideRoot, { force: true, recursive: true });
+    }
+  });
+
   it("discovers and rejects an invalid additional versioned manifest", () => {
     const directory = mkdtempSync(join(tmpdir(), "pss-pi-compatibility-"));
     const files = readCompatibilityFiles();
@@ -99,6 +129,14 @@ describe("Pi compatibility manifest", () => {
 
       expect(() => validateCompatibilityManifests(directory)).toThrow(
         "pi-v9.9.9.json violates its schema"
+      );
+
+      writeFileSync(
+        join(directory, "pi-v9.9.9.json"),
+        JSON.stringify(files.manifest)
+      );
+      expect(() => validateCompatibilityManifests(directory)).toThrow(
+        "pi-v9.9.9.json does not match baseline release v0.83.0"
       );
     } finally {
       rmSync(directory, { force: true, recursive: true });

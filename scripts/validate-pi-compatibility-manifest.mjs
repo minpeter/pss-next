@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -40,9 +40,20 @@ export function readCompatibilityFiles(
   };
 }
 
+function isContainedPath(root, candidate) {
+  const relativePath = relative(root, candidate);
+  return (
+    relativePath === "" ||
+    (relativePath !== ".." &&
+      !relativePath.startsWith(`..${sep}`) &&
+      !isAbsolute(relativePath))
+  );
+}
+
 export function validateCompatibilityManifest({
+  evidenceRoot = repoRoot,
   manifest,
-  manifestPath = "Pi compatibility manifest",
+  manifestPath,
   schema,
 }) {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -54,19 +65,46 @@ export function validateCompatibilityManifest({
     );
   }
 
-  const ids = manifest.surfaces.map(({ id }) => id);
-  if (new Set(ids).size !== ids.length) {
-    throw new Error(`${basename(manifestPath)} contains duplicate surface ids`);
+  const expectedManifestName = `pi-${manifest.baseline.release}.json`;
+  const manifestName =
+    manifestPath === undefined ? expectedManifestName : basename(manifestPath);
+  if (manifestName !== expectedManifestName) {
+    throw new Error(
+      `${manifestName} does not match baseline release ${manifest.baseline.release}; expected ${expectedManifestName}`
+    );
   }
 
-  const missingEvidence = manifest.surfaces.flatMap(({ evidence, id }) =>
-    evidence.local
-      .filter((path) => !existsSync(join(repoRoot, path)))
-      .map((path) => `${id}: ${path}`)
-  );
+  const ids = manifest.surfaces.map(({ id }) => id);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`${manifestName} contains duplicate surface ids`);
+  }
+
+  const lexicalRoot = resolve(evidenceRoot);
+  const canonicalRoot = realpathSync(lexicalRoot);
+  const missingEvidence = [];
+  for (const { evidence, id } of manifest.surfaces) {
+    for (const path of evidence.local) {
+      const candidate = resolve(lexicalRoot, path);
+      if (isAbsolute(path) || !isContainedPath(lexicalRoot, candidate)) {
+        throw new Error(
+          `${manifestName} local evidence escapes repository root: ${id}: ${path}`
+        );
+      }
+      if (!existsSync(candidate)) {
+        missingEvidence.push(`${id}: ${path}`);
+        continue;
+      }
+      if (!isContainedPath(canonicalRoot, realpathSync(candidate))) {
+        throw new Error(
+          `${manifestName} local evidence escapes repository root through a symlink: ${id}: ${path}`
+        );
+      }
+    }
+  }
   if (missingEvidence.length > 0) {
     throw new Error(
-      `${basename(manifestPath)} references missing local evidence:\n${missingEvidence.join("\n")}`
+      `${manifestName} references missing local evidence:
+${missingEvidence.join("\n")}`
     );
   }
 }

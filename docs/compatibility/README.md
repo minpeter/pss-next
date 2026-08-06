@@ -35,8 +35,10 @@ The JSON Schema rejects unknown fields and classifications and requires exactly
 one surface for each of the two intentional differences. The validator
 discovers and checks every `docs/compatibility/pi-v*.json` manifest; there is no
 unchecked historical or inactive version. It also rejects duplicate surface IDs
-and missing local evidence paths. CI runs the validator independently of the
-general test job.
+and missing local evidence paths. Evidence must resolve inside the repository,
+including after symbolic-link resolution, and each filename must match its
+`baseline.release` (`pi-${baseline.release}.json`). CI runs the validator
+independently of the general test job.
 
 See [ADR 0001](../adr/0001-pi-compatibility-baseline.md) for the decision and
 scope.
