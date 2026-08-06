@@ -534,10 +534,7 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": [
-      "type SpawnPssClientOptions",
-      "value spawnPssClient"
-    ],
+    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",
