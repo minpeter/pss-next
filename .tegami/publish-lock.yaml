@@ -1,24 +1,20 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-extension-latex:\n    type: patch\n  npm:@minpeter/pss-extension-mermaid:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Publish built-in extensions to the latest dist-tag\n\nThe extension manager resolves tagless installs through `latest`, so the built-in extensions now publish there instead of `next`; this release also moves `latest` off the stale pre-#335 builds.\n"
-    filename: 2026-08-05-extension-latest-dist-tag.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Strengthen runtime indexed access checks\n\nType-check shipped runtime source with `noUncheckedIndexedAccess` and document the staged exact-optional migration baseline without diagnostic suppressions.\n"
+    filename: 2026-08-06-runtime-indexed-access-strictness.md
     v: 0.0.0
 core:packages:
   - id: npm:@minpeter/pss-coding-agent
     updated: false
-  - changelogIds:
-      - 2026-08-05-extension-latest-dist-tag.md
-    id: npm:@minpeter/pss-extension-latex
-    updated: true
-  - changelogIds:
-      - 2026-08-05-extension-latest-dist-tag.md
-    id: npm:@minpeter/pss-extension-mermaid
-    updated: true
-  - changelogIds:
-      - 2026-08-05-extension-latest-dist-tag.md
-    id: npm:@minpeter/pss-extension-web
-    updated: true
-  - id: npm:@minpeter/pss-runtime
+  - id: npm:@minpeter/pss-extension-latex
     updated: false
+  - id: npm:@minpeter/pss-extension-mermaid
+    updated: false
+  - id: npm:@minpeter/pss-extension-web
+    updated: false
+  - changelogIds:
+      - 2026-08-06-runtime-indexed-access-strictness.md
+    id: npm:@minpeter/pss-runtime
+    updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
