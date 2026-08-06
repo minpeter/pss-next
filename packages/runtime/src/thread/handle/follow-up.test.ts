@@ -10,9 +10,18 @@ import {
 } from "../../testing/test-fixtures";
 import type { AgentEvent } from "../protocol/events";
 import { userTextToModelMessage } from "../protocol/mapping";
+import { inputMetaForQueuedKind } from "./durable-queue-send";
 import { collect } from "./test-support";
 
 describe("AgentThread follow-up queue", () => {
+  it("derives event metadata from the durable inbox kind", () => {
+    expect(inputMetaForQueuedKind("send")).toEqual({ source: "send" });
+    expect(inputMetaForQueuedKind("follow-up")).toEqual({
+      source: "follow-up",
+      streaming: "follow-up",
+    });
+  });
+
   it("delivers active follow-ups as FIFO one-at-a-time turns, not steering input", async () => {
     const host = createInMemoryHost();
     const seenHistory: ModelMessage[][] = [];

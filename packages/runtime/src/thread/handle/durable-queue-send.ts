@@ -8,6 +8,7 @@ import {
 } from "../input/attachments";
 import type { AgentInput } from "../input/input";
 import { attachInputMeta, userInputFromEvent } from "../input/input-meta";
+import type { InputEventMeta } from "../input/input-meta-types";
 import { normalizeAgentInput } from "../input/input-normalization";
 import {
   createRuntimeInputState,
@@ -102,10 +103,7 @@ export async function createQueuedSendInput({
   const normalized = normalizeAgentInput(input);
   const acceptedInput =
     normalized.meta === undefined
-      ? attachInputMeta(normalized, {
-          source: kind,
-          ...(kind === "follow-up" ? { streaming: "follow-up" } : {}),
-        })
+      ? attachInputMeta(normalized, inputMetaForQueuedKind(kind))
       : normalized;
   const stagedRefs: RuntimeAttachmentReference[] = [];
   let keepStagedAttachments = false;
@@ -180,4 +178,14 @@ export async function createQueuedSendInput({
       await cleanupStagedRuntimeAttachments(attachmentStore, stagedRefs);
     }
   }
+}
+
+/** @internal exported for the durable-kind/meta invariant test. */
+export function inputMetaForQueuedKind(
+  kind: Exclude<ThreadInputKind, "steer">
+): InputEventMeta {
+  return {
+    source: kind,
+    ...(kind === "follow-up" ? { streaming: "follow-up" } : {}),
+  };
 }
