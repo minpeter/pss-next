@@ -1,10 +1,52 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Strengthen runtime indexed access checks\n\nType-check shipped runtime source with `noUncheckedIndexedAccess` and document the staged exact-optional migration baseline without diagnostic suppressions.\n"
-    filename: 2026-08-06-runtime-indexed-access-strictness.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Harden built-in web, extension, and shell tool handling\n\nValidate built-in web and extension tool schemas before execution, improve model-facing parameter descriptions, and report failed shell commands accurately.\n"
+    filename: 2026-08-05-harden-coding-agent-tools.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Make the extension factory API canonical\n\nMake the extension factory API canonical, add typed event maps and explicit renderer modes, and preserve the deprecated registry API through a legacy subpath.\n"
+    filename: 2026-08-06-extension-authoring-api.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add the versioned JSONL agent protocol\n\nAdd a versioned transport-neutral JSONL RPC protocol, TypeScript client, and Node spawn transport.\nExpose coding-agent prompt, steer, abort, and state operations through a protocol-clean stdio mode.\n"
+    filename: 2026-08-06-jsonl-protocol.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Add lazy provider descriptors with API-key selection\n\nAdd lazy Anthropic, OpenAI, and OpenAI-compatible provider descriptors with API-key selection for headless and library use while preserving legacy AI environment behavior.\n"
+    filename: 2026-08-06-provider-registry.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add session TUI compaction parity\n\nAdd explicit `/compact` and Pi-compatible `/session` commands to the interactive TUI, with runtime-owned durable context compaction and documented session UX.\n"
+    filename: 2026-08-06-session-tui-parity.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add AgentHost fault-injection conformance coverage\n\nAdd reusable AgentHost fault-injection conformance coverage for durable cursors, leases, inputs, checkpoints, and transaction crash boundaries across memory, file, and Cloudflare hosts.\n"
+    filename: 2026-08-05-agent-host-fault-conformance.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Harden published-package release gates\n\nValidate published package metadata and packed-tarball imports in the release gate, and ship a stable `pss-eval` bin wrapper that avoids missing-bin install warnings before builds.\n"
+    filename: 2026-08-05-release-package-gates.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Preserve falsy buffered turn errors as rejections\n\nSeparate successful and failed buffered turn closure so every JavaScript falsy value remains observable as an iterator rejection.\n"
+    filename: 2026-08-06-buffered-turn-falsy-errors.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add durable followUp turns with recovery\n\nAdd durable `followUp` turns with recovery and distinct metadata. FIFO one-at-a-time execution applies within one process/isolate to handles sharing the exact store wrapper.\n"
+    filename: 2026-08-06-durable-follow-up-queue.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Scope event cursors nominally and validate offsets\n\nScope run and thread event cursors nominally and validate cursor offsets and replay limits consistently across storage backends.\n"
+    filename: 2026-08-06-harden-event-cursors.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Harden notification retry handling\n\nPrevent idempotent notification retries from rescheduling terminal runs and fail safely when deduplicated notification records are missing or inconsistent.\n"
+    filename: 2026-08-06-notification-dispatch-retries.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Remove dead runtime declarations\n\nRemove verified unused runtime declarations and internal test helpers.\n"
+    filename: 2026-08-06-remove-dead-runtime-declarations.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add the SQL + durable queue host\n\nAdd platform-neutral SQL store and leased durable-queue integration ports, worker draining, and exact-work outbox reconciliation with in-memory reference contract coverage.\n"
+    filename: 2026-08-06-sql-queue-host.md
     v: 0.0.0
 core:packages:
-  - id: npm:@minpeter/pss-coding-agent
-    updated: false
+  - changelogIds:
+      - 2026-08-05-harden-coding-agent-tools.md
+      - 2026-08-06-extension-authoring-api.md
+      - 2026-08-06-jsonl-protocol.md
+      - 2026-08-06-provider-registry.md
+      - 2026-08-06-session-tui-parity.md
+    id: npm:@minpeter/pss-coding-agent
+    updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
   - id: npm:@minpeter/pss-extension-mermaid
@@ -12,7 +54,16 @@ core:packages:
   - id: npm:@minpeter/pss-extension-web
     updated: false
   - changelogIds:
-      - 2026-08-06-runtime-indexed-access-strictness.md
+      - 2026-08-05-agent-host-fault-conformance.md
+      - 2026-08-05-release-package-gates.md
+      - 2026-08-06-buffered-turn-falsy-errors.md
+      - 2026-08-06-durable-follow-up-queue.md
+      - 2026-08-06-harden-event-cursors.md
+      - 2026-08-06-jsonl-protocol.md
+      - 2026-08-06-notification-dispatch-retries.md
+      - 2026-08-06-remove-dead-runtime-declarations.md
+      - 2026-08-06-session-tui-parity.md
+      - 2026-08-06-sql-queue-host.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
