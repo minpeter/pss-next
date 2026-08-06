@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { retryReleasedThreadDrain } from "./agent-thread-drain";
+import {
+  recoverOrCancelReleasedDrain,
+  retryReleasedThreadDrain,
+} from "./agent-thread-drain";
 
 describe("released thread drain restart", () => {
   it("retries a transient restart failure without another notification", async () => {
@@ -24,5 +27,34 @@ describe("released thread drain restart", () => {
 
     expect(drain).toHaveBeenCalledTimes(3);
     expect(permanentFailure).toHaveBeenCalledWith(failure);
+  });
+
+  it("recovers normally without a terminal event when cancellation fails once", async () => {
+    const cancel = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("cancel unavailable"));
+    const drain = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    const onCancelled = vi.fn();
+
+    await recoverOrCancelReleasedDrain({ cancel, drain, onCancelled });
+
+    expect(drain).toHaveBeenCalledOnce();
+    expect(onCancelled).not.toHaveBeenCalled();
+  });
+
+  it("leaves the caller protected without a terminal event on persistent failure", async () => {
+    const cancel = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValue(new Error("cancel unavailable"));
+    const drain = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValue(new Error("refresh unavailable"));
+    const onCancelled = vi.fn();
+
+    await recoverOrCancelReleasedDrain({ cancel, drain, onCancelled });
+
+    expect(drain).toHaveBeenCalledTimes(3);
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(onCancelled).not.toHaveBeenCalled();
   });
 });

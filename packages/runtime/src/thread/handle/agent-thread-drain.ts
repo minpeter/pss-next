@@ -107,7 +107,7 @@ async function restartReleasedThreadDrain(
 ): Promise<void> {
   await retryReleasedThreadDrain(
     () => drainAgentThreadInputQueue(context),
-    (failure) => settleInputsAfterRestartFailure(context, failure)
+    (failure) => settleInputsAfterRestartFailure(context, failure, true)
   );
 }
 
@@ -132,39 +132,66 @@ export async function retryReleasedThreadDrain(
 
 async function settleInputsAfterRestartFailure(
   context: AgentThreadContext,
-  failure: unknown
+  failure: unknown,
+  retryOnCancellationFailure: boolean
 ): Promise<void> {
   const items = [...context.inputQueue];
   const message = `Thread drain restart failed after ${RELEASED_DRAIN_RETRY_LIMIT} attempts: ${errorMessage(failure)}`;
-  try {
-    await cancelQueuedDurableThreadInputs({
-      executionHost: context.execution.executionHost,
-      items,
-      threadKey: context.threadKey,
-    });
-  } catch (cancellationFailure) {
-    const recoveryMessage = `${message}; durable cancellation failed and requires recovery: ${errorMessage(cancellationFailure)}`;
-    // Keep callers and protective live ownership open: closing/unregistering
-    // here could allow the durable record to execute after its caller ended.
-    for (const item of items) {
-      item.run.emit({ message: recoveryMessage, type: "turn-error" });
-    }
-    return;
-  }
+  await recoverOrCancelReleasedDrain({
+    cancel: () =>
+      cancelQueuedDurableThreadInputs({
+        executionHost: context.execution.executionHost,
+        items,
+        threadKey: context.threadKey,
+      }),
+    drain: () => drainAgentThreadInputQueue(context),
+    onCancelled: () => {
+      context.inputQueue.splice(0, items.length);
+      for (const item of items) {
+        if (item.durableMessageId) {
+          unregisterLiveThreadInput(
+            context.execution.executionHost,
+            context.threadKey,
+            item.durableMessageId,
+            item.durableOwner
+          );
+        }
+        closeRuntimeInput(item.runtimeInput, message);
+        item.run.emit({ message, type: "turn-error" });
+        item.run.close();
+      }
+    },
+    retryOnCancellationFailure,
+  });
+}
 
-  context.inputQueue.splice(0, items.length);
-  for (const item of items) {
-    if (item.durableMessageId) {
-      unregisterLiveThreadInput(
-        context.execution.executionHost,
-        context.threadKey,
-        item.durableMessageId,
-        item.durableOwner
+/** @internal exported for cancellation-recovery regression tests. */
+export async function recoverOrCancelReleasedDrain({
+  cancel,
+  drain,
+  onCancelled,
+  retryOnCancellationFailure = true,
+}: {
+  readonly cancel: () => Promise<void>;
+  readonly drain: () => Promise<void>;
+  readonly onCancelled: () => void;
+  readonly retryOnCancellationFailure?: boolean;
+}): Promise<void> {
+  try {
+    await cancel();
+    onCancelled();
+  } catch {
+    if (retryOnCancellationFailure) {
+      await Promise.resolve();
+      await retryReleasedThreadDrain(drain, () =>
+        recoverOrCancelReleasedDrain({
+          cancel,
+          drain,
+          onCancelled,
+          retryOnCancellationFailure: false,
+        })
       );
     }
-    closeRuntimeInput(item.runtimeInput, message);
-    item.run.emit({ message, type: "turn-error" });
-    item.run.close();
   }
 }
 
