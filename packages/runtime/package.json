@@ -84,7 +84,6 @@
       "@minpeter/pss-source": "./src/protocol/node/index.ts",
       "types": "./dist/protocol/node/index.d.ts",
       "import": "./dist/protocol/node/index.js"
-
     }
   },
   "bin": {
