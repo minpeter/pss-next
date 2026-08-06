@@ -185,6 +185,10 @@ export {
   speculativeCompaction,
 } from "./thread/runtime/speculative-compaction";
 export { ThreadEventReplayUnsupportedError } from "./thread/runtime/thread-event-replay";
+export {
+  type NormalizedTurnError,
+  normalizeTurnError,
+} from "./thread/runtime/turn-error-metadata";
 export type {
   CompactionContextMessage,
   ThreadContextMessage,

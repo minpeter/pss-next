@@ -175,9 +175,43 @@ describe("/session", () => {
   it("shows current session metadata and message statistics", async () => {
     const { context, manager } = createContext();
     (manager.loadSessionHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { content: "system context", role: "system" },
       { content: "question", role: "user" },
-      { content: "answer", role: "assistant" },
-      { content: [], role: "tool" },
+      {
+        content: [
+          { text: "checking", type: "text" },
+          {
+            input: {},
+            toolCallId: "call-1",
+            toolName: "read",
+            type: "tool-call",
+          },
+          {
+            input: {},
+            toolCallId: "call-2",
+            toolName: "grep",
+            type: "tool-call",
+          },
+        ],
+        role: "assistant",
+      },
+      {
+        content: [
+          {
+            output: { type: "text", value: "one" },
+            toolCallId: "call-1",
+            toolName: "read",
+            type: "tool-result",
+          },
+          {
+            output: { type: "text", value: "two" },
+            toolCallId: "call-2",
+            toolName: "grep",
+            type: "tool-result",
+          },
+        ],
+        role: "tool",
+      },
     ]);
 
     const result = await command(context, "session").execute({ args: [] });
@@ -185,8 +219,12 @@ describe("/session", () => {
     expect(result).toMatchObject({ success: true });
     expect(result.message).toContain("Key: cwd:/work");
     expect(result.message).toContain(
-      "Messages: 3 (1 user, 1 assistant, 1 tool)"
+      "Messages: 4 total (1 user, 1 assistant, 1 tool, 1 other)"
     );
+    expect(result.message).toContain(
+      "Tool activity: 2 calls, 2 results across 1 tool messages"
+    );
+    expect(result.message).toContain("Durable token usage: unavailable");
   });
 
   it("rejects arguments instead of switching sessions", async () => {

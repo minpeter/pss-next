@@ -327,8 +327,9 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
 `sessions.json` next to the thread files:
 
 - `/new [name]` — start a new empty session
-- `/session` — show the current session key, name, timestamps, parent, and
-  per-role message counts
+- `/session` — show the current session key, name, timestamps, parent, reconciled
+  per-role message counts, and tool call/result activity. Durable token-usage
+  totals are reported as unavailable because they are not retained
 - `/resume` — interactive picker (switch, rename, or delete a session;
   deleting the live session is blocked — switch away first);
   `/resume <key|name>` switches directly (with completions)

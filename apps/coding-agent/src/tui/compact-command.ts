@@ -1,4 +1,6 @@
+import { normalizeTurnError } from "@minpeter/pss-runtime";
 import type { TuiCommand, TuiCommandResult } from "./command";
+import { createTuiErrorPresentation } from "./error-presentation";
 
 export interface CompactCommandContext {
   /** Run runtime-owned compaction for the current durable thread. */
@@ -22,8 +24,16 @@ export function createCompactCommand(
               success: true,
             };
       } catch (error) {
+        const normalized = normalizeTurnError(error);
+        const presentation = createTuiErrorPresentation(
+          normalized.message ?? error,
+          normalized.error
+        );
         return {
-          message: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+          message: [
+            `Compaction failed: ${presentation.message}`,
+            ...(presentation.hint === undefined ? [] : [presentation.hint]),
+          ].join(" "),
           success: false,
         };
       }

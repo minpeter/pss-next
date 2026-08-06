@@ -146,7 +146,7 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
 
 function createSessionInfoCommand(context: SessionCommandContext): TuiCommand {
   return {
-    description: "Show current session information and message statistics",
+    description: "Show current session metadata and retained message activity",
     execute: (input) =>
       runSessionCommand(async () => {
         if (input.args.length > 0) {
@@ -308,13 +308,31 @@ function formatCurrentSessionInfo(
 ): string {
   const count = (role: ModelMessage["role"]): number =>
     history.filter((message) => message.role === role).length;
+  const userMessages = count("user");
+  const assistantMessages = count("assistant");
+  const toolMessages = count("tool");
+  const otherMessages =
+    history.length - userMessages - assistantMessages - toolMessages;
+  const assistantToolCalls = history
+    .filter((message) => message.role === "assistant")
+    .flatMap((message) =>
+      Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === "tool-call")
+        : []
+    ).length;
+  const toolResults = history
+    .filter((message) => message.role === "tool")
+    .flatMap((message) => message.content)
+    .filter((part) => part.type === "tool-result").length;
   return [
     `Session: ${session.name ?? "untitled"}`,
     `Key: ${session.key}`,
     ...(session.parentKey === undefined
       ? []
       : [`Parent: ${session.parentKey}`]),
-    `Messages: ${history.length} (${count("user")} user, ${count("assistant")} assistant, ${count("tool")} tool)`,
+    `Messages: ${history.length} total (${userMessages} user, ${assistantMessages} assistant, ${toolMessages} tool, ${otherMessages} other)`,
+    `Tool activity: ${assistantToolCalls} calls, ${toolResults} results across ${toolMessages} tool messages`,
+    "Durable token usage: unavailable (usage totals are not retained)",
     `Created: ${session.createdAt}`,
     `Updated: ${session.updatedAt}`,
   ].join("\n");
