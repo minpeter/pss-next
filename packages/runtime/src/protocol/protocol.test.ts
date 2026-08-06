@@ -395,4 +395,80 @@ describe("PSS protocol", () => {
     feed?.(null);
     await expect(serving).rejects.toThrow("write tail died");
   });
+
+  it("serializes concurrent outbound writes with backpressure", async () => {
+    let feed: ((value: string | null) => void) | undefined;
+    const readable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<string>>((resolve) => {
+              feed = (value) =>
+                resolve(
+                  value === null
+                    ? { done: true, value: undefined }
+                    : { done: false, value }
+                );
+            }),
+        };
+      },
+    };
+    let releaseFirst: (() => void) | undefined;
+    let activeWrites = 0;
+    let maximumActiveWrites = 0;
+    const methods: string[] = [];
+    const client = new PssProtocolClient({
+      readable,
+      async write(frame) {
+        activeWrites += 1;
+        maximumActiveWrites = Math.max(maximumActiveWrites, activeWrites);
+        methods.push(JSON.parse(frame).method);
+        if (methods.length === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        activeWrites -= 1;
+      },
+    });
+    const state = client.state();
+    const abort = client.abort();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(methods).toEqual(["state"]);
+    releaseFirst?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(methods).toEqual(["state", "abort"]);
+    expect(maximumActiveWrites).toBe(1);
+    feed?.(
+      '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"result":{"activeRequestId":null,"status":"idle"}}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"result":{"interrupted":false}}\n'
+    );
+    await expect(state).resolves.toMatchObject({ status: "idle" });
+    await expect(abort).resolves.toEqual({ interrupted: false });
+    feed?.(null);
+  });
+
+  it("dispatches valid frames before failing on a malformed neighbor consistently", async () => {
+    const response =
+      '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"result":{"activeRequestId":null,"status":"idle"}}\n';
+    const run = async (input: readonly string[]) => {
+      const client = new PssProtocolClient({
+        readable: chunks(...input),
+        write: () => undefined,
+      });
+      const first = await client.state();
+      await Promise.resolve();
+      const secondError = await client.state().then(
+        () => "resolved",
+        (error: unknown) =>
+          error instanceof Error ? error.message : String(error)
+      );
+      return { first, secondError };
+    };
+    const sameChunk = await run([`${response}malformed\n`]);
+    const splitChunks = await run([response, "malformed\n"]);
+    expect(sameChunk.first).toMatchObject({ status: "idle" });
+    expect(sameChunk.secondError).toContain("Invalid JSONL frame");
+    expect(splitChunks).toEqual(sameChunk);
+  });
 });

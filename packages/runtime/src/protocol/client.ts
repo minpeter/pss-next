@@ -29,6 +29,7 @@ export class PssProtocolClient {
   #closed = false;
   #nextId = 1;
   #readFailure: unknown;
+  #writeTail = Promise.resolve();
 
   constructor(transport: ProtocolTransport) {
     this.#transport = transport;
@@ -75,19 +76,22 @@ export class PssProtocolClient {
       ...(params ? { params } : {}),
       protocol: PSS_PROTOCOL_VERSION,
     };
-    Promise.resolve()
-      .then(() => {
-        if (this.#closed) {
-          throw new Error("PSS protocol client is closed");
-        }
-        if (this.#readFailure !== undefined) {
-          throw this.#readFailure;
-        }
-        return this.#transport.write(encodeJsonl(message));
-      })
-      .catch((error) => {
-        this.#pendingReject(id, error);
-      });
+    const write = this.#writeTail.then(() => {
+      if (this.#closed) {
+        throw new Error("PSS protocol client is closed");
+      }
+      if (this.#readFailure !== undefined) {
+        throw this.#readFailure;
+      }
+      return this.#transport.write(encodeJsonl(message));
+    });
+    this.#writeTail = write.then(
+      () => undefined,
+      () => undefined
+    );
+    write.catch((error) => {
+      this.#pendingReject(id, error);
+    });
     return result;
   }
 
@@ -126,18 +130,23 @@ export class PssProtocolClient {
       while (!this.#closed) {
         const next = await this.#iterator.next();
         if (next.done) {
-          for (const message of decoder.finish()) {
-            this.#handle(message);
-          }
+          this.#handleDecoded(decoder.finishResults());
           throw new Error("PSS protocol transport closed");
         }
-        for (const message of decoder.push(next.value)) {
-          this.#handle(message);
-        }
+        this.#handleDecoded(decoder.pushResults(next.value));
       }
     } catch (error) {
       this.#readFailure = error;
       this.#failPending(error);
+    }
+  }
+
+  #handleDecoded(results: ReturnType<JsonlDecoder["pushResults"]>): void {
+    for (const result of results) {
+      if ("error" in result) {
+        throw result.error;
+      }
+      this.#handle(result.value);
     }
   }
 
