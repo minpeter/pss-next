@@ -1308,3 +1308,43 @@ idempotent execution or a manual recovery flow.
 Cancellation is persisted before aborting active work. `delete()` and `dispose()`
 stop the current session's in-process work; durable hosts remain responsible for
 any app-owned background run cancellation, cleanup, and notification policy.
+
+
+## SQL + durable queue host
+
+`@minpeter/pss-runtime/platform/sql-queue` is a platform-neutral production
+host boundary for conventional servers. It deliberately does not select a SQL
+client or queue vendor:
+
+```ts
+import { createSqlQueueHost } from "@minpeter/pss-runtime/platform/sql-queue";
+
+const host = createSqlQueueHost({
+  store: postgresStorePort,
+  queue: {
+    // Must be durable and idempotent by work.workId.
+    enqueue: (work) => jobs.insertOnConflictDoNothing(work),
+  },
+  // Optional fast-path signal; durable queue polling remains the fallback.
+  wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
+});
+```
+
+A `SqlHostStorePort` exposes the normal runtime stores and an atomic
+`transaction` callback. A PostgreSQL implementation should acquire one pooled
+connection, issue `BEGIN`, create transaction-scoped store ports for that
+connection, then `COMMIT` on success or `ROLLBACK` on failure. Optimistic
+thread/checkpoint writes and queue inserts should use unique constraints or
+compare-and-swap predicates rather than process locks.
+
+`SqlQueuePort.enqueue` receives either run or thread-prompt work with a stable
+`workId` and `dueAtMs`. Persist it with a unique key (for example `INSERT ...
+ON CONFLICT (work_id) DO NOTHING`). The adapter calls `wake` only after enqueue
+resolves. Wake is advisory: workers must poll the durable queue for due,
+unacked work, and a wake failure may reject scheduling even though the item is
+already safely queued. Retrying is therefore safe and expected.
+
+The package contract suite runs this adapter against an in-memory reference
+SQL port and queue. Production database drivers remain application-owned so
+the runtime does not impose a PostgreSQL client, pool, migration system, or
+message broker.

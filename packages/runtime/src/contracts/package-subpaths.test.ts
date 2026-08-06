@@ -68,6 +68,20 @@ describe("runtime package subpaths", () => {
     expect(packageJson.exports["./node"]).toBeUndefined();
   });
 
+  it("declares the SQL queue adapter as a platform implementation subpath", async () => {
+    const packageJson = await readRuntimePackageJson();
+    const sqlQueue = await import("../platform/sql-queue");
+
+    expect(packageJson.exports["./platform/sql-queue"]).toMatchObject({
+      "@minpeter/pss-source": "./src/platform/sql-queue/index.ts",
+      import: "./dist/platform/sql-queue/index.js",
+      types: "./dist/platform/sql-queue/index.d.ts",
+    });
+    expect(sqlQueue).toHaveProperty("createSqlQueueHost");
+    expect(sqlQueue).toHaveProperty("SqlHostStore");
+    expect(sqlQueue).toHaveProperty("SqlQueueScheduler");
+  });
+
   it("declares the OpenTelemetry observability subpath", async () => {
     const packageJson = await readRuntimePackageJson();
     const root = await import("../index");
