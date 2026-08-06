@@ -70,5 +70,22 @@ describe.each(hostFactories)(
       expect(firstEvents.at(-1)?.type).toBe("turn-end");
       expect(secondEvents.at(-1)?.type).toBe("turn-end");
     });
+
+    it("refreshes a stale handle after another handle owns the thread", async () => {
+      const host = await hostFactory();
+      const model = createCallbackModel(() => [assistantMessage("DONE")]);
+      const agentA = new Agent({ host, model });
+      const agentB = new Agent({ host, model });
+      const threadA = agentA.thread("alternating-follow-up");
+      const threadB = agentB.thread("alternating-follow-up");
+
+      const b1 = await collect(await threadB.followUp("B1"));
+      const a1 = await collect(await threadA.followUp("A1"));
+      const b2 = await collect(await threadB.followUp("B2"));
+
+      expect(b1.at(-1)?.type).toBe("turn-end");
+      expect(a1.at(-1)?.type).toBe("turn-end");
+      expect(b2.at(-1)?.type).toBe("turn-end");
+    });
   }
 );

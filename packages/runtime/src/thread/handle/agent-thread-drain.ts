@@ -1,6 +1,7 @@
 import { deferred } from "../../internal/deferred";
 import type { AgentThreadContext } from "./agent-thread-context";
 import { assertThreadMachineInvariants } from "./agent-thread-machines";
+import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
 import { runThreadInputDrainLoop } from "./thread-drain";
 import { withThreadDrainOwnership } from "./thread-drain-coordinator";
 
@@ -27,8 +28,15 @@ export async function drainAgentThreadInputQueue(
   const loop = withThreadDrainOwnership(
     context.execution.executionHost,
     context.threadKey,
-    async ({ contended }) => {
-      if (contended) {
+    context,
+    async ({ refreshRequired }) => {
+      await recoverThreadDurableInputClaims({
+        allowOwned: true,
+        executionHost: context.execution.executionHost,
+        state: context.durableInputRecovery,
+        threadKey: context.threadKey,
+      });
+      if (refreshRequired) {
         await context.state.refresh();
       }
       return await runThreadInputDrainLoop({

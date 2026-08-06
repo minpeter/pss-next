@@ -1010,11 +1010,15 @@ can distinguish it from an ordinary send and from steering.
 
 Follow-ups use admitted-sequence FIFO, one-at-a-time delivery: every accepted
 call owns a distinct `AgentTurn`, model invocation, durable inbox record, and
-terminal event. Drain ownership serializes live `Agent` handles that share the
-same host store object and thread key, including the memory, file, and
-Cloudflare adapters. An older recovered record runs before newly admitted work.
-A later follow-up remains queued when the active turn is interrupted or fails,
-and an orphaned durable claim is recovered on the next thread admission. The
+terminal event. One-at-a-time drain ownership is process/isolate-local: it
+serializes live `Agent` handles only when they share the exact same host store
+wrapper object and thread key, including one shared memory, file, or Cloudflare
+host instance. It is not a distributed lease and does not serialize separate
+store wrappers or processes that happen to use the same backing storage.
+Durable `admittedSeq` values order inbox records; an older recovered record runs
+before newly admitted work. A later follow-up remains queued when the active
+turn is interrupted or fails, and an orphaned durable claim is recovered on the
+next thread admission. The
 runtime does not currently expose an `all` batching policy; batching would
 collapse multiple accepted calls into one turn and conflict with the
 one-call/one-turn contract.

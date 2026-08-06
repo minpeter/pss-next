@@ -8,7 +8,6 @@ import {
 } from "../input/attachments";
 import type { AgentInput } from "../input/input";
 import { attachInputMeta, userInputFromEvent } from "../input/input-meta";
-import type { InputSource } from "../input/input-meta-types";
 import { normalizeAgentInput } from "../input/input-normalization";
 import {
   createRuntimeInputState,
@@ -33,7 +32,6 @@ export async function admitThreadSendInput({
   pendingOverlays,
   pendingRuntimeInputs,
   run,
-  source = "send",
   threadKey,
 }: {
   readonly awaitBoundaries: boolean;
@@ -47,7 +45,6 @@ export async function admitThreadSendInput({
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
   readonly run: BufferedAgentTurn;
-  readonly source?: Extract<InputSource, "follow-up" | "send">;
   readonly threadKey: string;
 }): Promise<void> {
   const queued = await createQueuedSendInput({
@@ -60,7 +57,6 @@ export async function admitThreadSendInput({
     pendingOverlays,
     pendingRuntimeInputs,
     run,
-    source,
     threadKey,
   });
   if (queued.kind === "handled") {
@@ -90,7 +86,6 @@ export async function createQueuedSendInput({
   pendingOverlays,
   pendingRuntimeInputs,
   run,
-  source = "send",
   threadKey,
 }: {
   readonly awaitBoundaries: boolean;
@@ -102,15 +97,14 @@ export async function createQueuedSendInput({
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
   readonly run: BufferedAgentTurn;
-  readonly source?: Extract<InputSource, "follow-up" | "send">;
   readonly threadKey: string;
 }): Promise<QueuedSendInputResult> {
   const normalized = normalizeAgentInput(input);
   const acceptedInput =
     normalized.meta === undefined
       ? attachInputMeta(normalized, {
-          source,
-          ...(source === "follow-up" ? { streaming: "follow-up" } : {}),
+          source: kind,
+          ...(kind === "follow-up" ? { streaming: "follow-up" } : {}),
         })
       : normalized;
   const stagedRefs: RuntimeAttachmentReference[] = [];

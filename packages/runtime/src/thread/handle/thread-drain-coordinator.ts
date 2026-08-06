@@ -2,16 +2,33 @@ import type { AgentHost } from "../../execution/host/types";
 import { deferred } from "../../internal/deferred";
 
 interface DrainLock {
+  readonly owner: object;
   readonly settled: Promise<void>;
 }
 
-const hostDrainLocks = new WeakMap<object, Map<string, DrainLock>>();
+interface ThreadDrainOwnershipState {
+  active?: DrainLock;
+  lastOwner?: object;
+}
+
+export interface ThreadDrainOwnership {
+  /** Another owner completed work since this owner last held the thread. */
+  readonly refreshRequired: boolean;
+}
+
+const hostDrainStates = new WeakMap<
+  object,
+  Map<string, ThreadDrainOwnershipState>
+>();
 
 export function isThreadDrainOwned(
   executionHost: AgentHost,
   threadKey: string
 ): boolean {
-  return hostDrainLocks.get(executionHost.store)?.has(threadKey) ?? false;
+  return (
+    hostDrainStates.get(executionHost.store)?.get(threadKey)?.active !==
+    undefined
+  );
 }
 
 /**
@@ -23,39 +40,46 @@ export function isThreadDrainOwned(
 export async function withThreadDrainOwnership<T>(
   executionHost: AgentHost | undefined,
   threadKey: string,
-  operation: (ownership: { readonly contended: boolean }) => Promise<T>
+  owner: object,
+  operation: (ownership: ThreadDrainOwnership) => Promise<T>
 ): Promise<T> {
   if (!executionHost) {
-    return await operation({ contended: false });
+    return await operation({ refreshRequired: false });
   }
 
   const identity = executionHost.store;
-  let locks = hostDrainLocks.get(identity);
-  if (!locks) {
-    locks = new Map();
-    hostDrainLocks.set(identity, locks);
+  let threads = hostDrainStates.get(identity);
+  if (!threads) {
+    threads = new Map();
+    hostDrainStates.set(identity, threads);
+  }
+  let state = threads.get(threadKey);
+  if (!state) {
+    state = {};
+    threads.set(threadKey, state);
   }
 
-  let contended = false;
   for (;;) {
-    const active = locks.get(threadKey);
+    const active = state.active;
     if (!active) {
       break;
     }
-    contended = true;
     await active.settled;
   }
 
   const released = deferred();
-  const lock = { settled: released.promise } satisfies DrainLock;
+  const lock = { owner, settled: released.promise } satisfies DrainLock;
   // There is no await between observing the empty slot and installing it, so
   // JavaScript's run-to-completion semantics make acquisition atomic.
-  locks.set(threadKey, lock);
+  state.active = lock;
+  const refreshRequired =
+    state.lastOwner !== undefined && state.lastOwner !== owner;
   try {
-    return await operation({ contended });
+    return await operation({ refreshRequired });
   } finally {
-    if (locks.get(threadKey) === lock) {
-      locks.delete(threadKey);
+    if (state.active === lock) {
+      state.active = undefined;
+      state.lastOwner = owner;
     }
     released.resolve();
   }

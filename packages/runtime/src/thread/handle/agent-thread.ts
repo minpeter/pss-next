@@ -220,7 +220,6 @@ export class AgentThread {
       pendingOverlays: this.#context.pendingOverlays,
       pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
       run,
-      source: kind,
       threadKey: this.#context.threadKey,
     });
     this.#assertOpen();

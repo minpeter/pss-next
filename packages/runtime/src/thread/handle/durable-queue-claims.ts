@@ -14,10 +14,35 @@ import {
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
 } from "../runtime/execution";
-import {
-  isThreadDrainOwned,
-  withThreadDrainOwnership,
-} from "./thread-drain-coordinator";
+import { isThreadDrainOwned } from "./thread-drain-coordinator";
+
+const sharedRecoveries = new WeakMap<object, Map<string, Promise<void>>>();
+
+async function recoverAfterLiveDrain(
+  executionHost: AgentHost,
+  threadKey: string
+): Promise<void> {
+  let byThread = sharedRecoveries.get(executionHost.store);
+  if (!byThread) {
+    byThread = new Map();
+    sharedRecoveries.set(executionHost.store, byThread);
+  }
+  const existing = byThread.get(threadKey);
+  if (existing) {
+    return await existing;
+  }
+  const recovery = (async () => {
+    await recoverDurableThreadInputs({ executionHost, threadKey });
+  })();
+  byThread.set(threadKey, recovery);
+  try {
+    await recovery;
+  } finally {
+    if (byThread.get(threadKey) === recovery) {
+      byThread.delete(threadKey);
+    }
+  }
+}
 
 /**
  * One-shot recovery of orphaned durable input claims:
@@ -42,10 +67,12 @@ export class DurableInputRecoveryState {
 }
 
 export async function recoverThreadDurableInputClaims({
+  allowOwned = false,
   executionHost,
   state,
   threadKey,
 }: {
+  readonly allowOwned?: boolean;
   readonly executionHost: AgentHost | undefined;
   readonly state: DurableInputRecoveryState;
   readonly threadKey: string;
@@ -53,15 +80,18 @@ export async function recoverThreadDurableInputClaims({
   if (state.machine.state.tag !== "pending") {
     return;
   }
+  if (
+    executionHost &&
+    !allowOwned &&
+    isThreadDrainOwned(executionHost, threadKey)
+  ) {
+    return;
+  }
 
   state.machine.to({ tag: "recovering" });
   try {
     if (executionHost) {
-      if (!isThreadDrainOwned(executionHost, threadKey)) {
-        await withThreadDrainOwnership(executionHost, threadKey, async () => {
-          await recoverDurableThreadInputs({ executionHost, threadKey });
-        });
-      }
+      await recoverAfterLiveDrain(executionHost, threadKey);
     } else {
       await recoverDurableThreadInputs({ executionHost, threadKey });
     }

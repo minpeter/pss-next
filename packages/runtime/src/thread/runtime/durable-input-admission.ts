@@ -9,6 +9,7 @@ import type {
 import { ThreadInputInboxUnavailableError } from "../../execution/host/unsupported-thread-input-inbox";
 import type { UserInput } from "../input/input";
 import { precreateThreadExecutionRun } from "./execution";
+import { withThreadInputAdmission } from "./thread-input-admission-coordinator";
 
 export type DurableInputAdmission =
   | {
@@ -37,42 +38,44 @@ export async function admitDurableThreadInput({
     return { kind: "unavailable" };
   }
 
-  try {
-    const messageId = crypto.randomUUID();
-    if (precreateExecutionRun) {
-      return await executionHost.store.transaction(async (transaction) => {
-        const receipt = await transaction.inputs.admit({
-          input,
-          kind,
-          messageId,
-          placement,
-          threadKey,
+  return await withThreadInputAdmission(executionHost, threadKey, async () => {
+    try {
+      const messageId = crypto.randomUUID();
+      if (precreateExecutionRun) {
+        return await executionHost.store.transaction(async (transaction) => {
+          const receipt = await transaction.inputs.admit({
+            input,
+            kind,
+            messageId,
+            placement,
+            threadKey,
+          });
+          if (receipt.duplicate) {
+            return { kind: "admitted", receipt };
+          }
+          const executionRun = await precreateThreadExecutionRun({
+            kind: "user-turn",
+            runId: createThreadExecutionRunId({ threadKey, turnId: messageId }),
+            threadKey,
+            turnStore: transaction.turns,
+          });
+          return { executionRun, kind: "admitted", receipt };
         });
-        if (receipt.duplicate) {
-          return { kind: "admitted", receipt };
-        }
-        const executionRun = await precreateThreadExecutionRun({
-          kind: "user-turn",
-          runId: createThreadExecutionRunId({ threadKey, turnId: messageId }),
-          threadKey,
-          turnStore: transaction.turns,
-        });
-        return { executionRun, kind: "admitted", receipt };
-      });
-    }
+      }
 
-    const receipt = await executionHost.store.inputs.admit({
-      input,
-      kind,
-      messageId,
-      placement,
-      threadKey,
-    });
-    return { kind: "admitted", receipt };
-  } catch (error) {
-    if (error instanceof ThreadInputInboxUnavailableError) {
-      return { kind: "unavailable" };
+      const receipt = await executionHost.store.inputs.admit({
+        input,
+        kind,
+        messageId,
+        placement,
+        threadKey,
+      });
+      return { kind: "admitted", receipt };
+    } catch (error) {
+      if (error instanceof ThreadInputInboxUnavailableError) {
+        return { kind: "unavailable" };
+      }
+      throw error;
     }
-    throw error;
-  }
+  });
 }

@@ -5,6 +5,7 @@ import { createInMemoryHost } from "../../platform/memory";
 import {
   assistantMessage,
   createCallbackModel,
+  createDeferred,
   userText,
 } from "../../testing/test-fixtures";
 import type { AgentEvent } from "../protocol/events";
@@ -145,6 +146,52 @@ describe("AgentThread follow-up queue", () => {
     ]);
     await expect(
       host.store.inputs.claimNext("follow-up-recovery", "turn-idle")
+    ).resolves.toBeNull();
+  });
+
+  it("waits for a live owner before recovering an orphan claim", async () => {
+    const host = createInMemoryHost();
+    const activeStarted = createDeferred();
+    const releaseActive = createDeferred();
+    let calls = 0;
+    const model = createCallbackModel(async () => {
+      calls += 1;
+      if (calls === 1) {
+        activeStarted.resolve();
+        await releaseActive.promise;
+      }
+      return [assistantMessage(`DONE ${calls}`)];
+    });
+    const activeThread = new Agent({ host, model }).thread(
+      "recovery-during-active"
+    );
+    const recoveringThread = new Agent({ host, model }).thread(
+      "recovery-during-active"
+    );
+    const activeTurn = await activeThread.followUp("active");
+    const activeEvents = collect(activeTurn);
+    await activeStarted.promise;
+
+    await host.store.inputs.admit({
+      input: userText("orphan"),
+      kind: "follow-up",
+      messageId: "orphan-during-active",
+      threadKey: "recovery-during-active",
+    });
+    const orphanClaim = await host.store.inputs.claimNext(
+      "recovery-during-active",
+      "turn-idle"
+    );
+    expect(orphanClaim?.status).toBe("claiming");
+
+    const recoveringTurn = await recoveringThread.followUp("after orphan");
+
+    releaseActive.resolve();
+    await activeEvents;
+    await collect(recoveringTurn);
+    await vi.waitFor(() => expect(calls).toBe(3));
+    await expect(
+      host.store.inputs.claimNext("recovery-during-active", "turn-idle")
     ).resolves.toBeNull();
   });
 });
