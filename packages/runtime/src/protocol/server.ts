@@ -184,7 +184,7 @@ function rpcError(error: unknown): ProtocolError {
       Number.isFinite(value.code) &&
       typeof value.message === "string"
     ) {
-      const data = snapshotJsonData(value.data);
+      const data = snapshotJsonData(value);
       return {
         code: value.code,
         message: value.message,
@@ -195,11 +195,11 @@ function rpcError(error: unknown): ProtocolError {
   return { code: -32_603, message: errorMessage(error) };
 }
 
-function snapshotJsonData(
-  value: unknown
-): { readonly value: unknown } | undefined {
+function snapshotJsonData(source: {
+  readonly data?: unknown;
+}): { readonly value: unknown } | undefined {
   try {
-    const frame = encodeJsonl({ data: value });
+    const frame = encodeJsonl({ data: source.data });
     return { value: (JSON.parse(frame) as { data: unknown }).data };
   } catch {
     return;

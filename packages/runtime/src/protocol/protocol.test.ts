@@ -626,4 +626,40 @@ describe("PSS protocol", () => {
       id: 1,
     });
   });
+
+  it("omits a throwing RPC error data getter after one guarded read", async () => {
+    let reads = 0;
+    const error = Object.assign(new Error("custom failure"), {
+      code: -32_050,
+    });
+    Object.defineProperty(error, "data", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        throw new Error("data getter failed");
+      },
+    });
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      {
+        handle() {
+          throw error;
+        },
+      }
+    );
+    expect(reads).toBe(1);
+    expect(JSON.parse(output[0] ?? "null")).toMatchObject({
+      error: { code: -32_050, message: "custom failure" },
+      id: 1,
+    });
+    expect(JSON.parse(output[0] ?? "null").error).not.toHaveProperty("data");
+  });
 });
