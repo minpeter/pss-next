@@ -2,18 +2,6 @@ import type { TurnRecord, TurnStatus } from "../../../execution";
 import type { CloudflareDurableObjectStorage } from "../storage/durable-object/durable-object-storage";
 import { createCloudflareStorageHost } from "./durable-object-host";
 
-export async function shouldRetryScheduledRun(
-  storage: CloudflareDurableObjectStorage,
-  prefix: string,
-  runId: string
-): Promise<boolean> {
-  const run = await createCloudflareStorageHost({
-    prefix,
-    storage,
-  }).store.turns.get(runId);
-  return run?.kind === "notification" && isRetryableRunStatus(run.status);
-}
-
 export async function shouldRetryNotClaimableScheduledRun(
   storage: CloudflareDurableObjectStorage,
   prefix: string,

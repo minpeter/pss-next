@@ -15,7 +15,6 @@ export type AgentToolChoice = PreparedModelToolChoice;
 export type ModelStepOutput = Awaited<
   ReturnType<typeof generateText>
 >["responseMessages"];
-export type ModelStepOutputPart = ModelStepOutput[number];
 
 export interface ModelStepResult {
   readonly contextUsage?: import("./context-tokens").ContextUsageSnapshot;

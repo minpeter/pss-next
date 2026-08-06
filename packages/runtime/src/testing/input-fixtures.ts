@@ -21,12 +21,6 @@ export const userMessage = (content: UserMessageContent): UserMessage => ({
   content,
 });
 
-export const sentUserMessage = (content: UserMessageContent): UserMessage => ({
-  content,
-  meta: { source: "send" },
-  type: "user-input",
-});
-
 export const steerRuntimeInput = (
   text: UserTextContent,
   placement: "step-end" | "step-start" | "turn-start"
@@ -65,20 +59,6 @@ export const overlayRuntimeInput = (
     type: "user-input" as const,
   },
   meta: { source: "overlay" as const },
-  placement,
-  type: "runtime-input" as const,
-});
-
-export const steerRuntimeInputMessage = (
-  content: UserMessageContent,
-  placement: "step-end" | "step-start" | "turn-start"
-) => ({
-  input: {
-    content,
-    meta: { source: "steer" as const, streaming: "steer" as const },
-    type: "user-input" as const,
-  },
-  meta: { source: "steer" as const, streaming: "steer" as const },
   placement,
   type: "runtime-input" as const,
 });

@@ -3,7 +3,6 @@ import type {
   ClaimedThreadInput,
   RecoverThreadInputClaimsResult,
   ThreadInputBoundary,
-  ThreadInputRecord,
 } from "../../execution/host/types";
 import { ThreadInputInboxUnavailableError } from "../../execution/host/unsupported-thread-input-inbox";
 
@@ -42,24 +41,6 @@ export async function claimDurableThreadInput({
     }
     throw error;
   }
-}
-
-export async function promoteAndAckDurableThreadInput({
-  executionHost,
-  record,
-}: {
-  readonly executionHost: AgentHost | undefined;
-  readonly record: ClaimedThreadInput;
-}): Promise<ThreadInputRecord | null> {
-  if (!executionHost) {
-    return null;
-  }
-
-  const promoted = await executionHost.store.inputs.markPromoted(record);
-  if (!promoted) {
-    return null;
-  }
-  return await executionHost.store.inputs.ack(promoted);
 }
 
 export async function recoverDurableThreadInputs({
