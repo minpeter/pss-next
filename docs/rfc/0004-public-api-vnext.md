@@ -102,6 +102,7 @@ interface ThreadHandle {
 }
 
 interface Agent {
+  // Final vNext signature after the compatibility window.
   thread(identity: ThreadId | ThreadIdentity): ThreadHandle;
 }
 ```
@@ -109,8 +110,13 @@ interface Agent {
 `id` replaces the ambiguous public word `key`. Scope participates in storage
 identity; metadata does not. The runtime canonicalizes the pair for storage but
 does not expose the encoded storage key as identity. Two inputs with the same
-`id` and `scope` identify the same durable thread. `ThreadAddress.key` remains a
-compatibility input, then migrates to `ThreadIdentity.id`; `threadStoreKey`
+`id` and `scope` identify the same durable thread.
+
+The additive/deprecation phase temporarily uses
+`thread(identity: ThreadId | ThreadIdentity | ThreadAddress)`. In that overload,
+`ThreadAddress.key` maps to `ThreadIdentity.id` and its `metadata` remains
+non-identifying compatibility data. The major release removes `ThreadAddress`
+from this input, leaving the final signature shown above. `threadStoreKey`
 leaves the root because it is an encoding helper rather than identity.
 
 ### 4. Delete and dispose
@@ -230,8 +236,8 @@ a breaking-change detector.
 
 ## Automated public-surface gate
 
-`packages/runtime/public-api.snapshot.json` records every exported name as
-`type` or `value` for every `package.json#exports` entrypoint. CI builds runtime,
+`packages/runtime/public-api.snapshot.json` records every exported name as an explicit type-only export or a verified runtime
+value export for every `package.json#exports` entrypoint. CI builds runtime,
 then runs `pnpm api:check`. The command prints a deterministic per-entrypoint
 diff and fails on added, removed, moved, or type-only/value export changes.
 

@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -205,5 +205,33 @@ describe("verifyReleaseArtifacts package checks", () => {
     expect(
       isMainModule(pathToFileURL(scriptPath).href, `${scriptPath}.bak`)
     ).toBe(false);
+  });
+  it("checks the runtime API snapshot when requested by the release command", () => {
+    const cwd = createFixture();
+    writeFileSync(
+      join(cwd, "packages", "runtime", "package.json"),
+      JSON.stringify({
+        exports: { ".": { types: "./dist/index.d.ts" } },
+        name: "@minpeter/pss-runtime",
+      })
+    );
+    writeFileSync(
+      join(cwd, "packages", "runtime", "public-api.snapshot.json"),
+      JSON.stringify({
+        package: "@minpeter/pss-runtime",
+        schemaVersion: 1,
+        surfaces: { ".": [] },
+      })
+    );
+
+    const errors = verifyReleaseArtifacts({
+      checkPublicApiSnapshot: true,
+      cwd,
+      packages: ["runtime"],
+    });
+
+    expect(
+      errors.some((error) => error.includes("runtime public API changed"))
+    ).toBe(true);
   });
 });

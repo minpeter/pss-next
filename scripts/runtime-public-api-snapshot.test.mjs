@@ -49,13 +49,35 @@ describe("runtime public API snapshot", () => {
       export declare const directValue: string;
     `;
 
-    expect(declarationExportsFromText(declaration, "fixture.d.ts")).toEqual([
+    expect(
+      declarationExportsFromText(
+        declaration,
+        "fixture.d.ts",
+        new Set(["directValue", "renamedRuntime"])
+      )
+    ).toEqual([
       "type DirectType",
       "type InlineType",
       "type TypeAlias",
       "value directValue",
       "value renamedRuntime",
     ]);
+  });
+
+  it("classifies plain type exports against the runtime surface", () => {
+    expect(
+      declarationExportsFromText(
+        "interface SomeType {} export { SomeType };",
+        "plain-type.d.ts"
+      )
+    ).toEqual(["type SomeType"]);
+    expect(
+      declarationExportsFromText(
+        "declare const runtimeValue: string; export { runtimeValue };",
+        "plain-value.d.ts",
+        new Set(["runtimeValue"])
+      )
+    ).toEqual(["value runtimeValue"]);
   });
 
   it("rejects default and export-star surfaces explicitly", () => {

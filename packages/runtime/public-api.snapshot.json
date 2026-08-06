@@ -180,9 +180,9 @@
       "value userInputFromEvent"
     ],
     "./channel": [
-      "value ChannelAssistantDelivery",
-      "value ChannelAssistantTextDelivery",
-      "value ChannelInboundMessage",
+      "type ChannelAssistantDelivery",
+      "type ChannelAssistantTextDelivery",
+      "type ChannelInboundMessage",
       "value projectChannelAssistantDelivery"
     ],
     "./evals": [
@@ -291,9 +291,9 @@
       "value threadStoreFromHost"
     ],
     "./fsm": [
+      "type FsmState",
+      "type FsmTransitionTable",
       "value Fsm",
-      "value FsmState",
-      "value FsmTransitionTable",
       "value InvalidStateTransitionError"
     ],
     "./namespace": [

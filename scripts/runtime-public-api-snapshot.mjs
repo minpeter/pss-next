@@ -8,6 +8,8 @@ export const RUNTIME_API_SNAPSHOT_PATH = join(
   "public-api.snapshot.json"
 );
 
+const DECLARATION_EXTENSION_RE = /\.d\.ts$/;
+
 function compareCodeUnits(left, right) {
   if (left < right) {
     return -1;
@@ -65,7 +67,42 @@ function directDeclarationExports(declaration) {
   throw new Error(`Unsupported public declaration node: ${declaration.type}`);
 }
 
-function addStatementExports(exports, statement, sourceName) {
+export function runtimeExportsFromText(text, sourceName = "runtime module") {
+  const program = parse(text, {
+    sourceFilename: sourceName,
+    sourceType: "module",
+  }).program;
+  const exports = new Set();
+  for (const statement of program.body) {
+    if (statement.type === "ExportDefaultDeclaration") {
+      throw new Error(`${sourceName}: default exports are not supported`);
+    }
+    if (statement.type === "ExportAllDeclaration") {
+      throw new Error(
+        `${sourceName}: export star declarations are not supported`
+      );
+    }
+    if (statement.type !== "ExportNamedDeclaration") {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      if (specifier.type !== "ExportSpecifier") {
+        throw new Error(
+          `${sourceName}: ${specifier.type} declarations are not supported`
+        );
+      }
+      exports.add(exportedName(specifier.exported));
+    }
+    if (statement.declaration) {
+      for (const entry of directDeclarationExports(statement.declaration)) {
+        exports.add(entry.slice(entry.indexOf(" ") + 1));
+      }
+    }
+  }
+  return exports;
+}
+
+function addStatementExports(exports, statement, sourceName, runtimeNames) {
   if (statement.type === "ExportDefaultDeclaration") {
     throw new Error(`${sourceName}: default exports are not supported`);
   }
@@ -79,6 +116,11 @@ function addStatementExports(exports, statement, sourceName) {
   }
   if (statement.declaration) {
     for (const entry of directDeclarationExports(statement.declaration)) {
+      if (entry.startsWith("value ") && !runtimeNames.has(entry.slice(6))) {
+        throw new Error(
+          `${sourceName}: ${entry.slice(6)} has no runtime export`
+        );
+      }
       exports.add(entry);
     }
   }
@@ -90,13 +132,17 @@ function addStatementExports(exports, statement, sourceName) {
     }
     const typeOnly =
       statement.exportKind === "type" || specifier.exportKind === "type";
-    exports.add(
-      `${typeOnly ? "type" : "value"} ${exportedName(specifier.exported)}`
-    );
+    const name = exportedName(specifier.exported);
+    const kind = typeOnly || !runtimeNames.has(name) ? "type" : "value";
+    exports.add(`${kind} ${name}`);
   }
 }
 
-export function declarationExportsFromText(text, sourceName = "declaration") {
+export function declarationExportsFromText(
+  text,
+  sourceName = "declaration",
+  runtimeNames = new Set()
+) {
   const program = parse(text, {
     allowUndeclaredExports: true,
     plugins: ["typescript"],
@@ -105,13 +151,25 @@ export function declarationExportsFromText(text, sourceName = "declaration") {
   }).program;
   const exports = new Set();
   for (const statement of program.body) {
-    addStatementExports(exports, statement, sourceName);
+    addStatementExports(exports, statement, sourceName, runtimeNames);
   }
   return [...exports].sort(compareCodeUnits);
 }
 
 function declarationExports(file) {
-  return declarationExportsFromText(readFileSync(file, "utf8"), file);
+  const runtimeFile = file.replace(DECLARATION_EXTENSION_RE, ".js");
+  if (!existsSync(runtimeFile)) {
+    throw new Error(`Missing runtime entrypoint for ${file}: ${runtimeFile}`);
+  }
+  const runtimeNames = runtimeExportsFromText(
+    readFileSync(runtimeFile, "utf8"),
+    runtimeFile
+  );
+  return declarationExportsFromText(
+    readFileSync(file, "utf8"),
+    file,
+    runtimeNames
+  );
 }
 
 export function collectRuntimePublicApi(cwd = process.cwd()) {
