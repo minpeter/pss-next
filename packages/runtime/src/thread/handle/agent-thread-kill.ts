@@ -46,7 +46,10 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
   );
   Promise.all([immediateClose, admissionClose]).then(
     () => settled.resolve(),
-    settled.reject
+    (error: unknown) => {
+      context.terminal.toIf("killed", { tag: "open" });
+      settled.reject(error);
+    }
   );
   return killPromise;
 }

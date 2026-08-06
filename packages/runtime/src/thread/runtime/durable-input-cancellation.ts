@@ -50,7 +50,12 @@ export async function cancelQueuedDurableThreadInputs({
     }
   });
   for (const item of durableItems) {
-    unregisterLiveThreadInput(executionHost, threadKey, item.durableMessageId);
+    unregisterLiveThreadInput(
+      executionHost,
+      threadKey,
+      item.durableMessageId,
+      item.durableOwner
+    );
   }
 }
 

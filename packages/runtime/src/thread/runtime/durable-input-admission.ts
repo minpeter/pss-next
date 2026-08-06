@@ -26,6 +26,7 @@ export async function admitDurableThreadInput({
   executionHost,
   input,
   kind,
+  messageId = crypto.randomUUID(),
   placement,
   precreateExecutionRun = false,
   reservation,
@@ -34,6 +35,7 @@ export async function admitDurableThreadInput({
   readonly executionHost: AgentHost | undefined;
   readonly input: UserInput;
   readonly kind: ThreadInputKind;
+  readonly messageId?: string;
   readonly placement?: ThreadInputPlacement;
   readonly precreateExecutionRun?: boolean;
   readonly reservation?: ThreadInputAdmissionReservation;
@@ -45,7 +47,6 @@ export async function admitDurableThreadInput({
 
   const operation = async (): Promise<DurableInputAdmission> => {
     try {
-      const messageId = crypto.randomUUID();
       if (precreateExecutionRun) {
         return await executionHost.store.transaction(async (transaction) => {
           const receipt = await transaction.inputs.admit({

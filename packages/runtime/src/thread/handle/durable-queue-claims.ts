@@ -18,6 +18,7 @@ import {
 } from "../runtime/execution";
 import {
   isLiveThreadInputOwnedByOther,
+  liveThreadInputOwnedByOther,
   unregisterLiveThreadInput,
 } from "../runtime/live-input-ownership";
 import { inputMetaForQueuedKind } from "./durable-queue-send";
@@ -142,7 +143,7 @@ export async function claimOrphanDurableThreadInput({
 
 export type QueuedDurableInputPreparation =
   | { readonly kind: "prepared"; readonly item: QueuedInput }
-  | { readonly kind: "blocked" }
+  | { readonly kind: "blocked"; readonly released: Promise<void> }
   | { readonly kind: "preceding"; readonly item: QueuedInput }
   | { readonly kind: "unavailable" };
 
@@ -166,19 +167,18 @@ export async function prepareQueuedDurableInput({
   });
   if (claimed.kind === "claimed" && claimed.record) {
     if (claimed.record.messageId !== item.durableMessageId) {
-      if (
-        isLiveThreadInputOwnedByOther(
-          executionHost,
-          threadKey,
-          claimed.record.messageId,
-          item.durableOwner
-        )
-      ) {
+      const released = liveThreadInputOwnedByOther(
+        executionHost,
+        threadKey,
+        claimed.record.messageId,
+        item.durableOwner
+      );
+      if (released) {
         await releaseDurableThreadInputClaim({
           executionHost,
           record: claimed.record,
         });
-        return { kind: "blocked" };
+        return { kind: "blocked", released };
       }
       return {
         item: await queuedInputFromClaim(claimed.record, executionHost),
@@ -189,7 +189,8 @@ export async function prepareQueuedDurableInput({
       unregisterLiveThreadInput(
         executionHost,
         threadKey,
-        item.durableMessageId
+        item.durableMessageId,
+        item.durableOwner
       );
     }
     return {
@@ -199,7 +200,12 @@ export async function prepareQueuedDurableInput({
   }
 
   if (item.durableMessageId) {
-    unregisterLiveThreadInput(executionHost, threadKey, item.durableMessageId);
+    unregisterLiveThreadInput(
+      executionHost,
+      threadKey,
+      item.durableMessageId,
+      item.durableOwner
+    );
   }
   await cancelThreadExecutionRun({
     executionHost,

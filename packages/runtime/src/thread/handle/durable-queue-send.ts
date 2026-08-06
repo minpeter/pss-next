@@ -18,7 +18,10 @@ import {
 import type { AgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import { admitDurableThreadInput } from "../runtime/durable-input-admission";
-import { registerLiveThreadInput } from "../runtime/live-input-ownership";
+import {
+  registerLiveThreadInput,
+  unregisterLiveThreadInput,
+} from "../runtime/live-input-ownership";
 import { startThreadQueueDrain } from "../runtime/notification";
 import type { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
 import type { ThreadInputAdmissionReservation } from "../runtime/thread-input-admission-coordinator";
@@ -114,6 +117,7 @@ export async function createQueuedSendInput({
       : normalized;
   const stagedRefs: RuntimeAttachmentReference[] = [];
   let keepStagedAttachments = false;
+  let registeredMessageId: string | undefined;
   try {
     const stagedAcceptedInput = await stageUserInputAttachments(
       acceptedInput,
@@ -135,14 +139,25 @@ export async function createQueuedSendInput({
       attachmentStore,
       { stagedRefs, trustRuntimeAttachmentRefs: true }
     );
+    const messageId = crypto.randomUUID();
+    registerLiveThreadInput(executionHost, threadKey, messageId, run);
+    registeredMessageId = messageId;
     const admission = await admitDurableThreadInput({
       executionHost,
       input: queuedInput,
       kind,
+      messageId,
       precreateExecutionRun: true,
       reservation,
       threadKey,
     });
+    if (
+      admission.kind === "unavailable" ||
+      (admission.kind === "admitted" && admission.receipt.duplicate)
+    ) {
+      unregisterLiveThreadInput(executionHost, threadKey, messageId, run);
+      registeredMessageId = undefined;
+    }
     let executionRun: QueuedInput["executionRun"];
     if (admission.kind === "admitted") {
       if (admission.receipt.duplicate) {
@@ -180,18 +195,18 @@ export async function createQueuedSendInput({
       stagedRefs,
       [queuedInput, processed]
     );
-    if (admission.kind === "admitted") {
-      registerLiveThreadInput(
-        executionHost,
-        threadKey,
-        admission.receipt.record.messageId,
-        run
-      );
-    }
     keepStagedAttachments = true;
     return { kind: "queued", item, processed };
   } finally {
     if (!keepStagedAttachments) {
+      if (registeredMessageId) {
+        unregisterLiveThreadInput(
+          executionHost,
+          threadKey,
+          registeredMessageId,
+          run
+        );
+      }
       await cleanupStagedRuntimeAttachments(attachmentStore, stagedRefs);
     }
   }

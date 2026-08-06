@@ -25,6 +25,7 @@ export interface ThreadInputDrainLoopOptions {
   readonly execution: ThreadExecutionOptions;
   readonly inputQueue: QueuedInput[];
   readonly model: ModelGenerationOptions;
+  readonly onBlocked?: (released: Promise<void>) => void;
   readonly release: () => void;
   readonly state: ThreadState;
   readonly threadKey: string;
@@ -38,6 +39,7 @@ export async function runThreadInputDrainLoop({
   execution,
   inputQueue,
   model,
+  onBlocked,
   release,
   state,
   threadKey,
@@ -52,6 +54,7 @@ export async function runThreadInputDrainLoop({
         threadKey,
       });
       if (preparation.kind === "blocked") {
+        onBlocked?.(preparation.released);
         break;
       }
       if (preparation.kind === "unavailable") {
