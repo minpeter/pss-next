@@ -3,6 +3,7 @@ import type { ToolSet } from "ai";
 import type { CodingAgentSessionGuard } from "../sessions/session-guards";
 import type {
   AssistantRenderer,
+  AssistantRendererMode,
   AssistantRendererRegistrationOptions,
 } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
@@ -21,6 +22,7 @@ interface Capability<Kind extends string> {
 export interface AssistantRendererCapability
   extends Capability<"assistant-renderer"> {
   readonly fallback: boolean;
+  readonly mode: AssistantRendererMode;
   readonly override: boolean;
   readonly renderer: AssistantRenderer;
 }
@@ -77,82 +79,87 @@ export function assistantRenderer(
   renderer: AssistantRenderer,
   options: AssistantRendererRegistrationOptions = {}
 ): AssistantRendererCapability {
-  return Object.freeze({
-    [extensionCapabilityBrand]: true as const,
-    fallback: options.fallback === true,
+  const mode = resolveAssistantRendererMode(options);
+  return capability({
+    fallback: mode === "fallback",
     kind: "assistant-renderer",
-    override: options.override === true,
+    mode,
+    override: mode === "override",
     renderer,
   });
 }
 
 export function instructions(...fragments: string[]): InstructionsCapability {
-  return Object.freeze({
-    [extensionCapabilityBrand]: true as const,
+  return capability({
     fragments: Object.freeze([...fragments]),
     kind: "instructions",
   });
 }
 
 export function tools(definitions: ToolSet): ToolsCapability {
-  return Object.freeze({
-    kind: "tools",
-    tools: definitions,
-  }) as ToolsCapability;
+  return capability({ kind: "tools", tools: definitions });
 }
 
 export function command(definition: TuiCommand): CommandCapability {
-  return Object.freeze({
-    command: definition,
-    kind: "command",
-  }) as CommandCapability;
+  return capability({ command: definition, kind: "command" });
 }
 
 export function modelProvider(
   provider: CodingAgentExtensionModelProvider
 ): ModelProviderCapability {
-  return Object.freeze({
-    kind: "model-provider",
-    provider,
-  }) as ModelProviderCapability;
+  return capability({ kind: "model-provider", provider });
 }
 
 export function sessionGuard(
   guard: CodingAgentSessionGuard
 ): SessionGuardCapability {
-  return Object.freeze({
-    guard,
-    kind: "session-guard",
-  }) as SessionGuardCapability;
+  return capability({ guard, kind: "session-guard" });
 }
 
 export function resources(options: {
   readonly prompts?: readonly string[];
   readonly skills?: readonly string[];
 }): ResourcesCapability {
-  return Object.freeze({
+  return capability({
     kind: "resources",
     prompts: Object.freeze([...(options.prompts ?? [])]),
     skills: Object.freeze([...(options.skills ?? [])]),
-  }) as ResourcesCapability;
+  });
 }
 
 export function threadMigration(
   migration: ThreadStateMigration
 ): ThreadMigrationCapability {
-  return Object.freeze({
-    kind: "thread-migration",
-    migration,
-  }) as ThreadMigrationCapability;
+  return capability({ kind: "thread-migration", migration });
 }
 
 export function toolRenderer(
   toolName: string,
   renderer: ToolRendererMap[string]
 ): ToolRendererCapability {
+  return capability({ kind: "tool-renderer", renderer, toolName });
+}
+
+function capability<Value extends { readonly kind: string }>(
+  value: Value
+): Value & Capability<Value["kind"]> {
   return Object.freeze({
-    kind: "tool-renderer",
-    renderer,
-    toolName,
-  }) as ToolRendererCapability;
+    ...value,
+    [extensionCapabilityBrand]: true as const,
+  });
+}
+
+function resolveAssistantRendererMode(
+  options: AssistantRendererRegistrationOptions
+): AssistantRendererMode {
+  if ("mode" in options && options.mode !== undefined) {
+    return options.mode;
+  }
+  if ("fallback" in options && options.fallback === true) {
+    return "fallback";
+  }
+  if ("override" in options && options.override === true) {
+    return "override";
+  }
+  return "exclusive";
 }

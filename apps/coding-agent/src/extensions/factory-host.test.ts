@@ -9,8 +9,18 @@ import type {
   CodingAgentExtensionInput,
   CodingAgentExtensionModule,
 } from "./types";
+import { defineCodingAgentExtension } from "./types";
 
 describe("default-export coding agent extensions", () => {
+  it("defines the canonical factory without changing its identity", () => {
+    const factory = defineCodingAgentExtension((pss) => {
+      pss.provide(instructions("defined factory"));
+    });
+
+    expect(typeof factory).toBe("function");
+    expect(defineCodingAgentExtension(factory)).toBe(factory);
+  });
+
   it("configures and activates a default-export factory", async () => {
     // Given
     const lifecycle: string[] = [];

@@ -79,8 +79,8 @@ export function createCodingAgentExtensionRegistry({
     if (typeof renderer !== "function") {
       throw new TypeError("Assistant renderer must be a function");
     }
-    const fallback = options.fallback === true;
-    const override = options.override === true;
+    const fallback = options.fallback === true || options.mode === "fallback";
+    const override = options.override === true || options.mode === "override";
     if (fallback && override) {
       throw new TypeError(
         "Assistant renderer cannot be both a fallback and an override"
@@ -322,7 +322,7 @@ function registerEvent<Type extends AgentEvent["type"]>(
       context: CodingAgentExtensionEventContext
     ) => {
       await handler(
-        event as Extract<AgentEvent, { readonly type: Type }>,
+        event as Parameters<CodingAgentExtensionEventHandler<Type>>[0],
         context
       );
     },

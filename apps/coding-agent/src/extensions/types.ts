@@ -98,11 +98,33 @@ export interface CodingAgentExtensionState {
  * Host-originated events use reserved namespaces (`host:`, `provider:`)
  * that extensions can subscribe to but never publish.
  */
-export interface CodingAgentExtensionEvents {
-  emit(type: string, payload?: ExtensionJsonValue): void;
-  on(
-    type: string,
-    handler: (payload: ExtensionJsonValue | undefined) => Promise<void> | void
+/**
+ * Extension event payloads. Extend this interface with module augmentation to
+ * share event contracts between publishers and subscribers.
+ *
+ * @example
+ * declare module "@minpeter/pss-coding-agent/extension" {
+ *   interface CodingAgentExtensionEventMap {
+ *     "checkpoint:saved": { readonly revision: number };
+ *   }
+ * }
+ */
+export interface CodingAgentExtensionEventMap {
+  readonly [type: string]: ExtensionJsonValue | undefined;
+}
+
+export interface CodingAgentExtensionEvents<
+  EventMap extends CodingAgentExtensionEventMap = CodingAgentExtensionEventMap,
+> {
+  emit<Type extends keyof EventMap & string>(
+    type: Type,
+    ...payload: undefined extends EventMap[Type]
+      ? [payload?: EventMap[Type]]
+      : [payload: EventMap[Type]]
+  ): void;
+  on<Type extends keyof EventMap & string>(
+    type: Type,
+    handler: (payload: EventMap[Type]) => Promise<void> | void
   ): () => void;
 }
 
@@ -149,12 +171,21 @@ export interface CodingAgentExtensionEventContext
   readonly stream: boolean;
 }
 
-export type CodingAgentExtensionEventHandler<Type extends AgentEvent["type"]> =
-  (
-    event: Extract<AgentEvent, { readonly type: Type }>,
-    context: CodingAgentExtensionEventContext
-  ) => Promise<void> | void;
+export type CodingAgentExtensionRuntimeEventMap = {
+  readonly [Type in AgentEvent["type"]]: Extract<
+    AgentEvent,
+    { readonly type: Type }
+  >;
+};
 
+export type CodingAgentExtensionEventHandler<
+  Type extends keyof CodingAgentExtensionRuntimeEventMap,
+> = (
+  event: CodingAgentExtensionRuntimeEventMap[Type],
+  context: CodingAgentExtensionEventContext
+) => Promise<void> | void;
+
+/** @deprecated Use the factory `ExtensionAPI` instead. */
 export interface CodingAgentExtensionRegistry {
   readonly commands: {
     register(command: TuiCommand): void;
@@ -205,6 +236,7 @@ export type CodingAgentExtensionFactory = (
   pss: CodingAgentExtensionApi
 ) => Promise<void> | void;
 
+/** @deprecated Use a default-export `CodingAgentExtensionFactory` instead. */
 export interface CodingAgentExtension {
   readonly activate?: CodingAgentExtensionActivationHandler;
   readonly config?: Readonly<Record<string, ExtensionJsonValue>>;
@@ -235,8 +267,16 @@ export interface CodingAgentExtensionHostOptions {
   readonly workspace?: string;
 }
 
+/** Identity helper for the canonical default-export extension factory. */
+export function defineCodingAgentExtension(
+  factory: CodingAgentExtensionFactory
+): CodingAgentExtensionFactory;
+/** @deprecated Export a factory function instead of the registry-based object. */
 export function defineCodingAgentExtension(
   extension: CodingAgentExtension
-): CodingAgentExtension {
+): CodingAgentExtension;
+export function defineCodingAgentExtension(
+  extension: CodingAgentExtensionFactory | CodingAgentExtension
+): CodingAgentExtensionFactory | CodingAgentExtension {
   return extension;
 }

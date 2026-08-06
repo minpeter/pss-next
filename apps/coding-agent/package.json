@@ -64,6 +64,12 @@
       "@minpeter/pss-source": "./src/provider-registry.ts",
       "types": "./dist/provider-registry.d.ts",
       "import": "./dist/provider-registry.js"
+    },
+    "./extension/legacy": {
+      "@minpeter/pss-source": "./src/extensions/legacy.ts",
+      "types": "./dist/extensions/legacy.d.ts",
+      "import": "./dist/extensions/legacy.js"
+
     }
   },
   "bin": {

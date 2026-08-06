@@ -69,33 +69,7 @@ export function validateExtensionCapability(
   const kind = requiredString(capability.kind, "Extension capability kind");
   switch (kind) {
     case "assistant-renderer":
-      assertKeys(
-        capability,
-        ["fallback", "kind", "override", "renderer"],
-        "Extension capability"
-      );
-      if (typeof capability.renderer !== "function") {
-        throw new TypeError("Assistant renderer must be a function");
-      }
-      if (
-        typeof capability.fallback !== "boolean" ||
-        typeof capability.override !== "boolean"
-      ) {
-        throw new TypeError(
-          "Assistant renderer fallback and override must be booleans"
-        );
-      }
-      if (capability.fallback && capability.override) {
-        throw new TypeError(
-          "Assistant renderer cannot be both a fallback and an override"
-        );
-      }
-      return {
-        fallback: capability.fallback,
-        kind,
-        override: capability.override,
-        renderer: capability.renderer as AssistantRenderer,
-      };
+      return snapshotAssistantRendererCapability(capability);
     case "command":
       assertKeys(capability, ["command", "kind"], "Extension capability");
       return { command: snapshotCommand(capability.command), kind };
@@ -180,6 +154,50 @@ export function validateExtensionCapability(
     default:
       throw new TypeError(`Unknown extension capability kind "${kind}"`);
   }
+}
+
+function snapshotAssistantRendererCapability(
+  capability: Readonly<Record<string, unknown>>
+): Extract<ValidatedCapability, { readonly kind: "assistant-renderer" }> {
+  assertKeys(
+    capability,
+    ["fallback", "kind", "mode", "override", "renderer"],
+    "Extension capability",
+    ["fallback", "kind", "override", "renderer"]
+  );
+  if (typeof capability.renderer !== "function") {
+    throw new TypeError("Assistant renderer must be a function");
+  }
+  if (
+    typeof capability.fallback !== "boolean" ||
+    typeof capability.override !== "boolean"
+  ) {
+    throw new TypeError(
+      "Assistant renderer fallback and override must be booleans"
+    );
+  }
+  if (capability.fallback && capability.override) {
+    throw new TypeError(
+      "Assistant renderer cannot be both a fallback and an override"
+    );
+  }
+  let expectedMode = "exclusive";
+  if (capability.fallback) {
+    expectedMode = "fallback";
+  } else if (capability.override) {
+    expectedMode = "override";
+  }
+  if (capability.mode !== undefined && capability.mode !== expectedMode) {
+    throw new TypeError(
+      `Assistant renderer mode must be "${expectedMode}" for its compatibility flags`
+    );
+  }
+  return {
+    fallback: capability.fallback,
+    kind: "assistant-renderer",
+    override: capability.override,
+    renderer: capability.renderer as AssistantRenderer,
+  };
 }
 
 export function snapshotCommand(value: unknown): TuiCommand {
