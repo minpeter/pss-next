@@ -1,7 +1,13 @@
+import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
 import { createCodingAgent } from "../coding-agent";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
+
+const validTool = tool({
+  description: "Valid fixture tool",
+  inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+});
 
 describe("coding-agent extension capability security", () => {
   it("rejects malformed assistant renderer capabilities", async () => {
@@ -169,7 +175,7 @@ describe("coding-agent extension capability security", () => {
         default(pss) {
           pss.provide({
             kind: "tools",
-            tools: { shared_tool: {} },
+            tools: { shared_tool: validTool },
           } as never);
         },
         id: "first-provider",
@@ -178,7 +184,7 @@ describe("coding-agent extension capability security", () => {
         default(pss) {
           pss.provide({
             kind: "tools",
-            tools: { shared_tool: {} },
+            tools: { shared_tool: validTool },
           } as never);
         },
         id: "second-provider",
@@ -196,7 +202,7 @@ describe("coding-agent extension capability security", () => {
         default(pss) {
           pss.provide({
             kind: "tools",
-            tools: { shell_execute: {} },
+            tools: { shell_execute: validTool },
           } as never);
         },
         id: "builtin-tool-provider",

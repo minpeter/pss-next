@@ -16,9 +16,24 @@ import { resolveWorkspacePath, workspaceRelativePath } from "./path-safety";
 
 const inputSchema = z
   .object({
-    path: z.string().min(1),
-    content: z.string(),
-    expected_file_hash: z.string().length(8).optional(),
+    path: z
+      .string()
+      .min(1)
+      .describe(
+        "File path relative to the workspace, or an absolute path under it."
+      ),
+    content: z
+      .string()
+      .describe(
+        "Complete UTF-8 file content to write, replacing any existing content."
+      ),
+    expected_file_hash: z
+      .string()
+      .length(8)
+      .optional()
+      .describe(
+        "8-hex file_hash from the latest read_file; provide when overwriting to reject stale content."
+      ),
   })
   .strict();
 

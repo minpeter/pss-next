@@ -32,7 +32,8 @@
   },
   "dependencies": {
     "@minpeter/opensearch": "0.1.1",
-    "ai": "7.0.51"
+    "ai": "7.0.51",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@minpeter/pss-coding-agent": "^0.0.14-next.14"

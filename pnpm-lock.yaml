@@ -569,6 +569,9 @@ importers:
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.4.3)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       tsdown:
         specifier: ^0.22.14

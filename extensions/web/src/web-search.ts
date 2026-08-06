@@ -1,5 +1,6 @@
 import type { SearchResult } from "@minpeter/opensearch/node";
 import { jsonSchema, type Tool, tool } from "ai";
+import { z } from "zod";
 import { abortIfRequested } from "./errors";
 import type { CodingAgentOpenSearchClient } from "./web-tools";
 
@@ -10,6 +11,24 @@ export interface WebSearchInput {
   readonly numResults?: number;
   readonly query: string;
 }
+
+const inputSchema: z.ZodType<WebSearchInput> = z
+  .object({
+    numResults: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SEARCH_RESULTS)
+      .optional()
+      .describe("Result count from 1 to 15 (default 5)."),
+    query: z
+      .string()
+      .min(1)
+      .describe(
+        "Natural-language search query; operators such as site:example.com are allowed."
+      ),
+  })
+  .strict();
 
 export type WebSearchTool = Tool<
   WebSearchInput,
@@ -31,26 +50,7 @@ export function createWebSearchTool(
           input.numResults ?? DEFAULT_SEARCH_RESULT_COUNT
         );
       },
-      inputSchema: jsonSchema<WebSearchInput>({
-        additionalProperties: false,
-        properties: {
-          numResults: {
-            description:
-              "Optional result count from 1 to 15. Defaults to 5 when omitted.",
-            maximum: MAX_SEARCH_RESULTS,
-            minimum: 1,
-            type: "integer",
-          },
-          query: {
-            description:
-              "Non-empty natural-language search query. Search operators such as site:example.com may be included.",
-            minLength: 1,
-            type: "string",
-          },
-        },
-        required: ["query"],
-        type: "object",
-      }),
+      inputSchema,
       outputSchema: jsonSchema<readonly SearchResult[]>({
         items: {
           additionalProperties: false,

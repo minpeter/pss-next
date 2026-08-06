@@ -7,10 +7,30 @@ import { globPatternToRegExp, walkWorkspaceFiles } from "./walk";
 
 const inputSchema = z
   .object({
-    pattern: z.string().min(1),
-    path: z.string().min(1).optional(),
-    include_ignored: z.boolean().optional(),
-    max_results: z.number().int().positive().max(2000).optional(),
+    pattern: z
+      .string()
+      .min(1)
+      .describe(
+        'Glob relative to path, supporting *, **, and ? (e.g. "src/**/*.ts").'
+      ),
+    path: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Workspace directory to search from (default workspace root)."),
+    include_ignored: z
+      .boolean()
+      .optional()
+      .describe(
+        "Include normally skipped directories such as .git, node_modules, dist, and coverage (default false)."
+      ),
+    max_results: z
+      .number()
+      .int()
+      .positive()
+      .max(2000)
+      .optional()
+      .describe("Maximum file paths to return (default 500, max 2000)."),
   })
   .strict();
 

@@ -1,5 +1,6 @@
 import type { FetchOptions, FetchResult } from "@minpeter/opensearch/node";
 import { jsonSchema, type Tool, tool } from "ai";
+import { z } from "zod";
 import { abortIfRequested } from "./errors";
 import type { CodingAgentOpenSearchClient } from "./web-tools";
 
@@ -9,6 +10,22 @@ export interface WebFetchInput {
   readonly maxCharacters?: number;
   readonly urls: readonly string[];
 }
+
+const inputSchema: z.ZodType<WebFetchInput> = z
+  .object({
+    maxCharacters: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Per-page character cap (default 12000)."),
+    urls: z
+      .array(z.url({ protocol: /^https?$/u }))
+      .min(1)
+      .max(MAX_FETCH_URLS)
+      .describe("One to 10 absolute HTTP or HTTPS URLs to fetch."),
+  })
+  .strict();
 
 export type WebFetchTool = Tool<
   WebFetchInput,
@@ -26,31 +43,7 @@ export function createWebFetchTool(
       abortIfRequested(options.abortSignal, "web_fetch");
       return await client.fetch(input.urls, getFetchOptions(input));
     },
-    inputSchema: jsonSchema<WebFetchInput>({
-      additionalProperties: false,
-      properties: {
-        maxCharacters: {
-          description:
-            "Optional per-page character cap. Defaults to 12000 when omitted.",
-          minimum: 1,
-          type: "integer",
-        },
-        urls: {
-          description:
-            "Absolute http or https URLs to fetch. Maximum 10 URLs per request.",
-          items: {
-            description: "Absolute http or https URL.",
-            format: "uri",
-            type: "string",
-          },
-          maxItems: MAX_FETCH_URLS,
-          minItems: 1,
-          type: "array",
-        },
-      },
-      required: ["urls"],
-      type: "object",
-    }),
+    inputSchema,
     outputSchema: jsonSchema<readonly FetchResult[]>({
       items: {
         additionalProperties: false,
