@@ -20,11 +20,12 @@ import type { CloudflareDurableObjectTransactionStorage } from "../storage/durab
 
 let conformancePrefix = 0;
 describeAgentHostFaultContract({
-  createHost: () =>
-    createCloudflareStorageHost({
+  createHost: () => ({
+    host: createCloudflareStorageHost({
       prefix: `host-conformance-${conformancePrefix++}`,
       storage: new InMemoryCloudflareDurableObjectStorage(),
     }),
+  }),
   name: "Cloudflare Durable Object",
 });
 

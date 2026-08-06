@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentHost, ClaimedThreadInput } from "../execution";
 
+export interface AgentHostFaultContractFixture {
+  readonly cleanup?: () => Promise<void>;
+  readonly host: AgentHost;
+}
+
 export interface AgentHostFaultContractOptions {
-  readonly createHost: () => AgentHost;
+  readonly createHost: () => AgentHostFaultContractFixture;
   readonly name: string;
 }
 
@@ -17,8 +22,21 @@ export function describeAgentHostFaultContract({
   name,
 }: AgentHostFaultContractOptions): void {
   describe(`${name} AgentHost crash-boundary contract`, () => {
+    const cleanups: Array<() => Promise<void>> = [];
+    const host = (): AgentHost => {
+      const fixture = createHost();
+      if (fixture.cleanup) {
+        cleanups.push(fixture.cleanup);
+      }
+      return fixture.host;
+    };
+
+    afterEach(async () => {
+      const pending = cleanups.splice(0);
+      await Promise.all(pending.map((cleanup) => cleanup()));
+    });
     it("uses exclusive, monotonic cursors when replay resumes after a crash", async () => {
-      const store = createHost().store;
+      const store = host().store;
       const first = await store.events.append("run-cursor", {
         type: "turn-start",
       });
@@ -42,7 +60,7 @@ export function describeAgentHostFaultContract({
     });
 
     it("keeps a committed lease when the claim response is lost", async () => {
-      const store = createHost().store;
+      const store = host().store;
       await store.turns.create(queuedRun("run-lease"));
 
       await expect(
@@ -81,7 +99,7 @@ export function describeAgentHostFaultContract({
     });
 
     it("makes admission retry-safe and recovers a claim lost at a crash boundary", async () => {
-      const store = createHost().store;
+      const store = host().store;
       const admission = {
         admittedAtMs: 10,
         input: { text: "retry me", type: "user-input" } as const,
@@ -115,7 +133,7 @@ export function describeAgentHostFaultContract({
     });
 
     it("detects a checkpoint committed before its response was lost", async () => {
-      const store = createHost().store;
+      const store = host().store;
       await store.turns.create(queuedRun("run-checkpoint"));
       const checkpoint = {
         checkpointId: "checkpoint-after-tool",
@@ -144,7 +162,7 @@ export function describeAgentHostFaultContract({
     });
 
     it("does not expose partial runtime state when a transaction crashes", async () => {
-      const store = createHost().store;
+      const store = host().store;
 
       await expect(
         store.transaction(async (tx) => {

@@ -32,10 +32,13 @@ import {
 } from "./scheduled-work-store";
 
 describeAgentHostFaultContract({
-  createHost: () =>
-    createFileHost({
-      directory: join(tmpdir(), `pss-host-contract-${randomUUID()}`),
-    }),
+  createHost: () => {
+    const directory = join(tmpdir(), `pss-host-contract-${randomUUID()}`);
+    return {
+      cleanup: () => rm(directory, { force: true, recursive: true }),
+      host: createFileHost({ directory }),
+    };
+  },
   name: "file",
 });
 

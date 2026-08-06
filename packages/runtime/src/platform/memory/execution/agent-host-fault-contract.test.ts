@@ -2,6 +2,6 @@ import { describeAgentHostFaultContract } from "../../../contracts/agent-host-fa
 import { createInMemoryHost } from "./execution-host";
 
 describeAgentHostFaultContract({
-  createHost: createInMemoryHost,
+  createHost: () => ({ host: createInMemoryHost() }),
   name: "in-memory",
 });
