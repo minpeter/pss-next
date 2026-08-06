@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assistantRenderer,
   command,
+  extensionCapabilityBrand,
   instructions,
   threadMigration,
   toolRenderer,
@@ -22,6 +23,12 @@ const qaTool = tool({
 });
 
 describe("coding-agent extension capabilities", () => {
+  it("brands every capability factory consistently", () => {
+    const capability = tools({ qa_tool: qaTool });
+
+    expect(capability[extensionCapabilityBrand]).toBe(true);
+    expect(Reflect.ownKeys(capability)).toContain(extensionCapabilityBrand);
+  });
   it("creates immutable instruction capabilities", () => {
     const capability = instructions("first", "second");
 
@@ -31,6 +38,7 @@ describe("coding-agent extension capabilities", () => {
     });
     expect(Object.isFrozen(capability)).toBe(true);
     expect(Object.isFrozen(capability.fragments)).toBe(true);
+    expect(capability[extensionCapabilityBrand]).toBe(true);
   });
 
   it("normalizes assistant renderer registration options", () => {
@@ -48,17 +56,102 @@ describe("coding-agent extension capabilities", () => {
 
     expect(assistantRenderer(renderer)).toMatchObject({
       fallback: false,
+      mode: "exclusive",
       override: false,
       renderer,
     });
-    expect(assistantRenderer(renderer, { fallback: true })).toMatchObject({
+    expect(assistantRenderer(renderer, { mode: "fallback" })).toMatchObject({
       fallback: true,
+      mode: "fallback",
       override: false,
     });
-    expect(assistantRenderer(renderer, { override: true })).toMatchObject({
+    expect(assistantRenderer(renderer, { mode: "override" })).toMatchObject({
       fallback: false,
+      mode: "override",
       override: true,
     });
+    // Deprecated boolean forms remain runtime-compatible.
+    expect(assistantRenderer(renderer, { fallback: true }).mode).toBe(
+      "fallback"
+    );
+    expect(assistantRenderer(renderer, { override: true }).mode).toBe(
+      "override"
+    );
+  });
+
+  it("rejects malformed renderer options through factory and legacy registry paths", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+    const malformed = [
+      { fallback: true, mode: "fallback" },
+      { fallback: true, override: true },
+      { mode: "replace" },
+      { fallback: false },
+      { fallback: true, fallbak: true },
+    ] as const;
+
+    for (const options of malformed) {
+      expect(() => assistantRenderer(renderer, options as never)).toThrow(
+        TypeError
+      );
+      await expect(
+        createCodingAgentExtensionHost([
+          {
+            configure(registry) {
+              registry.tui.registerAssistantRenderer(
+                renderer,
+                options as never
+              );
+            },
+            id: "malformed-renderer-options",
+          },
+        ])
+      ).rejects.toMatchObject({ cause: expect.any(TypeError) });
+    }
+  });
+
+  it("treats own undefined renderer options as absent on both paths", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+    const optionalUndefined = [
+      { mode: undefined },
+      { fallback: undefined },
+      { override: undefined },
+    ] as const;
+
+    for (const options of optionalUndefined) {
+      expect(assistantRenderer(renderer, options as never).mode).toBe(
+        "exclusive"
+      );
+      const host = await createCodingAgentExtensionHost([
+        {
+          configure(registry) {
+            registry.tui.registerAssistantRenderer(renderer, options as never);
+          },
+          id: "undefined-renderer-option",
+        },
+      ]);
+      expect(host.assistantRenderer).toBe(renderer);
+      await host.dispose();
+    }
   });
 
   it("registers one assistant renderer through the capability API", async () => {

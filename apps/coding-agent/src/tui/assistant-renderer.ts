@@ -77,10 +77,27 @@ export const composeAssistantRenderers = (
   };
 };
 
+/** How an assistant renderer participates in renderer composition. */
+export type AssistantRendererMode = "exclusive" | "fallback" | "override";
+
 export type AssistantRendererRegistrationOptions =
-  | { readonly fallback?: never; readonly override?: never }
-  | { readonly fallback: true; readonly override?: never }
-  | { readonly fallback?: never; readonly override: true };
+  | {
+      readonly mode?: AssistantRendererMode;
+      readonly fallback?: never;
+      readonly override?: never;
+    }
+  /** @deprecated Use `{ mode: "fallback" }`. */
+  | {
+      readonly fallback: true;
+      readonly mode?: never;
+      readonly override?: never;
+    }
+  /** @deprecated Use `{ mode: "override" }`. */
+  | {
+      readonly fallback?: never;
+      readonly mode?: never;
+      readonly override: true;
+    };
 
 export interface AssistantRendererNotifications {
   readonly notify: (message: string) => void;

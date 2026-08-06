@@ -26,6 +26,7 @@ export default defineConfig({
     "src/cli.ts",
     "src/env.ts",
     "src/extensions/index.ts",
+    "src/extensions/legacy.ts",
     "src/instructions.ts",
     "src/model.ts",
     "src/provider-registry.ts",

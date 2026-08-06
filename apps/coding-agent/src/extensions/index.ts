@@ -13,6 +13,7 @@ export type { SessionLifecycleReason } from "../sessions/session-manager";
 export type {
   AssistantRenderer,
   AssistantRendererContext,
+  AssistantRendererMode,
   AssistantRendererNotifications,
   AssistantRendererRegistrationOptions,
   AssistantTextView,
@@ -73,6 +74,7 @@ export {
   type CodingAgentExtensionCleanup,
   type CodingAgentExtensionEventContext,
   type CodingAgentExtensionEventHandler,
+  type CodingAgentExtensionEventMap,
   type CodingAgentExtensionEvents,
   type CodingAgentExtensionExec,
   type CodingAgentExtensionExecResult,
@@ -85,6 +87,7 @@ export {
   type CodingAgentExtensionModelSelector,
   type CodingAgentExtensionModule,
   type CodingAgentExtensionRegistry,
+  type CodingAgentExtensionRuntimeEventMap,
   type CodingAgentExtensionServices,
   type CodingAgentExtensionSetupContext,
   type CodingAgentExtensionState,

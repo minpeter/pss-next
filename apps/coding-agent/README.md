@@ -76,6 +76,7 @@ runtime hooks, activation cleanup, and durable thread migrations:
 ```ts
 import {
   command,
+  defineCodingAgentExtension,
   instructions,
   modelProvider,
   threadMigration,
@@ -84,7 +85,7 @@ import {
   type ExtensionAPI,
 } from "@minpeter/pss-coding-agent/extension";
 
-export default function workspacePolicy(pss: ExtensionAPI) {
+export default defineCodingAgentExtension(function workspacePolicy(pss: ExtensionAPI) {
   pss.provide(
     instructions("Keep all file operations in the workspace."),
   );
@@ -140,7 +141,7 @@ export default function workspacePolicy(pss: ExtensionAPI) {
       await child.dispose();
     };
   });
-}
+});
 ```
 
 The factory object deliberately remains only `pss.on`, `pss.use`, and
@@ -165,7 +166,12 @@ cannot register arbitrary raw TUI components or persisted message/entry
 renderers because those have no extension-owned runtime domain.
 
 Extensions configure sequentially, use stable IDs, and cannot register new
-contributions after the factory resolves. Activation callbacks run after agent
+contributions after the factory resolves. The old registry-object shape remains
+supported for compatibility, but is deprecated and documented separately at
+`@minpeter/pss-coding-agent/extension/legacy`; new extensions should use the
+factory API above. Foreign capability-shaped objects remain runtime-compatible,
+while the TypeScript API brands every value returned by a capability factory.
+ Activation callbacks run after agent
 creation; cleanups run in reverse order. `pss.use()` composes control-flow
 hooks, `pss.on()` observes runtime and activation events, and overloaded
 `pss.provide()` accepts branded instruction, tool, command, migration, model
@@ -269,8 +275,10 @@ const unsubscribe = services.events.on("checkpoint:saved", (payload) => {
 services.events.emit("checkpoint:saved", { revision: 7 });
 ```
 
-Payloads are JSON values cloned per delivery, handlers run under the host
-timeout/abort boundary, and failures are attributed to the subscribing
+Event payloads can be shared across packages with declaration merging of
+`CodingAgentExtensionEventMap`; `emit` and `on` then infer the payload from the
+event name. Payloads are JSON values cloned per delivery, handlers run under the
+host timeout/abort boundary, and failures are attributed to the subscribing
 extension without affecting the publisher. The `host:` and `provider:`
 namespaces are reserved for host-originated events; extensions can subscribe
 to them but cannot publish into them.
@@ -395,9 +403,10 @@ bottom. This uses the same extension registration, conflict attribution, and
 
 Bundled LaTeX and Mermaid register as fallback assistant renderers; later
 registrations delegate unhandled Markdown to earlier ones. A third-party
-renderer can join the chain with `{ fallback: true }` or replace it entirely
-by explicitly registering with `{ override: true }`; a bare second exclusive
-renderer remains a source-attributed configuration error. Renderer contexts
+renderer can join the chain with `{ mode: "fallback" }` or replace it entirely
+with `{ mode: "override" }`; the default `"exclusive"` mode remains a
+source-attributed conflict when another renderer is already registered. The
+older boolean options remain accepted for compatibility. Renderer contexts
 receive an `AbortSignal`, session-scoped `notifyOnce`, a redraw callback, and
 a `delegate` that renders unhandled text through the next inner renderer.
 Optional view disposal runs when the transcript is cleared or the TUI stops.
