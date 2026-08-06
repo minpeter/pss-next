@@ -2,6 +2,7 @@ import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import { createInMemoryHost } from "../../platform/memory";
+import { MemoryThreadStore } from "../../platform/memory/storage/memory-thread-store";
 import {
   assistantMessage,
   createCallbackModel,
@@ -10,6 +11,7 @@ import {
 } from "../../testing/test-fixtures";
 import type { AgentEvent } from "../protocol/events";
 import { userTextToModelMessage } from "../protocol/mapping";
+import { AgentThread } from "./agent-thread";
 import { inputMetaForQueuedKind } from "./durable-queue-send";
 import { collect } from "./test-support";
 
@@ -233,5 +235,60 @@ describe("AgentThread follow-up queue", () => {
       messageId: "orphan-precreate-failure",
       status: "claiming",
     });
+  });
+
+  it("does not hang and can be retried after durable kill cancellation fails", async () => {
+    const base = createInMemoryHost();
+    let failTransactions = false;
+    const store = new Proxy(base.store, {
+      get(target, property) {
+        if (property === "transaction" && failTransactions) {
+          return (): Promise<never> =>
+            Promise.reject(new Error("kill transaction failed"));
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const enteredModel = createDeferred();
+    const holdModel = createDeferred();
+    const host = { ...base, store };
+    const thread = new AgentThread(
+      {
+        model: createCallbackModel(async () => {
+          enteredModel.resolve();
+          await holdModel.promise;
+          return [assistantMessage("DONE")];
+        }),
+      },
+      { key: "retry-kill", store: new MemoryThreadStore() },
+      { executionHost: host }
+    );
+    const activeEvents = collect(await thread.send("active"));
+    await enteredModel.promise;
+    const queued = await thread.followUp("queued");
+
+    failTransactions = true;
+    await expect(
+      Promise.race([
+        thread.kill(),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error("kill timed out")), 1000)
+        ),
+      ])
+    ).rejects.toThrow("kill transaction failed");
+
+    failTransactions = false;
+    await expect(
+      Promise.race([
+        thread.kill(),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error("retry timed out")), 1000)
+        ),
+      ])
+    ).resolves.toBeUndefined();
+    holdModel.resolve();
+    await activeEvents;
+    expect((await collect(queued)).at(-1)?.type).toBe("turn-error");
   });
 });

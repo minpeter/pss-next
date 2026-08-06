@@ -68,7 +68,7 @@ export function createThreadTerminalMachine(): Fsm<ThreadTerminalState> {
     name: "thread-terminal",
     transitions: {
       open: ["killed"],
-      killed: ["deleting"],
+      killed: ["deleting", "open"],
       deleting: ["killed", "deleted"],
       deleted: [],
     },

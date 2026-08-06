@@ -10,10 +10,29 @@ import { BufferedAgentTurn } from "../protocol/turn";
 import { cancelQueuedDurableThreadInputs } from "./durable-input-cancellation";
 import {
   isLiveThreadInputOwnedByOther,
+  liveThreadInputOwnedByOther,
   registerLiveThreadInput,
 } from "./live-input-ownership";
 
 describe("live durable input ownership", () => {
+  it("releases waiters when a message owner is replaced", async () => {
+    const host = createInMemoryHost();
+    const first = {};
+    const second = {};
+    registerLiveThreadInput(host, "replace", "message", first);
+    const released = liveThreadInputOwnedByOther(
+      host,
+      "replace",
+      "message",
+      second
+    );
+    registerLiveThreadInput(host, "replace", "message", second);
+    await expect(released).resolves.toBeUndefined();
+    expect(
+      isLiveThreadInputOwnedByOther(host, "replace", "message", first)
+    ).toBe(true);
+  });
+
   it("releases ownership when durable kill cancellation fails", async () => {
     const base = createInMemoryHost();
     let failTransaction = true;

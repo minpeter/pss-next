@@ -29,6 +29,8 @@ export function registerLiveThreadInput(
     messages = new Map();
     threads.set(threadKey, messages);
   }
+  const previous = messages.get(messageId);
+  previous?.released.resolve(undefined);
   messages.set(messageId, { owner, released: deferred<void>() });
 }
 

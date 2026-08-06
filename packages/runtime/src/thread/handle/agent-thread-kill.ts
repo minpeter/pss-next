@@ -26,29 +26,33 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
   context.pendingOverlays.length = 0;
   context.pendingRuntimeInputs.length = 0;
   turnAbort(context.turn)?.abort();
-  const immediateClose = closeKilledRuntimeInputs({
-    activeRuntimeInput: activeTurnRuntimeInput(context.turn),
-    executionHost: context.execution.executionHost,
-    inputQueue: context.inputQueue,
-    message: killedError.message,
-    runToClose: turnRunToClose(context.turn),
-    threadKey: context.threadKey,
-  });
-  const admissionClose = context.inputAdmissionQueue.then(() =>
-    closeKilledRuntimeInputs({
+  const close = async (): Promise<void> => {
+    await closeKilledRuntimeInputs({
+      activeRuntimeInput: activeTurnRuntimeInput(context.turn),
+      executionHost: context.execution.executionHost,
+      inputQueue: context.inputQueue,
+      message: killedError.message,
+      runToClose: turnRunToClose(context.turn),
+      threadKey: context.threadKey,
+    });
+    await context.inputAdmissionQueue;
+    await closeKilledRuntimeInputs({
       activeRuntimeInput: undefined,
       executionHost: context.execution.executionHost,
       inputQueue: context.inputQueue,
       message: killedError.message,
       runToClose: undefined,
       threadKey: context.threadKey,
-    })
-  );
-  Promise.all([immediateClose, admissionClose]).then(
+    });
+  };
+  close().then(
     () => settled.resolve(),
     (error: unknown) => {
-      context.terminal.toIf("killed", { tag: "open" });
-      settled.reject(error);
+      try {
+        context.terminal.toIf("killed", { tag: "open" });
+      } finally {
+        settled.reject(error);
+      }
     }
   );
   return killPromise;
