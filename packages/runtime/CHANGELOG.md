@@ -1,3 +1,46 @@
+## @minpeter/pss-runtime@0.3.0-next.10 (next)
+
+### Add AgentHost fault-injection conformance coverage
+
+Add reusable AgentHost fault-injection conformance coverage for durable cursors, leases, inputs, checkpoints, and transaction crash boundaries across memory, file, and Cloudflare hosts.
+
+### Harden published-package release gates
+
+Validate published package metadata and packed-tarball imports in the release gate, and ship a stable `pss-eval` bin wrapper that avoids missing-bin install warnings before builds.
+
+### Preserve falsy buffered turn errors as rejections
+
+Separate successful and failed buffered turn closure so every JavaScript falsy value remains observable as an iterator rejection.
+
+### Add durable followUp turns with recovery
+
+Add durable `followUp` turns with recovery and distinct metadata. FIFO one-at-a-time execution applies within one process/isolate to handles sharing the exact store wrapper.
+
+### Scope event cursors nominally and validate offsets
+
+Scope run and thread event cursors nominally and validate cursor offsets and replay limits consistently across storage backends.
+
+### Add the versioned JSONL agent protocol
+
+Add a versioned transport-neutral JSONL RPC protocol, TypeScript client, and Node spawn transport.
+Expose coding-agent prompt, steer, abort, and state operations through a protocol-clean stdio mode.
+
+### Harden notification retry handling
+
+Prevent idempotent notification retries from rescheduling terminal runs and fail safely when deduplicated notification records are missing or inconsistent.
+
+### Remove dead runtime declarations
+
+Remove verified unused runtime declarations and internal test helpers.
+
+### Add session TUI compaction parity
+
+Add explicit `/compact` and Pi-compatible `/session` commands to the interactive TUI, with runtime-owned durable context compaction and documented session UX.
+
+### Add the SQL + durable queue host
+
+Add platform-neutral SQL store and leased durable-queue integration ports, worker draining, and exact-work outbox reconciliation with in-memory reference contract coverage.
+
 ## @minpeter/pss-runtime@0.3.0-next.9 (next)
 
 ### Strengthen runtime indexed access checks

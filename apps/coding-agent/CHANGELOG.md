@@ -1,3 +1,26 @@
+## @minpeter/pss-coding-agent@0.0.14-next.16 (next)
+
+### Harden built-in web, extension, and shell tool handling
+
+Validate built-in web and extension tool schemas before execution, improve model-facing parameter descriptions, and report failed shell commands accurately.
+
+### Make the extension factory API canonical
+
+Make the extension factory API canonical, add typed event maps and explicit renderer modes, and preserve the deprecated registry API through a legacy subpath.
+
+### Add the versioned JSONL agent protocol
+
+Add a versioned transport-neutral JSONL RPC protocol, TypeScript client, and Node spawn transport.
+Expose coding-agent prompt, steer, abort, and state operations through a protocol-clean stdio mode.
+
+### Add lazy provider descriptors with API-key selection
+
+Add lazy Anthropic, OpenAI, and OpenAI-compatible provider descriptors with API-key selection for headless and library use while preserving legacy AI environment behavior.
+
+### Add session TUI compaction parity
+
+Add explicit `/compact` and Pi-compatible `/session` commands to the interactive TUI, with runtime-owned durable context compaction and documented session UX.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.15 (next)
 
 ### Shadow bundled extensions with installed ones
