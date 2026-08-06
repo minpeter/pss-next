@@ -90,7 +90,7 @@ export class JsonlDecoder {
   }
 
   #checkIncompleteFrame(results: JsonlDecodeResult[]): void {
-    if (this.#buffer.byteLength <= this.#maxFrameBytes) {
+    if (payloadByteLength(this.#buffer) <= this.#maxFrameBytes) {
       return;
     }
     results.push({ error: this.#oversizedError() });
@@ -107,7 +107,7 @@ export class JsonlDecoder {
   }
 
   #decodeFrame(frame: Uint8Array): JsonlDecodeResult | undefined {
-    if (frame.byteLength > this.#maxFrameBytes) {
+    if (payloadByteLength(frame) > this.#maxFrameBytes) {
       return { error: this.#oversizedError() };
     }
     return this.#parse(frame);
@@ -134,9 +134,28 @@ export class JsonlDecoder {
 }
 
 export function encodeJsonl(value: unknown): string {
-  return `${JSON.stringify(value, (_key, item: unknown) =>
-    typeof item === "bigint" ? item.toString() : item
-  )}\n`;
+  const encoded = JSON.stringify(value, (_key, item: unknown) => {
+    if (typeof item === "bigint") {
+      return item.toString();
+    }
+    if (
+      item === undefined ||
+      typeof item === "function" ||
+      typeof item === "symbol" ||
+      (typeof item === "number" && !Number.isFinite(item))
+    ) {
+      throw new JsonlFrameError("Value is not representable as JSON");
+    }
+    return item;
+  });
+  if (encoded === undefined) {
+    throw new JsonlFrameError("Value is not representable as JSON");
+  }
+  return `${encoded}\n`;
+}
+
+function payloadByteLength(frame: Uint8Array): number {
+  return frame.byteLength - (frame.at(-1) === 13 ? 1 : 0);
 }
 
 function concatenate(left: Uint8Array, right: Uint8Array): Uint8Array {

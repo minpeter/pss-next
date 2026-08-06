@@ -24,18 +24,26 @@ export class PssProtocolClient {
     { reject(error: unknown): void; resolve(value: unknown): void }
   >();
   readonly #listeners = new Set<(event: ProtocolEvent["params"]) => void>();
+  readonly #listenerErrorHandlers = new Set<(error: unknown) => void>();
+  readonly #iterator: AsyncIterator<string | Uint8Array>;
+  #closed = false;
   #nextId = 1;
   #readFailure: unknown;
-  readonly #reader: Promise<void>;
 
   constructor(transport: ProtocolTransport) {
     this.#transport = transport;
-    this.#reader = this.#read();
+    this.#iterator = transport.readable[Symbol.asyncIterator]();
+    this.#read().catch((error) => this.#notifyListenerError(error));
   }
 
   onEvent(listener: (event: ProtocolEvent["params"]) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  onEventError(listener: (error: unknown) => void): () => void {
+    this.#listenerErrorHandlers.add(listener);
+    return () => this.#listenerErrorHandlers.delete(listener);
   }
 
   request<T = unknown>(
@@ -44,6 +52,11 @@ export class PssProtocolClient {
   ): Promise<T> {
     if (this.#readFailure !== undefined) {
       return Promise.reject(this.#readFailure);
+    }
+    if (!Number.isSafeInteger(this.#nextId)) {
+      return Promise.reject(
+        new Error("PSS protocol request id space exhausted")
+      );
     }
     const id = this.#nextId++;
     const result = new Promise<T>((resolve, reject) =>
@@ -59,11 +72,11 @@ export class PssProtocolClient {
       ...(params ? { params } : {}),
       protocol: PSS_PROTOCOL_VERSION,
     };
-    Promise.resolve(this.#transport.write(encodeJsonl(message))).catch(
-      (error) => {
+    Promise.resolve()
+      .then(() => this.#transport.write(encodeJsonl(message)))
+      .catch((error) => {
         this.#pendingReject(id, error);
-      }
-    );
+      });
     return result;
   }
 
@@ -81,28 +94,39 @@ export class PssProtocolClient {
   }
 
   async close(): Promise<void> {
-    await this.#transport.close?.();
-    await this.#reader;
+    if (this.#closed) {
+      return;
+    }
+    this.#closed = true;
+    const closed = new Error("PSS protocol client closed");
+    this.#failPending(closed);
+    try {
+      await this.#transport.close?.();
+    } finally {
+      Promise.resolve()
+        .then(() => this.#iterator.return?.())
+        .catch((error) => this.#notifyListenerError(error));
+    }
   }
 
   async #read(): Promise<void> {
     const decoder = new JsonlDecoder();
     try {
-      for await (const chunk of this.#transport.readable) {
-        for (const message of decoder.push(chunk)) {
+      while (!this.#closed) {
+        const next = await this.#iterator.next();
+        if (next.done) {
+          for (const message of decoder.finish()) {
+            this.#handle(message);
+          }
+          throw new Error("PSS protocol transport closed");
+        }
+        for (const message of decoder.push(next.value)) {
           this.#handle(message);
         }
       }
-      for (const message of decoder.finish()) {
-        this.#handle(message);
-      }
-      throw new Error("PSS protocol transport closed");
     } catch (error) {
       this.#readFailure = error;
-      for (const pending of this.#pending.values()) {
-        pending.reject(error);
-      }
-      this.#pending.clear();
+      this.#failPending(error);
     }
   }
 
@@ -120,11 +144,24 @@ export class PssProtocolClient {
     if (message.method === "event") {
       const event = message as unknown as ProtocolEvent;
       for (const listener of this.#listeners) {
-        listener(event.params);
+        try {
+          listener(event.params);
+        } catch (error) {
+          this.#notifyListenerError(error);
+        }
       }
       return;
     }
     const response = message as unknown as ProtocolResponse;
+    if (!isResponseId(response.id)) {
+      throw new Error("Invalid PSS protocol response id");
+    }
+    if ("error" in response && !isProtocolError(response.error)) {
+      throw new Error("Invalid PSS protocol error");
+    }
+    if (!("error" in response || Object.hasOwn(response, "result"))) {
+      throw new Error("Invalid PSS protocol result");
+    }
     const pending =
       response.id === null ? undefined : this.#pending.get(response.id);
     if (!pending) {
@@ -138,6 +175,23 @@ export class PssProtocolClient {
     }
   }
 
+  #failPending(error: unknown): void {
+    for (const pending of this.#pending.values()) {
+      pending.reject(error);
+    }
+    this.#pending.clear();
+  }
+
+  #notifyListenerError(error: unknown): void {
+    for (const listener of this.#listenerErrorHandlers) {
+      try {
+        listener(error);
+      } catch {
+        // Error observers are isolated from protocol processing too.
+      }
+    }
+  }
+
   #pendingReject(id: ProtocolRequestId, error: unknown): void {
     const pending = this.#pending.get(id);
     if (pending) {
@@ -145,4 +199,28 @@ export class PssProtocolClient {
       pending.reject(error);
     }
   }
+}
+
+function isResponseId(value: unknown): value is ProtocolRequestId | null {
+  return (
+    value === null ||
+    (typeof value === "string" && value.length > 0 && value.length <= 128) ||
+    (typeof value === "number" && Number.isSafeInteger(value))
+  );
+}
+
+function isProtocolError(value: unknown): value is {
+  readonly code: number;
+  readonly message: string;
+} {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "code" in value &&
+      typeof value.code === "number" &&
+      Number.isFinite(value.code) &&
+      Number.isInteger(value.code) &&
+      "message" in value &&
+      typeof value.message === "string"
+  );
 }

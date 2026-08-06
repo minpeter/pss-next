@@ -53,4 +53,25 @@ describe("JSONL framing", () => {
     expect(results[1]).toHaveProperty("error");
     expect(results[2]).toEqual({ value: { after: 2 } });
   });
+
+  it("excludes an optional CR from the frame byte limit across CRLF chunks", () => {
+    const exact = new JsonlDecoder({ maxFrameBytes: 7 });
+    expect(exact.pushResults('{"x":1}\r')).toEqual([]);
+    expect(exact.pushResults("\n")).toEqual([{ value: { x: 1 } }]);
+
+    const oversized = new JsonlDecoder({ maxFrameBytes: 6 });
+    expect(oversized.pushResults('{"x":1}\r')).toHaveLength(1);
+    expect(oversized.pushResults("\n")).toEqual([]);
+  });
+
+  it("rejects non-JSON encoder values and invalid UTF-8", () => {
+    expect(() => encodeJsonl(undefined)).toThrow("not representable");
+    expect(() => encodeJsonl({ missing: undefined })).toThrow(
+      "not representable"
+    );
+    expect(() => encodeJsonl(Number.NaN)).toThrow("not representable");
+    expect(() => new JsonlDecoder().push(new Uint8Array([0xff, 0x0a]))).toThrow(
+      "Invalid JSONL frame"
+    );
+  });
 });

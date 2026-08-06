@@ -105,7 +105,8 @@ export async function runCodingAgentCli({
 
   if (command === "rpc") {
     return (
-      rpc ?? ((args: readonly string[]) => runRpcCli({ argv: args, cwd, env }))
+      rpc ??
+      ((args: readonly string[]) => runRpcCli({ argv: args, cwd, env, home }))
     )(argv.slice(1));
   }
 

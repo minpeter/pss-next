@@ -12,6 +12,7 @@ export interface ProtocolServerHandler {
     method: ProtocolMethod,
     params: Record<string, unknown>,
     context: {
+      defer?(work: Promise<unknown>): void;
       emit(event: unknown, requestId?: ProtocolRequestId): void;
       readonly requestId: ProtocolRequestId;
     }
@@ -30,11 +31,25 @@ export async function servePssProtocol(
 ): Promise<void> {
   const decoder = new JsonlDecoder();
   const active = new Set<Promise<void>>();
+  const background = new Set<Promise<unknown>>();
+  let writeFailure: unknown;
   let writes = Promise.resolve();
   const write = (value: unknown): void => {
-    writes = writes
-      .then(() => io.write(encodeJsonl(value)))
-      .then(() => undefined);
+    if (writeFailure !== undefined) {
+      throw writeFailure;
+    }
+    const frame = encodeJsonl(value);
+    writes = writes.then(async () => {
+      if (writeFailure !== undefined) {
+        throw writeFailure;
+      }
+      try {
+        await io.write(frame);
+      } catch (error) {
+        writeFailure = error;
+        throw error;
+      }
+    });
   };
   const failure = (id: ProtocolRequestId | null, error: ProtocolError): void =>
     write({ error, id, jsonrpc: "2.0", protocol: PSS_PROTOCOL_VERSION });
@@ -45,18 +60,13 @@ export async function servePssProtocol(
     }
     const candidate = value as Partial<ProtocolRequest>;
     if (!isRequest(candidate)) {
-      failure(
-        typeof candidate.id === "string" || typeof candidate.id === "number"
-          ? candidate.id
-          : null,
-        {
-          code: candidate.protocol === PSS_PROTOCOL_VERSION ? -32_600 : -32_001,
-          message:
-            candidate.protocol === PSS_PROTOCOL_VERSION
-              ? "Invalid Request"
-              : "Unsupported protocol version",
-        }
-      );
+      failure(isRequestId(candidate.id) ? candidate.id : null, {
+        code: candidate.protocol === PSS_PROTOCOL_VERSION ? -32_600 : -32_001,
+        message:
+          candidate.protocol === PSS_PROTOCOL_VERSION
+            ? "Invalid Request"
+            : "Unsupported protocol version",
+      });
       return;
     }
     const request = candidate as ProtocolRequest;
@@ -67,6 +77,12 @@ export async function servePssProtocol(
     const operation = Promise.resolve()
       .then(() =>
         handler.handle(request.method, request.params ?? {}, {
+          defer: (work) => {
+            const tracked = Promise.resolve(work).finally(() =>
+              background.delete(tracked)
+            );
+            background.add(tracked);
+          },
           emit: (event, requestId = request.id) =>
             write({
               jsonrpc: "2.0",
@@ -77,16 +93,18 @@ export async function servePssProtocol(
           requestId: request.id,
         })
       )
-      .then(
-        (result) =>
-          write({
-            id: request.id,
-            jsonrpc: "2.0",
-            protocol: PSS_PROTOCOL_VERSION,
-            result,
-          }),
-        (error: unknown) => failure(request.id, rpcError(error))
-      )
+      .then((result) => {
+        if (result === undefined) {
+          throw new Error("Protocol handlers must return a JSON result");
+        }
+        write({
+          id: request.id,
+          jsonrpc: "2.0",
+          protocol: PSS_PROTOCOL_VERSION,
+          result,
+        });
+      })
+      .catch((error: unknown) => failure(request.id, rpcError(error)))
       .finally(() => active.delete(operation));
     active.add(operation);
   };
@@ -111,6 +129,7 @@ export async function servePssProtocol(
   }
   handleDecoded(decoder.finishResults());
   await Promise.allSettled(active);
+  await Promise.allSettled(background);
   await writes;
 }
 
@@ -118,8 +137,15 @@ function isRequest(value: Partial<ProtocolRequest>): value is ProtocolRequest {
   return (
     value.jsonrpc === "2.0" &&
     value.protocol === PSS_PROTOCOL_VERSION &&
-    (typeof value.id === "string" || typeof value.id === "number") &&
+    isRequestId(value.id) &&
     isMethod(value.method)
+  );
+}
+
+function isRequestId(value: unknown): value is ProtocolRequestId {
+  return (
+    (typeof value === "string" && value.length > 0 && value.length <= 128) ||
+    (typeof value === "number" && Number.isSafeInteger(value))
   );
 }
 
@@ -149,7 +175,12 @@ function rpcError(error: unknown): ProtocolError {
     "message" in error
   ) {
     const value = error as { code: unknown; data?: unknown; message: unknown };
-    if (typeof value.code === "number" && typeof value.message === "string") {
+    if (
+      typeof value.code === "number" &&
+      Number.isInteger(value.code) &&
+      Number.isFinite(value.code) &&
+      typeof value.message === "string"
+    ) {
       return {
         code: value.code,
         message: value.message,

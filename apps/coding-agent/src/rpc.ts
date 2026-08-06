@@ -22,7 +22,11 @@ export function createCodingAgentRpcSession(
   options: { readonly threadKey?: string } = {}
 ): CodingAgentRpcSession {
   let active:
-    | { readonly requestId: ProtocolRequestId; turn?: AgentTurn }
+    | {
+        abortRequested?: boolean;
+        readonly requestId: ProtocolRequestId;
+        turn?: AgentTurn;
+      }
     | undefined;
   let background = Promise.resolve();
   const handler: ProtocolServerHandler = {
@@ -36,16 +40,19 @@ export function createCodingAgentRpcSession(
               ? {}
               : { threadKey: options.threadKey }),
           };
-        case "abort": {
-          const interrupted = active !== undefined;
-          thread.interrupt();
-          return { interrupted };
-        }
+        case "abort":
+          return abortActive(active, thread);
         case "steer":
           if (!active) {
             throw new ProtocolRpcError({
               code: -32_003,
               message: "No prompt is currently running",
+            });
+          }
+          if (!active.turn) {
+            throw new ProtocolRpcError({
+              code: -32_004,
+              message: "The active prompt is still starting",
             });
           }
           return steer(thread, params);
@@ -62,6 +69,9 @@ export function createCodingAgentRpcSession(
             .then((turn) => {
               if (active) {
                 active.turn = turn;
+                if (active.abortRequested) {
+                  thread.interrupt();
+                }
               }
               return consume(turn, (event) => context.emit(event));
             })
@@ -77,6 +87,7 @@ export function createCodingAgentRpcSession(
           background = Promise.allSettled([background, started]).then(
             () => undefined
           );
+          context.defer?.(started);
           return { accepted: true };
         }
         default:
@@ -92,6 +103,18 @@ export function createCodingAgentRpcSession(
       return background;
     },
   };
+}
+
+function abortActive(
+  active: { abortRequested?: boolean } | undefined,
+  thread: RpcThread
+): { interrupted: boolean } {
+  const interrupted = active !== undefined;
+  if (active) {
+    active.abortRequested = true;
+  }
+  thread.interrupt();
+  return { interrupted };
 }
 
 async function steer(

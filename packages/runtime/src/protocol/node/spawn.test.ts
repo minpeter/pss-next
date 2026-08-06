@@ -10,4 +10,28 @@ describe("spawnPssClient", () => {
     await expect(client.state()).rejects.toMatchObject({ code: "ENOENT" });
     await expect(client.close()).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("bounds EOF shutdown and terminates a child that stays alive", async () => {
+    const client = spawnPssClient({
+      args: [
+        "-e",
+        "process.on('SIGTERM',()=>process.exit(0));process.stdin.resume();setInterval(()=>{},1000)",
+      ],
+      command: process.execPath,
+      killTimeoutMs: 100,
+      shutdownTimeoutMs: 20,
+    });
+    await expect(client.close()).resolves.toBeUndefined();
+  });
+
+  it("closes after a child was already signal-terminated", async () => {
+    const client = spawnPssClient({
+      args: ["-e", "process.kill(process.pid, 'SIGTERM')"],
+      command: process.execPath,
+      killTimeoutMs: 100,
+      shutdownTimeoutMs: 100,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await expect(client.close()).resolves.toBeUndefined();
+  });
 });

@@ -13,6 +13,7 @@ interface RunRpcCliOptions {
   readonly argv: readonly string[];
   readonly cwd: string;
   readonly env: CodingAgentRuntimeEnv;
+  readonly home?: string;
   readonly stdin?: AsyncIterable<string | Uint8Array>;
   readonly stdout?: { write(text: string): unknown };
 }
@@ -21,6 +22,7 @@ export async function runRpcCli({
   argv,
   cwd,
   env,
+  home = homedir(),
   stdin = process.stdin,
   stdout = process.stdout,
 }: RunRpcCliOptions): Promise<number> {
@@ -37,11 +39,7 @@ export async function runRpcCli({
     ...(args.baseUrl ? { AI_BASE_URL: args.baseUrl } : {}),
     ...(args.model ? { AI_MODEL: args.model } : {}),
   };
-  const threadConfig = resolveCodingAgentThreadConfig(
-    runtimeEnv,
-    args.workspace,
-    homedir()
-  );
+  const threadConfig = resolveRpcThreadConfig(runtimeEnv, args.workspace, home);
   const threadKey = args.session ?? threadConfig.key;
   const agent = await createCodingAgent({
     compaction: threadConfig.compaction,
@@ -67,6 +65,14 @@ export async function runRpcCli({
   } finally {
     await agent.dispose();
   }
+}
+
+export function resolveRpcThreadConfig(
+  env: CodingAgentRuntimeEnv,
+  workspace: string,
+  home: string
+) {
+  return resolveCodingAgentThreadConfig(env, workspace, home);
 }
 
 function parseRpcArguments(

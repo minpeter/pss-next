@@ -8,12 +8,16 @@ interface ChildOutcome {
 export interface SpawnPssClientOptions {
   readonly args?: readonly string[];
   readonly command?: string;
+  readonly killTimeoutMs?: number;
+  readonly shutdownTimeoutMs?: number;
   readonly spawn?: SpawnOptions;
 }
 
 export function spawnPssClient({
   args = ["rpc"],
   command = "pss",
+  killTimeoutMs = 1000,
+  shutdownTimeoutMs = 5000,
   spawn: options = {},
 }: SpawnPssClientOptions = {}): PssProtocolClient {
   const child = spawn(command, args, {
@@ -58,11 +62,48 @@ export function spawnPssClient({
     },
     async close() {
       child.stdin?.end();
-      const outcome = await completion;
+      let outcome = await settleWithin(completion, shutdownTimeoutMs);
+      if (
+        outcome === undefined &&
+        child.exitCode === null &&
+        child.signalCode === null
+      ) {
+        child.kill("SIGTERM");
+        outcome = await settleWithin(completion, killTimeoutMs);
+      }
+      if (
+        outcome === undefined &&
+        child.exitCode === null &&
+        child.signalCode === null
+      ) {
+        child.kill("SIGKILL");
+      }
+      outcome ??= await completion;
       if (outcome.error) {
         throw outcome.error;
       }
     },
   };
   return new PssProtocolClient(transport);
+}
+
+async function settleWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T | undefined> {
+  if (!(Number.isFinite(timeoutMs) && timeoutMs >= 0)) {
+    throw new RangeError(
+      "shutdown timeouts must be finite non-negative numbers"
+    );
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs, undefined);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
