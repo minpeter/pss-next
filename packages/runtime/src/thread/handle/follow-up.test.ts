@@ -291,4 +291,59 @@ describe("AgentThread follow-up queue", () => {
     await activeEvents;
     expect((await collect(queued)).at(-1)?.type).toBe("turn-error");
   });
+
+  it("retries delete after durable kill cancellation fails", async () => {
+    const base = createInMemoryHost();
+    let failTransactions = false;
+    const store = new Proxy(base.store, {
+      get(target, property) {
+        if (property === "transaction" && failTransactions) {
+          return (): Promise<never> =>
+            Promise.reject(new Error("delete transaction failed"));
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const enteredModel = createDeferred();
+    const holdModel = createDeferred();
+    const host = { ...base, store };
+    const thread = new AgentThread(
+      {
+        model: createCallbackModel(async () => {
+          enteredModel.resolve();
+          await holdModel.promise;
+          return [assistantMessage("DONE")];
+        }),
+      },
+      { key: "retry-delete", store: new MemoryThreadStore() },
+      { executionHost: host }
+    );
+    const activeEvents = collect(await thread.send("active"));
+    await enteredModel.promise;
+    const queued = await thread.followUp("queued");
+
+    failTransactions = true;
+    await expect(
+      Promise.race([
+        thread.delete(),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error("delete timed out")), 1000)
+        ),
+      ])
+    ).rejects.toThrow("delete transaction failed");
+
+    failTransactions = false;
+    await expect(
+      Promise.race([
+        thread.delete(),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error("delete retry timed out")), 1000)
+        ),
+      ])
+    ).resolves.toBeUndefined();
+    holdModel.resolve();
+    await activeEvents;
+    expect((await collect(queued)).at(-1)?.type).toBe("turn-error");
+  });
 });

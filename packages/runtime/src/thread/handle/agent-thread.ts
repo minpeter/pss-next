@@ -138,29 +138,35 @@ export class AgentThread {
       return current.deletePromise;
     }
 
-    const killPromise = this.kill();
+    const killPromise =
+      current.tag === "killed" ? current.killPromise : this.kill();
     const settled = deferred();
     const deletePromise = settled.promise;
-    // Transition before wiring the continuation so the machine state never
-    // depends on microtask scheduling.
-    terminal.to({ tag: "deleting", deletePromise, killPromise });
-    killPromise
-      .then(() => this.#deleteThread())
-      .then(
-        () => {
-          terminal.toIf("deleting", {
-            tag: "deleted",
-            deletePromise,
-            killPromise,
-          });
-          settled.resolve();
-        },
-        (error: unknown) => {
-          // Roll back to `killed` so the delete can be retried.
-          terminal.toIf("deleting", { tag: "killed", killPromise });
-          settled.reject(error);
-        }
-      );
+    const remove = async (): Promise<void> => {
+      await killPromise;
+      const afterKill = terminal.state;
+      if (afterKill.tag === "deleting" || afterKill.tag === "deleted") {
+        return await afterKill.deletePromise;
+      }
+      if (afterKill.tag !== "killed") {
+        throw new Error("Thread kill did not reach a terminal state.");
+      }
+      terminal.to({ tag: "deleting", deletePromise, killPromise });
+      try {
+        await this.#deleteThread();
+        terminal.toIf("deleting", {
+          tag: "deleted",
+          deletePromise,
+          killPromise,
+        });
+      } catch (error) {
+        // The durable delete can be retried without repeating the successful
+        // kill teardown.
+        terminal.toIf("deleting", { tag: "killed", killPromise });
+        throw error;
+      }
+    };
+    remove().then(settled.resolve, settled.reject);
     return deletePromise;
   }
 
