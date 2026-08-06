@@ -269,13 +269,13 @@ export async function startTui(
             "Compacting session context..."
           );
           try {
-            const compacted = await thread.compact(
+            const result = await thread.compact(
               instructions === undefined ? {} : { instructions }
             );
-            if (compacted) {
+            if (result.status === "compacted") {
               resetUsageTotals();
             }
-            return compacted;
+            return result;
           } finally {
             clearCompactingStatus?.();
           }

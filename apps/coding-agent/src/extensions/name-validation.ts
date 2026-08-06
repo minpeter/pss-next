@@ -8,6 +8,7 @@ const RESERVED_COMMAND_NAMES = new Set([
   "fork",
   "help",
   "model",
+  "models",
   "name",
   "new",
   "reload",

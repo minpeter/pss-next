@@ -4,7 +4,9 @@ import { createCompactCommand } from "./compact-command";
 
 describe("/compact", () => {
   it("runs runtime-owned compaction", async () => {
-    const compact = vi.fn(() => Promise.resolve(true));
+    const compact = vi.fn(() =>
+      Promise.resolve({ status: "compacted" as const })
+    );
 
     await expect(
       createCompactCommand({ compact }).execute({ args: [] })
@@ -16,7 +18,9 @@ describe("/compact", () => {
   });
 
   it("passes custom summary instructions", async () => {
-    const compact = vi.fn(() => Promise.resolve(true));
+    const compact = vi.fn(() =>
+      Promise.resolve({ status: "compacted" as const })
+    );
 
     await createCompactCommand({ compact }).execute({
       args: ["focus", "on", "decisions"],
@@ -26,13 +30,27 @@ describe("/compact", () => {
   });
 
   it("reports empty history without treating it as an error", async () => {
-    const compact = vi.fn(() => Promise.resolve(false));
+    const compact = vi.fn(() => Promise.resolve({ status: "empty" as const }));
 
     await expect(
       createCompactCommand({ compact }).execute({ args: [] })
     ).resolves.toEqual({
       message: "Nothing to compact in the current session.",
       success: true,
+    });
+  });
+
+  it("distinguishes hook/freshness skips from empty history", async () => {
+    const compact = vi.fn(() =>
+      Promise.resolve({ status: "skipped" as const })
+    );
+
+    await expect(
+      createCompactCommand({ compact }).execute({ args: [] })
+    ).resolves.toEqual({
+      message:
+        "Compaction was skipped because a hook rejected it or the session changed.",
+      success: false,
     });
   });
 

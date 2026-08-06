@@ -152,7 +152,9 @@ function createSessionInfoCommand(context: SessionCommandContext): TuiCommand {
         if (input.args.length > 0) {
           return { message: "Usage: /session", success: false };
         }
-        const session = context.currentSession();
+        const current = context.currentSession();
+        const session =
+          (await context.manager.getSession(current.key)) ?? current;
         const history = await context.manager.loadSessionHistory(session.key);
         return {
           message: formatCurrentSessionInfo(session, history),

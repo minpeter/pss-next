@@ -34,7 +34,7 @@ import {
   type TuiCommandAction,
   type TuiCommandResult,
 } from "./command";
-import { buildTuiCommandSet } from "./command-set";
+import { buildTuiCommandSet, resolveTuiCommand } from "./command-set";
 import { ctrlCPressDecision } from "./ctrl-c";
 import { createTuiErrorPresentation } from "./error-presentation";
 import { createExtensionUi } from "./extension-ui";
@@ -1161,10 +1161,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return null;
     }
 
-    const normalizedName = parsed.name.toLowerCase();
-    const resolvedName =
-      commandSet.commandAliasLookup.get(normalizedName) ?? normalizedName;
-    const command = commandSet.commandLookup.get(resolvedName);
+    const command = resolveTuiCommand(commandSet, parsed.name);
     if (!command) {
       return null;
     }
@@ -1598,13 +1595,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (steeringTurn !== undefined) {
       if (trimmed.length > 0) {
         const parsed = parseCommand(trimmed);
-        const resolvedCommand =
+        const activeCommand =
           parsed === null
             ? undefined
-            : (commandSet.commandAliasLookup.get(parsed.name.toLowerCase()) ??
-              parsed.name.toLowerCase());
+            : resolveTuiCommand(commandSet, parsed.name);
         const operation =
-          resolvedCommand === "compact"
+          activeCommand?.allowDuringActiveTurn === true
             ? (async () => {
                 editor.disableSubmit = true;
                 editor.setText("");

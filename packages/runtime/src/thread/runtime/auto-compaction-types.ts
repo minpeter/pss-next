@@ -9,8 +9,13 @@ export type ThreadTokenEstimator = (
 
 export type AgentCompactionReason = "completed-turn" | "manual" | "overflow";
 
+export type ManualThreadCompactionResult =
+  | { readonly status: "compacted" }
+  | { readonly status: "empty" }
+  | { readonly status: "skipped" };
+
 export interface CompactionSummaryOptions {
-  /** Replaces the runtime's default continuation-handoff instructions. */
+  /** Appends an `Additional focus` section to the default handoff contract. */
   readonly instructions?: string;
   /** Controls whether raw tool-result evidence is appended after model output. */
   readonly toolEvidence?: "deterministic" | "omit";

@@ -203,7 +203,7 @@ describe("runtime public exports", () => {
     } satisfies CompactionContextMessage;
 
     expectTypeOf<Parameters<ThreadHandle["compact"]>[0]>().toEqualTypeOf<
-      CompactionSummaryOptions | ThreadCompactionInput | undefined
+      CompactionSummaryOptions | undefined
     >();
     expectTypeOf<
       Parameters<

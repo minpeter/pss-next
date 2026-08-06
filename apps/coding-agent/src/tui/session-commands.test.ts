@@ -227,6 +227,18 @@ describe("/session", () => {
     expect(result.message).toContain("Durable token usage: unavailable");
   });
 
+  it("reloads the index entry so completed-turn recency is current", async () => {
+    const { context, manager } = createContext();
+    (manager.getSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      entry("cwd:/work", { updatedAt: "2026-01-01T00:05:00.000Z" })
+    );
+
+    const result = await command(context, "session").execute({ args: [] });
+
+    expect(manager.getSession).toHaveBeenCalledWith("cwd:/work");
+    expect(result.message).toContain("Updated: 2026-01-01T00:05:00.000Z");
+  });
+
   it("rejects arguments instead of switching sessions", async () => {
     const { context, manager } = createContext();
     await expect(

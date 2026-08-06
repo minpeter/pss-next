@@ -33,6 +33,8 @@ export interface TuiCommandContext {
 
 export interface TuiCommand {
   aliases?: readonly string[];
+  /** Permit this command to run instead of becoming steering input mid-turn. */
+  allowDuringActiveTurn?: boolean;
   /** Static completion values for simple commands. */
   argumentSuggestions?: readonly string[];
   description: string;

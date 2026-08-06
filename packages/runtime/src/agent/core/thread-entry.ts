@@ -4,7 +4,10 @@ import type {
 } from "../../execution/host/types";
 import type { AgentInput, UserInput } from "../../thread/input/input";
 import type { AgentTurn } from "../../thread/protocol/turn";
-import type { CompactionSummaryOptions } from "../../thread/runtime/auto-compaction-types";
+import type {
+  CompactionSummaryOptions,
+  ManualThreadCompactionResult,
+} from "../../thread/runtime/auto-compaction-types";
 import type { NotifyOptions } from "../../thread/runtime/notification";
 import type { ThreadCompactionInput } from "../../thread/state/thread-state";
 import { namespacePart } from "../identity/namespace";
@@ -22,9 +25,10 @@ export interface ThreadAddress {
 export type ThreadKey = string | ThreadAddress;
 
 export interface ThreadHandle {
+  compact(input: ThreadCompactionInput): Promise<boolean>;
   compact(
-    input?: CompactionSummaryOptions | ThreadCompactionInput
-  ): Promise<boolean>;
+    options?: CompactionSummaryOptions
+  ): Promise<ManualThreadCompactionResult>;
   delete(): Promise<void>;
   dispose(): Promise<void>;
   events(options?: ThreadEventReadOptions): AsyncIterable<StoredThreadEvent>;

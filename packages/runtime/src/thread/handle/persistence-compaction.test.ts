@@ -99,9 +99,18 @@ describe("Agent thread persistence compaction", () => {
 
     await expect(
       thread.compact({ instructions: "Focus on architectural decisions" })
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: "compacted" });
 
     const summaryCall = seenHistory.at(-1) ?? [];
+    expect(summaryCall[0]).toMatchObject({
+      content: expect.stringContaining("## Objective"),
+      role: "system",
+    });
+    expect(summaryCall[0]).toMatchObject({
+      content: expect.stringContaining(
+        "## Additional focus\nFocus on architectural decisions"
+      ),
+    });
     expect(summaryCall).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -129,7 +138,9 @@ describe("Agent thread persistence compaction", () => {
       ),
     });
 
-    await expect(agent.thread("empty").compact()).resolves.toBe(false);
+    await expect(agent.thread("empty").compact()).resolves.toEqual({
+      status: "empty",
+    });
   });
 
   it("rejects manual compaction while a turn is active", async () => {
@@ -156,5 +167,26 @@ describe("Agent thread persistence compaction", () => {
 
     releaseModel?.();
     await collecting;
+  });
+
+  it("returns false when beforeCompaction cancels an explicit input", async () => {
+    const agent = new Agent({
+      hooks: {
+        beforeCompaction: () => ({ action: "cancel", reason: "policy" }),
+      },
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    });
+    const thread = agent.thread("cancel-explicit");
+    await collect(await thread.send("history"));
+
+    await expect(
+      thread.compact({
+        endSeqExclusive: 2,
+        startSeq: 0,
+        summary: "blocked",
+      })
+    ).resolves.toBe(false);
   });
 });

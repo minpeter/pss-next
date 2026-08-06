@@ -7,7 +7,10 @@ import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { AgentInput, UserInput } from "../input/input";
 import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
 import { compactThreadManually } from "../runtime/auto-compaction-runner";
-import type { CompactionSummaryOptions } from "../runtime/auto-compaction-types";
+import type {
+  CompactionSummaryOptions,
+  ManualThreadCompactionResult,
+} from "../runtime/auto-compaction-types";
 import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
@@ -111,9 +114,13 @@ export class AgentThread {
     return run;
   }
 
+  compact(input: ThreadCompactionInput): Promise<boolean>;
+  compact(
+    options?: CompactionSummaryOptions
+  ): Promise<ManualThreadCompactionResult>;
   async compact(
     input?: CompactionSummaryOptions | ThreadCompactionInput
-  ): Promise<boolean> {
+  ): Promise<boolean | ManualThreadCompactionResult> {
     this.#assertOpen();
 
     await this.#ensureStarted();
@@ -122,20 +129,22 @@ export class AgentThread {
     this.#assertOpen();
 
     if (input !== undefined && "summary" in input) {
-      await this.#context.events.compact(this.#context.state, input);
-      return true;
+      return await this.#context.events.compact(this.#context.state, input);
     }
     return await this.#enqueueInputAdmission(async () => {
       this.#assertOpen();
       if (this.#context.turn.state.tag !== "none") {
         throw new Error("Cannot compact while a turn is active.");
       }
+      if (this.#context.state.modelSnapshot().length === 0) {
+        return { status: "empty" };
+      }
       const transforms = createTurnModelTransforms({
         hookRuntime: this.#context.execution.hookRuntime,
         state: this.#context.state,
         threadKey: this.#context.threadKey,
       });
-      return await compactThreadManually({
+      const compacted = await compactThreadManually({
         compact: (compactionInput, guard) =>
           this.#context.events.compact(
             this.#context.state,
@@ -150,6 +159,7 @@ export class AgentThread {
         threadKey: this.#context.threadKey,
         transformModelContext: transforms.transformModelContext,
       });
+      return { status: compacted ? "compacted" : "skipped" };
     });
   }
 
