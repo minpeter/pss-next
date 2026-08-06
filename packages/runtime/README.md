@@ -1308,3 +1308,97 @@ idempotent execution or a manual recovery flow.
 Cancellation is persisted before aborting active work. `delete()` and `dispose()`
 stop the current session's in-process work; durable hosts remain responsible for
 any app-owned background run cancellation, cleanup, and notification policy.
+
+
+## SQL + durable queue host
+
+`@minpeter/pss-runtime/platform/sql-queue` is a platform-neutral integration
+boundary for conventional production servers. It deliberately does not select
+a SQL client, schema, queue vendor, or migration framework:
+
+```ts
+import {
+  createSqlQueueHost,
+  drainSqlQueue,
+  reconcileSqlQueuedWork,
+} from "@minpeter/pss-runtime/platform/sql-queue";
+
+const host = createSqlQueueHost({
+  store: postgresStorePort,
+  queue: postgresQueuePort, // enqueue + leased claim/ack/nack
+  // Optional fast-path signal; durable queue polling remains the fallback.
+  wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
+});
+
+await drainSqlQueue({
+  queue: postgresQueuePort,
+  handle: (work) => dispatchWork(work),
+});
+
+// Run periodically as well as at worker startup.
+await reconcileSqlQueuedWork({
+  queue: postgresQueuePort,
+  source: postgresQueuedWorkOutbox,
+  wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
+});
+```
+
+A `SqlHostStorePort` exposes the normal runtime stores and an atomic
+`transaction` callback. A PostgreSQL implementation should acquire one pooled
+connection, issue `BEGIN`, create transaction-scoped store ports for that
+connection, then `COMMIT` on success or `ROLLBACK` on failure. Optimistic
+thread/checkpoint writes should use unique constraints or compare-and-swap
+predicates rather than process locks.
+
+`SqlQueuePort.enqueue` receives run or thread-prompt work with a stable
+`workId` and `dueAtMs`; persist it with a unique key (`INSERT ... ON CONFLICT
+(work_id) DO NOTHING`). `claim` must atomically lease one due item and fence
+workers with its `claimId`. Its `attempt` is 1-based and increments after every
+successful reclaim. It must also honor `excludeWorkIds`, which prevents a
+zero-delay poison item from being claimed repeatedly in one drain pass while
+other work starves. `list` exposes due work for bounded inspection.
+
+`renewLease` must validate both the claim fence and that the existing lease has
+not expired before extending it. `ack` and `nack` also validate the current
+fence; ack removes work and nack retains it until `retryAtMs`. Expired leases
+become claimable again.
+
+`drainSqlQueue` heartbeats `renewLease` during unbounded handlers, acknowledges
+only after success, and nacks handler failures for retry. `onError` can report
+the original handler error after nack succeeds. Renewal and ack failures surface
+directly without nack because ownership or ack outcome is uncertain; lease
+expiry is the safe recovery path. Heartbeats use the current lease's absolute
+deadline, so renewal response latency consumes the next wait instead of
+shifting cadence past expiry. Each work ID is handled at most once per drain
+invocation, including when `retryDelayMs` is zero.
+
+Queue delivery remains **at least once**. A renewal outage or latency beyond the
+remaining lease can let another worker reclaim work while the original handler
+is still running; the adapter cannot cancel arbitrary handler side effects.
+Handlers must therefore be idempotent and safe under concurrent duplicate
+execution.
+
+The adapter calls `wake` only after durable enqueue resolves. Wake is advisory:
+a wake failure can reject scheduling even though the item is safely queued, so
+retry is safe and expected.
+
+### Store-to-queue crash recovery
+
+Committing durable scheduling state and calling `HostScheduler.enqueueRun` or
+`HostScheduler.resumeThread` are not one atomic operation. A process can crash after the store transaction commits but before queue
+insertion. Deployments must either implement a transactional
+outbox in their SQL port or run `reconcileSqlQueuedWork` periodically. Its
+`SqlQueuedWorkSource` must return the exact original `SqlQueueWork`, including
+kind, due time, payload, and stable ID. This is naturally an outbox query; a
+reconstruction query must join notification data so thread prompts keep their
+thread and idempotency context. A turn row by itself is not sufficient because
+notification work must remain `thread-prompt`, not become `run:<runId>`.
+Reconciliation inserts exact work idempotently, so existing rows and concurrent
+passes remain safe. An enqueue failure stops the pass without changing the
+durable source; a later pass retries it.
+
+The package runs the shared `HostStore` and `HostScheduler` suites through the
+adapter using `InMemoryExecutionStore` and a leased-map reference queue, plus
+consumer/reconciliation behavior tests. These prove adapter delegation and
+queue semantics, **not PostgreSQL SQL correctness**. Production database
+implementations and integration tests remain application-owned.

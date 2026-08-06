@@ -9,6 +9,7 @@ export default defineConfig({
     "src/platform/cloudflare/image-codecs-edge.ts",
     "src/platform/file/index.ts",
     "src/platform/memory/index.ts",
+    "src/platform/sql-queue/index.ts",
     "src/execution/index.ts",
     "src/namespace.ts",
     "src/evals/index.ts",
