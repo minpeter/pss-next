@@ -590,9 +590,41 @@ a run is active, submitting text calls `thread.steer(trimmed)` so the text lands
 in the current turn and renders as dim `runtime: ...` input instead of a new human
 turn.
 
+## Model providers
+
+`pss exec` and the provider library select an AI SDK adapter from API keys:
+
+| Provider | Selection | Optional model override | Default model |
+| --- | --- | --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` | `claude-sonnet-4-6` |
+| OpenAI | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-5.4` |
+| OpenAI-compatible | `AI_API_KEY` and optional `AI_BASE_URL` | `AI_MODEL` | existing gateway default |
+
+Existing `AI_*` configurations take priority and are unchanged. Set
+`AI_PROVIDER=anthropic|openai|openai-compatible` to choose explicitly; with an
+explicit provider, `AI_API_KEY` can be used as the credential and `AI_MODEL`
+as the model override. With no key or endpoint, the existing keyless OpenCode
+Zen free tier remains the fallback. Provider adapters are dynamically imported,
+so unused official SDKs do not load at startup. The interactive TUI currently
+retains its OpenAI-compatible session catalog and switching behavior; official
+provider auto-selection applies to `pss exec` and the library API.
+
+```ts
+import {
+  createProviderModelFromEnv,
+  PROVIDER_DESCRIPTORS,
+} from "@minpeter/pss-coding-agent/providers";
+
+console.table(PROVIDER_DESCRIPTORS);
+const model = await createProviderModelFromEnv();
+```
+
+OAuth is not part of this API-key-based provider slice.
+
 ## Env
 
-Set `AI_API_KEY`, `AI_BASE_URL`, and `AI_MODEL` for the model.
+Set one of the provider API keys above, or use the legacy `AI_API_KEY`,
+`AI_BASE_URL`, and `AI_MODEL` variables.
 
 The TUI persists runtime-owned thread state to files by default:
 

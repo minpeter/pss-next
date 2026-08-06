@@ -10,11 +10,11 @@ import {
   resolveCliExtensionTargets,
 } from "./extensions/manager/cli-extensions";
 import { loadConfiguredCodingAgentExtensions } from "./extensions/manager/loader";
-import { createOpenAICompatibleModelFromEnv } from "./model";
 import {
   createProviderObservationFetch,
   type ProviderObservationEmitter,
 } from "./provider-observation";
+import { createProviderModelFromEnv } from "./provider-registry";
 import type { WebToolsAvailability } from "./tools";
 
 interface ExecArguments {
@@ -245,7 +245,7 @@ export async function runExecCli({
     },
     extensions,
     home,
-    model: createOpenAICompatibleModelFromEnv({
+    model: await createProviderModelFromEnv({
       fetch: createProviderObservationFetch(providerEmitter),
       runtimeEnv,
     }),

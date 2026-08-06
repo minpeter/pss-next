@@ -28,6 +28,7 @@ export default defineConfig({
     "src/extensions/index.ts",
     "src/instructions.ts",
     "src/model.ts",
+    "src/provider-registry.ts",
     "src/thread-config.ts",
     "src/thread-inspect.ts",
     "src/tools.ts",
