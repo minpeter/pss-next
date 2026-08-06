@@ -32,9 +32,10 @@ claim source, wire, extension, or storage-format identity. `planned` records a
 gap without committing to a date. Evidence paths make each classification
 reviewable against the pinned repositories.
 
-CI validates the schema, the exact difference vocabulary and cardinality,
-unique surface IDs, and existence of local evidence. Updating an existing
-classification is therefore an explicit reviewed diff.
+CI discovers every versioned `pi-v*.json` manifest and validates its schema,
+the exact difference vocabulary and cardinality, unique surface IDs, and
+existence of local evidence. Adding a baseline or updating a classification is
+therefore an explicit reviewed diff.
 
 ## Consequences
 

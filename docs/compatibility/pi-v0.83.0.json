@@ -130,6 +130,16 @@
       }
     },
     {
+      "id": "sdk-embedding",
+      "title": "SDK and embedding",
+      "classification": "native",
+      "summary": "PSS exposes its own public createCodingAgent and createAgent APIs for embedding agent sessions in applications.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/sdk.ts"],
+        "local": ["apps/coding-agent/src/coding-agent.ts"]
+      }
+    },
+    {
       "id": "rpc-integration",
       "title": "RPC integration",
       "classification": "adapter",
@@ -142,21 +152,21 @@
     {
       "id": "skills",
       "title": "Skills",
-      "classification": "planned",
-      "summary": "Pi-compatible discovery and invocation of SKILL.md resources is not part of the pinned PSS surface.",
+      "classification": "adapter",
+      "summary": "PSS discovers SKILL.md resources and exposes them on demand through PSS-owned trust, source-precedence, and workspace boundaries.",
       "evidence": {
         "upstream": ["packages/coding-agent/src/core/skills.ts"],
-        "local": ["apps/coding-agent/src/"]
+        "local": ["apps/coding-agent/src/context/skills.ts"]
       }
     },
     {
       "id": "prompt-templates",
       "title": "Prompt templates",
-      "classification": "planned",
-      "summary": "Pi-compatible prompt-template discovery and expansion is not part of the pinned PSS surface.",
+      "classification": "adapter",
+      "summary": "PSS discovers and expands Markdown prompt templates through PSS-owned directories, trust rules, and command integration.",
       "evidence": {
         "upstream": ["packages/coding-agent/src/core/prompt-templates.ts"],
-        "local": ["apps/coding-agent/src/"]
+        "local": ["apps/coding-agent/src/context/prompt-templates.ts"]
       }
     },
     {

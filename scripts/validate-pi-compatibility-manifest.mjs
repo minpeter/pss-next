@@ -1,38 +1,62 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 export const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-export const manifestPath = join(
-  repoRoot,
-  "docs/compatibility/pi-v0.83.0.json"
-);
+export const compatibilityDirectory = join(repoRoot, "docs/compatibility");
 export const schemaPath = join(
-  repoRoot,
-  "docs/compatibility/pi-manifest.schema.json"
+  compatibilityDirectory,
+  "pi-manifest.schema.json"
 );
 
-export function readCompatibilityFiles() {
+const VERSIONED_MANIFEST_PATTERN = /^pi-v\d+\.\d+\.\d+\.json$/;
+
+export function discoverCompatibilityManifestPaths(
+  directory = compatibilityDirectory
+) {
+  return readdirSync(directory, { withFileTypes: true })
+    .filter(
+      (entry) => entry.isFile() && VERSIONED_MANIFEST_PATTERN.test(entry.name)
+    )
+    .map((entry) => join(directory, entry.name))
+    .sort();
+}
+
+export function readCompatibilityFiles(
+  manifestPath = discoverCompatibilityManifestPaths()[0],
+  directory = compatibilityDirectory
+) {
+  if (manifestPath === undefined) {
+    throw new Error("No versioned Pi compatibility manifests found");
+  }
+
   return {
     manifest: JSON.parse(readFileSync(manifestPath, "utf8")),
-    schema: JSON.parse(readFileSync(schemaPath, "utf8")),
+    manifestPath,
+    schema: JSON.parse(
+      readFileSync(join(directory, "pi-manifest.schema.json"), "utf8")
+    ),
   };
 }
 
-export function validateCompatibilityManifest({ manifest, schema }) {
+export function validateCompatibilityManifest({
+  manifest,
+  manifestPath = "Pi compatibility manifest",
+  schema,
+}) {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validate = ajv.compile(schema);
   if (!validate(manifest)) {
     const details = ajv.errorsText(validate.errors, { separator: "\n" });
     throw new Error(
-      `Pi compatibility manifest violates its schema:\n${details}`
+      `${basename(manifestPath)} violates its schema:\n${details}`
     );
   }
 
   const ids = manifest.surfaces.map(({ id }) => id);
   if (new Set(ids).size !== ids.length) {
-    throw new Error("Pi compatibility manifest contains duplicate surface ids");
+    throw new Error(`${basename(manifestPath)} contains duplicate surface ids`);
   }
 
   const missingEvidence = manifest.surfaces.flatMap(({ evidence, id }) =>
@@ -42,9 +66,26 @@ export function validateCompatibilityManifest({ manifest, schema }) {
   );
   if (missingEvidence.length > 0) {
     throw new Error(
-      `Pi compatibility manifest references missing local evidence:\n${missingEvidence.join("\n")}`
+      `${basename(manifestPath)} references missing local evidence:\n${missingEvidence.join("\n")}`
     );
   }
+}
+
+export function validateCompatibilityManifests(
+  directory = compatibilityDirectory
+) {
+  const manifestPaths = discoverCompatibilityManifestPaths(directory);
+  if (manifestPaths.length === 0) {
+    throw new Error("No versioned Pi compatibility manifests found");
+  }
+
+  for (const manifestPath of manifestPaths) {
+    validateCompatibilityManifest(
+      readCompatibilityFiles(manifestPath, directory)
+    );
+  }
+
+  return manifestPaths;
 }
 
 function isMainModule() {
@@ -55,6 +96,8 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  validateCompatibilityManifest(readCompatibilityFiles());
-  console.log("Pi v0.83.0 compatibility manifest is valid.");
+  const manifests = validateCompatibilityManifests();
+  console.log(
+    `Validated ${manifests.length} Pi compatibility manifest(s): ${manifests.map((path) => basename(path)).join(", ")}`
+  );
 }

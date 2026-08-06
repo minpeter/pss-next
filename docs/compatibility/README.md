@@ -32,9 +32,11 @@ free-form manifest text.
 4. Run `pnpm check:compatibility` and the repository test suite.
 
 The JSON Schema rejects unknown fields and classifications and requires exactly
-one surface for each of the two intentional differences. The validator also
-rejects duplicate surface IDs and missing local evidence paths. CI runs this
-validator independently of the general test job.
+one surface for each of the two intentional differences. The validator
+discovers and checks every `docs/compatibility/pi-v*.json` manifest; there is no
+unchecked historical or inactive version. It also rejects duplicate surface IDs
+and missing local evidence paths. CI runs the validator independently of the
+general test job.
 
 See [ADR 0001](../adr/0001-pi-compatibility-baseline.md) for the decision and
 scope.
