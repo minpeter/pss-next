@@ -1451,4 +1451,3 @@ codec, concurrent server, and `PssProtocolClient`. Node applications can use
 `spawnPssClient` from `@minpeter/pss-runtime/protocol/node` to launch a `pss rpc`
 child and call `prompt`, `steer`, `abort`, and `state`. Each stdout line is one
 protocol frame; child diagnostics are inherited on stderr.
-
