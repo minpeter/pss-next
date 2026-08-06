@@ -147,6 +147,12 @@ export class ThreadState {
     return await load.promise;
   }
 
+  async refresh(): Promise<void> {
+    await this.ensureLoaded();
+    const applySnapshot = await this.#loadStoredSnapshot();
+    applySnapshot();
+  }
+
   modelSnapshot(): ModelMessage[] {
     return this.#history.modelSnapshot();
   }

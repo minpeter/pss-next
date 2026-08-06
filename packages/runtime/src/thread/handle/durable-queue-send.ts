@@ -161,6 +161,7 @@ export async function createQueuedSendInput({
       acceptedEvent: processed,
       awaitBoundaries,
       durableInput: admission.kind === "admitted",
+      durableInputKind: kind,
       ...(admission.kind === "admitted"
         ? { durableMessageId: admission.receipt.record.messageId }
         : {}),

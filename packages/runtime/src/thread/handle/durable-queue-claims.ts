@@ -14,6 +14,10 @@ import {
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
 } from "../runtime/execution";
+import {
+  isThreadDrainOwned,
+  withThreadDrainOwnership,
+} from "./thread-drain-coordinator";
 
 /**
  * One-shot recovery of orphaned durable input claims:
@@ -52,10 +56,15 @@ export async function recoverThreadDurableInputClaims({
 
   state.machine.to({ tag: "recovering" });
   try {
-    await recoverDurableThreadInputs({
-      executionHost,
-      threadKey,
-    });
+    if (executionHost) {
+      if (!isThreadDrainOwned(executionHost, threadKey)) {
+        await withThreadDrainOwnership(executionHost, threadKey, async () => {
+          await recoverDurableThreadInputs({ executionHost, threadKey });
+        });
+      }
+    } else {
+      await recoverDurableThreadInputs({ executionHost, threadKey });
+    }
     state.machine.to({ tag: "recovered" });
   } catch (error) {
     state.machine.to({ tag: "pending" });
@@ -78,30 +87,13 @@ export async function claimOrphanDurableThreadInput({
   if (claimed.kind === "unavailable" || !claimed.record) {
     return;
   }
-
-  const runId = createThreadExecutionRunId({
-    threadKey: claimed.record.threadKey,
-    turnId: claimed.record.messageId,
-  });
-  const precreated = await precreateThreadExecutionRun({
-    executionHost,
-    kind: "user-turn",
-    runId,
-    threadKey,
-  });
-  return {
-    acceptedEvent: claimed.record.input,
-    awaitBoundaries: false,
-    durableInputClaim: claimed.record,
-    ...(precreated
-      ? { executionRun: { kind: precreated.kind, runId: precreated.runId } }
-      : {}),
-    initialEvents: [],
-    preUserRuntimeInputs: [],
-    run: new BufferedAgentTurn(precreated?.runId),
-    runtimeInput: createRuntimeInputState([]),
-  };
+  return await queuedInputFromClaim(claimed.record, executionHost);
 }
+
+export type QueuedDurableInputPreparation =
+  | { readonly kind: "prepared"; readonly item: QueuedInput }
+  | { readonly kind: "preceding"; readonly item: QueuedInput }
+  | { readonly kind: "unavailable" };
 
 export async function prepareQueuedDurableInput({
   executionHost,
@@ -111,19 +103,29 @@ export async function prepareQueuedDurableInput({
   readonly executionHost: AgentHost | undefined;
   readonly item: QueuedInput;
   readonly threadKey: string;
-}): Promise<QueuedInput | undefined> {
+}): Promise<QueuedDurableInputPreparation> {
   if (!item.durableInput) {
-    return item;
+    return { item, kind: "prepared" };
   }
 
+  const oldestFirst = item.durableInputKind === "follow-up";
   const claimed = await claimDurableThreadInput({
     boundary: "turn-idle",
     executionHost,
-    messageId: item.durableMessageId,
+    messageId: oldestFirst ? undefined : item.durableMessageId,
     threadKey,
   });
   if (claimed.kind === "claimed" && claimed.record) {
-    return { ...item, durableInputClaim: claimed.record };
+    if (oldestFirst && claimed.record.messageId !== item.durableMessageId) {
+      return {
+        item: await queuedInputFromClaim(claimed.record, executionHost),
+        kind: "preceding",
+      };
+    }
+    return {
+      item: { ...item, durableInputClaim: claimed.record },
+      kind: "prepared",
+    };
   }
 
   await cancelThreadExecutionRun({
@@ -131,5 +133,34 @@ export async function prepareQueuedDurableInput({
     executionRun: item.executionRun,
   });
   item.run.close();
-  return;
+  return { kind: "unavailable" };
+}
+
+async function queuedInputFromClaim(
+  record: import("../../execution/host/types").ClaimedThreadInput,
+  executionHost: AgentHost | undefined
+): Promise<QueuedInput> {
+  const runId = createThreadExecutionRunId({
+    threadKey: record.threadKey,
+    turnId: record.messageId,
+  });
+  const precreated = await precreateThreadExecutionRun({
+    executionHost,
+    kind: "user-turn",
+    runId,
+    threadKey: record.threadKey,
+  });
+  return {
+    acceptedEvent: record.input,
+    awaitBoundaries: false,
+    durableInputClaim: record,
+    durableInputKind: record.kind === "follow-up" ? "follow-up" : "send",
+    ...(precreated
+      ? { executionRun: { kind: precreated.kind, runId: precreated.runId } }
+      : {}),
+    initialEvents: [],
+    preUserRuntimeInputs: [],
+    run: new BufferedAgentTurn(precreated?.runId),
+    runtimeInput: createRuntimeInputState([]),
+  };
 }

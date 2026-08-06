@@ -136,11 +136,13 @@ describe("AgentThread follow-up queue", () => {
     await vi.waitFor(() => expect(seenHistory).toHaveLength(2));
 
     expect(seenHistory[0]).toEqual([
+      userTextToModelMessage(userText("orphaned follow-up")),
+    ]);
+    expect(seenHistory[1]).toEqual([
+      userTextToModelMessage(userText("orphaned follow-up")),
+      assistantMessage("DONE 1"),
       userTextToModelMessage(userText("new follow-up")),
     ]);
-    expect(seenHistory[1]).toContainEqual(
-      userTextToModelMessage(userText("orphaned follow-up"))
-    );
     await expect(
       host.store.inputs.claimNext("follow-up-recovery", "turn-idle")
     ).resolves.toBeNull();

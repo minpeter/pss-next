@@ -742,7 +742,7 @@ raw-payload capture mode. The wrapper passes every original event through unchan
 Stopping iteration calls the source iterator's `return()` and closes all open
 spans.
 
-Agent instrumentations run for `send`, `steer`, and durable `resume` turns.
+Agent instrumentations run for `send`, `follow-up`, `steer`, and durable `resume` turns.
 Custom `AgentInstrumentation.wrapTurn(turn, context)` implementations receive
 the operation, canonical thread key, optional agent namespace, and the durable
 run ID for resume operations.
@@ -1008,13 +1008,16 @@ only after the active turn reaches a terminal boundary. Its input event carries
 `meta.source === "follow-up"` and `meta.streaming === "follow-up"`, so consumers
 can distinguish it from an ordinary send and from steering.
 
-Follow-ups use FIFO, one-at-a-time delivery: every accepted call owns a distinct
-`AgentTurn`, model invocation, durable inbox record, and terminal event. A later
-follow-up remains queued when the active turn is interrupted or fails, and an
-orphaned durable claim is recovered on the next thread admission. The runtime
-does not currently expose an `all` batching policy; batching would collapse
-multiple accepted calls into one turn and conflict with the one-call/one-turn
-contract.
+Follow-ups use admitted-sequence FIFO, one-at-a-time delivery: every accepted
+call owns a distinct `AgentTurn`, model invocation, durable inbox record, and
+terminal event. Drain ownership serializes live `Agent` handles that share the
+same host store object and thread key, including the memory, file, and
+Cloudflare adapters. An older recovered record runs before newly admitted work.
+A later follow-up remains queued when the active turn is interrupted or fails,
+and an orphaned durable claim is recovered on the next thread admission. The
+runtime does not currently expose an `all` batching policy; batching would
+collapse multiple accepted calls into one turn and conflict with the
+one-call/one-turn contract.
 
 Use `thread.steer(input)` only when the input should affect the active turn; if
 no turn is active, it preserves its existing behavior and starts a normal send
