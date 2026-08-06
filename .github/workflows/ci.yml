@@ -48,6 +48,9 @@ jobs:
       - name: Check package boundaries
         run: pnpm boundaries
 
+      - name: Validate Pi compatibility manifest
+        run: pnpm check:compatibility
+
       - name: Lint
         run: pnpm lint
 

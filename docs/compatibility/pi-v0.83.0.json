@@ -1,0 +1,186 @@
+{
+  "$schema": "./pi-manifest.schema.json",
+  "schemaVersion": 1,
+  "baseline": {
+    "project": "Pi",
+    "repository": "https://github.com/badlogic/pi-mono",
+    "release": "v0.83.0",
+    "commit": "845d6ff1f6643aba440341cce877ce1c43ebbc39"
+  },
+  "surfaces": [
+    {
+      "id": "model-execution",
+      "title": "Model execution",
+      "classification": "intentional-difference:ai-sdk",
+      "summary": "PSS deliberately uses AI SDK language-model objects and its generate/stream APIs instead of Pi\u2019s provider/model stack.",
+      "evidence": {
+        "upstream": [
+          "packages/coding-agent/src/core/agent-session.ts",
+          "packages/ai/src/providers/"
+        ],
+        "local": ["packages/runtime/src/agent/", "packages/runtime/src/llm/"]
+      }
+    },
+    {
+      "id": "execution-continuity",
+      "title": "Execution continuity",
+      "classification": "intentional-difference:durable-execution",
+      "summary": "PSS deliberately makes durable thread state, replay, suspension, and retry boundaries runtime concerns rather than matching Pi\u2019s process-local session loop.",
+      "evidence": {
+        "upstream": [
+          "packages/coding-agent/src/core/agent-session.ts",
+          "packages/coding-agent/src/core/session-manager.ts"
+        ],
+        "local": [
+          "packages/runtime/src/platform/",
+          "packages/runtime/src/agent/"
+        ]
+      }
+    },
+    {
+      "id": "terminal-ui",
+      "title": "Terminal UI",
+      "classification": "adapter",
+      "summary": "The coding agent adapts Pi\u2019s TUI package behind PSS-owned application and rendering boundaries.",
+      "evidence": {
+        "upstream": ["packages/tui/src/"],
+        "local": ["apps/coding-agent/src/tui/"]
+      }
+    },
+    {
+      "id": "workspace-tools",
+      "title": "Workspace coding tools",
+      "classification": "native",
+      "summary": "PSS implements its own read, write, edit, grep, find, and command-execution tools.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/tools/"],
+        "local": ["apps/coding-agent/src/workspace-tools/"]
+      }
+    },
+    {
+      "id": "interactive-cli",
+      "title": "Interactive CLI",
+      "classification": "native",
+      "summary": "PSS provides an independently implemented interactive terminal entry point and command set.",
+      "evidence": {
+        "upstream": [
+          "packages/coding-agent/src/main.ts",
+          "packages/coding-agent/src/modes/interactive/"
+        ],
+        "local": ["apps/coding-agent/src/cli.ts", "apps/coding-agent/src/tui/"]
+      }
+    },
+    {
+      "id": "headless-cli",
+      "title": "Headless CLI",
+      "classification": "native",
+      "summary": "PSS provides its own non-interactive exec runner corresponding to Pi print and JSON automation use cases.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/modes/print-mode.ts"],
+        "local": ["apps/coding-agent/src/exec-cli.ts"]
+      }
+    },
+    {
+      "id": "thread-storage",
+      "title": "Thread persistence",
+      "classification": "native",
+      "summary": "PSS owns keyed thread history, storage contracts, event records, and compaction.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/session-manager.ts"],
+        "local": [
+          "packages/runtime/src/platform/",
+          "packages/runtime/src/thread/"
+        ]
+      }
+    },
+    {
+      "id": "extension-api",
+      "title": "Extension API",
+      "classification": "adapter",
+      "summary": "PSS maps Pi-style customization goals onto a capability-based extension host with explicit lifecycle and service boundaries.",
+      "evidence": {
+        "upstream": [
+          "packages/coding-agent/src/core/extensions/",
+          "packages/coding-agent/src/extensions/"
+        ],
+        "local": ["apps/coding-agent/src/extensions/"]
+      }
+    },
+    {
+      "id": "model-selection",
+      "title": "Model selection",
+      "classification": "adapter",
+      "summary": "PSS exposes model catalog selection through an OpenAI-compatible provider adapter rather than Pi\u2019s built-in provider registry.",
+      "evidence": {
+        "upstream": [
+          "packages/ai/src/providers/",
+          "packages/coding-agent/src/core/model-registry.ts"
+        ],
+        "local": [
+          "apps/coding-agent/src/model.ts",
+          "apps/coding-agent/src/tui/model-command.ts"
+        ]
+      }
+    },
+    {
+      "id": "sdk-embedding",
+      "title": "SDK and embedding",
+      "classification": "native",
+      "summary": "PSS exposes its own public createCodingAgent and createAgent APIs for embedding agent sessions in applications.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/sdk.ts"],
+        "local": ["apps/coding-agent/src/coding-agent.ts"]
+      }
+    },
+    {
+      "id": "rpc-integration",
+      "title": "RPC integration",
+      "classification": "adapter",
+      "summary": "PSS supplies app-owned worker RPC and remote TUI delivery instead of Pi\u2019s stdio RPC protocol.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/rpc-entry.ts"],
+        "local": ["apps/worker-agent/src/rpc/", "apps/worker-agent/src/tui/"]
+      }
+    },
+    {
+      "id": "skills",
+      "title": "Skills",
+      "classification": "adapter",
+      "summary": "PSS discovers SKILL.md resources and exposes them on demand through PSS-owned trust, source-precedence, and workspace boundaries.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/skills.ts"],
+        "local": ["apps/coding-agent/src/context/skills.ts"]
+      }
+    },
+    {
+      "id": "prompt-templates",
+      "title": "Prompt templates",
+      "classification": "adapter",
+      "summary": "PSS discovers and expands Markdown prompt templates through PSS-owned directories, trust rules, and command integration.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/prompt-templates.ts"],
+        "local": ["apps/coding-agent/src/context/prompt-templates.ts"]
+      }
+    },
+    {
+      "id": "themes",
+      "title": "Themes",
+      "classification": "planned",
+      "summary": "Pi-compatible user theme packages are not part of the pinned PSS surface.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/modes/interactive/theme/"],
+        "local": ["apps/coding-agent/src/tui/"]
+      }
+    },
+    {
+      "id": "pi-packages",
+      "title": "Pi packages",
+      "classification": "planned",
+      "summary": "Installing Pi package bundles is not a compatibility goal of the pinned PSS release; PSS has its own managed extension format.",
+      "evidence": {
+        "upstream": ["packages/coding-agent/src/core/package-manager.ts"],
+        "local": ["apps/coding-agent/src/extensions/manager/"]
+      }
+    }
+  ]
+}
