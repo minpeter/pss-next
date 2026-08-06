@@ -1,0 +1,175 @@
+name: Extended verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Verification suite to run
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - storage
+          - cross-platform
+          - edge
+          - live-provider
+          - remote-edge
+  schedule:
+    # Weekly storage stress; live provider and edge dry-run run on Thursday.
+    - cron: "17 3 * * 1"
+    - cron: "23 5 * * 4"
+    # macOS/Windows runners are intentionally limited to a monthly smoke run.
+    - cron: "41 4 1 * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  storage-stress:
+    if: >-
+      github.event.schedule == '17 3 * * 1' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.suite == 'all' || inputs.suite == 'storage'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run heavy runtime storage profile
+        run: pnpm stress:runtime-storage:heavy
+
+  cross-platform-smoke:
+    if: >-
+      github.event.schedule == '41 4 1 * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.suite == 'all' || inputs.suite == 'cross-platform'))
+    name: Cross-platform smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Exercise paths, file locks, CLI, and terminal guards
+        run: pnpm test:cross-platform-smoke
+
+  edge-dry-run:
+    if: >-
+      github.event.schedule == '23 5 * * 4' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.suite == 'all' || inputs.suite == 'edge'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the Worker with the real edge bundler
+        run: pnpm verify:edge
+
+  secret-gate:
+    if: >-
+      github.event.schedule == '23 5 * * 4' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.suite == 'all' || inputs.suite == 'live-provider' ||
+        inputs.suite == 'remote-edge'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      provider: ${{ steps.detect.outputs.provider }}
+      remote_edge: ${{ steps.detect.outputs.remote_edge }}
+    steps:
+      - id: detect
+        name: Detect optional verification credentials
+        shell: bash
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          WORKER_AGENT_TUI_ENDPOINT: ${{ secrets.WORKER_AGENT_TUI_ENDPOINT }}
+        run: |
+          if [[ -n "$AI_API_KEY" ]]; then
+            echo "provider=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "provider=false" >> "$GITHUB_OUTPUT"
+            echo "### Live provider check skipped: AI_API_KEY is not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -n "$AI_API_KEY" && -n "$WORKER_AGENT_TUI_ENDPOINT" ]]; then
+            echo "remote_edge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "remote_edge=false" >> "$GITHUB_OUTPUT"
+            echo "### Remote edge check skipped: AI_API_KEY and WORKER_AGENT_TUI_ENDPOINT are required." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  live-provider:
+    needs: secret-gate
+    if: >-
+      needs.secret-gate.outputs.provider == 'true' &&
+      (github.event.schedule == '23 5 * * 4' ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.suite == 'all' || inputs.suite == 'live-provider')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the small real-provider eval suite
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          PSS_EVAL_REAL: "1"
+        run: pnpm eval:provider
+
+  remote-edge:
+    needs: secret-gate
+    if: >-
+      needs.secret-gate.outputs.remote_edge == 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.suite == 'all' || inputs.suite == 'remote-edge')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Probe the deployed Worker and its provider
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          WORKER_AGENT_TUI_ENDPOINT: ${{ secrets.WORKER_AGENT_TUI_ENDPOINT }}
+          WORKER_AGENT_TUI_TOKEN: ${{ secrets.WORKER_AGENT_TUI_TOKEN }}
+        run: pnpm eval:edge-remote
