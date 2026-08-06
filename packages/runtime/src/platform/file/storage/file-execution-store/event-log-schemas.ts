@@ -1,3 +1,7 @@
+import {
+  createEventCursor,
+  createThreadEventCursor,
+} from "../../../../execution/host/event-cursors";
 import type {
   StoredAgentEvent,
   StoredThreadEvent,
@@ -18,7 +22,7 @@ export function parseEventLogLine(
   }
 
   return {
-    cursor: { offset: parsed.cursor.offset },
+    cursor: createEventCursor(parsed.cursor.offset),
     event: parsed.event,
     runId: parsed.runId,
   };
@@ -37,7 +41,7 @@ export function parseThreadEventLogLine(
   }
 
   return {
-    cursor: { offset: parsed.cursor.offset },
+    cursor: createThreadEventCursor(parsed.cursor.offset),
     event: parsed.event,
     threadKey: parsed.threadKey,
   };

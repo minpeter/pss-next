@@ -4,7 +4,10 @@ import type {
   ThreadEventLog,
   ThreadEventReadOptions,
 } from "../../../../execution";
-import { normalizeThreadEventReadOptions } from "../../../../execution/host/thread-event-read-options";
+import {
+  createThreadEventCursor,
+  normalizeThreadEventReadOptions,
+} from "../../../../execution/host/event-cursors";
 import type { AgentEvent } from "../../../../index";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import type { CloudflareDurableObjectStorage } from "../durable-object/durable-object-storage";
@@ -67,7 +70,7 @@ export class DurableObjectSqliteThreadEventLog implements ThreadEventLog {
         serializedEvent
       );
       this.#writeNextSeq(key, seq + 1);
-      return Promise.resolve({ offset: seq + 1 });
+      return Promise.resolve(createThreadEventCursor(seq + 1));
     } catch (error) {
       return Promise.reject(error);
     }
@@ -99,7 +102,7 @@ export class DurableObjectSqliteThreadEventLog implements ThreadEventLog {
         );
       }
       yield {
-        cursor: { offset: row.seq + 1 },
+        cursor: createThreadEventCursor(row.seq + 1),
         event: JSON.parse(event) as AgentEvent,
         threadKey,
       };

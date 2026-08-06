@@ -1,4 +1,9 @@
-import { normalizeThreadEventReadOptions } from "../../../execution/host/thread-event-read-options";
+import {
+  createEventCursor,
+  createThreadEventCursor,
+  normalizeEventCursor,
+  normalizeThreadEventReadOptions,
+} from "../../../execution/host/event-cursors";
 import type {
   Checkpoint,
   CheckpointStore,
@@ -227,7 +232,7 @@ class InMemoryEventStore implements EventStore {
 
   append(runId: string, event: AgentEvent): Promise<EventCursor> {
     const events = this.#state().events.get(runId) ?? [];
-    const cursor = { offset: events.length + 1 };
+    const cursor = createEventCursor(events.length + 1);
     events.push({
       cursor,
       event: structuredClone(event),
@@ -243,7 +248,7 @@ class InMemoryEventStore implements EventStore {
   ): AsyncIterable<StoredAgentEvent> {
     await Promise.resolve();
     const events = this.#state().events.get(runId) ?? [];
-    const start = cursor?.offset ?? 0;
+    const start = normalizeEventCursor(cursor);
     for (const event of events.slice(start)) {
       yield structuredClone(event);
     }
@@ -259,7 +264,7 @@ class InMemoryThreadEventLog implements ThreadEventLog {
 
   append(threadKey: string, event: AgentEvent): Promise<ThreadEventCursor> {
     const events = this.#state().threadEvents.get(threadKey) ?? [];
-    const cursor = { offset: events.length + 1 };
+    const cursor = createThreadEventCursor(events.length + 1);
     events.push({
       cursor,
       event: structuredClone(event),

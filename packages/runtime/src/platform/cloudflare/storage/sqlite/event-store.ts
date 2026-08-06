@@ -3,6 +3,10 @@ import type {
   EventStore,
   StoredAgentEvent,
 } from "../../../../execution";
+import {
+  createEventCursor,
+  normalizeEventCursor,
+} from "../../../../execution/host/event-cursors";
 import type { AgentEvent } from "../../../../index";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import type { CloudflareDurableObjectStorage } from "../durable-object/durable-object-storage";
@@ -82,7 +86,7 @@ export class DurableObjectSqliteEventStore implements EventStore {
         serializedEvent
       );
       this.#writeNextSeq(key, seq + 1);
-      return Promise.resolve({ offset: seq + 1 });
+      return Promise.resolve(createEventCursor(seq + 1));
     } catch (error) {
       return Promise.reject(error);
     }
@@ -95,7 +99,7 @@ export class DurableObjectSqliteEventStore implements EventStore {
     await Promise.resolve();
     this.#ensureSchema();
     const key = this.#rowKey(runId);
-    const start = cursor?.offset ?? 0;
+    const start = normalizeEventCursor(cursor);
     const rows = this.#sql
       .exec<EventRow>(
         "SELECT seq, event FROM pss_event WHERE run_key = ? AND seq >= ? ORDER BY seq",
@@ -118,7 +122,7 @@ export class DurableObjectSqliteEventStore implements EventStore {
         throw new Error(`Missing event payload for ${key} seq ${row.seq}`);
       }
       yield {
-        cursor: { offset: row.seq + 1 },
+        cursor: createEventCursor(row.seq + 1),
         event: JSON.parse(event) as AgentEvent,
         runId,
       };
