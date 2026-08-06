@@ -12,6 +12,7 @@ import type {
   SqlQueueListOptions,
   SqlQueueNackOptions,
   SqlQueuePort,
+  SqlQueueRenewLeaseOptions,
   SqlQueueWork,
 } from "./queue";
 import { reconcileSqlQueuedWork } from "./reconciliation";
@@ -40,6 +41,7 @@ class ReferenceQueue implements SqlQueuePort {
       const lease = this.#leases.get(item.workId);
       return (
         item.dueAtMs <= options.nowMs &&
+        !options.excludeWorkIds?.includes(item.workId) &&
         (!lease || lease.leaseUntilMs <= options.nowMs)
       );
     });
@@ -84,6 +86,20 @@ class ReferenceQueue implements SqlQueuePort {
       dueAtMs: options.retryAtMs,
     });
     return Promise.resolve();
+  }
+
+  renewLease(
+    claim: SqlQueueClaim,
+    options: SqlQueueRenewLeaseOptions
+  ): Promise<SqlQueueClaim> {
+    this.#assertCurrentClaim(claim);
+    const current = this.#leases.get(claim.work.workId);
+    if (!(current && current.leaseUntilMs > options.nowMs)) {
+      return Promise.reject(new Error("queue lease expired"));
+    }
+    const renewed = { ...current, leaseUntilMs: options.leaseUntilMs };
+    this.#leases.set(claim.work.workId, renewed);
+    return Promise.resolve(structuredClone(renewed));
   }
 
   #assertCurrentClaim(claim: SqlQueueClaim): void {
@@ -154,6 +170,7 @@ describe("SQL queue wake behavior", () => {
       },
       list: () => Promise.resolve([]),
       nack: () => Promise.resolve(),
+      renewLease: (claim) => Promise.resolve(claim),
     };
     const host = createSqlQueueHost({
       clock: () => 1000,
@@ -261,6 +278,128 @@ describe("SQL queue consumer contract", () => {
       attempt: 2,
       work: { workId: "run:run-1" },
     });
+  });
+
+  it("renews a long handler lease before another worker can reclaim it", async () => {
+    const queue = new ReferenceQueue();
+    await queue.enqueue({
+      dueAtMs: 0,
+      kind: "run",
+      runId: "run-long",
+      workId: "run:run-long",
+    });
+    let nowMs = 0;
+
+    await drainSqlQueue({
+      clock: () => nowMs,
+      handle: async () => {
+        nowMs = 20;
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        await expect(
+          queue.claim({ leaseMs: 30, nowMs: 31 })
+        ).resolves.toBeNull();
+      },
+      heartbeatMs: 5,
+      leaseMs: 30,
+      queue,
+    });
+
+    expect(queue.work.size).toBe(0);
+  });
+
+  it("reports handler failures through onError after nacking", async () => {
+    const queue = new ReferenceQueue();
+    const error = new Error("handler failed");
+    const observed: unknown[] = [];
+    await queue.enqueue({
+      dueAtMs: 0,
+      kind: "run",
+      runId: "run-error",
+      workId: "run:run-error",
+    });
+
+    await drainSqlQueue({
+      clock: () => 0,
+      handle: () => Promise.reject(error),
+      onError: (context) => {
+        observed.push(context);
+      },
+      queue,
+    });
+
+    expect(observed).toEqual([
+      expect.objectContaining({
+        error,
+        work: expect.objectContaining({ workId: "run:run-error" }),
+      }),
+    ]);
+  });
+
+  it("surfaces uncertain ack errors without nacking", async () => {
+    const queue = new ReferenceQueue();
+    let nackCalls = 0;
+    await queue.enqueue({
+      dueAtMs: 0,
+      kind: "run",
+      runId: "run-ack",
+      workId: "run:run-ack",
+    });
+    const uncertainAckQueue: SqlQueuePort = {
+      ack: () => Promise.reject(new Error("ack result unknown")),
+      claim: queue.claim.bind(queue),
+      enqueue: queue.enqueue.bind(queue),
+      list: queue.list.bind(queue),
+      nack: (...args) => {
+        nackCalls += 1;
+        return queue.nack(...args);
+      },
+      renewLease: queue.renewLease.bind(queue),
+    };
+
+    await expect(
+      drainSqlQueue({
+        clock: () => 0,
+        handle: () => Promise.resolve(),
+        queue: uncertainAckQueue,
+      })
+    ).rejects.toThrow("ack result unknown");
+    expect(nackCalls).toBe(0);
+    expect(queue.work.has("run:run-ack")).toBe(true);
+  });
+
+  it("handles zero-delay poison work at most once per drain pass", async () => {
+    const queue = new ReferenceQueue();
+    await queue.enqueue({
+      dueAtMs: 0,
+      kind: "run",
+      runId: "poison",
+      workId: "run:poison",
+    });
+    await queue.enqueue({
+      dueAtMs: 0,
+      kind: "run",
+      runId: "healthy",
+      workId: "run:healthy",
+    });
+    const handled: string[] = [];
+
+    const result = await drainSqlQueue({
+      clock: () => 0,
+      handle: (work) => {
+        handled.push(work.workId);
+        return work.workId === "run:poison"
+          ? Promise.reject(new Error("poison"))
+          : Promise.resolve();
+      },
+      limit: 10,
+      queue,
+      retryDelayMs: 0,
+    });
+
+    expect(result).toEqual({ claimed: 2, failed: 1, succeeded: 1 });
+    expect(handled).toEqual(["run:poison", "run:healthy"]);
+    expect(queue.work.has("run:poison")).toBe(true);
+    expect(queue.work.has("run:healthy")).toBe(false);
   });
 
   it("makes unacked work claimable after its lease expires", async () => {

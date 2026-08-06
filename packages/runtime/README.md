@@ -1353,11 +1353,22 @@ predicates rather than process locks.
 `SqlQueuePort.enqueue` receives run or thread-prompt work with a stable
 `workId` and `dueAtMs`; persist it with a unique key (`INSERT ... ON CONFLICT
 (work_id) DO NOTHING`). `claim` must atomically lease one due item and fence
-workers with its `claimId`; expired leases must become claimable. `list` exposes
-due work for bounded inspection without claiming it. `ack` removes only a
-currently fenced claim, while `nack` retains it until `retryAtMs`.
-`drainSqlQueue` acknowledges only after the handler succeeds, nacks failures
-for retry, and leaves work recoverable through lease expiry if a worker dies.
+workers with its `claimId`. Its `attempt` is 1-based and increments after every
+successful reclaim. It must also honor `excludeWorkIds`, which prevents a
+zero-delay poison item from being claimed repeatedly in one drain pass while
+other work starves. `list` exposes due work for bounded inspection.
+
+`renewLease` must validate both the claim fence and that the existing lease has
+not expired before extending it. `ack` and `nack` also validate the current
+fence; ack removes work and nack retains it until `retryAtMs`. Expired leases
+become claimable again.
+
+`drainSqlQueue` heartbeats `renewLease` during unbounded handlers, acknowledges
+only after success, and nacks handler failures for retry. `onError` can report
+the original handler error after nack succeeds. Renewal and ack failures surface
+directly without nack because ownership or ack outcome is uncertain; lease
+expiry is the safe recovery path. Each work ID is handled at most once per
+drain invocation, including when `retryDelayMs` is zero.
 
 The adapter calls `wake` only after durable enqueue resolves. Wake is advisory:
 a wake failure can reject scheduling even though the item is safely queued, so
@@ -1366,8 +1377,8 @@ retry is safe and expected.
 ### Store-to-queue crash recovery
 
 Committing durable scheduling state and calling `HostScheduler.enqueueRun` or
-`HostScheduler.resumeThread` are not one atomic operation. A process can crash after the store transaction commits but
-before queue insertion. Deployments must either implement a transactional
+`HostScheduler.resumeThread` are not one atomic operation. A process can crash after the store transaction commits but before queue
+insertion. Deployments must either implement a transactional
 outbox in their SQL port or run `reconcileSqlQueuedWork` periodically. Its
 `SqlQueuedWorkSource` must return the exact original `SqlQueueWork`, including
 kind, due time, payload, and stable ID. This is naturally an outbox query; a

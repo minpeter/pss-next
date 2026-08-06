@@ -17,6 +17,7 @@ export interface SqlQueueThreadPromptWork {
 export type SqlQueueWork = SqlQueueRunWork | SqlQueueThreadPromptWork;
 
 export interface SqlQueueClaim {
+  /** 1-based number of times this work item has been successfully claimed. */
   readonly attempt: number;
   readonly claimId: string;
   readonly leaseUntilMs: number;
@@ -24,6 +25,8 @@ export interface SqlQueueClaim {
 }
 
 export interface SqlQueueClaimOptions {
+  /** Work IDs already handled by this drain pass and ineligible for reclaim. */
+  readonly excludeWorkIds?: readonly string[];
   readonly leaseMs: number;
   readonly nowMs: number;
 }
@@ -37,6 +40,11 @@ export interface SqlQueueNackOptions {
   readonly retryAtMs: number;
 }
 
+export interface SqlQueueRenewLeaseOptions {
+  readonly leaseUntilMs: number;
+  readonly nowMs: number;
+}
+
 /** Producer-only subset useful to reconciliation and scheduling helpers. */
 export interface SqlQueueProducerPort {
   /** Must durably insert idempotently by `work.workId`. */
@@ -47,12 +55,18 @@ export interface SqlQueueProducerPort {
  * Durable queue boundary for producers and workers.
  *
  * `claim` must atomically lease one due, unacked item and fence competing
- * workers with `claimId`. Expired leases become claimable again. `ack` and
- * `nack` must validate that fence; nack retains the item for `retryAtMs`.
+ * workers with `claimId`. `attempt` starts at 1 and increments on every
+ * successful reclaim. Expired leases become claimable again. `ack`, `nack`,
+ * and `renewLease` must validate the claim fence. Renewal must fail for an
+ * expired or replaced claim; nack retains the item for `retryAtMs`.
  */
 export interface SqlQueuePort extends SqlQueueProducerPort {
   ack(claim: SqlQueueClaim): Promise<void>;
   claim(options: SqlQueueClaimOptions): Promise<SqlQueueClaim | null>;
   list(options: SqlQueueListOptions): Promise<readonly SqlQueueWork[]>;
   nack(claim: SqlQueueClaim, options: SqlQueueNackOptions): Promise<void>;
+  renewLease(
+    claim: SqlQueueClaim,
+    options: SqlQueueRenewLeaseOptions
+  ): Promise<SqlQueueClaim>;
 }

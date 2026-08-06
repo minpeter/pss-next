@@ -4,6 +4,7 @@ export {
   drainSqlQueue,
   type SqlQueueDrainOptions,
   type SqlQueueDrainResult,
+  type SqlQueueHandlerErrorContext,
 } from "./drainer";
 export {
   createSqlQueueHost,
@@ -17,6 +18,7 @@ export type {
   SqlQueueNackOptions,
   SqlQueuePort,
   SqlQueueProducerPort,
+  SqlQueueRenewLeaseOptions,
   SqlQueueRunWork,
   SqlQueueThreadPromptWork,
   SqlQueueWork,
