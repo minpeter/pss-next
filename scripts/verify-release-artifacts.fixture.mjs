@@ -90,14 +90,18 @@ export function cleanupFixtures() {
 }
 
 function packageMetadata(packageName) {
-  return packageName === "coding-agent"
-    ? {
-        bin: {
-          pss: "./bin/pss.js",
-          "pss-coding-agent": "./bin/pss.js",
-        },
-      }
-    : {};
+  if (packageName === "runtime") {
+    return { bin: { "pss-eval": "./bin/pss-eval.js" } };
+  }
+  if (packageName === "coding-agent") {
+    return {
+      bin: {
+        pss: "./bin/pss.js",
+        "pss-coding-agent": "./bin/pss.js",
+      },
+    };
+  }
+  return {};
 }
 
 function fixturePackageRoot(cwd, packageName) {
@@ -118,6 +122,12 @@ function writePackageDeclarationFixtures(cwd, packageName, packageRoot) {
   writeFileSync(join(packageRoot, "dist", "index.d.ts"), declaration);
 
   if (packageName === "runtime") {
+    mkdirSync(join(packageRoot, "bin"), { recursive: true });
+    writeFileSync(
+      join(packageRoot, "bin", "pss-eval.js"),
+      "#!/usr/bin/env node\nimport '../dist/evals/cli.js';\n",
+      { mode: 0o755 }
+    );
     writeRuntimeDeclarationFixtures(cwd, packageName);
     return;
   }

@@ -340,7 +340,7 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
   compaction records that fit it); `/fork <name>` forks at the latest
   state under that name. Applied thread migrations carry over so they
   never re-run on the fork, and the parent thread key is recorded
-- `/clear` — wipe the current session in place (legacy behavior)
+- `/clear [name]` — alias for `/new [name]`; starts a new empty session and preserves the previous session for `/resume`
 - `/compact [custom instructions]` — summarize the current durable conversation
   through the runtime's compaction pipeline and replace its model-facing
   context with the smaller continuation handoff; full history remains available
@@ -594,6 +594,9 @@ otherwise from `process.env`. An injected `client` replaces the OpenSearch
 client entirely.
 
 ```ts
+import { createCodingAgentTools } from "@minpeter/pss-coding-agent";
+import { resolveStartTuiTools } from "@minpeter/pss-coding-agent/tools";
+
 const tools = createCodingAgentTools({ webToolsAvailability: "required" });
 
 // Custom entrypoint around the TUI defaults:

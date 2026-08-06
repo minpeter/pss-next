@@ -16,7 +16,7 @@ pnpm -F "@minpeter/pss-worker-agent" ship   # deploy
 
 After local `dev`, run `ship` again to restore the prod webhook.
 
-## Session transport (RFC 0002 phase 1)
+## Session transport (RFC 0002)
 
 The initial remote submit-turn RPC is the existing authenticated tRPC mutation:
 
@@ -27,20 +27,20 @@ Authorization: Bearer <WORKER_AGENT_TUI_TOKEN>
 
 Development accepts requests without a token; production requires the configured bearer token. `createRemoteTuiDeliveryClient()` is the supported client for this compatibility surface. It waits for the existing tool-only delivery result, so its response is a delivery result rather than an admission receipt.
 
-RFC 0002 names the generalized transport fields as follows:
+The compatibility RPC differs from the implemented generalized transport:
 
 | RFC shape | Initial `tui.turn` shape | Notes |
 | --- | --- | --- |
 | `SubmitTurnRequest.channel` | `input.channel` | Currently restricted to `{ kind: "tui", id }`. |
 | `SubmitTurnRequest.text` | `input.text` | Trimmed and rejected when empty. |
 | `SubmitTurnRequest.sessionScopeKey` | `input.sessionScopeKey` | Optional and trimmed before forwarding. |
-| `SubmitTurnRequest.idempotencyKey` | Not present | Added by the generalized session admission surface in a later phase. |
+| `SubmitTurnRequest.idempotencyKey` | Not present | Available on `session.submitTurn`. |
 | `SubmitTurnResponse.accepted` | `output.delivered` | Not equivalent: `delivered` reports tool delivery after the run. |
-| `SubmitTurnResponse.runId` | Not present | Added by the generalized durable-admission surface. |
+| `SubmitTurnResponse.runId` | Not present | Returned by `session.submitTurn`. |
 | `SubmitTurnResponse.threadKey` | Implicit (`default` inside the channel DO) | Runtime naming remains `threadKey`; transport naming remains `session`. |
-| `SubmitTurnResponse.eventCursor` | Not present | Clients use durable replay cursors when replay is available. |
+| `SubmitTurnResponse.eventCursor` | Not present | Clients use durable replay cursors through `session.replayEvents`. |
 
-The current route is intentionally retained while the `session` transport is added. Telegram continues to use its webhook delivery path.
+The route is intentionally retained for compatibility alongside the `session` transport. Telegram continues to use its webhook delivery path.
 
 ## Session submit and replay
 
