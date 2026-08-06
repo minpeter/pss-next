@@ -1312,20 +1312,33 @@ any app-owned background run cancellation, cleanup, and notification policy.
 
 ## SQL + durable queue host
 
-`@minpeter/pss-runtime/platform/sql-queue` is a platform-neutral production
-host boundary for conventional servers. It deliberately does not select a SQL
-client or queue vendor:
+`@minpeter/pss-runtime/platform/sql-queue` is a platform-neutral integration
+boundary for conventional production servers. It deliberately does not select
+a SQL client, schema, queue vendor, or migration framework:
 
 ```ts
-import { createSqlQueueHost } from "@minpeter/pss-runtime/platform/sql-queue";
+import {
+  createSqlQueueHost,
+  drainSqlQueue,
+  reconcileSqlQueuedRuns,
+} from "@minpeter/pss-runtime/platform/sql-queue";
 
 const host = createSqlQueueHost({
   store: postgresStorePort,
-  queue: {
-    // Must be durable and idempotent by work.workId.
-    enqueue: (work) => jobs.insertOnConflictDoNothing(work),
-  },
+  queue: postgresQueuePort, // enqueue + leased claim/ack/nack
   // Optional fast-path signal; durable queue polling remains the fallback.
+  wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
+});
+
+await drainSqlQueue({
+  queue: postgresQueuePort,
+  handle: (work) => dispatchWork(work),
+});
+
+// Run periodically as well as at worker startup.
+await reconcileSqlQueuedRuns({
+  queue: postgresQueuePort,
+  runs: postgresQueuedRunQuery,
   wake: (dueAtMs) => workerWake.publish({ dueAtMs }),
 });
 ```
@@ -1334,17 +1347,36 @@ A `SqlHostStorePort` exposes the normal runtime stores and an atomic
 `transaction` callback. A PostgreSQL implementation should acquire one pooled
 connection, issue `BEGIN`, create transaction-scoped store ports for that
 connection, then `COMMIT` on success or `ROLLBACK` on failure. Optimistic
-thread/checkpoint writes and queue inserts should use unique constraints or
-compare-and-swap predicates rather than process locks.
+thread/checkpoint writes should use unique constraints or compare-and-swap
+predicates rather than process locks.
 
-`SqlQueuePort.enqueue` receives either run or thread-prompt work with a stable
-`workId` and `dueAtMs`. Persist it with a unique key (for example `INSERT ...
-ON CONFLICT (work_id) DO NOTHING`). The adapter calls `wake` only after enqueue
-resolves. Wake is advisory: workers must poll the durable queue for due,
-unacked work, and a wake failure may reject scheduling even though the item is
-already safely queued. Retrying is therefore safe and expected.
+`SqlQueuePort.enqueue` receives run or thread-prompt work with a stable
+`workId` and `dueAtMs`; persist it with a unique key (`INSERT ... ON CONFLICT
+(work_id) DO NOTHING`). `claim` must atomically lease one due item and fence
+workers with its `claimId`; expired leases must become claimable. `list` exposes
+due work for bounded inspection without claiming it. `ack` removes only a
+currently fenced claim, while `nack` retains it until `retryAtMs`.
+`drainSqlQueue` acknowledges only after the handler succeeds, nacks failures
+for retry, and leaves work recoverable through lease expiry if a worker dies.
 
-The package contract suite runs this adapter against an in-memory reference
-SQL port and queue. Production database drivers remain application-owned so
-the runtime does not impose a PostgreSQL client, pool, migration system, or
-message broker.
+The adapter calls `wake` only after durable enqueue resolves. Wake is advisory:
+a wake failure can reject scheduling even though the item is safely queued, so
+retry is safe and expected.
+
+### Store-to-queue crash recovery
+
+Creating a queued turn and calling `HostScheduler.enqueueRun` are not one
+atomic operation. A process can crash after the store transaction commits but
+before queue insertion. Deployments must either implement a transactional
+outbox in their SQL port or run `reconcileSqlQueuedRuns` periodically. Its
+`SqlQueuedRunSource` should query every durable, runnable queued turn (including
+recovery statuses selected by the deployment). Reconciliation recreates the
+stable `run:<runId>` work item idempotently, so existing queue rows are safe and
+orphaned turns are repaired. An enqueue failure stops the pass without changing
+the durable turn; a later pass retries it.
+
+The package runs the shared `HostStore` and `HostScheduler` suites through the
+adapter using `InMemoryExecutionStore` and a leased-map reference queue, plus
+consumer/reconciliation behavior tests. These prove adapter delegation and
+queue semantics, **not PostgreSQL SQL correctness**. Production database
+implementations and integration tests remain application-owned.

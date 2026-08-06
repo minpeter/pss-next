@@ -4,4 +4,4 @@ packages:
     type: patch
 ---
 
-Add a platform-neutral SQL store and durable queue host adapter with injected wake signaling and shared contract coverage.
+Add platform-neutral SQL store and leased durable-queue integration ports, worker draining, and queued-run reconciliation with in-memory reference contract coverage.

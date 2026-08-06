@@ -5,29 +5,7 @@ import {
   threadPromptScheduledWorkId,
 } from "../../execution/scheduled-work";
 
-export interface SqlQueueRunWork {
-  readonly dueAtMs: number;
-  readonly kind: "run";
-  readonly runId: string;
-  readonly workId: string;
-}
-
-export interface SqlQueueThreadPromptWork {
-  readonly dueAtMs: number;
-  readonly kind: "thread-prompt";
-  readonly prompt: ScheduledThreadPrompt;
-  readonly workId: string;
-}
-
-export type SqlQueueWork = SqlQueueRunWork | SqlQueueThreadPromptWork;
-
-/**
- * Durable queue boundary. `enqueue` must be idempotent by `work.workId`.
- * A PostgreSQL implementation can use `INSERT ... ON CONFLICT DO NOTHING`.
- */
-export interface SqlQueuePort {
-  enqueue(work: SqlQueueWork): Promise<void>;
-}
+import type { SqlQueuePort, SqlQueueWork } from "./queue";
 
 export interface SqlQueueSchedulerOptions {
   readonly clock?: () => number;
