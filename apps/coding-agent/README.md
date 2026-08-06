@@ -594,10 +594,8 @@ otherwise from `process.env`. An injected `client` replaces the OpenSearch
 client entirely.
 
 ```ts
-import {
-  createCodingAgentTools,
-  resolveStartTuiTools,
-} from "@minpeter/pss-coding-agent";
+import { createCodingAgentTools } from "@minpeter/pss-coding-agent";
+import { resolveStartTuiTools } from "@minpeter/pss-coding-agent/tools";
 
 const tools = createCodingAgentTools({ webToolsAvailability: "required" });
 

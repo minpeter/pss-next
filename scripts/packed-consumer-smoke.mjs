@@ -29,6 +29,7 @@ try {
     `import { createAgent } from "@minpeter/pss-runtime";
 import { createInMemoryHost } from "@minpeter/pss-runtime/platform/memory";
 import { createCodingAgent, createCodingAgentTools } from "@minpeter/pss-coding-agent";
+import { resolveStartTuiTools } from "@minpeter/pss-coding-agent/tools";
 import { createWorkspaceTools } from "@minpeter/pss-coding-agent/workspace-tools";
 
 for (const [name, value] of Object.entries({
@@ -37,6 +38,7 @@ for (const [name, value] of Object.entries({
   createCodingAgentTools,
   createInMemoryHost,
   createWorkspaceTools,
+  resolveStartTuiTools,
 })) {
   if (typeof value !== "function") throw new TypeError(name + " is not callable");
 }
