@@ -34,4 +34,18 @@ describe("spawnPssClient", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     await expect(client.close()).resolves.toBeUndefined();
   });
+
+  it("settles close when stdin fails while the child remains alive", async () => {
+    const client = spawnPssClient({
+      args: ["-e", "require('node:fs').closeSync(0);setInterval(()=>{},1000)"],
+      command: process.execPath,
+      killTimeoutMs: 100,
+      shutdownTimeoutMs: 100,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await expect(
+      client.request("prompt", { prompt: "x".repeat(1024 * 1024) })
+    ).rejects.toBeInstanceOf(Error);
+    await expect(client.close()).rejects.toMatchObject({ code: "EPIPE" });
+  });
 });

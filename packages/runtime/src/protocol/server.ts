@@ -81,6 +81,7 @@ export async function servePssProtocol(
             const tracked = Promise.resolve(work).finally(() =>
               background.delete(tracked)
             );
+            tracked.catch(() => undefined);
             background.add(tracked);
           },
           emit: (event, requestId = request.id) =>

@@ -17,7 +17,8 @@ export class JsonlFrameError extends Error {
 
 /** Incrementally frames bounded UTF-8 JSON Lines. Empty lines are ignored. */
 export class JsonlDecoder {
-  #buffer: Uint8Array<ArrayBufferLike> = new Uint8Array();
+  #buffer: Uint8Array;
+  #length = 0;
   #discardingOversizedFrame = false;
   readonly #maxFrameBytes: number;
   readonly #textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -30,6 +31,7 @@ export class JsonlDecoder {
       throw new RangeError("maxFrameBytes must be a positive safe integer");
     }
     this.#maxFrameBytes = maxFrameBytes;
+    this.#buffer = new Uint8Array(Math.min(1024, maxFrameBytes + 1));
   }
 
   push(chunk: string | Uint8Array): unknown[] {
@@ -39,8 +41,33 @@ export class JsonlDecoder {
   pushResults(chunk: string | Uint8Array): JsonlDecodeResult[] {
     const bytes =
       typeof chunk === "string" ? this.#textEncoder.encode(chunk) : chunk;
-    this.#buffer = concatenate(this.#buffer, bytes);
-    return this.#drain(false);
+    const results: JsonlDecodeResult[] = [];
+    let cursor = 0;
+    while (cursor < bytes.byteLength) {
+      const newline = bytes.indexOf(10, cursor);
+      const end = newline < 0 ? bytes.byteLength : newline;
+      if (!this.#discardingOversizedFrame) {
+        const error = this.#append(bytes.subarray(cursor, end));
+        if (error) {
+          results.push({ error });
+        }
+      }
+      if (newline < 0) {
+        return results;
+      }
+      if (this.#discardingOversizedFrame) {
+        this.#discardingOversizedFrame = false;
+        this.#length = 0;
+      } else {
+        const parsed = this.#parseBufferedFrame();
+        if (parsed !== undefined) {
+          results.push(parsed);
+        }
+        this.#length = 0;
+      }
+      cursor = newline + 1;
+    }
+    return results;
   }
 
   finish(): unknown[] {
@@ -48,72 +75,56 @@ export class JsonlDecoder {
   }
 
   finishResults(): JsonlDecodeResult[] {
-    return this.#drain(true);
-  }
-
-  #drain(finish: boolean): JsonlDecodeResult[] {
-    const results: JsonlDecodeResult[] = [];
-    while (true) {
-      const newline = this.#buffer.indexOf(10);
-      if (this.#discardingOversizedFrame) {
-        if (!this.#finishDiscard(newline)) {
-          return results;
-        }
-        continue;
-      }
-      if (newline < 0 && !finish) {
-        this.#checkIncompleteFrame(results);
-        return results;
-      }
-      if (newline < 0 && this.#buffer.byteLength === 0) {
-        return results;
-      }
-      const frame = this.#takeFrame(newline);
-      const parsed = this.#decodeFrame(frame);
-      if (parsed !== undefined) {
-        results.push(parsed);
-      }
-      if (newline < 0) {
-        return results;
-      }
+    if (this.#discardingOversizedFrame) {
+      this.#discardingOversizedFrame = false;
+      this.#length = 0;
+      return [];
     }
-  }
-
-  #finishDiscard(newline: number): boolean {
-    if (newline < 0) {
-      this.#buffer = new Uint8Array();
-      return false;
+    if (this.#length === 0) {
+      return [];
     }
-    this.#buffer = this.#buffer.slice(newline + 1);
-    this.#discardingOversizedFrame = false;
-    return true;
+    const parsed = this.#parseBufferedFrame();
+    this.#length = 0;
+    return parsed === undefined ? [] : [parsed];
   }
 
-  #checkIncompleteFrame(results: JsonlDecodeResult[]): void {
-    if (payloadByteLength(this.#buffer) <= this.#maxFrameBytes) {
+  #append(bytes: Uint8Array): JsonlFrameError | undefined {
+    const maximumBufferedBytes = this.#maxFrameBytes + 1;
+    const available = maximumBufferedBytes - this.#length;
+    const copied = Math.min(available, bytes.byteLength);
+    this.#ensureCapacity(this.#length + copied);
+    this.#buffer.set(bytes.subarray(0, copied), this.#length);
+    this.#length += copied;
+    const exceedsLimit =
+      bytes.byteLength > copied ||
+      payloadByteLength(this.#buffer.subarray(0, this.#length)) >
+        this.#maxFrameBytes;
+    if (!exceedsLimit) {
       return;
     }
-    results.push({ error: this.#oversizedError() });
-    this.#buffer = new Uint8Array();
+    this.#length = 0;
     this.#discardingOversizedFrame = true;
+    return this.#oversizedError();
   }
 
-  #takeFrame(newline: number): Uint8Array<ArrayBufferLike> {
-    const end = newline < 0 ? this.#buffer.byteLength : newline;
-    const frame = this.#buffer.slice(0, end);
-    this.#buffer =
-      newline < 0 ? new Uint8Array() : this.#buffer.slice(newline + 1);
-    return frame;
+  #ensureCapacity(required: number): void {
+    if (required <= this.#buffer.byteLength) {
+      return;
+    }
+    const capacity = Math.min(
+      this.#maxFrameBytes + 1,
+      Math.max(required, this.#buffer.byteLength * 2)
+    );
+    const grown = new Uint8Array(capacity);
+    grown.set(this.#buffer.subarray(0, this.#length));
+    this.#buffer = grown;
   }
 
-  #decodeFrame(frame: Uint8Array): JsonlDecodeResult | undefined {
+  #parseBufferedFrame(): JsonlDecodeResult | undefined {
+    const frame = this.#buffer.subarray(0, this.#length);
     if (payloadByteLength(frame) > this.#maxFrameBytes) {
       return { error: this.#oversizedError() };
     }
-    return this.#parse(frame);
-  }
-
-  #parse(frame: Uint8Array): JsonlDecodeResult | undefined {
     try {
       const decoded = this.#textDecoder.decode(frame);
       const line = decoded.endsWith("\r") ? decoded.slice(0, -1) : decoded;
@@ -156,16 +167,6 @@ export function encodeJsonl(value: unknown): string {
 
 function payloadByteLength(frame: Uint8Array): number {
   return frame.byteLength - (frame.at(-1) === 13 ? 1 : 0);
-}
-
-function concatenate(left: Uint8Array, right: Uint8Array): Uint8Array {
-  if (left.byteLength === 0) {
-    return right.slice();
-  }
-  const joined = new Uint8Array(left.byteLength + right.byteLength);
-  joined.set(left);
-  joined.set(right, left.byteLength);
-  return joined;
 }
 
 function valuesOrThrow(results: readonly JsonlDecodeResult[]): unknown[] {

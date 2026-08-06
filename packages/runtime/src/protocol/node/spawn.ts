@@ -47,6 +47,10 @@ export function spawnPssClient({
   child.once("exit", () => settleCompletion({}));
   child.stdin.on("error", (error) => {
     child.stdout?.destroy(error);
+    settleCompletion({ error });
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+    }
   });
 
   const transport: ProtocolTransport = {

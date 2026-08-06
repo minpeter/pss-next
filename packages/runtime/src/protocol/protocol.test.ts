@@ -254,4 +254,58 @@ describe("PSS protocol", () => {
       id: null,
     });
   });
+
+  it("rejects requests after close and cancels request-close races", async () => {
+    let writes = 0;
+    const client = new PssProtocolClient({
+      readable: {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => new Promise<IteratorResult<string>>(() => undefined),
+            return: () => Promise.resolve({ done: true, value: undefined }),
+          };
+        },
+      },
+      write() {
+        writes += 1;
+      },
+    });
+    const racing = client.state();
+    await client.close();
+    await expect(racing).rejects.toThrow("closed");
+    await expect(client.state()).rejects.toThrow("closed");
+    expect(writes).toBe(0);
+  });
+
+  it("observes deferred rejections while input remains open", async () => {
+    let feed: ((value: string | null) => void) | undefined;
+    const readable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<string>>((resolve) => {
+              feed = (value) =>
+                resolve(
+                  value === null
+                    ? { done: true, value: undefined }
+                    : { done: false, value }
+                );
+            }),
+        };
+      },
+    };
+    const serving = servePssProtocol(
+      { readable, write: () => undefined },
+      {
+        handle(_method, _params, context) {
+          context.defer?.(Promise.reject(new Error("background failed")));
+          return { accepted: true };
+        },
+      }
+    );
+    feed?.('{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"prompt"}\n');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    feed?.(null);
+    await expect(serving).resolves.toBeUndefined();
+  });
 });

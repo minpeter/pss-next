@@ -74,4 +74,15 @@ describe("JSONL framing", () => {
       "Invalid JSONL frame"
     );
   });
+
+  it("assembles a large frame from tiny chunks", () => {
+    const payload = "x".repeat(64 * 1024);
+    const encoded = encodeJsonl({ payload });
+    const decoder = new JsonlDecoder({ maxFrameBytes: encoded.length });
+    const values: unknown[] = [];
+    for (const character of encoded) {
+      values.push(...decoder.push(character));
+    }
+    expect(values).toEqual([{ payload }]);
+  });
 });

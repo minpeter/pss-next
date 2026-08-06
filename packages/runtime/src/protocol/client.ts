@@ -50,6 +50,9 @@ export class PssProtocolClient {
     method: ProtocolMethod,
     params?: Record<string, unknown>
   ): Promise<T> {
+    if (this.#closed) {
+      return Promise.reject(new Error("PSS protocol client is closed"));
+    }
     if (this.#readFailure !== undefined) {
       return Promise.reject(this.#readFailure);
     }
@@ -73,7 +76,12 @@ export class PssProtocolClient {
       protocol: PSS_PROTOCOL_VERSION,
     };
     Promise.resolve()
-      .then(() => this.#transport.write(encodeJsonl(message)))
+      .then(() => {
+        if (this.#closed) {
+          throw new Error("PSS protocol client is closed");
+        }
+        return this.#transport.write(encodeJsonl(message));
+      })
       .catch((error) => {
         this.#pendingReject(id, error);
       });
