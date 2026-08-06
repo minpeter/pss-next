@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import {
   sessionDisplayKey,
@@ -53,6 +54,7 @@ export function createSessionCommands(
 ): TuiCommand[] {
   return [
     createNewCommand(context),
+    createSessionInfoCommand(context),
     createResumeCommand(context),
     createForkCommand(context),
     createNameCommand(context),
@@ -84,9 +86,8 @@ function createNewCommand(context: SessionCommandContext): TuiCommand {
 
 function createResumeCommand(context: SessionCommandContext): TuiCommand {
   return {
-    aliases: ["resume"],
     description:
-      "Resume, rename, or delete a session: /session [key|name] (also /resume; no argument opens the picker)",
+      "Resume, rename, or delete a session: /resume [key|name] (no argument opens the picker)",
     execute: (input) =>
       runSessionCommand(async () => {
         if (input.args.length === 0) {
@@ -139,6 +140,25 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
       }
       return completions;
     },
+    name: "resume",
+  };
+}
+
+function createSessionInfoCommand(context: SessionCommandContext): TuiCommand {
+  return {
+    description: "Show current session information and message statistics",
+    execute: (input) =>
+      runSessionCommand(async () => {
+        if (input.args.length > 0) {
+          return { message: "Usage: /session", success: false };
+        }
+        const session = context.currentSession();
+        const history = await context.manager.loadSessionHistory(session.key);
+        return {
+          message: formatCurrentSessionInfo(session, history),
+          success: true,
+        };
+      }),
     name: "session",
   };
 }
@@ -280,4 +300,22 @@ async function runSessionCommand(
 function optionalName(args: readonly string[]): string | undefined {
   const name = args.join(" ").trim();
   return name.length === 0 ? undefined : name;
+}
+
+function formatCurrentSessionInfo(
+  session: SessionIndexEntry,
+  history: readonly ModelMessage[]
+): string {
+  const count = (role: ModelMessage["role"]): number =>
+    history.filter((message) => message.role === role).length;
+  return [
+    `Session: ${session.name ?? "untitled"}`,
+    `Key: ${session.key}`,
+    ...(session.parentKey === undefined
+      ? []
+      : [`Parent: ${session.parentKey}`]),
+    `Messages: ${history.length} (${count("user")} user, ${count("assistant")} assistant, ${count("tool")} tool)`,
+    `Created: ${session.createdAt}`,
+    `Updated: ${session.updatedAt}`,
+  ].join("\n");
 }

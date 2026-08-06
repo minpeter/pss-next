@@ -1,51 +1,8 @@
-import {
-  type AgentOptions,
-  summarizeCompactionRange,
-  type ThreadCompactionInput,
-} from "@minpeter/pss-runtime";
-import type { ModelMessage } from "ai";
 import type { TuiCommand, TuiCommandResult } from "./command";
 
 export interface CompactCommandContext {
-  /** Summarize and compact the current durable thread. */
-  compact(): Promise<{ compactedMessages: number }>;
-}
-
-interface CompactCurrentThreadOptions {
-  readonly commit: (input: ThreadCompactionInput) => Promise<void>;
-  readonly history: readonly ModelMessage[];
-  readonly instructions: string;
-  readonly model: AgentOptions["model"];
-  readonly summarize?: (options: {
-    readonly history: readonly ModelMessage[];
-    readonly model: {
-      readonly instructions: string;
-      readonly model: AgentOptions["model"];
-    };
-  }) => Promise<string>;
-}
-
-/** Generate a continuation handoff and atomically install it as context. */
-export async function compactCurrentThread({
-  commit,
-  history,
-  instructions,
-  model,
-  summarize = summarizeCompactionRange,
-}: CompactCurrentThreadOptions): Promise<{ compactedMessages: number }> {
-  if (history.length === 0) {
-    throw new Error("the current session has no conversation history");
-  }
-  const summary = await summarize({
-    history,
-    model: { instructions, model },
-  });
-  await commit({
-    endSeqExclusive: history.length,
-    startSeq: 0,
-    summary,
-  });
-  return { compactedMessages: history.length };
+  /** Run runtime-owned compaction for the current durable thread. */
+  compact(instructions?: string): Promise<boolean>;
 }
 
 /** Explicit context compaction, matching the interactive Pi `/compact` UX. */
@@ -53,14 +10,17 @@ export function createCompactCommand(
   context: CompactCommandContext
 ): TuiCommand {
   return {
-    description: "Compact the current session context",
-    execute: async (): Promise<TuiCommandResult> => {
+    description: "Compact session context: /compact [custom instructions]",
+    execute: async (input): Promise<TuiCommandResult> => {
       try {
-        const { compactedMessages } = await context.compact();
-        return {
-          message: `Compacted ${compactedMessages} conversation messages.`,
-          success: true,
-        };
+        const instructions = input.args.join(" ").trim() || undefined;
+        const compacted = await context.compact(instructions);
+        return compacted
+          ? { message: "Session context compacted.", success: true }
+          : {
+              message: "Nothing to compact in the current session.",
+              success: true,
+            };
       } catch (error) {
         return {
           message: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,

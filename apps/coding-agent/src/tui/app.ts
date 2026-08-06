@@ -53,7 +53,7 @@ import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createReloadCommand } from "./command-set";
-import { compactCurrentThread, createCompactCommand } from "./compact-command";
+import { createCompactCommand } from "./compact-command";
 import { parseDirectStartArguments } from "./direct-start";
 import { createModelCommand } from "./model-command";
 import {
@@ -264,22 +264,18 @@ export async function startTui(
     const activeModelSession = modelSession;
     const builtInCommands = [
       createCompactCommand({
-        compact: async () => {
-          const history = await sessionManager.loadSessionHistory(
-            currentSession.key
-          );
+        compact: async (instructions) => {
           const clearCompactingStatus = extensionUi?.status(
             "Compacting session context..."
           );
           try {
-            const result = await compactCurrentThread({
-              commit: (input) => thread.compact(input),
-              history,
-              instructions: currentInstructions(),
-              model,
-            });
-            resetUsageTotals();
-            return result;
+            const compacted = await thread.compact(
+              instructions === undefined ? {} : { instructions }
+            );
+            if (compacted) {
+              resetUsageTotals();
+            }
+            return compacted;
           } finally {
             clearCompactingStatus?.();
           }

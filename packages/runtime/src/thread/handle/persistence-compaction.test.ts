@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import { hostWithThreads } from "../../testing/host-with-threads";
 import {
@@ -63,5 +63,98 @@ describe("Agent thread persistence compaction", () => {
       ],
       schemaVersion: 2,
     });
+  });
+
+  it("manually compacts through prior summaries, custom instructions, and context hooks", async () => {
+    const store = new SpyStore();
+    const seenHistory: ModelMessage[][] = [];
+    const transformModelContext = vi.fn(() => ({
+      action: "continue" as const,
+    }));
+    const agent = new Agent({
+      hooks: { transformModelContext },
+      host: hostWithThreads(store),
+      model: createCallbackModel(({ history }) => {
+        seenHistory.push([...history]);
+        const isSummary = history.some(
+          (message) =>
+            message.role === "system" &&
+            typeof message.content === "string" &&
+            message.content.includes("Focus on architectural decisions")
+        );
+        return Promise.resolve([
+          assistantMessage(isSummary ? "combined handoff" : "DONE"),
+        ]);
+      }),
+    });
+    const thread = agent.thread("manual-compact");
+
+    await collect(await thread.send("old"));
+    await thread.compact({
+      endSeqExclusive: 2,
+      startSeq: 0,
+      summary: "prior handoff",
+    });
+    await collect(await thread.send("newer"));
+
+    await expect(
+      thread.compact({ instructions: "Focus on architectural decisions" })
+    ).resolves.toBe(true);
+
+    const summaryCall = seenHistory.at(-1) ?? [];
+    expect(summaryCall).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.stringContaining("prior handoff"),
+          role: "user",
+        }),
+      ])
+    );
+    expect(transformModelContext).toHaveBeenCalledTimes(3);
+    expect(store.threads.get("manual-compact")?.state).toMatchObject({
+      compactions: [
+        expect.anything(),
+        expect.objectContaining({
+          endSeqExclusive: 4,
+          summary: { content: "combined handoff", role: "system" },
+        }),
+      ],
+    });
+  });
+
+  it("reports no-op manual compaction for an empty thread", async () => {
+    const agent = new Agent({
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("unused")])
+      ),
+    });
+
+    await expect(agent.thread("empty").compact()).resolves.toBe(false);
+  });
+
+  it("rejects manual compaction while a turn is active", async () => {
+    let releaseModel: (() => void) | undefined;
+    const modelGate = new Promise<void>((resolve) => {
+      releaseModel = resolve;
+    });
+    let modelStarted = false;
+    const agent = new Agent({
+      model: createCallbackModel(async () => {
+        modelStarted = true;
+        await modelGate;
+        return [assistantMessage("DONE")];
+      }),
+    });
+    const thread = agent.thread("busy");
+    const turn = await thread.send("work");
+    const collecting = collect(turn);
+    await vi.waitFor(() => expect(modelStarted).toBe(true));
+
+    await expect(thread.compact()).rejects.toThrow(
+      "Cannot compact while a turn is active."
+    );
+
+    releaseModel?.();
+    await collecting;
   });
 });

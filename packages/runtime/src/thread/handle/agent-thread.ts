@@ -6,6 +6,8 @@ import { deferred } from "../../internal/deferred";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { AgentInput, UserInput } from "../input/input";
 import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
+import { compactThreadManually } from "../runtime/auto-compaction-runner";
+import type { CompactionSummaryOptions } from "../runtime/auto-compaction-types";
 import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
@@ -14,6 +16,7 @@ import {
   reserveThreadInputAdmission,
   type ThreadInputAdmissionReservation,
 } from "../runtime/thread-input-admission-coordinator";
+import { createTurnModelTransforms } from "../runtime/turn-model-transforms";
 import { threadKilledError } from "../state/thread-errors";
 import type {
   ThreadCompactionInput,
@@ -108,7 +111,9 @@ export class AgentThread {
     return run;
   }
 
-  async compact(input: ThreadCompactionInput): Promise<void> {
+  async compact(
+    input?: CompactionSummaryOptions | ThreadCompactionInput
+  ): Promise<boolean> {
     this.#assertOpen();
 
     await this.#ensureStarted();
@@ -116,7 +121,36 @@ export class AgentThread {
 
     this.#assertOpen();
 
-    await this.#context.events.compact(this.#context.state, input);
+    if (input !== undefined && "summary" in input) {
+      await this.#context.events.compact(this.#context.state, input);
+      return true;
+    }
+    return await this.#enqueueInputAdmission(async () => {
+      this.#assertOpen();
+      if (this.#context.turn.state.tag !== "none") {
+        throw new Error("Cannot compact while a turn is active.");
+      }
+      const transforms = createTurnModelTransforms({
+        hookRuntime: this.#context.execution.hookRuntime,
+        state: this.#context.state,
+        threadKey: this.#context.threadKey,
+      });
+      return await compactThreadManually({
+        compact: (compactionInput, guard) =>
+          this.#context.events.compact(
+            this.#context.state,
+            compactionInput,
+            guard
+          ),
+        latestContextTransform: transforms.latestContextTransform,
+        model: this.#context.model,
+        signal: new AbortController().signal,
+        state: this.#context.state,
+        summaryOptions: input,
+        threadKey: this.#context.threadKey,
+        transformModelContext: transforms.transformModelContext,
+      });
+    });
   }
 
   events(options?: ThreadEventReadOptions): AsyncIterable<StoredThreadEvent> {

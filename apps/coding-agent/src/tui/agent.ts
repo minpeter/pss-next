@@ -1597,15 +1597,33 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const steeringTurn = session.activeTurn;
     if (steeringTurn !== undefined) {
       if (trimmed.length > 0) {
-        processSteeringInput(trimmed, steeringTurn.run).catch(
-          (error: unknown) => {
-            clearStatus();
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            addSystemMessage(chatContainer, `Error: ${errorMessage}`);
-            tui.requestRender();
-          }
-        );
+        const parsed = parseCommand(trimmed);
+        const resolvedCommand =
+          parsed === null
+            ? undefined
+            : (commandSet.commandAliasLookup.get(parsed.name.toLowerCase()) ??
+              parsed.name.toLowerCase());
+        const operation =
+          resolvedCommand === "compact"
+            ? (async () => {
+                editor.disableSubmit = true;
+                editor.setText("");
+                try {
+                  await processCommandInput(trimmed);
+                } finally {
+                  editor.disableSubmit = false;
+                  tui.setFocus(composerLayer);
+                  tui.requestRender();
+                }
+              })()
+            : processSteeringInput(trimmed, steeringTurn.run);
+        operation.catch((error: unknown) => {
+          clearStatus();
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+          tui.requestRender();
+        });
       }
       return;
     }

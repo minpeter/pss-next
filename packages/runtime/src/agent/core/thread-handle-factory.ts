@@ -26,7 +26,7 @@ export function createThreadPublicHandle({
   ): AgentTurn => applyAgentInstrumentations(turn, instrumentations, context);
 
   const publicHandle: ThreadHandle = {
-    compact: (input) => thread.compact(input),
+    compact: thread.compact.bind(thread),
     delete: async () => {
       evict(key);
       await thread.delete();

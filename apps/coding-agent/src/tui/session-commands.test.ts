@@ -171,13 +171,34 @@ describe("/new", () => {
   });
 });
 
-describe("/resume", () => {
-  it("exposes /session as the canonical Pi-compatible command", () => {
-    const { context } = createContext();
-    expect(command(context, "session").name).toBe("session");
-    expect(command(context, "session").aliases).toContain("resume");
+describe("/session", () => {
+  it("shows current session metadata and message statistics", async () => {
+    const { context, manager } = createContext();
+    (manager.loadSessionHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { content: "question", role: "user" },
+      { content: "answer", role: "assistant" },
+      { content: [], role: "tool" },
+    ]);
+
+    const result = await command(context, "session").execute({ args: [] });
+
+    expect(result).toMatchObject({ success: true });
+    expect(result.message).toContain("Key: cwd:/work");
+    expect(result.message).toContain(
+      "Messages: 3 (1 user, 1 assistant, 1 tool)"
+    );
   });
 
+  it("rejects arguments instead of switching sessions", async () => {
+    const { context, manager } = createContext();
+    await expect(
+      command(context, "session").execute({ args: ["other"] })
+    ).resolves.toEqual({ message: "Usage: /session", success: false });
+    expect(manager.switchToSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("/resume", () => {
   it("opens the inline session selector without arguments", async () => {
     const { context } = createContext();
     const result = await command(context, "resume").execute({ args: [] });

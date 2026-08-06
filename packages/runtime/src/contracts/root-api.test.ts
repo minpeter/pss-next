@@ -25,6 +25,7 @@ import type {
   AgentInstrumentationOperation,
   AgentOptions,
   CompactionContextMessage,
+  CompactionSummaryOptions,
   HostAttachmentStore,
   ModelToolCacheFingerprintMetadata,
   PrepareModelStep,
@@ -201,9 +202,9 @@ describe("runtime public exports", () => {
       summary: "Earlier turns established the durable context.",
     } satisfies CompactionContextMessage;
 
-    expectTypeOf<
-      Parameters<ThreadHandle["compact"]>[0]
-    >().toEqualTypeOf<ThreadCompactionInput>();
+    expectTypeOf<Parameters<ThreadHandle["compact"]>[0]>().toEqualTypeOf<
+      CompactionSummaryOptions | ThreadCompactionInput | undefined
+    >();
     expectTypeOf<
       Parameters<
         NonNullable<AgentHooks["transformModelContext"]>

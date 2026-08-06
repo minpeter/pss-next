@@ -7,7 +7,7 @@ export type ThreadTokenEstimator = (
   messages: readonly ModelMessage[]
 ) => number;
 
-export type AgentCompactionReason = "completed-turn" | "overflow";
+export type AgentCompactionReason = "completed-turn" | "manual" | "overflow";
 
 export interface CompactionSummaryOptions {
   /** Replaces the runtime's default continuation-handoff instructions. */

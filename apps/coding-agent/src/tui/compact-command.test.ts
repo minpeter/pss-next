@@ -1,76 +1,50 @@
-import type { AgentOptions } from "@minpeter/pss-runtime";
 import { describe, expect, it, vi } from "vitest";
-import { compactCurrentThread, createCompactCommand } from "./compact-command";
+import { createCompactCommand } from "./compact-command";
 
 describe("/compact", () => {
-  it("compacts the current thread and reports the affected history", async () => {
-    const compact = vi.fn(() => Promise.resolve({ compactedMessages: 12 }));
+  it("runs runtime-owned compaction", async () => {
+    const compact = vi.fn(() => Promise.resolve(true));
 
     await expect(
       createCompactCommand({ compact }).execute({ args: [] })
     ).resolves.toEqual({
-      message: "Compacted 12 conversation messages.",
+      message: "Session context compacted.",
       success: true,
     });
-    expect(compact).toHaveBeenCalledOnce();
+    expect(compact).toHaveBeenCalledWith(undefined);
   });
 
-  it("turns runtime failures into a command result", async () => {
-    const compact = vi.fn(() => Promise.reject(new Error("history is empty")));
+  it("passes custom summary instructions", async () => {
+    const compact = vi.fn(() => Promise.resolve(true));
+
+    await createCompactCommand({ compact }).execute({
+      args: ["focus", "on", "decisions"],
+    });
+
+    expect(compact).toHaveBeenCalledWith("focus on decisions");
+  });
+
+  it("reports empty history without treating it as an error", async () => {
+    const compact = vi.fn(() => Promise.resolve(false));
 
     await expect(
       createCompactCommand({ compact }).execute({ args: [] })
     ).resolves.toEqual({
-      message: "Compaction failed: history is empty",
+      message: "Nothing to compact in the current session.",
+      success: true,
+    });
+  });
+
+  it("makes active-turn rejection explicit", async () => {
+    const compact = vi.fn(() =>
+      Promise.reject(new Error("Cannot compact while a turn is active."))
+    );
+
+    await expect(
+      createCompactCommand({ compact }).execute({ args: [] })
+    ).resolves.toEqual({
+      message: "Compaction failed: Cannot compact while a turn is active.",
       success: false,
     });
-  });
-});
-
-describe("compactCurrentThread", () => {
-  it("summarizes the full durable history before committing the prefix", async () => {
-    const history = [
-      { content: "question", role: "user" as const },
-      { content: "answer", role: "assistant" as const },
-    ];
-    const summarize = vi.fn(() => Promise.resolve("continuation handoff"));
-    const commit = vi.fn(() => Promise.resolve());
-    const model = {} as AgentOptions["model"];
-
-    await expect(
-      compactCurrentThread({
-        commit,
-        history,
-        instructions: "coding rules",
-        model,
-        summarize,
-      })
-    ).resolves.toEqual({ compactedMessages: 2 });
-    expect(summarize).toHaveBeenCalledWith({
-      history,
-      model: { instructions: "coding rules", model },
-    });
-    expect(commit).toHaveBeenCalledWith({
-      endSeqExclusive: 2,
-      startSeq: 0,
-      summary: "continuation handoff",
-    });
-  });
-
-  it("rejects empty sessions without spending a model call", async () => {
-    const summarize = vi.fn(() => Promise.resolve("unused"));
-    const commit = vi.fn(() => Promise.resolve());
-
-    await expect(
-      compactCurrentThread({
-        commit,
-        history: [],
-        instructions: "coding rules",
-        model: {} as AgentOptions["model"],
-        summarize,
-      })
-    ).rejects.toThrow("no conversation history");
-    expect(summarize).not.toHaveBeenCalled();
-    expect(commit).not.toHaveBeenCalled();
   });
 });

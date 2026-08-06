@@ -26,7 +26,9 @@ export interface AgentThreadContext {
   readonly drain: Fsm<ThreadDrainState>;
   readonly durableInputRecovery: DurableInputRecoveryState;
   readonly events: ThreadEventDispatcher;
-  readonly execution: ThreadExecutionOptions;
+  readonly execution: ThreadExecutionOptions & {
+    readonly hookRuntime: AgentHookRuntime;
+  };
   /** Serializes input admission; concurrency control, not a state. */
   inputAdmissionQueue: Promise<void>;
   readonly inputQueue: QueuedInput[];
