@@ -59,6 +59,11 @@
       "@minpeter/pss-source": "./src/extensions/index.ts",
       "types": "./dist/extensions/index.d.ts",
       "import": "./dist/extensions/index.js"
+    },
+    "./providers": {
+      "@minpeter/pss-source": "./src/provider-registry.ts",
+      "types": "./dist/provider-registry.d.ts",
+      "import": "./dist/provider-registry.js"
     }
   },
   "bin": {
@@ -90,6 +95,8 @@
     "preview:assistant": "tsx --conditions=@minpeter/pss-source scripts/preview-assistant-render.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.32",
+    "@ai-sdk/openai": "4.0.31",
     "@ai-sdk/openai-compatible": "3.0.20",
     "@earendil-works/pi-tui": "^0.83.0",
     "@fontsource-variable/noto-sans": "5.3.0",
