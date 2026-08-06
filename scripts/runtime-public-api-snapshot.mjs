@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { parse } from "@babel/parser";
 
 export const RUNTIME_API_SNAPSHOT_PATH = join(
   "packages",
@@ -7,9 +8,12 @@ export const RUNTIME_API_SNAPSHOT_PATH = join(
   "public-api.snapshot.json"
 );
 
-const DECLARATION_EXPORT_RE =
-  /export\s*\{([\s\S]*?)\}\s*(?:from\s*["'][^"']+["'])?\s*;/g;
-const EXPORT_ALIAS_RE = /\s+as\s+/;
+function compareCodeUnits(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  return left > right ? 1 : 0;
+}
 
 function declarationPath(packageDirectory, target) {
   const typesTarget = typeof target === "string" ? target : target.types;
@@ -19,25 +23,95 @@ function declarationPath(packageDirectory, target) {
   return resolve(packageDirectory, typesTarget);
 }
 
-function declarationExports(file) {
-  const text = readFileSync(file, "utf8");
-  const exports = new Set();
-  const blocks = text.matchAll(DECLARATION_EXPORT_RE);
-  for (const block of blocks) {
-    for (const rawName of block[1].split(",")) {
-      const entry = rawName.trim();
-      if (!entry) {
-        continue;
+function exportedName(node) {
+  if (node.type === "Identifier") {
+    return node.name;
+  }
+  if (node.type === "StringLiteral") {
+    return node.value;
+  }
+  throw new Error(`Unsupported exported name node: ${node.type}`);
+}
+
+function directDeclarationExports(declaration) {
+  if (
+    declaration.type === "TSInterfaceDeclaration" ||
+    declaration.type === "TSTypeAliasDeclaration"
+  ) {
+    return [`type ${declaration.id.name}`];
+  }
+  if (declaration.type === "VariableDeclaration") {
+    return declaration.declarations.map(({ id }) => {
+      if (id.type !== "Identifier") {
+        throw new Error(
+          "Destructured public variable declarations are unsupported"
+        );
       }
-      const typeOnly = entry.startsWith("type ");
-      const withoutType = typeOnly ? entry.slice(5).trim() : entry;
-      const alias = withoutType.split(EXPORT_ALIAS_RE).at(-1)?.trim();
-      if (alias) {
-        exports.add(`${typeOnly ? "type" : "value"} ${alias}`);
-      }
+      return `value ${id.name}`;
+    });
+  }
+  if (
+    declaration.type === "ClassDeclaration" ||
+    declaration.type === "FunctionDeclaration" ||
+    declaration.type === "TSDeclareFunction" ||
+    declaration.type === "TSEnumDeclaration" ||
+    declaration.type === "TSModuleDeclaration"
+  ) {
+    if (declaration.id?.type !== "Identifier") {
+      throw new Error(`Unnamed public ${declaration.type} is unsupported`);
+    }
+    return [`value ${declaration.id.name}`];
+  }
+  throw new Error(`Unsupported public declaration node: ${declaration.type}`);
+}
+
+function addStatementExports(exports, statement, sourceName) {
+  if (statement.type === "ExportDefaultDeclaration") {
+    throw new Error(`${sourceName}: default exports are not supported`);
+  }
+  if (statement.type === "ExportAllDeclaration") {
+    throw new Error(
+      `${sourceName}: export star declarations are not supported`
+    );
+  }
+  if (statement.type !== "ExportNamedDeclaration") {
+    return;
+  }
+  if (statement.declaration) {
+    for (const entry of directDeclarationExports(statement.declaration)) {
+      exports.add(entry);
     }
   }
-  return [...exports].sort((left, right) => left.localeCompare(right));
+  for (const specifier of statement.specifiers) {
+    if (specifier.type !== "ExportSpecifier") {
+      throw new Error(
+        `${sourceName}: ${specifier.type} declarations are not supported`
+      );
+    }
+    const typeOnly =
+      statement.exportKind === "type" || specifier.exportKind === "type";
+    exports.add(
+      `${typeOnly ? "type" : "value"} ${exportedName(specifier.exported)}`
+    );
+  }
+}
+
+export function declarationExportsFromText(text, sourceName = "declaration") {
+  const program = parse(text, {
+    allowUndeclaredExports: true,
+    plugins: ["typescript"],
+    sourceFilename: sourceName,
+    sourceType: "module",
+  }).program;
+  const exports = new Set();
+  for (const statement of program.body) {
+    addStatementExports(exports, statement, sourceName);
+  }
+  return [...exports].sort(compareCodeUnits);
+}
+
+function declarationExports(file) {
+  return declarationExportsFromText(readFileSync(file, "utf8"), file);
 }
 
 export function collectRuntimePublicApi(cwd = process.cwd()) {
@@ -74,7 +148,7 @@ export function collectRuntimePublicApi(cwd = process.cwd()) {
     package: manifest.name,
     surfaces: Object.fromEntries(
       Object.entries(surfaces).sort(([left], [right]) =>
-        left.localeCompare(right)
+        compareCodeUnits(left, right)
       )
     ),
   };
@@ -87,18 +161,18 @@ export function diffPublicApi(expected, actual) {
     ...Object.keys(actual.surfaces ?? {}),
   ]);
   for (const surface of [...surfaceNames].sort((left, right) =>
-    left.localeCompare(right)
+    compareCodeUnits(left, right)
   )) {
     const expectedNames = new Set(expected.surfaces?.[surface] ?? []);
     const actualNames = new Set(actual.surfaces?.[surface] ?? []);
     for (const name of [...expectedNames]
       .filter((name) => !actualNames.has(name))
-      .sort((left, right) => left.localeCompare(right))) {
+      .sort((left, right) => compareCodeUnits(left, right))) {
       lines.push(`- ${surface}: ${name}`);
     }
     for (const name of [...actualNames]
       .filter((name) => !expectedNames.has(name))
-      .sort((left, right) => left.localeCompare(right))) {
+      .sort((left, right) => compareCodeUnits(left, right))) {
       lines.push(`+ ${surface}: ${name}`);
     }
   }
