@@ -132,7 +132,7 @@ describe("dispatchAgentNotification", () => {
     expect(resumeCalls).toBe(2);
   });
 
-  it.each(["cancelled", "completed", "error"] as const)(
+  it.each(["cancelled", "completed", "error", "needs-recovery"] as const)(
     "returns a deduplicated result without rescheduling a %s run",
     async (status) => {
       const baseHost = createInMemoryHost();

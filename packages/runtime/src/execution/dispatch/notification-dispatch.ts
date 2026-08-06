@@ -239,7 +239,12 @@ function scheduleAgentNotification(
 }
 
 function isTerminalTurnStatus(status: TurnRecord["status"]): boolean {
-  return status === "cancelled" || status === "completed" || status === "error";
+  return (
+    status === "cancelled" ||
+    status === "completed" ||
+    status === "error" ||
+    status === "needs-recovery"
+  );
 }
 
 function dispatchedAgentNotification(
