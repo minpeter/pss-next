@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { findRuntimePublicApiSnapshotErrors } from "../runtime-public-api-snapshot.mjs";
 import {
   findBundledExtensionImportLeaks,
   findExtensionlessRelativeImports,
@@ -14,6 +15,7 @@ import { DEFAULT_PACKAGES } from "./shared.mjs";
 
 export function parseArgs(argv) {
   const options = {
+    checkPublicApiSnapshot: true,
     cwd: process.cwd(),
     packages: [...DEFAULT_PACKAGES],
   };
@@ -48,6 +50,9 @@ export function parseArgs(argv) {
 
 export function verifyReleaseArtifacts(options) {
   return [
+    ...(options.checkPublicApiSnapshot
+      ? findRuntimePublicApiSnapshotErrors(options)
+      : []),
     ...requirePackageDists(options),
     ...findPackageBinEntrypointErrors(options),
     ...findExtensionlessRelativeImports(options),
