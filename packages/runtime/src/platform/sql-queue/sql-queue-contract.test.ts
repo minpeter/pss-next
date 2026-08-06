@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { describeExecutionSchedulerContract } from "../../contracts/execution-scheduler/contract";
 import { describeExecutionStoreContract } from "../../contracts/execution-store/contract";
 import type { ScheduledThreadPrompt } from "../../execution/scheduled-work";
@@ -308,46 +308,53 @@ describe("SQL queue consumer contract", () => {
   });
 
   it("anchors heartbeat timing to the lease deadline after a delayed renewal", async () => {
-    const queue = new ReferenceQueue();
-    await queue.enqueue({
-      dueAtMs: 0,
-      kind: "run",
-      runId: "run-delayed-renewal",
-      workId: "run:run-delayed-renewal",
-    });
-    let renewalCalls = 0;
-    const delayedRenewalQueue: SqlQueuePort = {
-      ack: queue.ack.bind(queue),
-      claim: queue.claim.bind(queue),
-      enqueue: queue.enqueue.bind(queue),
-      list: queue.list.bind(queue),
-      nack: queue.nack.bind(queue),
-      renewLease: async (claim, options) => {
-        const renewed = await queue.renewLease(claim, options);
-        renewalCalls += 1;
-        if (renewalCalls === 1) {
-          // The database committed the renewal, but its response consumed most
-          // of that lease. A response-relative cadence would renew too late.
-          await new Promise((resolve) => setTimeout(resolve, 70));
-        }
-        return renewed;
-      },
-    };
+    vi.useFakeTimers({ now: 0 });
+    try {
+      const queue = new ReferenceQueue();
+      await queue.enqueue({
+        dueAtMs: 0,
+        kind: "run",
+        runId: "run-delayed-renewal",
+        workId: "run:run-delayed-renewal",
+      });
+      let renewalCalls = 0;
+      const delayedRenewalQueue: SqlQueuePort = {
+        ack: queue.ack.bind(queue),
+        claim: queue.claim.bind(queue),
+        enqueue: queue.enqueue.bind(queue),
+        list: queue.list.bind(queue),
+        nack: queue.nack.bind(queue),
+        renewLease: async (claim, options) => {
+          const renewed = await queue.renewLease(claim, options);
+          renewalCalls += 1;
+          if (renewalCalls === 1) {
+            // The database committed the renewal, but its response consumed
+            // most of that lease. Response-relative cadence renews too late.
+            await new Promise((resolve) => setTimeout(resolve, 70));
+          }
+          return renewed;
+        },
+      };
 
-    await drainSqlQueue({
-      handle: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 160));
-        await expect(
-          queue.claim({ leaseMs: 100, nowMs: Date.now() })
-        ).resolves.toBeNull();
-      },
-      heartbeatMs: 50,
-      leaseMs: 100,
-      queue: delayedRenewalQueue,
-    });
+      const draining = drainSqlQueue({
+        handle: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 160));
+          await expect(
+            queue.claim({ leaseMs: 100, nowMs: Date.now() })
+          ).resolves.toBeNull();
+        },
+        heartbeatMs: 50,
+        leaseMs: 100,
+        queue: delayedRenewalQueue,
+      });
+      await vi.advanceTimersByTimeAsync(160);
+      await draining;
 
-    expect(renewalCalls).toBeGreaterThanOrEqual(2);
-    expect(queue.work.size).toBe(0);
+      expect(renewalCalls).toBeGreaterThanOrEqual(2);
+      expect(queue.work.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports handler failures through onError after nacking", async () => {
