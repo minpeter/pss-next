@@ -38,6 +38,16 @@ describe("Pi compatibility manifest", () => {
     ]);
   });
 
+  it("reports invalid schema without a manifest path", () => {
+    const files = readCompatibilityFiles();
+    files.manifestPath = undefined;
+    files.manifest.unexpected = true;
+
+    expect(() => validateCompatibilityManifest(files)).toThrow(
+      "Pi compatibility manifest violates its schema"
+    );
+  });
+
   it("permits only the two named intentional differences, exactly once", () => {
     const files = readCompatibilityFiles();
     const differences = files.manifest.surfaces

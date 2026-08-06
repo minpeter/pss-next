@@ -79,18 +79,22 @@ export function validateCompatibilityManifest({
   manifestPath,
   schema,
 }) {
+  const diagnosticManifestName =
+    manifestPath === undefined
+      ? "Pi compatibility manifest"
+      : basename(manifestPath);
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validate = ajv.compile(schema);
   if (!validate(manifest)) {
     const details = ajv.errorsText(validate.errors, { separator: "\n" });
     throw new Error(
-      `${basename(manifestPath)} violates its schema:\n${details}`
+      `${diagnosticManifestName} violates its schema:\n${details}`
     );
   }
 
   const expectedManifestName = `pi-${manifest.baseline.release}.json`;
   const manifestName =
-    manifestPath === undefined ? expectedManifestName : basename(manifestPath);
+    manifestPath === undefined ? expectedManifestName : diagnosticManifestName;
   if (manifestName !== expectedManifestName) {
     throw new Error(
       `${manifestName} does not match baseline release ${manifest.baseline.release}; expected ${expectedManifestName}`
