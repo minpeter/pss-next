@@ -3,7 +3,7 @@ import { createEventCursor, createThreadEventCursor } from "./event-cursors";
 import type { EventCursor, ThreadEventCursor } from "./types";
 
 describe("event cursors", () => {
-  it("keeps run and thread cursors nominally scoped", () => {
+  it("keeps run and thread cursors statically scoped", () => {
     const runCursor = createEventCursor(1);
     const threadCursor = createThreadEventCursor(1);
 

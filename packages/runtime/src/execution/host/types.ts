@@ -109,13 +109,11 @@ export type CheckpointWriteResult =
       readonly reason: "stale-version";
     };
 
-declare const eventCursorBrand: unique symbol;
-declare const threadEventCursorBrand: unique symbol;
-
 /** Cursor scoped to a single run event log. Use `createEventCursor` when restoring one from storage. */
 export interface EventCursor {
+  /** @internal Compile-time scope marker; omitted from the wire format. */
+  readonly __pssEventCursorScope?: "run-event";
   readonly offset: number;
-  readonly [eventCursorBrand]: "run-event";
 }
 
 export interface StoredAgentEvent {
@@ -126,8 +124,9 @@ export interface StoredAgentEvent {
 
 /** Cursor scoped to a thread event log. Use `createThreadEventCursor` when restoring one from storage. */
 export interface ThreadEventCursor {
+  /** @internal Compile-time scope marker; omitted from the wire format. */
+  readonly __pssEventCursorScope?: "thread-event";
   readonly offset: number;
-  readonly [threadEventCursorBrand]: "thread-event";
 }
 
 export interface StoredThreadEvent {
