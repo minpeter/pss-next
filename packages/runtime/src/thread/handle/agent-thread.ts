@@ -118,49 +118,63 @@ export class AgentThread {
   compact(
     options?: CompactionSummaryOptions
   ): Promise<ManualThreadCompactionResult>;
-  async compact(
+  compact(
     input?: CompactionSummaryOptions | ThreadCompactionInput
   ): Promise<boolean | ManualThreadCompactionResult> {
     this.#assertOpen();
 
+    if (input !== undefined && "summary" in input) {
+      return this.#compactExplicitSummary(input);
+    }
+
+    const executionHost = this.#context.execution.executionHost;
+    const reservation = executionHost
+      ? reserveThreadInputAdmission(executionHost, this.#context.threadKey)
+      : undefined;
+    return this.#enqueueInputAdmission(async () => {
+      const compact = async (): Promise<ManualThreadCompactionResult> => {
+        await this.#ensureStarted();
+        await this.#recoverDurableInputClaims();
+        this.#assertOpen();
+        if (this.#context.turn.state.tag !== "none") {
+          throw new Error("Cannot compact while a turn is active.");
+        }
+        if (this.#context.state.modelSnapshot().length === 0) {
+          return { status: "empty" };
+        }
+        const transforms = createTurnModelTransforms({
+          hookRuntime: this.#context.execution.hookRuntime,
+          state: this.#context.state,
+          threadKey: this.#context.threadKey,
+        });
+        const compacted = await compactThreadManually({
+          compact: (compactionInput, guard) =>
+            this.#context.events.compact(
+              this.#context.state,
+              compactionInput,
+              guard
+            ),
+          latestContextTransform: transforms.latestContextTransform,
+          model: this.#context.model,
+          signal: new AbortController().signal,
+          state: this.#context.state,
+          summaryOptions: input,
+          threadKey: this.#context.threadKey,
+          transformModelContext: transforms.transformModelContext,
+        });
+        return { status: compacted ? "compacted" : "skipped" };
+      };
+      return await (reservation ? reservation(compact) : compact());
+    });
+  }
+
+  async #compactExplicitSummary(
+    input: ThreadCompactionInput
+  ): Promise<boolean> {
     await this.#ensureStarted();
     await this.#recoverDurableInputClaims();
-
     this.#assertOpen();
-
-    if (input !== undefined && "summary" in input) {
-      return await this.#context.events.compact(this.#context.state, input);
-    }
-    return await this.#enqueueInputAdmission(async () => {
-      this.#assertOpen();
-      if (this.#context.turn.state.tag !== "none") {
-        throw new Error("Cannot compact while a turn is active.");
-      }
-      if (this.#context.state.modelSnapshot().length === 0) {
-        return { status: "empty" };
-      }
-      const transforms = createTurnModelTransforms({
-        hookRuntime: this.#context.execution.hookRuntime,
-        state: this.#context.state,
-        threadKey: this.#context.threadKey,
-      });
-      const compacted = await compactThreadManually({
-        compact: (compactionInput, guard) =>
-          this.#context.events.compact(
-            this.#context.state,
-            compactionInput,
-            guard
-          ),
-        latestContextTransform: transforms.latestContextTransform,
-        model: this.#context.model,
-        signal: new AbortController().signal,
-        state: this.#context.state,
-        summaryOptions: input,
-        threadKey: this.#context.threadKey,
-        transformModelContext: transforms.transformModelContext,
-      });
-      return { status: compacted ? "compacted" : "skipped" };
-    });
+    return await this.#context.events.compact(this.#context.state, input);
   }
 
   events(options?: ThreadEventReadOptions): AsyncIterable<StoredThreadEvent> {

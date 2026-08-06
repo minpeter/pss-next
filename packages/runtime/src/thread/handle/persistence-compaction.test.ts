@@ -189,4 +189,78 @@ describe("Agent thread persistence compaction", () => {
       })
     ).resolves.toBe(false);
   });
+
+  it("keeps same-handle compact-before-followUp admission FIFO", async () => {
+    const order: string[] = [];
+    const model = createCallbackModel(async ({ history }) => {
+      const isSummary = history[0]?.role === "system";
+      order.push(isSummary ? "compact" : "turn");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return [assistantMessage(isSummary ? "SUMMARY" : "DONE")];
+    });
+    const thread = new Agent({ model }).thread("same-handle-compact-fifo");
+    await collect(await thread.send("old ".repeat(200)));
+    order.length = 0;
+
+    const compactPromise = thread.compact();
+    const followUpPromise = thread.followUp("after compact");
+    const [compaction, followUp] = await Promise.all([
+      compactPromise,
+      followUpPromise,
+    ]);
+    await collect(followUp);
+
+    expect(compaction).toEqual({ status: "compacted" });
+    expect(order).toEqual(["compact", "turn"]);
+  });
+
+  it("serializes compact-before-followUp across Agents sharing a store", async () => {
+    const store = new SpyStore();
+    const host = hostWithThreads(store);
+    const seedAgent = new Agent({
+      host,
+      model: createCallbackModel(() => [assistantMessage("SEED")]),
+    });
+    await collect(
+      await seedAgent.thread("shared-compact-fifo").send("old ".repeat(200))
+    );
+
+    let active = 0;
+    let maxActive = 0;
+    const order: string[] = [];
+    const model = createCallbackModel(async ({ history }) => {
+      const isSummary = history[0]?.role === "system";
+      order.push(isSummary ? "compact" : "turn");
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      return [assistantMessage(isSummary ? "SHARED SUMMARY" : "DONE")];
+    });
+    const compactThread = new Agent({ host, model }).thread(
+      "shared-compact-fifo"
+    );
+    const followUpThread = new Agent({ host, model }).thread(
+      "shared-compact-fifo"
+    );
+
+    const compactPromise = compactThread.compact();
+    const followUpPromise = followUpThread.followUp("after shared compact");
+    const [compaction, followUp] = await Promise.all([
+      compactPromise,
+      followUpPromise,
+    ]);
+    await collect(followUp);
+
+    expect(compaction).toEqual({ status: "compacted" });
+    expect(order).toEqual(["compact", "turn"]);
+    expect(maxActive).toBe(1);
+    expect(store.threads.get("shared-compact-fifo")?.state).toMatchObject({
+      compactions: [
+        {
+          summary: { content: "SHARED SUMMARY", role: "system" },
+        },
+      ],
+    });
+  });
 });
