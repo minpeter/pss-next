@@ -53,6 +53,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
