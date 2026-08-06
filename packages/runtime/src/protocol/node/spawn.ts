@@ -20,6 +20,8 @@ export function spawnPssClient({
   shutdownTimeoutMs = 5000,
   spawn: options = {},
 }: SpawnPssClientOptions = {}): PssProtocolClient {
+  assertShutdownTimeout(shutdownTimeoutMs);
+  assertShutdownTimeout(killTimeoutMs);
   const child = spawn(command, args, {
     ...options,
     stdio: ["pipe", "pipe", "inherit"],
@@ -116,5 +118,13 @@ async function settleWithin<T>(
     return await Promise.race([promise, timeout]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function assertShutdownTimeout(timeoutMs: number): void {
+  if (!(Number.isFinite(timeoutMs) && timeoutMs >= 0)) {
+    throw new RangeError(
+      "shutdown timeouts must be finite non-negative numbers"
+    );
   }
 }

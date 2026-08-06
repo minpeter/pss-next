@@ -356,4 +356,43 @@ describe("PSS protocol", () => {
     await expect(client.state()).rejects.toThrow("transport closed");
     expect(writes).toBe(0);
   });
+
+  it("observes concurrent operation rejection after the write tail dies", async () => {
+    let feed: ((value: string | null) => void) | undefined;
+    const readable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<string>>((resolve) => {
+              feed = (value) =>
+                resolve(
+                  value === null
+                    ? { done: true, value: undefined }
+                    : { done: false, value }
+                );
+            }),
+        };
+      },
+    };
+    const serving = servePssProtocol(
+      {
+        readable,
+        write: () => Promise.reject(new Error("write tail died")),
+      },
+      {
+        async handle(_method, _params, context) {
+          if (context.requestId === 2) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          return { status: "idle" };
+        },
+      }
+    );
+    feed?.(
+      '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n'
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    feed?.(null);
+    await expect(serving).rejects.toThrow("write tail died");
+  });
 });

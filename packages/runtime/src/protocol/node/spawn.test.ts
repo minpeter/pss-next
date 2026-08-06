@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { spawnPssClient } from "./spawn";
 
@@ -50,5 +53,28 @@ describe("spawnPssClient", () => {
       client.request("prompt", { prompt: "x".repeat(1024 * 1024) })
     ).rejects.toBeInstanceOf(Error);
     await expect(client.close()).rejects.toMatchObject({ code: "EPIPE" });
+  });
+
+  it("validates shutdown timeouts before spawning a child", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pss-spawn-validation-"));
+    const marker = join(directory, "spawned");
+    try {
+      expect(() =>
+        spawnPssClient({
+          args: [
+            "-e",
+            `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes')`,
+          ],
+          command: process.execPath,
+          shutdownTimeoutMs: -1,
+        })
+      ).toThrow(RangeError);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await expect(readFile(marker, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });

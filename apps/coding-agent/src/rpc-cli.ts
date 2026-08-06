@@ -1,7 +1,10 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createFileHost } from "@minpeter/pss-runtime/platform/file";
-import { servePssProtocol } from "@minpeter/pss-runtime/protocol";
+import {
+  type ProtocolServerIo,
+  servePssProtocol,
+} from "@minpeter/pss-runtime/protocol";
 import { config } from "dotenv";
 import { createCodingAgent } from "./coding-agent";
 import type { CodingAgentRuntimeEnv } from "./env";
@@ -51,20 +54,24 @@ export async function runRpcCli({
     threadKey,
   });
   try {
-    await servePssProtocol(
-      {
-        readable: stdin,
-        write: (data) => {
-          stdout.write(data);
-        },
-      },
-      session.handler
-    );
+    await servePssProtocol(createRpcServerIo(stdin, stdout), session.handler);
     await session.settled;
     return 0;
   } finally {
     await agent.dispose();
   }
+}
+
+export function createRpcServerIo(
+  readable: AsyncIterable<string | Uint8Array>,
+  stdout: { write(text: string): unknown }
+): ProtocolServerIo {
+  return {
+    readable,
+    async write(data) {
+      await stdout.write(data);
+    },
+  };
 }
 
 export function resolveRpcThreadConfig(

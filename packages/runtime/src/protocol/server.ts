@@ -108,6 +108,7 @@ export async function servePssProtocol(
       })
       .catch((error: unknown) => failure(request.id, rpcError(error)))
       .finally(() => active.delete(operation));
+    operation.catch(() => undefined);
     active.add(operation);
   };
 

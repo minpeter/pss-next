@@ -44,7 +44,10 @@ interface RunCodingAgentCliOptions {
   readonly extension?: (args: readonly string[]) => Promise<number>;
   readonly home?: string;
   readonly loadExtensions?: () => Promise<LoadedConfiguredExtensions>;
-  readonly rpc?: (args: readonly string[]) => Promise<number>;
+  readonly rpc?: (
+    args: readonly string[],
+    options: { readonly stdout: { write(text: string): unknown } }
+  ) => Promise<number>;
   readonly start?: (
     extensions: readonly CodingAgentExtensionInput[],
     selection: {
@@ -106,8 +109,9 @@ export async function runCodingAgentCli({
   if (command === "rpc") {
     return (
       rpc ??
-      ((args: readonly string[]) => runRpcCli({ argv: args, cwd, env, home }))
-    )(argv.slice(1));
+      ((args: readonly string[]) =>
+        runRpcCli({ argv: args, cwd, env, home, stdout }))
+    )(argv.slice(1), { stdout });
   }
 
   if (command === "extension") {
