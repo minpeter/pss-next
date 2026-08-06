@@ -1,6 +1,11 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { normalizeThreadEventReadOptions } from "../../../../execution/host/thread-event-read-options";
+import {
+  createEventCursor,
+  createThreadEventCursor,
+  normalizeEventCursor,
+  normalizeThreadEventReadOptions,
+} from "../../../../execution/host/event-cursors";
 import type {
   EventCursor,
   EventStore,
@@ -41,7 +46,7 @@ export class FileEventStore implements EventStore {
         `${JSON.stringify({ cursor: { offset }, event, runId })}\n`,
         "utf8"
       );
-      return { offset };
+      return createEventCursor(offset);
     });
   }
 
@@ -49,6 +54,7 @@ export class FileEventStore implements EventStore {
     runId: string,
     cursor?: EventCursor
   ): AsyncIterable<StoredAgentEvent> {
+    const start = normalizeEventCursor(cursor);
     const events = await this.#lock(async () => {
       const file = await this.#fileForRun(runId);
       let content: string;
@@ -72,7 +78,6 @@ export class FileEventStore implements EventStore {
       return parsed;
     });
 
-    const start = cursor?.offset ?? 0;
     for (const event of events.slice(start)) {
       yield structuredClone(event);
     }
@@ -123,7 +128,7 @@ export class FileThreadEventLog implements ThreadEventLog {
         `${JSON.stringify({ cursor: { offset }, event, threadKey })}\n`,
         "utf8"
       );
-      return { offset };
+      return createThreadEventCursor(offset);
     });
   }
 
@@ -131,6 +136,7 @@ export class FileThreadEventLog implements ThreadEventLog {
     threadKey: string,
     options: ThreadEventReadOptions = {}
   ): AsyncIterable<StoredThreadEvent> {
+    const { limit, start } = normalizeThreadEventReadOptions(options);
     const events = await this.#lock(async () => {
       const file = await this.#fileForThread(threadKey);
       let content: string;
@@ -154,7 +160,6 @@ export class FileThreadEventLog implements ThreadEventLog {
       return parsed;
     });
 
-    const { limit, start } = normalizeThreadEventReadOptions(options);
     const end = limit === undefined ? undefined : start + limit;
     for (const event of events.slice(start, end)) {
       yield structuredClone(event);

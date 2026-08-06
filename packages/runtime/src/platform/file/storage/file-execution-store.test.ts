@@ -1,4 +1,4 @@
-import { readdir, utimes } from "node:fs/promises";
+import { readdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
@@ -109,6 +109,33 @@ describe("FileExecutionStore", () => {
     await expect(
       readdir(join(dataDirectory, "notifications"))
     ).resolves.toContain(`${base64Url("notify:persist")}.json`);
+  });
+
+  it("reports invalid stored event offsets with file context", async () => {
+    const directory = await tempDir();
+    const store = new FileExecutionStore(directory);
+    await store.events.append("run:corrupt", { type: "turn-start" });
+    const dataDirectory = await currentDataDirectory(directory);
+    const file = join(
+      dataDirectory,
+      "events",
+      `${base64Url("run:corrupt")}.jsonl`
+    );
+    await writeFile(
+      file,
+      `${JSON.stringify({
+        cursor: { offset: Number.MAX_SAFE_INTEGER + 1 },
+        event: { type: "turn-start" },
+        runId: "run:corrupt",
+      })}\n`,
+      "utf8"
+    );
+
+    await expect(
+      collectEvents(store.events.read("run:corrupt"))
+    ).rejects.toThrow(
+      `Invalid FileExecutionStore event log ${JSON.stringify(file)}`
+    );
   });
 
   it("rolls back file-backed transaction writes after a failure", async () => {

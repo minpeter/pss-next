@@ -44,6 +44,7 @@ export {
   type RuntimeDiagnosticLevel,
   type RuntimeDiagnosticsSink,
 } from "./diagnostics";
+export { createThreadEventCursor } from "./execution/host/event-cursors";
 export type {
   AgentHost,
   StoredThreadEvent,

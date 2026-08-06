@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HostStore } from "../../execution";
+import type { EventCursor, HostStore } from "../../execution";
 import {
   appendCheckpoint,
   collectEvents,
@@ -294,6 +294,21 @@ export function describeExecutionStoreContract({
         ok: false,
         reason: "stale-version",
       });
+    });
+
+    it.each([
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])("rejects invalid run event cursor offset %s", async (offset) => {
+      const store = createStore();
+      const cursor = { offset } as EventCursor;
+
+      await expect(
+        collectEvents(store.events.read("run-1", cursor))
+      ).rejects.toThrow(RangeError);
     });
 
     it("replays events from a cursor without duplicates", async () => {

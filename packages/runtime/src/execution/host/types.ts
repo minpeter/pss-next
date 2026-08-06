@@ -109,7 +109,16 @@ export type CheckpointWriteResult =
       readonly reason: "stale-version";
     };
 
+/**
+ * Cursor scoped to a single run event log.
+ *
+ * Raw `{ offset }` wire values remain structurally assignable for transport
+ * compatibility. Use `createEventCursor` at deserialization boundaries; the
+ * resulting typed cursor cannot be passed to a thread event API.
+ */
 export interface EventCursor {
+  /** @internal Compile-time scope marker; omitted from the wire format. */
+  readonly __pssEventCursorScope?: "run-event";
   readonly offset: number;
 }
 
@@ -119,7 +128,16 @@ export interface StoredAgentEvent {
   readonly runId: string;
 }
 
+/**
+ * Cursor scoped to a thread event log.
+ *
+ * Raw `{ offset }` wire values remain structurally assignable for transport
+ * compatibility. Use `createThreadEventCursor` at deserialization boundaries;
+ * the resulting typed cursor cannot be passed to a run event API.
+ */
 export interface ThreadEventCursor {
+  /** @internal Compile-time scope marker; omitted from the wire format. */
+  readonly __pssEventCursorScope?: "thread-event";
   readonly offset: number;
 }
 

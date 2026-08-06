@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HostStore } from "../../execution";
+import type { HostStore, ThreadEventCursor } from "../../execution";
 import { collectThreadEvents } from "./fixtures";
 
 export interface ThreadEventLogContractOptions {
@@ -52,18 +52,54 @@ export function describeThreadEventLogContract({
       ]);
     });
 
-    it("rejects invalid thread event replay limits", async () => {
-      const store = createStore();
-      const threadEvents = store.threadEvents;
+    it.each([
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])("rejects invalid thread event replay limit %s", async (limit) => {
+      const threadEvents = createStore().threadEvents;
       if (!threadEvents) {
         throw new Error("expected thread event log");
       }
 
-      await threadEvents.append("thread-1", { type: "turn-start" });
-
       await expect(
-        collectThreadEvents(threadEvents.read("thread-1", { limit: -1 }))
+        collectThreadEvents(threadEvents.read("thread-1", { limit }))
       ).rejects.toThrow(RangeError);
     });
+
+    it.each([
+      -1,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])("rejects invalid thread event cursor offset %s", async (offset) => {
+      const threadEvents = createStore().threadEvents;
+      if (!threadEvents) {
+        throw new Error("expected thread event log");
+      }
+      const after = { offset } as ThreadEventCursor;
+
+      await expect(
+        collectThreadEvents(threadEvents.read("thread-1", { after }))
+      ).rejects.toThrow(RangeError);
+    });
+
+    it.each([{}, { offset: null }, null])(
+      "rejects malformed present thread event cursor %j",
+      async (value) => {
+        const threadEvents = createStore().threadEvents;
+        if (!threadEvents) {
+          throw new Error("expected thread event log");
+        }
+        const after = value as unknown as ThreadEventCursor;
+
+        await expect(
+          collectThreadEvents(threadEvents.read("thread-1", { after }))
+        ).rejects.toThrow(RangeError);
+      }
+    );
   });
 }

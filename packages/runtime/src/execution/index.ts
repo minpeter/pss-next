@@ -11,6 +11,10 @@ export type {
   DispatchedAgentNotification,
 } from "./dispatch/notification-dispatch";
 export { dispatchAgentNotification } from "./dispatch/notification-dispatch";
+export {
+  createEventCursor,
+  createThreadEventCursor,
+} from "./host/event-cursors";
 export { threadStoreFromHost } from "./host/host";
 export type { ResumeThreadOptions } from "./host/scheduler-options";
 export { ThreadInputDuplicateConflictError } from "./host/thread-input-conflict";
