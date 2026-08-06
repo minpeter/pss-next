@@ -42,6 +42,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
+        if: matrix.node == '24'
         run: pnpm run audit
 
       - name: Check package boundaries

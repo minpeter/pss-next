@@ -7,5 +7,6 @@ packages:
 
 ## Keep generated benchmarks out of boundary checks
 
-Exclude the Next.js benchmark workspace from the CI boundary scan so ignored,
-large generated result trees do not consume boundary-check time and memory.
+Store Next.js benchmark results in the repository artifact root and migrate the
+legacy package-local directory so generated projects stay outside boundary scans
+without disabling checks for the benchmark source package.

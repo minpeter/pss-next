@@ -7,7 +7,7 @@ Pull requests stay on the fast Ubuntu CI matrix in `ci.yml`. Expensive or enviro
 - path, file-lock, CLI, and terminal/TUI smoke tests run on macOS and Windows monthly;
 - every suite can be selected manually, while the deployed-Worker probe is manual-only.
 
-Live checks first run a credential gate. Missing secrets produce a successful summary explaining the skip, rather than a failed job. `AI_API_KEY` enables the provider suite; `AI_BASE_URL` and `AI_MODEL` are optional provider overrides. The remote edge suite additionally requires `WORKER_AGENT_TUI_ENDPOINT`, and accepts the optional `WORKER_AGENT_TUI_TOKEN`. Secrets are passed only to the step that consumes them.
+Live checks first run a credential gate. Scheduled and `all` runs skip unavailable optional suites with a successful summary. Explicitly selecting `live-provider` or `remote-edge` fails when its required credentials are missing so a requested check cannot silently pass without running. `AI_API_KEY` enables real-mode provider evals; `AI_BASE_URL` and `AI_MODEL` are optional provider overrides. The remote edge suite combines those real-mode worker evals with the deployed production-Worker probe and additionally requires `WORKER_AGENT_TUI_ENDPOINT` plus `WORKER_AGENT_TUI_TOKEN`. Secrets are passed only to the step that consumes them.
 
 ## Large generated JSON policy
 

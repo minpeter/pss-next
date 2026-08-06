@@ -6,12 +6,13 @@
 the unit-level contract holds, not that the user-facing behavior works. Drive the
 real surface and record what you observed.
 
-The core published packages have a regression coverage gate. Run
-`pnpm coverage` to test `packages/runtime/src` and `apps/coding-agent/src`, print
-a terminal report, enforce the baseline, and write machine-readable results to
-`coverage/core/coverage-summary.json`. Test files and explicit test-support or
-fixture modules are excluded; examples, extensions, and experimental workspaces
-remain outside this focused gate.
+The core published packages have absolute coverage floors. Run `pnpm coverage`
+to test `packages/runtime/src` and `apps/coding-agent/src`, print a terminal
+report, enforce separate package baselines as well as the combined baseline, and
+write machine-readable results to `coverage/core/coverage-summary.json`. JavaScript
+and TypeScript test files, files named `test-support.ts` or `test-fixtures.ts`, and
+`*.test-support.ts` modules are excluded; public `testing` APIs remain measured.
+Examples, extensions, and experimental workspaces stay outside this focused gate.
 
 Scope the QA to what you touched:
 

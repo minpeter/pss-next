@@ -11,6 +11,7 @@ AGENTS.md
 .dev.vars.*
 !.dev.vars.example
 .turbo
+.artifacts
 packages/*/.turbo
 .wrangler
 

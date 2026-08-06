@@ -23,7 +23,9 @@ on:
     - cron: "41 4 1 * *"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}-${{
+      github.event.schedule || inputs.suite || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -41,9 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6.0.9
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -64,9 +66,9 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6.0.9
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -82,9 +84,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6.0.9
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -109,19 +111,34 @@ jobs:
         shell: bash
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_SUITE: ${{ inputs.suite }}
           WORKER_AGENT_TUI_ENDPOINT: ${{ secrets.WORKER_AGENT_TUI_ENDPOINT }}
+          WORKER_AGENT_TUI_TOKEN: ${{ secrets.WORKER_AGENT_TUI_TOKEN }}
         run: |
+          missing_requested_secret=false
           if [[ -n "$AI_API_KEY" ]]; then
             echo "provider=true" >> "$GITHUB_OUTPUT"
           else
             echo "provider=false" >> "$GITHUB_OUTPUT"
             echo "### Live provider check skipped: AI_API_KEY is not configured." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$EVENT_NAME" == "workflow_dispatch" && "$REQUESTED_SUITE" == "live-provider" ]]; then
+              echo "::error::The selected live-provider suite requires AI_API_KEY."
+              missing_requested_secret=true
+            fi
           fi
-          if [[ -n "$AI_API_KEY" && -n "$WORKER_AGENT_TUI_ENDPOINT" ]]; then
+          if [[ -n "$AI_API_KEY" && -n "$WORKER_AGENT_TUI_ENDPOINT" && -n "$WORKER_AGENT_TUI_TOKEN" ]]; then
             echo "remote_edge=true" >> "$GITHUB_OUTPUT"
           else
             echo "remote_edge=false" >> "$GITHUB_OUTPUT"
-            echo "### Remote edge check skipped: AI_API_KEY and WORKER_AGENT_TUI_ENDPOINT are required." >> "$GITHUB_STEP_SUMMARY"
+            echo "### Remote edge check skipped: AI_API_KEY, WORKER_AGENT_TUI_ENDPOINT, and WORKER_AGENT_TUI_TOKEN are required." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$EVENT_NAME" == "workflow_dispatch" && "$REQUESTED_SUITE" == "remote-edge" ]]; then
+              echo "::error::The selected remote-edge suite requires AI_API_KEY, WORKER_AGENT_TUI_ENDPOINT, and WORKER_AGENT_TUI_TOKEN."
+              missing_requested_secret=true
+            fi
+          fi
+          if [[ "$missing_requested_secret" == "true" ]]; then
+            exit 1
           fi
 
   live-provider:
@@ -134,9 +151,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6.0.9
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -144,8 +161,8 @@ jobs:
       - name: Run the small real-provider eval suite
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
-          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL || 'https://apis.opengateway.ai/v1' }}
+          AI_MODEL: ${{ secrets.AI_MODEL || 'minimax/MiniMax-M3' }}
           PSS_EVAL_REAL: "1"
         run: pnpm eval:provider
 
@@ -158,18 +175,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6.0.9
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Probe the deployed Worker and its provider
+      - name: Probe the deployed Worker with real-mode worker evals
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
-          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL || 'https://apis.opengateway.ai/v1' }}
+          AI_MODEL: ${{ secrets.AI_MODEL || 'minimax/MiniMax-M3' }}
+          PSS_WORKER_AGENT_EVAL_REAL: "1"
           WORKER_AGENT_TUI_ENDPOINT: ${{ secrets.WORKER_AGENT_TUI_ENDPOINT }}
           WORKER_AGENT_TUI_TOKEN: ${{ secrets.WORKER_AGENT_TUI_TOKEN }}
         run: pnpm eval:edge-remote

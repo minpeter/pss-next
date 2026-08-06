@@ -10,4 +10,4 @@ packages:
 
 ## Add a focused core coverage gate
 
-Report and enforce a sustainable coverage baseline for the published runtime and coding-agent source in CI.
+Report and enforce sustainable, package-specific coverage floors for the published runtime and coding-agent source in CI.
