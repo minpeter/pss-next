@@ -588,4 +588,42 @@ describe("PSS protocol", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(events).toEqual([1]);
   });
+
+  it("snapshots RPC error data getters in one strict serialization pass", async () => {
+    let reads = 0;
+    const data = {
+      get value(): unknown {
+        reads += 1;
+        return reads === 1 ? "snapshot" : () => undefined;
+      },
+    };
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      {
+        handle() {
+          throw Object.assign(new Error("custom failure"), {
+            code: -32_050,
+            data,
+          });
+        },
+      }
+    );
+    expect(reads).toBe(1);
+    expect(JSON.parse(output[0] ?? "null")).toMatchObject({
+      error: {
+        code: -32_050,
+        data: { value: "snapshot" },
+        message: "custom failure",
+      },
+      id: 1,
+    });
+  });
 });

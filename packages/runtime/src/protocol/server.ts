@@ -195,41 +195,9 @@ function rpcError(error: unknown): ProtocolError {
   return { code: -32_603, message: errorMessage(error) };
 }
 
-function isJsonValue(value: unknown, seen = new Set<object>()): boolean {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value);
-  }
-  if (typeof value !== "object" || seen.has(value)) {
-    return false;
-  }
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      return value.every((entry) => isJsonValue(entry, seen));
-    }
-    return Object.keys(value).every((key) =>
-      isJsonValue((value as Record<string, unknown>)[key], seen)
-    );
-  } catch {
-    return false;
-  } finally {
-    seen.delete(value);
-  }
-}
-
 function snapshotJsonData(
   value: unknown
 ): { readonly value: unknown } | undefined {
-  if (!isJsonValue(value)) {
-    return;
-  }
   try {
     const frame = encodeJsonl({ data: value });
     return { value: (JSON.parse(frame) as { data: unknown }).data };
