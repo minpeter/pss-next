@@ -96,6 +96,7 @@ describe("coding-agent extension capabilities", () => {
       { fallback: true, override: true },
       { mode: "replace" },
       { fallback: false },
+      { fallback: true, fallbak: true },
     ] as const;
 
     for (const options of malformed) {
@@ -115,6 +116,41 @@ describe("coding-agent extension capabilities", () => {
           },
         ])
       ).rejects.toMatchObject({ cause: expect.any(TypeError) });
+    }
+  });
+
+  it("treats own undefined renderer options as absent on both paths", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+    const optionalUndefined = [
+      { mode: undefined },
+      { fallback: undefined },
+      { override: undefined },
+    ] as const;
+
+    for (const options of optionalUndefined) {
+      expect(assistantRenderer(renderer, options as never).mode).toBe(
+        "exclusive"
+      );
+      const host = await createCodingAgentExtensionHost([
+        {
+          configure(registry) {
+            registry.tui.registerAssistantRenderer(renderer, options as never);
+          },
+          id: "undefined-renderer-option",
+        },
+      ]);
+      expect(host.assistantRenderer).toBe(renderer);
+      await host.dispose();
     }
   });
 

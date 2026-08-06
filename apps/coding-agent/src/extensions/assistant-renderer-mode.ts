@@ -20,9 +20,16 @@ export function parseAssistantRendererMode(
   ) {
     throw new TypeError("Assistant renderer options must be an object");
   }
-  const hasMode = Object.hasOwn(options, "mode");
-  const hasFallback = Object.hasOwn(options, "fallback");
-  const hasOverride = Object.hasOwn(options, "override");
+  assertSupportedOptionKeys(options);
+  const modeValue: unknown = Reflect.get(options, "mode");
+  const fallbackValue: unknown = Reflect.get(options, "fallback");
+  const overrideValue: unknown = Reflect.get(options, "override");
+  // Optional properties emitted as `undefined` are semantically absent.
+  const hasMode = Object.hasOwn(options, "mode") && modeValue !== undefined;
+  const hasFallback =
+    Object.hasOwn(options, "fallback") && fallbackValue !== undefined;
+  const hasOverride =
+    Object.hasOwn(options, "override") && overrideValue !== undefined;
   if (hasMode && (hasFallback || hasOverride)) {
     throw new TypeError(
       "Assistant renderer mode cannot be combined with legacy fallback or override options"
@@ -34,23 +41,34 @@ export function parseAssistantRendererMode(
     );
   }
   if (hasMode) {
-    const mode: unknown = Reflect.get(options, "mode");
-    if (!ASSISTANT_RENDERER_MODES.has(mode as AssistantRendererMode)) {
-      throw new TypeError(`Invalid assistant renderer mode "${String(mode)}"`);
+    if (!ASSISTANT_RENDERER_MODES.has(modeValue as AssistantRendererMode)) {
+      throw new TypeError(
+        `Invalid assistant renderer mode "${String(modeValue)}"`
+      );
     }
-    return mode as AssistantRendererMode;
+    return modeValue as AssistantRendererMode;
   }
   if (hasFallback) {
-    if (Reflect.get(options, "fallback") !== true) {
+    if (fallbackValue !== true) {
       throw new TypeError("Assistant renderer fallback option must be true");
     }
     return "fallback";
   }
   if (hasOverride) {
-    if (Reflect.get(options, "override") !== true) {
+    if (overrideValue !== true) {
       throw new TypeError("Assistant renderer override option must be true");
     }
     return "override";
   }
   return "exclusive";
+}
+
+function assertSupportedOptionKeys(options: object): void {
+  for (const key of Reflect.ownKeys(options)) {
+    if (key !== "mode" && key !== "fallback" && key !== "override") {
+      throw new TypeError(
+        `Unsupported assistant renderer option "${String(key)}"`
+      );
+    }
+  }
 }
