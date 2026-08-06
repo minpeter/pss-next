@@ -17,6 +17,7 @@ import { extensionScopePaths } from "./extensions/manager/paths";
 import { beginCommonJsReloadTransaction } from "./extensions/manager/reload-module-graph";
 import { beginExtensionStagingSession } from "./extensions/manager/reload-staging";
 import { readExtensionSettings } from "./extensions/manager/settings";
+import { runRpcCli } from "./rpc-cli";
 import {
   activeSessionKey,
   readSessionIndex,
@@ -43,6 +44,10 @@ interface RunCodingAgentCliOptions {
   readonly extension?: (args: readonly string[]) => Promise<number>;
   readonly home?: string;
   readonly loadExtensions?: () => Promise<LoadedConfiguredExtensions>;
+  readonly rpc?: (
+    args: readonly string[],
+    options: { readonly stdout: { write(text: string): unknown } }
+  ) => Promise<number>;
   readonly start?: (
     extensions: readonly CodingAgentExtensionInput[],
     selection: {
@@ -62,6 +67,7 @@ export async function runCodingAgentCli({
   extension,
   loadExtensions,
   home = homedir(),
+  rpc,
   start,
   stdout = process.stdout,
   update = (args: readonly string[]) =>
@@ -98,6 +104,14 @@ export async function runCodingAgentCli({
       ((args: readonly string[]) =>
         runExecCli({ argv: args, cwd, env, home, stdout }))
     )(argv.slice(1));
+  }
+
+  if (command === "rpc") {
+    return (
+      rpc ??
+      ((args: readonly string[]) =>
+        runRpcCli({ argv: args, cwd, env, home, stdout }))
+    )(argv.slice(1), { stdout });
   }
 
   if (command === "extension") {
@@ -467,6 +481,7 @@ function formatUsage(): string {
     "  exec             Run one headless coding task",
     "  extension        Manage coding-agent extensions",
     "  inspect-thread   Print a report for the configured thread",
+    "  rpc              Serve the versioned JSONL protocol on stdin/stdout",
     "  update           Update pss (--check, --channel <tag>)",
     "  help             Show this help message",
   ].join("\n");

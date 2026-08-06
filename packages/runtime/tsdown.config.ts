@@ -17,6 +17,8 @@ export default defineConfig({
     "src/fsm/index.ts",
     "src/channel/index.ts",
     "src/testing/index.ts",
+    "src/protocol/index.ts",
+    "src/protocol/node/index.ts",
   ],
   unbundle: true,
   root: "src",

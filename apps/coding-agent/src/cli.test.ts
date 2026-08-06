@@ -290,4 +290,22 @@ describe("coding-agent CLI", () => {
       await rm(directory, { force: true, recursive: true });
     }
   });
+
+  it("routes rpc with remaining arguments to the JSONL command", async () => {
+    const received: (readonly string[])[] = [];
+    const stdout = { write: () => undefined };
+    let receivedStdout: unknown;
+    const exitCode = await runCodingAgentCli({
+      argv: ["rpc", "--session", "automation"],
+      rpc: (args, options) => {
+        received.push(args);
+        receivedStdout = options.stdout;
+        return Promise.resolve(0);
+      },
+      stdout,
+    });
+    expect(exitCode).toBe(0);
+    expect(received).toEqual([["--session", "automation"]]);
+    expect(receivedStdout).toBe(stdout);
+  });
 });
