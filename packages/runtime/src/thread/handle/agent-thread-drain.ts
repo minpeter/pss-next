@@ -1,4 +1,6 @@
 import { deferred } from "../../internal/deferred";
+import { closeRuntimeInput } from "../input/runtime-input";
+import { unregisterLiveThreadInput } from "../runtime/live-input-ownership";
 import type { AgentThreadContext } from "./agent-thread-context";
 import { assertThreadMachineInvariants } from "./agent-thread-machines";
 import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
@@ -67,7 +69,7 @@ export async function drainAgentThreadInputQueue(
         model: context.model,
         onBlocked: (released) => {
           released
-            .then(() => drainAgentThreadInputQueue(context))
+            .then(() => restartReleasedThreadDrain(context))
             .catch(() => undefined);
         },
         release: () => {
@@ -95,4 +97,58 @@ export async function drainAgentThreadInputQueue(
       await drainAgentThreadInputQueue(context);
     }
   }
+}
+
+const RELEASED_DRAIN_RETRY_LIMIT = 3;
+
+async function restartReleasedThreadDrain(
+  context: AgentThreadContext
+): Promise<void> {
+  await retryReleasedThreadDrain(
+    () => drainAgentThreadInputQueue(context),
+    (failure) => settleInputsAfterRestartFailure(context, failure)
+  );
+}
+
+/** @internal exported for retry/observability regression tests. */
+export async function retryReleasedThreadDrain(
+  drain: () => Promise<void>,
+  onPermanentFailure: (failure: unknown) => void,
+  retryLimit = RELEASED_DRAIN_RETRY_LIMIT
+): Promise<void> {
+  let failure: unknown;
+  for (let attempt = 0; attempt < retryLimit; attempt += 1) {
+    try {
+      await drain();
+      return;
+    } catch (error) {
+      failure = error;
+      await Promise.resolve();
+    }
+  }
+  onPermanentFailure(failure);
+}
+
+function settleInputsAfterRestartFailure(
+  context: AgentThreadContext,
+  failure: unknown
+): void {
+  const message = `Thread drain restart failed after ${RELEASED_DRAIN_RETRY_LIMIT} attempts: ${errorMessage(failure)}`;
+  for (const item of context.inputQueue.splice(0)) {
+    if (item.durableMessageId) {
+      unregisterLiveThreadInput(
+        context.execution.executionHost,
+        context.threadKey,
+        item.durableMessageId,
+        item.durableOwner
+      );
+    }
+    closeRuntimeInput(item.runtimeInput, message);
+    item.run.emit({ message, type: "turn-error" });
+    item.run.close();
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
