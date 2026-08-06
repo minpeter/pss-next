@@ -74,12 +74,17 @@ export async function withThreadDrainOwnership<T>(
   state.active = lock;
   const refreshRequired =
     state.lastOwner !== undefined && state.lastOwner !== owner;
+  let completed = false;
   try {
-    return await operation({ refreshRequired });
+    const result = await operation({ refreshRequired });
+    completed = true;
+    return result;
   } finally {
     if (state.active === lock) {
       state.active = undefined;
-      state.lastOwner = owner;
+      if (completed) {
+        state.lastOwner = owner;
+      }
     }
     released.resolve();
   }
