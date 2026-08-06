@@ -85,6 +85,23 @@ describe("provider registry", () => {
     expect(compatibleFactory).not.toHaveBeenCalled();
   });
 
+  it("ignores a stale generic model during automatic native selection", async () => {
+    const { createProviderModelFromEnv, resolveProviderSelection } =
+      await import("./provider-registry");
+    const runtimeEnv = {
+      AI_MODEL: "minimax/MiniMax-M3",
+      ANTHROPIC_API_KEY: "anthropic-key",
+    };
+
+    expect(resolveProviderSelection(runtimeEnv)).toMatchObject({
+      descriptor: { id: "anthropic" },
+      modelId: "claude-sonnet-4-6",
+    });
+    await createProviderModelFromEnv({ runtimeEnv });
+
+    expect(anthropicProvider).toHaveBeenCalledWith("claude-sonnet-4-6");
+  });
+
   it("detects OpenAI and supports an injected fetch", async () => {
     const { createProviderModelFromEnv } = await import("./provider-registry");
     const fetch = vi.fn<typeof globalThis.fetch>();
@@ -118,8 +135,18 @@ describe("provider registry", () => {
     );
   });
 
-  it("keeps the keyless compatible free tier as the empty-env fallback", async () => {
-    const { createProviderModelFromEnv } = await import("./provider-registry");
+  it("keeps compatible selection and creation aligned on the free tier", async () => {
+    const { createProviderModelFromEnv, resolveProviderSelection } =
+      await import("./provider-registry");
+    const selection = resolveProviderSelection({});
+
+    expect(selection).toMatchObject({
+      descriptor: {
+        defaultModelId: "mimo-v2.5-free",
+        id: "openai-compatible",
+      },
+      modelId: "mimo-v2.5-free",
+    });
     await createProviderModelFromEnv({ runtimeEnv: {} });
     expect(compatibleFactory).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -128,6 +155,6 @@ describe("provider registry", () => {
         name: "opencode-zen",
       })
     );
-    expect(compatibleProvider).toHaveBeenCalledWith("mimo-v2.5-free");
+    expect(compatibleProvider).toHaveBeenCalledWith(selection.modelId);
   });
 });

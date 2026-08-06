@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import {
   type CodingAgentRuntimeEnv,
-  DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+  FREE_TIER_DEFAULT_MODEL_ID,
   readOpenAICompatibleModelEnv,
 } from "./env";
 
@@ -35,7 +35,7 @@ export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] =
     }),
     Object.freeze({
       apiKeyEnv: "AI_API_KEY",
-      defaultModelId: DEFAULT_OPENAI_COMPATIBLE_MODEL_ID,
+      defaultModelId: FREE_TIER_DEFAULT_MODEL_ID,
       id: "openai-compatible",
       label: "OpenAI-compatible",
       modelEnv: "AI_MODEL",
@@ -103,9 +103,15 @@ export function resolveProviderSelection(
   if (descriptor === undefined) {
     throw new Error("The OpenAI-compatible provider descriptor is missing.");
   }
+  if (descriptor.id === "openai-compatible") {
+    return {
+      descriptor,
+      modelId: readOpenAICompatibleModelEnv({ runtimeEnv }).AI_MODEL,
+    };
+  }
   const modelId =
     nonBlank(runtimeEnv[descriptor.modelEnv]) ??
-    nonBlank(runtimeEnv.AI_MODEL) ??
+    (explicit === undefined ? undefined : nonBlank(runtimeEnv.AI_MODEL)) ??
     descriptor.defaultModelId;
   return { descriptor, modelId };
 }
@@ -144,7 +150,7 @@ export async function createProviderModelFromEnv({
       includeUsage: true,
       name: env.isFreeTier ? "opencode-zen" : "custom",
       ...(fetch === undefined ? {} : { fetch }),
-    })(env.AI_MODEL);
+    })(modelId);
   }
   const apiKey = requiredApiKey(descriptor, runtimeEnv);
   if (descriptor.id === "anthropic") {
