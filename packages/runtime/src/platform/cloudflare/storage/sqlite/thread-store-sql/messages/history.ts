@@ -71,18 +71,24 @@ export function writeThreadHistoryRows(
 
   const existing = readRawActiveThreadMessages(sql, key);
   let prefix = 0;
-  while (
-    prefix < existing.length &&
-    prefix < history.length &&
-    rawThreadMessageEquals(sql, key, existing[prefix], history[prefix])
-  ) {
+  while (prefix < existing.length && prefix < history.length) {
+    const existingMessage = existing[prefix];
+    const historyMessage = history[prefix];
+    if (
+      existingMessage === undefined ||
+      historyMessage === undefined ||
+      !rawThreadMessageEquals(sql, key, existingMessage, historyMessage)
+    ) {
+      break;
+    }
     prefix += 1;
   }
-  if (prefix < existing.length) {
+  const firstStaleMessage = existing[prefix];
+  if (firstStaleMessage !== undefined) {
     sql.exec(
       "UPDATE pss_thread_message SET active = 0 WHERE thread_key = ? AND active = 1 AND seq >= ?",
       key,
-      existing[prefix].seq
+      firstStaleMessage.seq
     );
   }
   return insertThreadMessages({

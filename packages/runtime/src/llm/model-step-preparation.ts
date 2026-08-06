@@ -131,7 +131,7 @@ export async function resolveModelStepOptions({
     ...canonicalRegistryOrder.filter((name) => selectedSet.has(name)),
   ];
   const executableTools = registry
-    ? Object.fromEntries(activeTools.map((name) => [name, registry[name]]))
+    ? selectTools(registry, activeTools)
     : undefined;
   const effectiveToolChoice = snapshotToolChoice(
     prepared?.toolChoice === undefined ? toolChoice : prepared.toolChoice
@@ -166,4 +166,23 @@ export async function resolveModelStepOptions({
       ? {}
       : { startToolCacheFingerprintReport }),
   };
+}
+
+function selectTools(registry: ToolSet, names: readonly string[]): ToolSet {
+  const selected: ToolSet = Object.create(null);
+  const byName = new Map(Object.entries(registry));
+  for (const name of names) {
+    const definition = byName.get(name);
+    if (definition === undefined) {
+      Object.defineProperty(selected, name, {
+        configurable: true,
+        enumerable: true,
+        value: undefined,
+        writable: true,
+      });
+    } else {
+      selected[name] = definition;
+    }
+  }
+  return selected;
 }

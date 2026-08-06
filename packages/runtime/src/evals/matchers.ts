@@ -173,22 +173,35 @@ function levenshteinSimilarity(a: string, b: string): number {
 }
 
 function levenshtein(a: string, b: string): number {
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
+  const matrix = Array.from({ length: b.length + 1 }, (_, row) =>
+    Array.from({ length: a.length + 1 }, (_, column) =>
+      row === 0 ? column : row
+    )
+  );
   for (let i = 1; i <= b.length; i++) {
+    const row = matrix[i];
+    const previousRow = matrix[i - 1];
+    if (!(row && previousRow)) {
+      throw new Error("Levenshtein matrix row is missing.");
+    }
     for (let j = 1; j <= a.length; j++) {
-      const cost = a[j - 1] === b[i - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost
-      );
+      const deletion = previousRow[j];
+      const insertion = row[j - 1];
+      const substitution = previousRow[j - 1];
+      if (
+        deletion === undefined ||
+        insertion === undefined ||
+        substitution === undefined
+      ) {
+        throw new Error("Levenshtein matrix cell is missing.");
+      }
+      const cost = a.charAt(j - 1) === b.charAt(i - 1) ? 0 : 1;
+      row[j] = Math.min(deletion + 1, insertion + 1, substitution + cost);
     }
   }
-  return matrix[b.length][a.length];
+  const distance = matrix.at(-1)?.at(-1);
+  if (distance === undefined) {
+    throw new Error("Levenshtein distance is missing.");
+  }
+  return distance;
 }

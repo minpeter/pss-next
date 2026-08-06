@@ -48,6 +48,9 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let i = 0;
   while (i < args.length) {
     const arg = args[i++];
+    if (arg === undefined) {
+      break;
+    }
     switch (arg) {
       case "-h":
       case "--help":
@@ -85,12 +88,13 @@ export function compileFilters(
     return;
   }
   if (filters.length === 1) {
-    return toPattern(filters[0]);
+    const [filter] = filters;
+    return filter === undefined ? undefined : toPattern(filter);
   }
   const combined = filters
     .map((f) => {
       const pattern = regexFilterForm.exec(f);
-      return pattern ? pattern[1] : escapeRegExp(f);
+      return pattern?.[1] ?? escapeRegExp(f);
     })
     .join("|");
   return new RegExp(combined);
@@ -98,7 +102,8 @@ export function compileFilters(
 
 function toPattern(filter: string): string | RegExp {
   const pattern = regexFilterForm.exec(filter);
-  return pattern ? new RegExp(pattern[1], pattern[2]) : filter;
+  const source = pattern?.[1];
+  return source === undefined ? filter : new RegExp(source, pattern?.[2]);
 }
 
 function escapeRegExp(value: string): string {

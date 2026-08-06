@@ -90,7 +90,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.production.json --noEmit",
     "test": "vitest run",
     "test:storage-stress": "vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
     "test:storage-stress:extreme": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=extreme vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts",

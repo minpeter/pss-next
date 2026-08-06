@@ -23,6 +23,15 @@ export function diagnosticToolRegistry(tools: ToolSet): ToolSet {
   for (const name of Object.keys(tools)) {
     try {
       const tool = tools[name];
+      if (tool === undefined) {
+        Object.defineProperty(snapshot, name, {
+          configurable: true,
+          enumerable: true,
+          value: undefined,
+          writable: true,
+        });
+        continue;
+      }
       if (!isObjectRecord(tool)) {
         snapshot[name] = tool;
         continue;
