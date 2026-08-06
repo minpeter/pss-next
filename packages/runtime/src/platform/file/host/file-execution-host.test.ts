@@ -35,7 +35,7 @@ describeAgentHostFaultContract({
   createHost: () => {
     const directory = join(tmpdir(), `pss-host-contract-${randomUUID()}`);
     return {
-      cleanup: () => rm(directory, { force: true, recursive: true }),
+      cleanup: () => removeTempDir(directory),
       host: createFileHost({ directory }),
     };
   },
