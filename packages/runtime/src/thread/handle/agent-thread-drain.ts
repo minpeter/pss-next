@@ -146,8 +146,8 @@ async function settleInputsAfterRestartFailure(
       }),
     drain: () => drainAgentThreadInputQueue(context),
     onCancelled: () => {
-      context.inputQueue.splice(0, items.length);
-      for (const item of items) {
+      const removed = removeQueuedInputsByIdentity(context.inputQueue, items);
+      for (const item of removed) {
         if (item.durableMessageId) {
           unregisterLiveThreadInput(
             context.execution.executionHost,
@@ -163,6 +163,21 @@ async function settleInputsAfterRestartFailure(
     },
     retryOnCancellationFailure,
   });
+}
+
+/** @internal exported for queue-mutation regression tests. */
+export function removeQueuedInputsByIdentity<T>(
+  queue: T[],
+  snapshot: readonly T[]
+): T[] {
+  const removed: T[] = [];
+  for (const item of snapshot) {
+    const index = queue.indexOf(item);
+    if (index >= 0) {
+      removed.push(...queue.splice(index, 1));
+    }
+  }
+  return removed;
 }
 
 /** @internal exported for cancellation-recovery regression tests. */

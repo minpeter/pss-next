@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   recoverOrCancelReleasedDrain,
+  removeQueuedInputsByIdentity,
   retryReleasedThreadDrain,
 } from "./agent-thread-drain";
 
@@ -56,5 +57,29 @@ describe("released thread drain restart", () => {
     expect(drain).toHaveBeenCalledTimes(3);
     expect(cancel).toHaveBeenCalledTimes(2);
     expect(onCancelled).not.toHaveBeenCalled();
+  });
+
+  it("removes only snapshotted callers still present after cancellation", async () => {
+    const first = { id: "first" };
+    const second = { id: "second" };
+    const later = { id: "later" };
+    const queue = [first, second];
+    const snapshot = [...queue];
+    const removed: { id: string }[] = [];
+
+    await recoverOrCancelReleasedDrain({
+      cancel: async () => {
+        await Promise.resolve();
+        queue.shift();
+        queue.push(later);
+      },
+      drain: () => Promise.resolve(),
+      onCancelled: () => {
+        removed.push(...removeQueuedInputsByIdentity(queue, snapshot));
+      },
+    });
+
+    expect(removed).toEqual([second]);
+    expect(queue).toEqual([later]);
   });
 });
