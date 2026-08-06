@@ -127,6 +127,9 @@ export class AgentThread {
     if (input !== undefined && "summary" in input) {
       return await this.#compactExplicitSummary(input);
     }
+    if (this.#context.turn.state.tag !== "none") {
+      throw new Error("Cannot compact while a turn is active.");
+    }
 
     const executionHost = this.#context.execution.executionHost;
     const reservation = executionHost

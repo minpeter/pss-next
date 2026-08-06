@@ -143,35 +143,68 @@ describe("Agent thread persistence compaction", () => {
     });
   });
 
-  it("waits for an active drain before manual compaction", async () => {
+  it("rejects same-handle manual compaction while a turn is active", async () => {
     let releaseModel: (() => void) | undefined;
     const modelGate = new Promise<void>((resolve) => {
       releaseModel = resolve;
     });
-    let modelCalls = 0;
+    let modelStarted = false;
     const agent = new Agent({
       model: createCallbackModel(async () => {
-        modelCalls += 1;
-        if (modelCalls === 1) {
-          await modelGate;
-          return [assistantMessage("DONE")];
-        }
-        return [assistantMessage("SUMMARY")];
+        modelStarted = true;
+        await modelGate;
+        return [assistantMessage("DONE")];
       }),
     });
     const thread = agent.thread("busy");
-    const turn = await thread.send("work ".repeat(200));
+    const turn = await thread.send("work");
     const collecting = collect(turn);
-    await vi.waitFor(() => expect(modelCalls).toBe(1));
+    await vi.waitFor(() => expect(modelStarted).toBe(true));
 
-    const compacting = thread.compact();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(modelCalls).toBe(1);
+    await expect(thread.compact()).rejects.toThrow(
+      "Cannot compact while a turn is active."
+    );
+
     releaseModel?.();
+    await collecting;
+  });
+
+  it("waits for another handle's active drain before compaction", async () => {
+    const store = new SpyStore();
+    const host = hostWithThreads(store);
+    let releaseOwner: (() => void) | undefined;
+    const ownerGate = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    let ownerStarted = false;
+    let compactionCalls = 0;
+    const ownerThread = new Agent({
+      host,
+      model: createCallbackModel(async () => {
+        ownerStarted = true;
+        await ownerGate;
+        return [assistantMessage("OWNER DONE")];
+      }),
+    }).thread("cross-handle-busy");
+    const compactingThread = new Agent({
+      host,
+      model: createCallbackModel(() => {
+        compactionCalls += 1;
+        return [assistantMessage("SUMMARY")];
+      }),
+    }).thread("cross-handle-busy");
+    const turn = await ownerThread.send("work ".repeat(200));
+    const collecting = collect(turn);
+    await vi.waitFor(() => expect(ownerStarted).toBe(true));
+
+    const compacting = compactingThread.compact();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(compactionCalls).toBe(0);
+    releaseOwner?.();
     await collecting;
 
     await expect(compacting).resolves.toEqual({ status: "compacted" });
-    expect(modelCalls).toBe(2);
+    expect(compactionCalls).toBe(1);
   });
 
   it("returns false when beforeCompaction cancels an explicit input", async () => {
