@@ -86,5 +86,20 @@ export function describeThreadEventLogContract({
         collectThreadEvents(threadEvents.read("thread-1", { after }))
       ).rejects.toThrow(RangeError);
     });
+
+    it.each([{}, { offset: null }, null])(
+      "rejects malformed present thread event cursor %j",
+      async (value) => {
+        const threadEvents = createStore().threadEvents;
+        if (!threadEvents) {
+          throw new Error("expected thread event log");
+        }
+        const after = value as unknown as ThreadEventCursor;
+
+        await expect(
+          collectThreadEvents(threadEvents.read("thread-1", { after }))
+        ).rejects.toThrow(RangeError);
+      }
+    );
   });
 }

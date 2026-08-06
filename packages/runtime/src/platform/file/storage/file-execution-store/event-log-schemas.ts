@@ -75,7 +75,9 @@ function isStoredEventBase(value: unknown): value is {
   return (
     isRecord(value) &&
     isRecord(value.cursor) &&
-    typeof value.cursor.offset === "number"
+    typeof value.cursor.offset === "number" &&
+    Number.isSafeInteger(value.cursor.offset) &&
+    value.cursor.offset >= 0
   );
 }
 

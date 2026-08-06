@@ -36,13 +36,19 @@ export function normalizeThreadEventReadOptions(
   if (limit !== undefined) {
     assertNonNegativeSafeInteger(limit, "thread event limit");
   }
-  const start = options.after?.offset ?? 0;
+  if (options.after === undefined) {
+    return { limit, start: 0 };
+  }
+  const start = options.after?.offset;
   assertNonNegativeSafeInteger(start, "thread event cursor offset");
   return { limit, start };
 }
 
-function assertNonNegativeSafeInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value < 0) {
+function assertNonNegativeSafeInteger(
+  value: unknown,
+  label: string
+): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`${label} must be a non-negative safe integer.`);
   }
 }

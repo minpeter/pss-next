@@ -13,6 +13,12 @@ describe("event cursors", () => {
     expectTypeOf(threadCursor).not.toMatchTypeOf<EventCursor>();
     expect(runCursor).toEqual({ offset: 1 });
     expect(threadCursor).toEqual({ offset: 1 });
+
+    // Raw wire values intentionally remain assignable to either cursor type.
+    const wireCursor = { offset: 1 };
+    const runWireCursor: EventCursor = wireCursor;
+    const threadWireCursor: ThreadEventCursor = wireCursor;
+    expect(runWireCursor).toEqual(threadWireCursor);
   });
 
   it.each([
