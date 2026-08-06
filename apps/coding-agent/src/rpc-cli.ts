@@ -62,16 +62,88 @@ export async function runRpcCli({
   }
 }
 
+interface RpcStdout {
+  off?(
+    event: "drain" | "error",
+    listener: (...args: unknown[]) => void
+  ): unknown;
+  once?(
+    event: "drain" | "error",
+    listener: (...args: unknown[]) => void
+  ): unknown;
+  write(text: string, callback?: (error?: Error | null) => void): unknown;
+}
+
 export function createRpcServerIo(
   readable: AsyncIterable<string | Uint8Array>,
-  stdout: { write(text: string): unknown }
+  stdout: RpcStdout
 ): ProtocolServerIo {
   return {
     readable,
-    async write(data) {
-      await stdout.write(data);
-    },
+    write: (data) => writeRpcStdout(stdout, data),
   };
+}
+
+async function writeRpcStdout(stdout: RpcStdout, data: string): Promise<void> {
+  if (!(stdout.once && stdout.off)) {
+    await stdout.write(data);
+    return;
+  }
+  const once = stdout.once.bind(stdout);
+  const off = stdout.off.bind(stdout);
+  await new Promise<void>((resolveWrite, rejectWrite) => {
+    let callbackDone = false;
+    let drainSeen = false;
+    let needsDrain = false;
+    let settled = false;
+    let writeReturned = false;
+    const cleanup = () => {
+      off("error", onError);
+      off("drain", onDrain);
+    };
+    const finish = () => {
+      if (
+        !(
+          settled ||
+          !writeReturned ||
+          !callbackDone ||
+          (needsDrain && !drainSeen)
+        )
+      ) {
+        settled = true;
+        cleanup();
+        resolveWrite();
+      }
+    };
+    const onError = (...args: unknown[]) => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        rejectWrite(args[0]);
+      }
+    };
+    const onDrain = () => {
+      drainSeen = true;
+      finish();
+    };
+    once("error", onError);
+    once("drain", onDrain);
+    try {
+      needsDrain =
+        stdout.write(data, (error) => {
+          if (error) {
+            onError(error);
+            return;
+          }
+          callbackDone = true;
+          finish();
+        }) === false;
+      writeReturned = true;
+      finish();
+    } catch (error) {
+      onError(error);
+    }
+  });
 }
 
 export function resolveRpcThreadConfig(

@@ -471,4 +471,77 @@ describe("PSS protocol", () => {
     expect(sameChunk.secondError).toContain("Invalid JSONL frame");
     expect(splitChunks).toEqual(sameChunk);
   });
+
+  it("sanitizes non-JSON RPC error data and always writes a response", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const output: string[] = [];
+    await servePssProtocol(
+      {
+        readable: chunks(
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n'
+        ),
+        write: (frame) => {
+          output.push(frame);
+        },
+      },
+      {
+        handle(_method, _params, context) {
+          throw Object.assign(new Error("custom failure"), {
+            code: -32_050,
+            data: context.requestId === 1 ? cyclic : () => undefined,
+          });
+        },
+      }
+    );
+    expect(output).toHaveLength(2);
+    for (const frame of output) {
+      const response = JSON.parse(frame);
+      expect(response.error).toEqual({
+        code: -32_050,
+        message: "custom failure",
+      });
+    }
+  });
+
+  it("makes close an idempotent barrier against late reads and events", async () => {
+    let feed: ((value: string) => void) | undefined;
+    let closeCalls = 0;
+    let returnCalls = 0;
+    const client = new PssProtocolClient({
+      close: () => {
+        closeCalls += 1;
+        return Promise.reject(new Error("close failed"));
+      },
+      readable: {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () =>
+              new Promise<IteratorResult<string>>((resolve) => {
+                feed = (value) => resolve({ done: false, value });
+              }),
+            return: () => {
+              returnCalls += 1;
+              return Promise.resolve({ done: true, value: undefined });
+            },
+          };
+        },
+      },
+      write: () => undefined,
+    });
+    const events: unknown[] = [];
+    client.onEvent((event) => events.push(event));
+    const firstClose = client.close();
+    const secondClose = client.close();
+    expect(secondClose).toBe(firstClose);
+    await expect(firstClose).rejects.toThrow("close failed");
+    await expect(secondClose).rejects.toThrow("close failed");
+    feed?.(
+      '{"jsonrpc":"2.0","protocol":"pss/1","method":"event","params":{"event":{"late":true},"requestId":1}}\n'
+    );
+    await Promise.resolve();
+    expect(closeCalls).toBe(1);
+    expect(returnCalls).toBe(1);
+    expect(events).toEqual([]);
+  });
 });

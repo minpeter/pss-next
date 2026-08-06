@@ -187,9 +187,48 @@ function rpcError(error: unknown): ProtocolError {
       return {
         code: value.code,
         message: value.message,
-        ...(value.data === undefined ? {} : { data: value.data }),
+        ...(isJsonValue(value.data) && canEncodeJson(value.data)
+          ? { data: value.data }
+          : {}),
       };
     }
   }
   return { code: -32_603, message: errorMessage(error) };
+}
+
+function isJsonValue(value: unknown, seen = new Set<object>()): boolean {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (typeof value !== "object" || seen.has(value)) {
+    return false;
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.every((entry) => isJsonValue(entry, seen));
+    }
+    return Object.keys(value).every((key) =>
+      isJsonValue((value as Record<string, unknown>)[key], seen)
+    );
+  } catch {
+    return false;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function canEncodeJson(value: unknown): boolean {
+  try {
+    return JSON.stringify(value) !== undefined;
+  } catch {
+    return false;
+  }
 }

@@ -27,6 +27,7 @@ export class PssProtocolClient {
   readonly #listenerErrorHandlers = new Set<(error: unknown) => void>();
   readonly #iterator: AsyncIterator<string | Uint8Array>;
   #closed = false;
+  #closePromise: Promise<void> | undefined;
   #nextId = 1;
   #readFailure: unknown;
   #writeTail = Promise.resolve();
@@ -108,20 +109,24 @@ export class PssProtocolClient {
     return this.request("state");
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) {
-      return;
+  close(): Promise<void> {
+    if (this.#closePromise) {
+      return this.#closePromise;
     }
     this.#closed = true;
-    const closed = new Error("PSS protocol client closed");
-    this.#failPending(closed);
-    try {
-      await this.#transport.close?.();
-    } finally {
-      Promise.resolve()
-        .then(() => this.#iterator.return?.())
-        .catch((error) => this.#notifyListenerError(error));
-    }
+    this.#failPending(new Error("PSS protocol client closed"));
+    this.#closePromise = (async () => {
+      try {
+        await this.#transport.close?.();
+      } finally {
+        try {
+          await this.#iterator.return?.();
+        } catch (error) {
+          this.#notifyListenerError(error);
+        }
+      }
+    })();
+    return this.#closePromise;
   }
 
   async #read(): Promise<void> {
@@ -129,6 +134,9 @@ export class PssProtocolClient {
     try {
       while (!this.#closed) {
         const next = await this.#iterator.next();
+        if (this.#closed) {
+          return;
+        }
         if (next.done) {
           this.#handleDecoded(decoder.finishResults());
           throw new Error("PSS protocol transport closed");
