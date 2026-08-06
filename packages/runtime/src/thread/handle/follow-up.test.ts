@@ -15,6 +15,23 @@ import { AgentThread } from "./agent-thread";
 import { inputMetaForQueuedKind } from "./durable-queue-send";
 import { collect } from "./test-support";
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  message: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), 1000);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 describe("AgentThread follow-up queue", () => {
   it("derives event metadata from the durable inbox kind", () => {
     expect(inputMetaForQueuedKind("send")).toEqual({ source: "send" });
@@ -243,6 +260,7 @@ describe("AgentThread follow-up queue", () => {
     const store = new Proxy(base.store, {
       get(target, property) {
         if (property === "transaction" && failTransactions) {
+          failTransactions = false;
           return (): Promise<never> =>
             Promise.reject(new Error("kill transaction failed"));
         }
@@ -271,23 +289,13 @@ describe("AgentThread follow-up queue", () => {
     failTransactions = true;
     const firstKill = thread.kill();
     holdModel.resolve();
-    await expect(
-      Promise.race([
-        firstKill,
-        new Promise<never>((_resolve, reject) =>
-          setTimeout(() => reject(new Error("kill timed out")), 1000)
-        ),
-      ])
-    ).rejects.toThrow("kill transaction failed");
+    await expect(withTimeout(firstKill, "kill timed out")).rejects.toThrow(
+      "kill transaction failed"
+    );
 
     failTransactions = false;
     await expect(
-      Promise.race([
-        thread.kill(),
-        new Promise<never>((_resolve, reject) =>
-          setTimeout(() => reject(new Error("retry timed out")), 1000)
-        ),
-      ])
+      withTimeout(thread.kill(), "retry timed out")
     ).resolves.toBeUndefined();
     holdModel.resolve();
     await activeEvents;
@@ -300,6 +308,7 @@ describe("AgentThread follow-up queue", () => {
     const store = new Proxy(base.store, {
       get(target, property) {
         if (property === "transaction" && failTransactions) {
+          failTransactions = false;
           return (): Promise<never> =>
             Promise.reject(new Error("delete transaction failed"));
         }
@@ -328,23 +337,13 @@ describe("AgentThread follow-up queue", () => {
     failTransactions = true;
     const firstDelete = thread.delete();
     holdModel.resolve();
-    await expect(
-      Promise.race([
-        firstDelete,
-        new Promise<never>((_resolve, reject) =>
-          setTimeout(() => reject(new Error("delete timed out")), 1000)
-        ),
-      ])
-    ).rejects.toThrow("delete transaction failed");
+    await expect(withTimeout(firstDelete, "delete timed out")).rejects.toThrow(
+      "delete transaction failed"
+    );
 
     failTransactions = false;
     await expect(
-      Promise.race([
-        thread.delete(),
-        new Promise<never>((_resolve, reject) =>
-          setTimeout(() => reject(new Error("delete retry timed out")), 1000)
-        ),
-      ])
+      withTimeout(thread.delete(), "delete retry timed out")
     ).resolves.toBeUndefined();
     holdModel.resolve();
     await activeEvents;

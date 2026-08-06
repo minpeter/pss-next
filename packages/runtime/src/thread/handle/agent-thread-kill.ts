@@ -27,23 +27,42 @@ export function killAgentThread(context: AgentThreadContext): Promise<void> {
   context.pendingRuntimeInputs.length = 0;
   turnAbort(context.turn)?.abort();
   const close = async (): Promise<void> => {
-    await closeKilledRuntimeInputs({
-      activeRuntimeInput: activeTurnRuntimeInput(context.turn),
-      executionHost: context.execution.executionHost,
-      inputQueue: context.inputQueue,
-      message: killedError.message,
-      runToClose: turnRunToClose(context.turn),
-      threadKey: context.threadKey,
-    });
-    await context.inputAdmissionQueue;
-    await closeKilledRuntimeInputs({
-      activeRuntimeInput: undefined,
-      executionHost: context.execution.executionHost,
-      inputQueue: context.inputQueue,
-      message: killedError.message,
-      runToClose: undefined,
-      threadKey: context.threadKey,
-    });
+    const errors: unknown[] = [];
+    try {
+      await closeKilledRuntimeInputs({
+        activeRuntimeInput: activeTurnRuntimeInput(context.turn),
+        executionHost: context.execution.executionHost,
+        inputQueue: context.inputQueue,
+        message: killedError.message,
+        runToClose: turnRunToClose(context.turn),
+        threadKey: context.threadKey,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await context.inputAdmissionQueue;
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await closeKilledRuntimeInputs({
+        activeRuntimeInput: undefined,
+        executionHost: context.execution.executionHost,
+        inputQueue: context.inputQueue,
+        message: killedError.message,
+        runToClose: undefined,
+        threadKey: context.threadKey,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Thread teardown failed.");
+    }
   };
   close().then(
     () => settled.resolve(),

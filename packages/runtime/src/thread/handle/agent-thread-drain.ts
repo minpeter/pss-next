@@ -66,10 +66,9 @@ export async function drainAgentThreadInputQueue(
         inputQueue: context.inputQueue,
         model: context.model,
         onBlocked: (released) => {
-          released.then(
-            () => drainAgentThreadInputQueue(context),
-            () => undefined
-          );
+          released
+            .then(() => drainAgentThreadInputQueue(context))
+            .catch(() => undefined);
         },
         release: () => {
           turn.to({ tag: "none" });
