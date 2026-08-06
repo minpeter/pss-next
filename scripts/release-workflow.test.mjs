@@ -26,11 +26,14 @@ describe("release workflow", () => {
     expect(ciWorkflow).toContain('node: ["24", "26"]');
     expect(ciWorkflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("pnpm tegami ci");
-    expect(workflow).toContain("pnpm --filter @minpeter/pss-runtime pack");
-    expect(workflow).toContain("pnpm --filter @minpeter/pss-coding-agent pack");
-    expect(workflow).toContain(
-      "npm install --package-lock-only --ignore-scripts"
+    expect(workflow).toContain("pnpm verify:release");
+    expect(packageJson.scripts["verify:release"]).toContain(
+      "pnpm verify:package-apis"
     );
+    expect(packageJson.scripts["verify:package-apis"]).toContain(
+      "node scripts/packed-consumer-smoke.mjs"
+    );
+    expect(workflow).not.toContain("Verify coding-agent dependency resolution");
     expect(workflow).not.toContain("NPM_CONFIG_PROVENANCE");
     expect(workflow).not.toContain("changesets/action");
   });

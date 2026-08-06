@@ -47,8 +47,22 @@ for (const [name, value] of Object.entries({
   );
 
   run(process.execPath, ["consumer.mjs"], temporary);
-  run(join(temporary, "node_modules/.bin/pss-eval"), ["--help"], temporary);
-  run(join(temporary, "node_modules/.bin/pss"), ["--help"], temporary);
+  run(
+    process.execPath,
+    [
+      join(temporary, "node_modules/@minpeter/pss-runtime/bin/pss-eval.js"),
+      "--help",
+    ],
+    temporary
+  );
+  run(
+    process.execPath,
+    [
+      join(temporary, "node_modules/@minpeter/pss-coding-agent/bin/pss.js"),
+      "--help",
+    ],
+    temporary
+  );
   console.log("Packed-tarball consumer smoke passed");
 } finally {
   await rm(temporary, { force: true, recursive: true });
