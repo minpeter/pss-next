@@ -26,6 +26,7 @@ export interface DispatchedAgentNotification {
 }
 
 interface SchedulableAgentNotification extends DispatchedAgentNotification {
+  readonly shouldSchedule: boolean;
   readonly storageIdempotencyKey: string;
   readonly threadKey: string;
 }
@@ -134,6 +135,7 @@ export async function dispatchAgentNotification(
       idempotencyKey: input.idempotencyKey,
       notificationId,
       runId,
+      shouldSchedule: true,
       threadKey: input.threadKey,
       storageIdempotencyKey,
     } satisfies SchedulableAgentNotification;
@@ -193,11 +195,29 @@ async function queuedNotificationRun({
 
   const existingNotification =
     await host.store.notifications.getByIdempotencyKey(storageIdempotencyKey);
+  if (!existingNotification) {
+    throw new Error(
+      `Notification dispatch integrity error: run ${existingRun.runId} has no notification record.`
+    );
+  }
+  if (
+    existingNotification.idempotencyKey !== storageIdempotencyKey ||
+    existingNotification.runId !== existingRun.runId ||
+    existingNotification.ownerNamespace !== ownerNamespace ||
+    existingNotification.threadKey !== threadKey ||
+    !existingNotification.notificationId
+  ) {
+    throw new Error(
+      `Notification dispatch integrity error: notification record for run ${existingRun.runId} does not match the deduplicated run.`
+    );
+  }
+
   return {
     deduplicated: true,
     idempotencyKey,
-    notificationId: existingNotification?.notificationId ?? existingRun.runId,
+    notificationId: existingNotification.notificationId,
     runId: existingRun.runId,
+    shouldSchedule: !isTerminalTurnStatus(existingRun.status),
     threadKey: existingRun.threadKey,
     storageIdempotencyKey,
   };
@@ -207,11 +227,24 @@ function scheduleAgentNotification(
   host: AgentHost,
   notification: SchedulableAgentNotification
 ): Promise<void> {
+  if (!notification.shouldSchedule) {
+    return Promise.resolve();
+  }
+
   return host.scheduler.resumeThread(notification.threadKey, {
     idempotencyKey: notification.storageIdempotencyKey,
     notificationId: notification.notificationId,
     runId: notification.runId,
   });
+}
+
+function isTerminalTurnStatus(status: TurnRecord["status"]): boolean {
+  return (
+    status === "cancelled" ||
+    status === "completed" ||
+    status === "error" ||
+    status === "needs-recovery"
+  );
 }
 
 function dispatchedAgentNotification(
