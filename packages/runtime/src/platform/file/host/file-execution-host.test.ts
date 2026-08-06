@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -11,6 +12,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../../../agent/core/agent";
 import { agentNamespace } from "../../../agent/identity/namespace";
+import { describeAgentHostFaultContract } from "../../../contracts/agent-host-fault-contract";
 import { dispatchAgentNotification } from "../../../execution/dispatch/notification-dispatch";
 import {
   assistantMessage,
@@ -28,6 +30,14 @@ import {
   listScheduledNodeRuns,
   listScheduledNodeThreadPrompts,
 } from "./scheduled-work-store";
+
+describeAgentHostFaultContract({
+  createHost: () =>
+    createFileHost({
+      directory: join(tmpdir(), `pss-host-contract-${randomUUID()}`),
+    }),
+  name: "file",
+});
 
 const malformedScheduledWorkPattern =
   /Invalid Node scheduled work file .*invalid JSON/;

@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { describeAgentHostFaultContract } from "../../../contracts/agent-host-fault-contract";
 import type { AgentEvent, AgentTurn } from "../../../index";
 import {
   ackScheduledCloudflareRun,
@@ -16,6 +17,16 @@ import {
 } from "../index";
 import { InMemorySqlStorage } from "../sql/node-test/node-sqlite-storage";
 import type { CloudflareDurableObjectTransactionStorage } from "../storage/durable-object/durable-object-storage";
+
+let conformancePrefix = 0;
+describeAgentHostFaultContract({
+  createHost: () =>
+    createCloudflareStorageHost({
+      prefix: `host-conformance-${conformancePrefix++}`,
+      storage: new InMemoryCloudflareDurableObjectStorage(),
+    }),
+  name: "Cloudflare Durable Object",
+});
 
 interface ScheduledWorkProbeRow {
   readonly kind: string;
