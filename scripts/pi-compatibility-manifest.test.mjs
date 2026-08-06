@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  discoverCompatibilityManifestPaths,
   readCompatibilityFiles,
   validateCompatibilityManifest,
   validateCompatibilityManifests,
@@ -27,6 +28,14 @@ describe("Pi compatibility manifest", () => {
       release: "v0.83.0",
       commit: UPSTREAM_COMMIT,
     });
+    expect(files.manifest.classifications).toBeUndefined();
+    expect(files.schema.properties.classifications).toBeUndefined();
+    expect(files.schema.$defs.surface.properties.classification.enum).toEqual([
+      "native",
+      "adapter",
+      "planned",
+      ...INTENTIONAL_DIFFERENCES,
+    ]);
   });
 
   it("permits only the two named intentional differences, exactly once", () => {
@@ -106,6 +115,37 @@ describe("Pi compatibility manifest", () => {
     } finally {
       rmSync(evidenceRoot, { force: true, recursive: true });
       rmSync(outsideRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("uses the custom directory default and sorts manifests numerically", () => {
+    const directory = mkdtempSync(join(tmpdir(), "pss-pi-discovery-"));
+    const files = readCompatibilityFiles();
+
+    try {
+      writeFileSync(
+        join(directory, "pi-manifest.schema.json"),
+        JSON.stringify(files.schema)
+      );
+      for (const release of ["v10.0.0", "v9.9.9"]) {
+        const manifest = clone(files.manifest);
+        manifest.baseline.release = release;
+        writeFileSync(
+          join(directory, `pi-${release}.json`),
+          JSON.stringify(manifest)
+        );
+      }
+
+      expect(
+        discoverCompatibilityManifestPaths(directory).map((path) =>
+          basename(path)
+        )
+      ).toEqual(["pi-v9.9.9.json", "pi-v10.0.0.json"]);
+      expect(readCompatibilityFiles(undefined, directory).manifestPath).toBe(
+        join(directory, "pi-v10.0.0.json")
+      );
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
     }
   });
 

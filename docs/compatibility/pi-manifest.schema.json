@@ -4,13 +4,7 @@
   "title": "PSS Pi compatibility manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "$schema",
-    "schemaVersion",
-    "baseline",
-    "classifications",
-    "surfaces"
-  ],
+  "required": ["$schema", "schemaVersion", "baseline", "surfaces"],
   "properties": {
     "$schema": {
       "const": "./pi-manifest.schema.json"
@@ -38,15 +32,6 @@
           "pattern": "^[0-9a-f]{40}$"
         }
       }
-    },
-    "classifications": {
-      "const": [
-        "native",
-        "adapter",
-        "planned",
-        "intentional-difference:ai-sdk",
-        "intentional-difference:durable-execution"
-      ]
     },
     "surfaces": {
       "type": "array",

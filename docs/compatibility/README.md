@@ -18,9 +18,10 @@ Every tracked surface has one classification:
 - `intentional-difference:durable-execution`: PSS deliberately owns durable
   execution, replay, and recovery boundaries.
 
-Those last two are the complete intentional-difference vocabulary. A new
-architectural exception requires an ADR and schema change; it cannot be added as
-free-form manifest text.
+Those last two are the complete intentional-difference vocabulary. The schema's
+surface classification enum is the single machine-readable source for this
+vocabulary. A new architectural exception requires an ADR and schema change; it
+cannot be added as free-form manifest text.
 
 ## Updating the baseline
 

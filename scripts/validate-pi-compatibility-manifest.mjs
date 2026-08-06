@@ -10,7 +10,28 @@ export const schemaPath = join(
   "pi-manifest.schema.json"
 );
 
-const VERSIONED_MANIFEST_PATTERN = /^pi-v\d+\.\d+\.\d+\.json$/;
+const VERSIONED_MANIFEST_PATTERN =
+  /^pi-v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\.json$/;
+
+function compareManifestVersions(left, right) {
+  const leftMatch = basename(left).match(VERSIONED_MANIFEST_PATTERN);
+  const rightMatch = basename(right).match(VERSIONED_MANIFEST_PATTERN);
+  if (!(leftMatch?.groups && rightMatch?.groups)) {
+    throw new Error("Cannot compare invalid Pi compatibility manifest names");
+  }
+
+  for (const component of ["major", "minor", "patch"]) {
+    const leftValue = BigInt(leftMatch.groups[component]);
+    const rightValue = BigInt(rightMatch.groups[component]);
+    if (leftValue < rightValue) {
+      return -1;
+    }
+    if (leftValue > rightValue) {
+      return 1;
+    }
+  }
+  return 0;
+}
 
 export function discoverCompatibilityManifestPaths(
   directory = compatibilityDirectory
@@ -20,20 +41,22 @@ export function discoverCompatibilityManifestPaths(
       (entry) => entry.isFile() && VERSIONED_MANIFEST_PATTERN.test(entry.name)
     )
     .map((entry) => join(directory, entry.name))
-    .sort();
+    .sort(compareManifestVersions);
 }
 
 export function readCompatibilityFiles(
-  manifestPath = discoverCompatibilityManifestPaths()[0],
+  manifestPath,
   directory = compatibilityDirectory
 ) {
-  if (manifestPath === undefined) {
+  const resolvedManifestPath =
+    manifestPath ?? discoverCompatibilityManifestPaths(directory).at(-1);
+  if (resolvedManifestPath === undefined) {
     throw new Error("No versioned Pi compatibility manifests found");
   }
 
   return {
-    manifest: JSON.parse(readFileSync(manifestPath, "utf8")),
-    manifestPath,
+    manifest: JSON.parse(readFileSync(resolvedManifestPath, "utf8")),
+    manifestPath: resolvedManifestPath,
     schema: JSON.parse(
       readFileSync(join(directory, "pi-manifest.schema.json"), "utf8")
     ),

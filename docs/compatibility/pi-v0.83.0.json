@@ -7,13 +7,6 @@
     "release": "v0.83.0",
     "commit": "845d6ff1f6643aba440341cce877ce1c43ebbc39"
   },
-  "classifications": [
-    "native",
-    "adapter",
-    "planned",
-    "intentional-difference:ai-sdk",
-    "intentional-difference:durable-execution"
-  ],
   "surfaces": [
     {
       "id": "model-execution",
