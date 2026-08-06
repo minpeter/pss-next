@@ -59,6 +59,10 @@ export interface SqlQueueProducerPort {
  * successful reclaim. Expired leases become claimable again. `ack`, `nack`,
  * and `renewLease` must validate the claim fence. Renewal must fail for an
  * expired or replaced claim; nack retains the item for `retryAtMs`.
+ *
+ * These leases provide at-least-once delivery, not exclusive side-effect
+ * execution: an outage or renewal delay can expire a lease while its handler
+ * is still running, allowing a concurrent duplicate handler.
  */
 export interface SqlQueuePort extends SqlQueueProducerPort {
   ack(claim: SqlQueueClaim): Promise<void>;

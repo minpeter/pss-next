@@ -39,6 +39,8 @@ type HandlerOutcome =
  * only successful handlers. Handler failures are nacked for retry and exposed
  * through `onError`. Ack and renewal failures surface without nack because
  * their outcome or claim ownership is uncertain; lease expiry enables retry.
+ * A lost renewal cannot cancel an already-running handler, so handlers must be
+ * idempotent and tolerate concurrent duplicate execution (at-least-once).
  */
 export async function drainSqlQueue({
   clock = Date.now,
@@ -134,6 +136,13 @@ async function handleWithHeartbeat({
   let renewal = Promise.resolve();
 
   const scheduleRenewal = (): void => {
+    // Anchor cadence to the lease's absolute deadline. A slow renewal response
+    // must consume the next delay rather than shift the whole cadence later.
+    const remainingMs = currentClaim.leaseUntilMs - clock();
+    const delayMs = Math.max(
+      0,
+      Math.min(heartbeatMs, remainingMs - heartbeatMs)
+    );
     timer = setTimeout(() => {
       const nowMs = clock();
       renewal = queue
@@ -150,7 +159,7 @@ async function handleWithHeartbeat({
         .catch((error: unknown) => {
           renewalError = error;
         });
-    }, heartbeatMs);
+    }, delayMs);
   };
   scheduleRenewal();
 

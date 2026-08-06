@@ -1367,8 +1367,16 @@ become claimable again.
 only after success, and nacks handler failures for retry. `onError` can report
 the original handler error after nack succeeds. Renewal and ack failures surface
 directly without nack because ownership or ack outcome is uncertain; lease
-expiry is the safe recovery path. Each work ID is handled at most once per
-drain invocation, including when `retryDelayMs` is zero.
+expiry is the safe recovery path. Heartbeats use the current lease's absolute
+deadline, so renewal response latency consumes the next wait instead of
+shifting cadence past expiry. Each work ID is handled at most once per drain
+invocation, including when `retryDelayMs` is zero.
+
+Queue delivery remains **at least once**. A renewal outage or latency beyond the
+remaining lease can let another worker reclaim work while the original handler
+is still running; the adapter cannot cancel arbitrary handler side effects.
+Handlers must therefore be idempotent and safe under concurrent duplicate
+execution.
 
 The adapter calls `wake` only after durable enqueue resolves. Wake is advisory:
 a wake failure can reject scheduling even though the item is safely queued, so
