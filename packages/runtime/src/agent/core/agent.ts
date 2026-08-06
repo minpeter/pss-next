@@ -129,6 +129,10 @@ export class Agent {
     return this.thread("default").send(input);
   }
 
+  followUp(input: AgentInput): Promise<AgentTurn> {
+    return this.thread("default").followUp(input);
+  }
+
   overlay(input: AgentInput): ThreadHandle {
     return this.thread("default").overlay(input);
   }

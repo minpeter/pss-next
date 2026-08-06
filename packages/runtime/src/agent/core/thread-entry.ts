@@ -25,6 +25,7 @@ export interface ThreadHandle {
   delete(): Promise<void>;
   dispose(): Promise<void>;
   events(options?: ThreadEventReadOptions): AsyncIterable<StoredThreadEvent>;
+  followUp(input: AgentInput): Promise<AgentTurn>;
   interrupt(): void;
   overlay(input: AgentInput): ThreadHandle;
   send(input: AgentInput): Promise<AgentTurn>;

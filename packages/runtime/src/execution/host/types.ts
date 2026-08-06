@@ -205,7 +205,7 @@ export interface NotificationInbox {
   releaseByIdempotencyKey(idempotencyKey: string): Promise<void>;
 }
 
-export type ThreadInputKind = "send" | "steer";
+export type ThreadInputKind = "follow-up" | "send" | "steer";
 export type ThreadInputStatus = "acked" | "claiming" | "pending" | "promoted";
 export type ThreadInputBoundary =
   | "step-end"

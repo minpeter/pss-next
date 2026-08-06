@@ -44,15 +44,12 @@ export class AgentThread {
   }
 
   async send(input: AgentInput): Promise<AgentTurn> {
-    this.#assertOpen();
+    return await this.#queueTurnInput(input, "send");
+  }
 
-    const run = new BufferedAgentTurn();
-    const loaded = this.#ensureStarted();
-    await this.#enqueueInputAdmission(async () => {
-      await loaded;
-      await this.#admitSend(input, run);
-    });
-    return run;
+  /** Queue a durable user turn that starts only after the active turn ends. */
+  async followUp(input: AgentInput): Promise<AgentTurn> {
+    return await this.#queueTurnInput(input, "follow-up");
   }
 
   overlay(input: AgentInput): this {
@@ -180,7 +177,26 @@ export class AgentThread {
     return killAgentThread(this.#context);
   }
 
-  async #admitSend(input: AgentInput, run: BufferedAgentTurn): Promise<void> {
+  async #queueTurnInput(
+    input: AgentInput,
+    kind: "follow-up" | "send"
+  ): Promise<AgentTurn> {
+    this.#assertOpen();
+
+    const run = new BufferedAgentTurn();
+    const loaded = this.#ensureStarted();
+    await this.#enqueueInputAdmission(async () => {
+      await loaded;
+      await this.#admitSend(input, run, kind);
+    });
+    return run;
+  }
+
+  async #admitSend(
+    input: AgentInput,
+    run: BufferedAgentTurn,
+    kind: "follow-up" | "send"
+  ): Promise<void> {
     this.#assertOpen();
 
     await this.#recoverDurableInputClaims();
@@ -200,9 +216,11 @@ export class AgentThread {
       attachmentStore: this.#context.model.attachmentStore,
       input,
       inputQueue: this.#context.inputQueue,
+      kind,
       pendingOverlays: this.#context.pendingOverlays,
       pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
       run,
+      source: kind,
       threadKey: this.#context.threadKey,
     });
     this.#assertOpen();

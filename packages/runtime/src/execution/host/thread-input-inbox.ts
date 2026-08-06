@@ -183,7 +183,7 @@ function hasSameSemanticPayload(
 function normalizedPlacement(
   input: AdmitThreadInput
 ): ThreadInputPlacement | undefined {
-  if (input.kind === "send") {
+  if (input.kind !== "steer") {
     return;
   }
   return input.placement ?? "step-end";
@@ -192,7 +192,7 @@ function normalizedPlacement(
 function recordSemanticPlacement(
   record: ThreadInputRecord
 ): ThreadInputPlacement | undefined {
-  if (record.kind === "send") {
+  if (record.kind !== "steer") {
     return;
   }
   return record.placement ?? "step-end";
@@ -216,7 +216,7 @@ function isClaimableAtBoundary(
   record: ThreadInputRecord,
   boundary: ThreadInputBoundary
 ): boolean {
-  if (record.kind === "send") {
+  if (record.kind !== "steer") {
     return boundary === "turn-idle";
   }
   return recordSemanticPlacement(record) === boundary;

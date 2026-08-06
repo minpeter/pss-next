@@ -1,4 +1,10 @@
-export type InputSource = "delegate" | "notify" | "overlay" | "send" | "steer";
+export type InputSource =
+  | "delegate"
+  | "follow-up"
+  | "notify"
+  | "overlay"
+  | "send"
+  | "steer";
 
 export interface InputEventMeta {
   readonly delegateToolName?: string;

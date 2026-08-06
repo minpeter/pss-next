@@ -1,4 +1,4 @@
-import type { AgentHost } from "../../execution/host/types";
+import type { AgentHost, ThreadInputKind } from "../../execution/host/types";
 import {
   cleanupStagedRuntimeAttachments,
   cleanupUnreferencedStagedRuntimeAttachments,
@@ -8,6 +8,7 @@ import {
 } from "../input/attachments";
 import type { AgentInput } from "../input/input";
 import { attachInputMeta, userInputFromEvent } from "../input/input-meta";
+import type { InputSource } from "../input/input-meta-types";
 import { normalizeAgentInput } from "../input/input-normalization";
 import {
   createRuntimeInputState,
@@ -28,9 +29,11 @@ export async function admitThreadSendInput({
   executionHost,
   input,
   inputQueue,
+  kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
   run,
+  source = "send",
   threadKey,
 }: {
   readonly awaitBoundaries: boolean;
@@ -40,9 +43,11 @@ export async function admitThreadSendInput({
   readonly executionHost: AgentHost | undefined;
   readonly input: AgentInput;
   readonly inputQueue: QueuedInput[];
+  readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
   readonly run: BufferedAgentTurn;
+  readonly source?: Extract<InputSource, "follow-up" | "send">;
   readonly threadKey: string;
 }): Promise<void> {
   const queued = await createQueuedSendInput({
@@ -51,9 +56,11 @@ export async function admitThreadSendInput({
     events,
     executionHost,
     input,
+    kind,
     pendingOverlays,
     pendingRuntimeInputs,
     run,
+    source,
     threadKey,
   });
   if (queued.kind === "handled") {
@@ -79,9 +86,11 @@ export async function createQueuedSendInput({
   events,
   executionHost,
   input,
+  kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
   run,
+  source = "send",
   threadKey,
 }: {
   readonly awaitBoundaries: boolean;
@@ -89,15 +98,20 @@ export async function createQueuedSendInput({
   readonly events: ThreadEventDispatcher;
   readonly executionHost: AgentHost | undefined;
   readonly input: AgentInput;
+  readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
   readonly run: BufferedAgentTurn;
+  readonly source?: Extract<InputSource, "follow-up" | "send">;
   readonly threadKey: string;
 }): Promise<QueuedSendInputResult> {
   const normalized = normalizeAgentInput(input);
   const acceptedInput =
     normalized.meta === undefined
-      ? attachInputMeta(normalized, { source: "send" })
+      ? attachInputMeta(normalized, {
+          source,
+          ...(source === "follow-up" ? { streaming: "follow-up" } : {}),
+        })
       : normalized;
   const stagedRefs: RuntimeAttachmentReference[] = [];
   let keepStagedAttachments = false;
@@ -125,7 +139,7 @@ export async function createQueuedSendInput({
     const admission = await admitDurableThreadInput({
       executionHost,
       input: queuedInput,
-      kind: "send",
+      kind,
       precreateExecutionRun: true,
       threadKey,
     });

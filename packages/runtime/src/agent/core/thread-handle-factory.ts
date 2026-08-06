@@ -36,6 +36,12 @@ export function createThreadPublicHandle({
       await thread.dispose();
     },
     events: (options) => thread.events(options),
+    followUp: async (input) =>
+      instrumentTurn(await thread.followUp(input), {
+        namespace,
+        operation: "follow-up",
+        threadKey: key,
+      }),
     interrupt: () => thread.interrupt(),
     overlay: (input) => {
       thread.overlay(input);

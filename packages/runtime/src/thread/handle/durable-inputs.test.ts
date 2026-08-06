@@ -7,6 +7,7 @@ import type {
   HostStoreTransaction,
   ThreadInputBoundary,
   ThreadInputInbox,
+  ThreadInputKind,
 } from "../../execution";
 import { createInMemoryHost } from "../../platform/memory";
 import {
@@ -258,7 +259,7 @@ function transactionWithInputTrace(
 function claimTrace(
   boundary: ThreadInputBoundary,
   messageId: string | undefined,
-  kind: "send" | "steer" | undefined
+  kind: ThreadInputKind | undefined
 ): string {
   const target = messageId ? "targeted" : "any";
   return `claim:${boundary}:${target}:${kind ?? "none"}`;
