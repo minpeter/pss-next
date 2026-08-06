@@ -104,19 +104,9 @@ describe("dispatchAgentNotification", () => {
   });
 
   it("reschedules an active run on an idempotent retry", async () => {
-    const baseHost = createInMemoryHost();
-    let resumeCalls = 0;
-    const host = {
-      ...baseHost,
-      scheduler: {
-        enqueueRun: (runId, options) =>
-          baseHost.scheduler.enqueueRun(runId, options),
-        resumeThread: async (threadKey, options) => {
-          resumeCalls += 1;
-          await baseHost.scheduler.resumeThread(threadKey, options);
-        },
-      },
-    } satisfies AgentHost;
+    const { host, resumeCallCount } = hostWithResumeCounter(
+      createInMemoryHost()
+    );
     const input = {
       host,
       idempotencyKey: "reminder:retry",
@@ -129,25 +119,15 @@ describe("dispatchAgentNotification", () => {
     const retry = await dispatchAgentNotification(input);
 
     expect(retry).toEqual({ ...first, deduplicated: true });
-    expect(resumeCalls).toBe(2);
+    expect(resumeCallCount()).toBe(2);
   });
 
   it.each(["cancelled", "completed", "error", "needs-recovery"] as const)(
     "returns a deduplicated result without rescheduling a %s run",
     async (status) => {
-      const baseHost = createInMemoryHost();
-      let resumeCalls = 0;
-      const host = {
-        ...baseHost,
-        scheduler: {
-          enqueueRun: (runId, options) =>
-            baseHost.scheduler.enqueueRun(runId, options),
-          resumeThread: async (threadKey, options) => {
-            resumeCalls += 1;
-            await baseHost.scheduler.resumeThread(threadKey, options);
-          },
-        },
-      } satisfies AgentHost;
+      const { host, resumeCallCount } = hostWithResumeCounter(
+        createInMemoryHost()
+      );
       const input = {
         host,
         idempotencyKey: `reminder:terminal:${status}`,
@@ -165,7 +145,7 @@ describe("dispatchAgentNotification", () => {
       const retry = await dispatchAgentNotification(input);
 
       expect(retry).toEqual({ ...first, deduplicated: true });
-      expect(resumeCalls).toBe(1);
+      expect(resumeCallCount()).toBe(1);
     }
   );
 
@@ -390,6 +370,27 @@ describe("dispatchAgentNotification", () => {
     await expect(attachmentStore.get(deletedRef)).resolves.toBeNull();
   });
 });
+
+function hostWithResumeCounter(baseHost: AgentHost): {
+  readonly host: AgentHost;
+  readonly resumeCallCount: () => number;
+} {
+  let resumeCalls = 0;
+  return {
+    host: {
+      ...baseHost,
+      scheduler: {
+        enqueueRun: (runId, options) =>
+          baseHost.scheduler.enqueueRun(runId, options),
+        resumeThread: async (threadKey, options) => {
+          resumeCalls += 1;
+          await baseHost.scheduler.resumeThread(threadKey, options);
+        },
+      },
+    },
+    resumeCallCount: () => resumeCalls,
+  };
+}
 
 function hostWithNotificationLookup(
   host: AgentHost,
