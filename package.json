@@ -20,6 +20,11 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
     "test": "turbo run test && vitest run scripts/*.test.mjs",
+    "coverage": "vitest run --config vitest.coverage.config.ts --coverage",
+    "test:cross-platform-smoke": "pnpm turbo run build --filter=@minpeter/pss-coding-agent... && pnpm --filter @minpeter/pss-runtime exec vitest run src/platform/file/storage/file-lock.test.ts src/platform/file/storage/file-execution-store-edge.test.ts && pnpm --filter @minpeter/pss-coding-agent exec vitest run src/cli.test.ts src/cli-exec-home.test.ts src/context/context-resources.test.ts src/extensions/manager/paths.test.ts src/tui/terminal-safety.test.ts && node apps/coding-agent/bin/pss.js --help",
+    "verify:edge": "pnpm --filter @minpeter/pss-worker-agent build",
+    "eval:provider": "pnpm --filter @minpeter/pss-example-evals eval",
+    "eval:edge-remote": "pnpm --filter @minpeter/pss-worker-agent eval:remote",
     "inspect:runtime-storage": "tsx packages/runtime/scripts/inspect-storage.ts",
     "stress:runtime-storage": "pnpm --filter @minpeter/pss-runtime test:storage-stress",
     "stress:runtime-storage:extreme": "pnpm --filter @minpeter/pss-runtime test:storage-stress:extreme",
@@ -29,9 +34,10 @@
     "format": "ultracite fix .",
     "tegami": "node scripts/tegami.mts",
     "verify:release": "node scripts/verify-release-artifacts.mjs",
-    "boundaries": "turbo boundaries",
+    "boundaries": "node scripts/prepare-boundaries.mjs && turbo boundaries",
     "repo:packages": "turbo query ls --output json",
-    "repo:affected": "turbo query affected"
+    "repo:affected": "turbo query affected",
+    "audit": "corepack pnpm audit --audit-level moderate"
   },
   "devDependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
@@ -44,6 +50,7 @@
     "@modelcontextprotocol/server": "2.0.0-beta.5",
     "@t3-oss/env-core": "^0.13.11",
     "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.10",
     "@xterm/xterm": "6.0.0",
     "dotenv": "^17.4.2",
     "eslint": "10.7.0",

@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
 dist
+coverage
 AGENTS.md
 **/AGENTS.md
 .env
@@ -10,6 +11,7 @@ AGENTS.md
 .dev.vars.*
 !.dev.vars.example
 .turbo
+.artifacts
 packages/*/.turbo
 .wrangler
 

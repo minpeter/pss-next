@@ -6,6 +6,11 @@ packages:
   - "extensions/*"
 autoInstallPeers: false
 overrides:
+  # Security-only, parent-scoped resolutions where direct updates cannot reach the vulnerable edge.
+  # Keep these exact so unrelated consumers retain their declared dependency ranges.
+  '@ai-sdk/provider-utils@3.0.31>undici': 6.28.0
+  'dockerode@4.0.12>uuid': 11.1.1
+  'miniflare@5.20260730.0-alpha>undici': 7.29.0
   read-yaml-file: 2.1.0
   typescript: ^7.0.2
   rolldown-plugin-dts: 0.27.2

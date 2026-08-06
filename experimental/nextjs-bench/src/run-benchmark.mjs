@@ -256,7 +256,7 @@ const results = await runExperiment({
   config,
   fixtures: selectedFixtures,
   apiKey,
-  resultsDir: resolve(benchmarkRoot, "results"),
+  resultsDir: resolve(repositoryRoot, ".artifacts/nextjs-bench/results"),
   experimentName,
   smoke: options.smoke,
   rateLimiter: new StartRateLimiter(resolveStartsPerMinute(), 60_000),
