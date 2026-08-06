@@ -80,12 +80,13 @@ export class FileCheckpointStore implements CheckpointStore {
       .filter((version) => Number.isSafeInteger(version) && version > 0)
       .sort((left, right) => right - left);
 
-    if (versions.length === 0) {
+    const [latestVersion] = versions;
+    if (latestVersion === undefined) {
       return null;
     }
 
     return await readJsonFile(
-      await this.#fileForCheckpoint(runId, versions[0]),
+      await this.#fileForCheckpoint(runId, latestVersion),
       parseRunCheckpoint,
       "checkpoint file"
     );

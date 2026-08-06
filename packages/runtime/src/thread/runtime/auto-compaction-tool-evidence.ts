@@ -165,7 +165,8 @@ function ledgerEvidence(summary: string): readonly string[] {
     return [];
   }
   return ledger
-    .split("\n## ")[0]
+    .split("\n## ", 1)
+    .join("")
     .split("\n")
     .flatMap((line) => {
       try {

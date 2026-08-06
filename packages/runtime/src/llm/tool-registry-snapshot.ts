@@ -47,9 +47,9 @@ export function readonlyToolRegistry(
 ): Readonly<ToolSet> {
   return Object.freeze(
     Object.fromEntries(
-      Object.keys(registry ?? {}).map((name) => [
+      Object.entries(registry ?? {}).map(([name, definition]) => [
         name,
-        readonlyToolFacade((registry as ToolSet)[name]),
+        readonlyToolFacade(definition),
       ])
     )
   );
