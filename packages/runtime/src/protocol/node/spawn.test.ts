@@ -37,7 +37,10 @@ describe("spawnPssClient", () => {
 
   it("settles close when stdin fails while the child remains alive", async () => {
     const client = spawnPssClient({
-      args: ["-e", "require('node:fs').closeSync(0);setInterval(()=>{},1000)"],
+      args: [
+        "-e",
+        "process.on('SIGTERM',()=>{});require('node:fs').closeSync(0);setInterval(()=>{},1000)",
+      ],
       command: process.execPath,
       killTimeoutMs: 100,
       shutdownTimeoutMs: 100,

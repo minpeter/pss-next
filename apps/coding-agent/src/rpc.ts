@@ -65,7 +65,8 @@ export function createCodingAgentRpcSession(
           }
           const prompt = requiredPrompt(params);
           active = { requestId: context.requestId };
-          const started = Promise.resolve(thread.send(prompt))
+          const started = Promise.resolve()
+            .then(() => thread.send(prompt))
             .then((turn) => {
               if (active) {
                 active.turn = turn;

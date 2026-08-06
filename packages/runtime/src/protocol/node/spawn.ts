@@ -32,6 +32,7 @@ export function spawnPssClient({
   // are emitted on the next tick and must never become uncaught process errors.
   let settleReadiness: (outcome: ChildOutcome) => void = () => undefined;
   let settleCompletion: (outcome: ChildOutcome) => void = () => undefined;
+  let pipeError: Error | undefined;
   const readiness = new Promise<ChildOutcome>((resolve) => {
     settleReadiness = resolve;
   });
@@ -46,8 +47,8 @@ export function spawnPssClient({
   });
   child.once("exit", () => settleCompletion({}));
   child.stdin.on("error", (error) => {
+    pipeError ??= error;
     child.stdout?.destroy(error);
-    settleCompletion({ error });
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
     }
@@ -57,6 +58,9 @@ export function spawnPssClient({
     readable: child.stdout,
     async write(data) {
       const outcome = await readiness;
+      if (pipeError) {
+        throw pipeError;
+      }
       if (outcome.error) {
         throw outcome.error;
       }
@@ -83,6 +87,9 @@ export function spawnPssClient({
         child.kill("SIGKILL");
       }
       outcome ??= await completion;
+      if (pipeError) {
+        throw pipeError;
+      }
       if (outcome.error) {
         throw outcome.error;
       }

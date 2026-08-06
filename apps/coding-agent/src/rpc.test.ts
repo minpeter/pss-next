@@ -180,8 +180,44 @@ describe("coding-agent RPC session", () => {
       interrupted: true,
     });
     expect(interrupt).toHaveBeenCalledOnce();
+    await Promise.resolve();
     resolveTurn?.(turn([]));
     await session.settled;
     expect(interrupt).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears active state when thread.send throws synchronously", async () => {
+    const send = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("send failed");
+      })
+      .mockImplementationOnce(() => Promise.resolve(turn([])));
+    const session = createCodingAgentRpcSession({
+      interrupt: vi.fn(),
+      send,
+      steer: vi.fn(),
+    });
+    const emitted: unknown[] = [];
+    const context = {
+      emit: (event: unknown) => emitted.push(event),
+      requestId: 21,
+    };
+    expect(
+      session.handler.handle("prompt", { prompt: "first" }, context)
+    ).toEqual({ accepted: true });
+    await session.settled;
+    expect(emitted).toContainEqual({
+      message: "send failed",
+      type: "protocol-error",
+    });
+    expect(session.handler.handle("state", {}, context)).toMatchObject({
+      status: "idle",
+    });
+    expect(
+      session.handler.handle("prompt", { prompt: "second" }, context)
+    ).toEqual({ accepted: true });
+    await session.settled;
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

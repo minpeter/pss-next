@@ -308,4 +308,52 @@ describe("PSS protocol", () => {
     feed?.(null);
     await expect(serving).resolves.toBeUndefined();
   });
+
+  it("observes write-tail rejection while input remains open", async () => {
+    let feed: ((value: string | null) => void) | undefined;
+    const readable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<string>>((resolve) => {
+              feed = (value) =>
+                resolve(
+                  value === null
+                    ? { done: true, value: undefined }
+                    : { done: false, value }
+                );
+            }),
+        };
+      },
+    };
+    const serving = servePssProtocol(
+      {
+        readable,
+        write: () => Promise.reject(new Error("open transport failed")),
+      },
+      { handle: () => ({ status: "idle" }) }
+    );
+    feed?.('{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    feed?.(null);
+    await expect(serving).rejects.toThrow("open transport failed");
+  });
+
+  it("does not write a deferred request after readable EOF", async () => {
+    let writes = 0;
+    const client = new PssProtocolClient({
+      readable: {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => Promise.resolve({ done: true, value: undefined }),
+          };
+        },
+      },
+      write() {
+        writes += 1;
+      },
+    });
+    await expect(client.state()).rejects.toThrow("transport closed");
+    expect(writes).toBe(0);
+  });
 });

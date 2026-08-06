@@ -80,6 +80,9 @@ export class PssProtocolClient {
         if (this.#closed) {
           throw new Error("PSS protocol client is closed");
         }
+        if (this.#readFailure !== undefined) {
+          throw this.#readFailure;
+        }
         return this.#transport.write(encodeJsonl(message));
       })
       .catch((error) => {

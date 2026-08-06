@@ -50,6 +50,7 @@ export async function servePssProtocol(
         throw error;
       }
     });
+    writes.catch(() => undefined);
   };
   const failure = (id: ProtocolRequestId | null, error: ProtocolError): void =>
     write({ error, id, jsonrpc: "2.0", protocol: PSS_PROTOCOL_VERSION });
