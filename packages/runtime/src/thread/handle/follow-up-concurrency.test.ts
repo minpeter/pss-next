@@ -73,6 +73,14 @@ describe.each(hostFactories)(
       expect(modelOrder[0]).toContain("first");
       expect(modelOrder[0]).not.toContain("second");
       expect(modelOrder[1]).toContain("second");
+      expect(firstEvents[0]).toMatchObject({
+        text: "first",
+        type: "user-input",
+      });
+      expect(secondEvents[0]).toMatchObject({
+        text: "second",
+        type: "user-input",
+      });
       expect(firstEvents.at(-1)?.type).toBe("turn-end");
       expect(secondEvents.at(-1)?.type).toBe("turn-end");
     });

@@ -1,6 +1,7 @@
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
 import type { AgentHost } from "../../execution/host/types";
 import { Fsm } from "../../fsm";
+import { attachInputMeta } from "../input/input-meta";
 import {
   createRuntimeInputState,
   type QueuedInput,
@@ -15,6 +16,7 @@ import {
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
 } from "../runtime/execution";
+import { inputMetaForQueuedKind } from "./durable-queue-send";
 import { isThreadDrainOwned } from "./thread-drain-coordinator";
 
 const sharedRecoveries = new WeakMap<object, Map<string, Promise<void>>>();
@@ -185,8 +187,15 @@ async function queuedInputFromClaim(
     await releaseDurableThreadInputClaim({ executionHost, record });
     throw error;
   }
+  if (record.kind === "steer") {
+    await releaseDurableThreadInputClaim({ executionHost, record });
+    throw new Error("A steering input cannot be claimed at turn-idle.");
+  }
   return {
-    acceptedEvent: record.input,
+    acceptedEvent: attachInputMeta(
+      record.input,
+      inputMetaForQueuedKind(record.kind)
+    ),
     awaitBoundaries: false,
     durableInputClaim: record,
     durableInputKind: record.kind === "follow-up" ? "follow-up" : "send",
