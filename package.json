@@ -31,7 +31,8 @@
     "verify:release": "node scripts/verify-release-artifacts.mjs",
     "boundaries": "turbo boundaries --filter=!@minpeter/pss-benchmark-nextjs",
     "repo:packages": "turbo query ls --output json",
-    "repo:affected": "turbo query affected"
+    "repo:affected": "turbo query affected",
+    "audit": "corepack pnpm audit --audit-level moderate"
   },
   "devDependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
