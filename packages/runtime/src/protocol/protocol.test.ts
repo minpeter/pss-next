@@ -15,9 +15,7 @@ describe("PSS protocol", () => {
     await servePssProtocol(
       {
         readable: chunks(
-          "bad\n",
-          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n',
-          '{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"prompt","params":{}}\n'
+          'bad\n{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"prompt","params":{}}\n'
         ),
         write: (text) => {
           output.push(text);

@@ -61,14 +61,40 @@ describe("coding-agent RPC session", () => {
       )
     ).rejects.toMatchObject({ code: -32_602 });
     await expect(
-      Promise.resolve(
+      Promise.resolve().then(() =>
         session.handler.handle("steer", { prompt: "adjust" }, context)
       )
-    ).resolves.toEqual({ accepted: true });
-    expect(steer).toHaveBeenCalledWith("adjust");
+    ).rejects.toMatchObject({ code: -32_003 });
+    expect(steer).not.toHaveBeenCalled();
     expect(session.handler.handle("abort", {}, context)).toEqual({
       interrupted: false,
     });
     expect(interrupt).toHaveBeenCalledOnce();
+  });
+
+  it("steers only a tracked active prompt", async () => {
+    let resolveTurn: ((turn: AgentTurn) => void) | undefined;
+    const send = vi.fn(
+      () =>
+        new Promise<AgentTurn>((resolve) => {
+          resolveTurn = resolve;
+        })
+    );
+    const steer = vi.fn(() => Promise.resolve(turn([])));
+    const session = createCodingAgentRpcSession({
+      interrupt: vi.fn(),
+      send,
+      steer,
+    });
+    const context = { emit: vi.fn(), requestId: 9 };
+    expect(
+      session.handler.handle("prompt", { prompt: "start" }, context)
+    ).toEqual({ accepted: true });
+    await expect(
+      session.handler.handle("steer", { prompt: "adjust" }, context)
+    ).resolves.toEqual({ accepted: true });
+    expect(steer).toHaveBeenCalledWith("adjust");
+    resolveTurn?.(turn([]));
+    await session.settled;
   });
 });

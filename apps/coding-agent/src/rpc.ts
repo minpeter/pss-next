@@ -42,6 +42,12 @@ export function createCodingAgentRpcSession(
           return { interrupted };
         }
         case "steer":
+          if (!active) {
+            throw new ProtocolRpcError({
+              code: -32_003,
+              message: "No prompt is currently running",
+            });
+          }
           return steer(thread, params);
         case "prompt": {
           if (active) {

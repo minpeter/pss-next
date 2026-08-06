@@ -25,4 +25,32 @@ describe("JSONL framing", () => {
   it("rejects malformed records", () => {
     expect(() => new JsonlDecoder().push("nope\n")).toThrow();
   });
+
+  it("keeps decoder UTF-8 state isolated when instances interleave", () => {
+    const first = new JsonlDecoder();
+    const second = new JsonlDecoder();
+    const one = new TextEncoder().encode('{"text":"한"}\n');
+    const two = new TextEncoder().encode('{"text":"글"}\n');
+    expect(first.push(one.slice(0, 10))).toEqual([]);
+    expect(second.push(two.slice(0, 10))).toEqual([]);
+    expect(first.push(one.slice(10))).toEqual([{ text: "한" }]);
+    expect(second.push(two.slice(10))).toEqual([{ text: "글" }]);
+  });
+
+  it("bounds frames by UTF-8 bytes across chunks and recovers at newline", () => {
+    const decoder = new JsonlDecoder({ maxFrameBytes: 8 });
+    expect(decoder.pushResults('{"x":"')).toEqual([]);
+    const oversized = decoder.pushResults("한");
+    expect(oversized).toHaveLength(1);
+    expect(oversized[0]).toHaveProperty("error");
+    expect(decoder.pushResults('"}\n{"x":1}\n')).toEqual([{ value: { x: 1 } }]);
+  });
+
+  it("isolates malformed records from valid neighbors", () => {
+    const decoder = new JsonlDecoder();
+    const results = decoder.pushResults('{"before":1}\nnope\n{"after":2}\n');
+    expect(results[0]).toEqual({ value: { before: 1 } });
+    expect(results[1]).toHaveProperty("error");
+    expect(results[2]).toEqual({ value: { after: 2 } });
+  });
 });

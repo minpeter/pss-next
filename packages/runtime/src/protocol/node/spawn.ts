@@ -1,6 +1,10 @@
 import { type SpawnOptions, spawn } from "node:child_process";
 import { type ProtocolTransport, PssProtocolClient } from "../client";
 
+interface ChildOutcome {
+  readonly error?: Error;
+}
+
 export interface SpawnPssClientOptions {
   readonly args?: readonly string[];
   readonly command?: string;
@@ -19,22 +23,45 @@ export function spawnPssClient({
   if (!(child.stdin && child.stdout)) {
     throw new Error("PSS child process did not expose protocol pipes");
   }
+
+  // Install error listeners synchronously: spawn failures (for example ENOENT)
+  // are emitted on the next tick and must never become uncaught process errors.
+  let settleReadiness: (outcome: ChildOutcome) => void = () => undefined;
+  let settleCompletion: (outcome: ChildOutcome) => void = () => undefined;
+  const readiness = new Promise<ChildOutcome>((resolve) => {
+    settleReadiness = resolve;
+  });
+  const completion = new Promise<ChildOutcome>((resolve) => {
+    settleCompletion = resolve;
+  });
+  child.once("spawn", () => settleReadiness({}));
+  child.once("error", (error) => {
+    child.stdout?.destroy(error);
+    settleReadiness({ error });
+    settleCompletion({ error });
+  });
+  child.once("exit", () => settleCompletion({}));
+  child.stdin.on("error", (error) => {
+    child.stdout?.destroy(error);
+  });
+
   const transport: ProtocolTransport = {
     readable: child.stdout,
-    write(data) {
-      return new Promise<void>((resolve, reject) =>
+    async write(data) {
+      const outcome = await readiness;
+      if (outcome.error) {
+        throw outcome.error;
+      }
+      await new Promise<void>((resolve, reject) =>
         child.stdin?.write(data, (error) => (error ? reject(error) : resolve()))
       );
     },
-    close() {
+    async close() {
       child.stdin?.end();
-      if (child.exitCode !== null) {
-        return;
+      const outcome = await completion;
+      if (outcome.error) {
+        throw outcome.error;
       }
-      return new Promise<void>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("exit", () => resolve());
-      });
     },
   };
   return new PssProtocolClient(transport);

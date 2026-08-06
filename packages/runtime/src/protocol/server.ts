@@ -91,33 +91,25 @@ export async function servePssProtocol(
     active.add(operation);
   };
 
+  const handleDecoded = (
+    results: ReturnType<JsonlDecoder["pushResults"]>
+  ): void => {
+    for (const result of results) {
+      if ("error" in result) {
+        failure(null, {
+          code: -32_700,
+          message: "Parse error",
+          data: errorMessage(result.error),
+        });
+      } else {
+        dispatch(result.value);
+      }
+    }
+  };
   for await (const chunk of io.readable) {
-    let messages: unknown[];
-    try {
-      messages = decoder.push(chunk);
-    } catch (error) {
-      failure(null, {
-        code: -32_700,
-        message: "Parse error",
-        data: errorMessage(error),
-      });
-      continue;
-    }
-    for (const message of messages) {
-      dispatch(message);
-    }
+    handleDecoded(decoder.pushResults(chunk));
   }
-  try {
-    for (const message of decoder.finish()) {
-      dispatch(message);
-    }
-  } catch (error) {
-    failure(null, {
-      code: -32_700,
-      message: "Parse error",
-      data: errorMessage(error),
-    });
-  }
+  handleDecoded(decoder.finishResults());
   await Promise.allSettled(active);
   await writes;
 }
