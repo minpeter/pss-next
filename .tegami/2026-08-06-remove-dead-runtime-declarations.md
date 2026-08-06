@@ -4,4 +4,6 @@ packages:
     type: patch
 ---
 
+## Remove dead runtime declarations
+
 Remove verified unused runtime declarations and internal test helpers.

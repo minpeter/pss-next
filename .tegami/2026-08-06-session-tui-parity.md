@@ -6,4 +6,6 @@ packages:
     type: patch
 ---
 
+## Add session TUI compaction parity
+
 Add explicit `/compact` and Pi-compatible `/session` commands to the interactive TUI, with runtime-owned durable context compaction and documented session UX.

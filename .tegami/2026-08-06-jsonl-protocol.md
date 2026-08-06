@@ -6,5 +6,7 @@ packages:
     type: patch
 ---
 
+## Add the versioned JSONL agent protocol
+
 Add a versioned transport-neutral JSONL RPC protocol, TypeScript client, and Node spawn transport.
 Expose coding-agent prompt, steer, abort, and state operations through a protocol-clean stdio mode.
