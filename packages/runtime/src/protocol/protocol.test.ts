@@ -475,11 +475,14 @@ describe("PSS protocol", () => {
   it("sanitizes non-JSON RPC error data and always writes a response", async () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
+    const sparse: unknown[] = [];
+    sparse.length = 1;
+    const invalidData = [cyclic, () => undefined, sparse];
     const output: string[] = [];
     await servePssProtocol(
       {
         readable: chunks(
-          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n'
+          '{"jsonrpc":"2.0","protocol":"pss/1","id":1,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":2,"method":"state"}\n{"jsonrpc":"2.0","protocol":"pss/1","id":3,"method":"state"}\n'
         ),
         write: (frame) => {
           output.push(frame);
@@ -489,12 +492,12 @@ describe("PSS protocol", () => {
         handle(_method, _params, context) {
           throw Object.assign(new Error("custom failure"), {
             code: -32_050,
-            data: context.requestId === 1 ? cyclic : () => undefined,
+            data: invalidData[Number(context.requestId) - 1],
           });
         },
       }
     );
-    expect(output).toHaveLength(2);
+    expect(output).toHaveLength(3);
     for (const frame of output) {
       const response = JSON.parse(frame);
       expect(response.error).toEqual({
@@ -543,5 +546,46 @@ describe("PSS protocol", () => {
     expect(closeCalls).toBe(1);
     expect(returnCalls).toBe(1);
     expect(events).toEqual([]);
+  });
+
+  it("closes without awaiting an uninterruptible iterator return", async () => {
+    let returnCalls = 0;
+    const never = new Promise<IteratorResult<string>>(() => undefined);
+    const client = new PssProtocolClient({
+      readable: {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => never,
+            return: () => {
+              returnCalls += 1;
+              return never;
+            },
+          };
+        },
+      },
+      write: () => undefined,
+    });
+    const firstClose = client.close();
+    expect(client.close()).toBe(firstClose);
+    await expect(firstClose).resolves.toBeUndefined();
+    expect(returnCalls).toBe(1);
+  });
+
+  it("stops dispatching a decoded chunk when an event listener closes", async () => {
+    const client = new PssProtocolClient({
+      readable: chunks(
+        '{"jsonrpc":"2.0","protocol":"pss/1","method":"event","params":{"event":1,"requestId":1}}\n{"jsonrpc":"2.0","protocol":"pss/1","method":"event","params":{"event":2,"requestId":1}}\n'
+      ),
+      write: () => undefined,
+    });
+    const events: unknown[] = [];
+    client.onEvent((params) => {
+      events.push(params.event);
+      if (params.event === 1) {
+        client.close().catch(() => undefined);
+      }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events).toEqual([1]);
   });
 });

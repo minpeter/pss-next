@@ -23,6 +23,7 @@ export class JsonlDecoder {
   readonly #maxFrameBytes: number;
   readonly #textDecoder = new TextDecoder("utf-8", { fatal: true });
   readonly #textEncoder = new TextEncoder();
+  #trailingHighSurrogate = "";
 
   constructor({
     maxFrameBytes = DEFAULT_JSONL_MAX_FRAME_BYTES,
@@ -39,8 +40,60 @@ export class JsonlDecoder {
   }
 
   pushResults(chunk: string | Uint8Array): JsonlDecodeResult[] {
-    const bytes =
-      typeof chunk === "string" ? this.#textEncoder.encode(chunk) : chunk;
+    const results: JsonlDecodeResult[] = [];
+    if (typeof chunk === "string") {
+      let text = `${this.#trailingHighSurrogate}${chunk}`;
+      this.#trailingHighSurrogate = "";
+      if (hasTrailingHighSurrogate(text)) {
+        this.#trailingHighSurrogate = text.at(-1) ?? "";
+        text = text.slice(0, -1);
+      }
+      results.push(...this.#pushBytes(this.#textEncoder.encode(text)));
+      return results;
+    }
+    if (this.#trailingHighSurrogate) {
+      results.push(
+        ...this.#pushBytes(
+          this.#textEncoder.encode(this.#trailingHighSurrogate)
+        )
+      );
+      this.#trailingHighSurrogate = "";
+    }
+    results.push(...this.#pushBytes(chunk));
+    return results;
+  }
+
+  finish(): unknown[] {
+    return valuesOrThrow(this.finishResults());
+  }
+
+  finishResults(): JsonlDecodeResult[] {
+    const results: JsonlDecodeResult[] = [];
+    if (this.#trailingHighSurrogate) {
+      results.push(
+        ...this.#pushBytes(
+          this.#textEncoder.encode(this.#trailingHighSurrogate)
+        )
+      );
+      this.#trailingHighSurrogate = "";
+    }
+    if (this.#discardingOversizedFrame) {
+      this.#discardingOversizedFrame = false;
+      this.#length = 0;
+      return results;
+    }
+    if (this.#length === 0) {
+      return results;
+    }
+    const parsed = this.#parseBufferedFrame();
+    this.#length = 0;
+    if (parsed !== undefined) {
+      results.push(parsed);
+    }
+    return results;
+  }
+
+  #pushBytes(bytes: Uint8Array): JsonlDecodeResult[] {
     const results: JsonlDecodeResult[] = [];
     let cursor = 0;
     while (cursor < bytes.byteLength) {
@@ -68,24 +121,6 @@ export class JsonlDecoder {
       cursor = newline + 1;
     }
     return results;
-  }
-
-  finish(): unknown[] {
-    return valuesOrThrow(this.finishResults());
-  }
-
-  finishResults(): JsonlDecodeResult[] {
-    if (this.#discardingOversizedFrame) {
-      this.#discardingOversizedFrame = false;
-      this.#length = 0;
-      return [];
-    }
-    if (this.#length === 0) {
-      return [];
-    }
-    const parsed = this.#parseBufferedFrame();
-    this.#length = 0;
-    return parsed === undefined ? [] : [parsed];
   }
 
   #append(bytes: Uint8Array): JsonlFrameError | undefined {
@@ -163,6 +198,11 @@ export function encodeJsonl(value: unknown): string {
     throw new JsonlFrameError("Value is not representable as JSON");
   }
   return `${encoded}\n`;
+}
+
+function hasTrailingHighSurrogate(value: string): boolean {
+  const codeUnit = value.charCodeAt(value.length - 1);
+  return codeUnit >= 0xd8_00 && codeUnit <= 0xdb_ff;
 }
 
 function payloadByteLength(frame: Uint8Array): number {

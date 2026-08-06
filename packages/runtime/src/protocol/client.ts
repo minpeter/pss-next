@@ -120,7 +120,9 @@ export class PssProtocolClient {
         await this.#transport.close?.();
       } finally {
         try {
-          await this.#iterator.return?.();
+          Promise.resolve(this.#iterator.return?.()).catch((error) =>
+            this.#notifyListenerError(error)
+          );
         } catch (error) {
           this.#notifyListenerError(error);
         }
@@ -151,6 +153,9 @@ export class PssProtocolClient {
 
   #handleDecoded(results: ReturnType<JsonlDecoder["pushResults"]>): void {
     for (const result of results) {
+      if (this.#closed) {
+        return;
+      }
       if ("error" in result) {
         throw result.error;
       }
@@ -170,14 +175,7 @@ export class PssProtocolClient {
       throw new Error("Unsupported PSS protocol version");
     }
     if (message.method === "event") {
-      const event = message as unknown as ProtocolEvent;
-      for (const listener of this.#listeners) {
-        try {
-          listener(event.params);
-        } catch (error) {
-          this.#notifyListenerError(error);
-        }
-      }
+      this.#emit((message as unknown as ProtocolEvent).params);
       return;
     }
     const response = message as unknown as ProtocolResponse;
@@ -200,6 +198,19 @@ export class PssProtocolClient {
       pending.reject(new ProtocolRpcError(response.error));
     } else {
       pending.resolve(response.result);
+    }
+  }
+
+  #emit(event: ProtocolEvent["params"]): void {
+    for (const listener of this.#listeners) {
+      if (this.#closed) {
+        break;
+      }
+      try {
+        listener(event);
+      } catch (error) {
+        this.#notifyListenerError(error);
+      }
     }
   }
 

@@ -85,4 +85,10 @@ describe("JSONL framing", () => {
     }
     expect(values).toEqual([{ payload }]);
   });
+
+  it("preserves a surrogate pair split across string chunks", () => {
+    const decoder = new JsonlDecoder();
+    expect(decoder.push('{"emoji":"\ud83d')).toEqual([]);
+    expect(decoder.push('\ude00"}\n')).toEqual([{ emoji: "😀" }]);
+  });
 });

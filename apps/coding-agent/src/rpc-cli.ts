@@ -122,6 +122,13 @@ async function writeRpcStdout(stdout: RpcStdout, data: string): Promise<void> {
         rejectWrite(args[0]);
       }
     };
+    const onCallbackError = (error: Error) => {
+      if (!settled) {
+        settled = true;
+        off("drain", onDrain);
+        rejectWrite(error);
+      }
+    };
     const onDrain = () => {
       drainSeen = true;
       finish();
@@ -132,7 +139,7 @@ async function writeRpcStdout(stdout: RpcStdout, data: string): Promise<void> {
       needsDrain =
         stdout.write(data, (error) => {
           if (error) {
-            onError(error);
+            onCallbackError(error);
             return;
           }
           callbackDone = true;

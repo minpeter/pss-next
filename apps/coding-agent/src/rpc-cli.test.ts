@@ -80,4 +80,33 @@ describe("RPC CLI thread config", () => {
       createRpcServerIo(readable, failed).write("frame\n")
     ).rejects.toThrow("EPIPE");
   });
+
+  it("keeps callback errors safe through the paired stream error", async () => {
+    const readable = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            Promise.resolve<IteratorResult<string>>({
+              done: true,
+              value: undefined,
+            }),
+        };
+      },
+    };
+    const output = new EventEmitter() as EventEmitter & {
+      write(text: string, callback?: (error?: Error | null) => void): boolean;
+    };
+    output.write = (_text, callback) => {
+      const error = new Error("callback EPIPE");
+      callback?.(error);
+      queueMicrotask(() => output.emit("error", error));
+      return true;
+    };
+    await expect(
+      createRpcServerIo(readable, output).write("frame\n")
+    ).rejects.toThrow("callback EPIPE");
+    await Promise.resolve();
+    expect(output.listenerCount("error")).toBe(0);
+    expect(output.listenerCount("drain")).toBe(0);
+  });
 });

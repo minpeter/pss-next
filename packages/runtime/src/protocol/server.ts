@@ -184,12 +184,11 @@ function rpcError(error: unknown): ProtocolError {
       Number.isFinite(value.code) &&
       typeof value.message === "string"
     ) {
+      const data = snapshotJsonData(value.data);
       return {
         code: value.code,
         message: value.message,
-        ...(isJsonValue(value.data) && canEncodeJson(value.data)
-          ? { data: value.data }
-          : {}),
+        ...(data ? { data: data.value } : {}),
       };
     }
   }
@@ -225,10 +224,16 @@ function isJsonValue(value: unknown, seen = new Set<object>()): boolean {
   }
 }
 
-function canEncodeJson(value: unknown): boolean {
+function snapshotJsonData(
+  value: unknown
+): { readonly value: unknown } | undefined {
+  if (!isJsonValue(value)) {
+    return;
+  }
   try {
-    return JSON.stringify(value) !== undefined;
+    const frame = encodeJsonl({ data: value });
+    return { value: (JSON.parse(frame) as { data: unknown }).data };
   } catch {
-    return false;
+    return;
   }
 }
