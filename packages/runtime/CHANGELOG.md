@@ -1,3 +1,9 @@
+## @minpeter/pss-runtime@0.3.0-next.9 (next)
+
+### Strengthen runtime indexed access checks
+
+Type-check shipped runtime source with `noUncheckedIndexedAccess` and document the staged exact-optional migration baseline without diagnostic suppressions.
+
 ## @minpeter/pss-runtime@0.3.0-next.8 (next)
 
 ### Update the agents SDK
