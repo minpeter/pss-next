@@ -14,6 +14,9 @@ import {
 } from "./shared.mjs";
 
 const REQUIRED_PACKAGE_BINS = {
+  runtime: {
+    "pss-eval": "./bin/pss-eval.js",
+  },
   "coding-agent": {
     pss: "./bin/pss.js",
     "pss-coding-agent": "./bin/pss.js",

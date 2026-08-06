@@ -5,8 +5,8 @@ Status: implemented (initial cut) — tracks issue #258.
 ## Motivation
 
 The coding agent originally pinned one durable thread per working directory
-(`cwd:<path>`), with `/clear` as the only lifecycle operation (delete and
-recreate the same key). Multiple parallel sessions, resuming older work,
+(`cwd:<path>`), with a destructive `/clear` operation that deleted and
+recreated the same key. Multiple parallel sessions, resuming older work,
 naming, and branching all require explicit session management, and
 extensions need lifecycle visibility so their state does not silently
 outlive the thread it belongs to.
@@ -94,9 +94,11 @@ narrow and explicit:
   records that fit inside it. Either way `appliedMigrations` carries over,
   so #256 migrations never re-run on the fork. `/fork <name>` forks at the
   latest state under that name.
-- `/clear` keeps its legacy meaning (wipe the current session in place) and
-  emits `host:session-start` with reason `clear`. Its `new` alias moved to
-  the dedicated `/new` command.
+- `/clear [name]` is a compatibility alias for `/new [name]`: it creates and
+  switches to a new session without deleting the previous one. Both spellings
+  emit the normal `new` lifecycle reason; `clear` remains in the reason type so
+  older extension hosts can decode persisted/third-party events, but the built-in
+  command no longer emits it.
 - `new`, `resume`, `name`, `fork` (plus the previously reserved names) are
   reserved: extensions cannot register them.
 

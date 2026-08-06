@@ -7,6 +7,24 @@
 Minimal, platform-agnostic agent runtime with keyed threads, synchronized
 `turn.events()`, and opaque persistence contracts.
 
+## Guarantees and boundaries
+
+- **Provider boundary:** `model` accepts concrete AI SDK language-model objects
+  for the versions represented by the exported `LanguageModel` type (currently
+  v2, v3, and v4). PSS normalizes its own event protocol, but provider model
+  availability, token accounting, streaming quality, and retry behavior remain
+  provider/SDK concerns. `observedRetryable` is evidence, not a retry promise.
+- **Durability boundary:** durability comes from the selected `AgentHost`.
+  Omitting `host` uses an in-memory host and does not survive process loss. File
+  and Cloudflare hosts persist committed snapshots, execution records, and
+  replay events according to their adapter contracts; ephemeral stream deltas
+  and work outside the host transaction are not durable. Applications must use
+  stable `namespace` and thread keys to reopen the same state.
+- **API boundary:** supported imports are exactly the subpaths in the package
+  `exports` map. Files under `dist/`, opaque stored snapshots, and adapter
+  implementation details are not public APIs. `turn.events()` is the live
+  driver; `thread.events()` is committed replay, not a second live stream.
+
 ## Core DX
 
 ```ts

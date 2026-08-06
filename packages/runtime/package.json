@@ -87,10 +87,11 @@
     }
   },
   "bin": {
-    "pss-eval": "./dist/evals/cli-bin.js"
+    "pss-eval": "./bin/pss-eval.js"
   },
   "files": [
     "dist",
+    "bin",
     "README.md",
     "LICENSE.md"
   ],

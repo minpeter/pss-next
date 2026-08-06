@@ -2,7 +2,7 @@
 source_issue: 172
 source_url: https://github.com/minpeter/pss-runtime/issues/172
 original_created_at: 2026-07-07
-status: Proposed
+status: Implemented
 ---
 
 > Moved from GitHub issue #172 into the repo on 2026-07-19; the issue is closed and this file is the canonical copy.
@@ -11,7 +11,7 @@ status: Proposed
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Implemented |
 | **Authors** | @minpeter |
 | **Created** | 2026-07-07 |
 | **Target packages** | `apps/worker-agent`, optionally examples/docs in `@minpeter/pss-runtime` |
@@ -34,22 +34,21 @@ The key design split:
 
 ## Current State
 
-`apps/worker-agent` already has a narrow remote TUI RPC path:
+`apps/worker-agent` implements the app-owned transport while keeping transport
+concerns out of runtime core:
 
-- Worker entrypoint routes `/trpc` to `handleTuiRpcRequest`.
-- `tui.turn` is a tRPC mutation.
-- `dispatchTuiTurn()` forwards to the target Agent Durable Object `/turn` endpoint.
-- Remote clients use `createRemoteTuiDeliveryClient()` with an HTTP link.
+- `session.submitTurn` durably admits an input and returns `runId` and
+  `threadKey`; an optional idempotency key makes admission retry-safe.
+- `session.replayEvents` reads committed `StoredThreadEvent` records after an
+  exclusive cursor from `ThreadHandle.events()`.
+- `GET /session/events` replays the same durable records and then follows newly
+  committed events over SSE; the remote client reconnects with its last cursor.
+- Auth, `ChannelAddress` routing, and `sessionScopeKey` remain worker-owned.
+- The older `tui.turn` delivery-result RPC remains as a compatibility surface.
 
-This proves the app-owned RPC direction, but the current surface is turn-submission-oriented and not a general session transport:
-
-- No standard session creation/open shape.
-- No durable event replay endpoint.
-- No live SSE stream surface.
-- No shared cursor contract across TUI/webhook/browser clients.
-- No explicit relationship to RFC 0001's future `thread.events({ after })` API.
-
----
+Polling `session.replayEvents` is the portable baseline. SSE is optional and
+never the only recovery path. See `apps/worker-agent/README.md` for request and
+reconnect details.
 
 ## Goals
 
@@ -158,27 +157,26 @@ worker-agent transport
 
 ---
 
-## Implementation Plan
+## Implementation Status
 
-| Phase | Work | Gate |
-|-------|------|------|
-| 1 | Document current `/trpc/tui.turn` as the initial submit-turn RPC | existing TUI remote tests |
-| 2 | Add transport-level event cursor types shared by client/server | typecheck + contract tests |
-| 3 | Add replay-events RPC backed by RFC 0001 thread event replay | reconnect test with cursor |
-| 4 | Add SSE endpoint as an optional live stream over durable replay | reconnect + dropped-connection tests |
-| 5 | Unify TUI/browser client around submit + replay + stream model | worker-agent remote eval |
+| Phase | Result | Gate |
+|-------|--------|------|
+| 1 | Existing `/trpc/tui.turn` retained and documented as compatibility RPC | remote TUI tests |
+| 2 | Shared request, response, channel, and cursor schemas | session contract tests |
+| 3 | `session.submitTurn` and `session.replayEvents` backed by durable admission/replay | idempotency and cursor replay tests |
+| 4 | Optional `/session/events` SSE replay/follow endpoint | reconnect and dropped-response tests |
+| 5 | Remote session client exposes submit, polling replay, and SSE helpers | remote client tests |
 
----
+## Resolved Decisions
 
-## Open Questions
-
-1. Should the generalized RPC keep tRPC, or expose plain JSON endpoints for easier non-TypeScript clients?
-2. Should SSE be required, or should cursor replay polling be the baseline and SSE optional?
-3. Should submit-turn return immediately after durable admission, or wait for tool-only delivery like current TUI behavior?
-4. Should Telegram use the same replay surface internally, or remain webhook-delivery-only?
-5. What is the public naming: `session`, `thread`, `channel`, or `conversation`?
-
----
+1. tRPC is the typed submit/replay baseline; SSE is a separate HTTP endpoint.
+2. Cursor polling is required as the deployment-neutral recovery path; SSE is
+   optional.
+3. `session.submitTurn` returns after durable admission. The legacy `tui.turn`
+   continues to wait for its delivery result.
+4. Telegram remains webhook-delivery-owned rather than consuming session replay.
+5. Runtime naming remains `thread`; the app transport uses `session` and maps a
+   `ChannelAddress` to its Durable Object.
 
 ## References
 
