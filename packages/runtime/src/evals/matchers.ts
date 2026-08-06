@@ -173,17 +173,9 @@ function levenshteinSimilarity(a: string, b: string): number {
 }
 
 function levenshtein(a: string, b: string): number {
-  const matrix = Array.from({ length: b.length + 1 }, (_, row) =>
-    Array.from({ length: a.length + 1 }, (_, column) =>
-      row === 0 ? column : row
-    )
-  );
+  let previousRow = Array.from({ length: a.length + 1 }, (_, index) => index);
   for (let i = 1; i <= b.length; i++) {
-    const row = matrix[i];
-    const previousRow = matrix[i - 1];
-    if (!(row && previousRow)) {
-      throw new Error("Levenshtein matrix row is missing.");
-    }
+    const row = [i];
     for (let j = 1; j <= a.length; j++) {
       const deletion = previousRow[j];
       const insertion = row[j - 1];
@@ -198,8 +190,9 @@ function levenshtein(a: string, b: string): number {
       const cost = a.charAt(j - 1) === b.charAt(i - 1) ? 0 : 1;
       row[j] = Math.min(deletion + 1, insertion + 1, substitution + cost);
     }
+    previousRow = row;
   }
-  const distance = matrix.at(-1)?.at(-1);
+  const distance = previousRow[a.length];
   if (distance === undefined) {
     throw new Error("Levenshtein distance is missing.");
   }

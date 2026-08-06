@@ -170,9 +170,10 @@ export async function resolveModelStepOptions({
 
 function selectTools(registry: ToolSet, names: readonly string[]): ToolSet {
   const selected: ToolSet = Object.create(null);
-  const byName = new Map(Object.entries(registry));
   for (const name of names) {
-    const definition = byName.get(name);
+    const definition = Object.hasOwn(registry, name)
+      ? registry[name]
+      : undefined;
     if (definition === undefined) {
       Object.defineProperty(selected, name, {
         configurable: true,
