@@ -100,7 +100,7 @@ describe("Agent", () => {
     await expect(agent.send("hello")).resolves.toBeDefined();
   });
 
-  it("wraps send and steer turns with operation context", async () => {
+  it("wraps send, follow-up, and steer turns with operation context", async () => {
     const contexts: AgentInstrumentationContext[] = [];
     const instrumentation: AgentInstrumentation = {
       wrapTurn: (turn, context) => {
@@ -118,12 +118,18 @@ describe("Agent", () => {
     const thread = agent.thread("customer-1");
 
     await collectRun(await thread.send("hello"));
+    await collectRun(await thread.followUp("follow up"));
     await collectRun(await thread.steer("one more thing"));
 
     expect(contexts).toEqual([
       {
         namespace: "support",
         operation: "send",
+        threadKey: "customer-1",
+      },
+      {
+        namespace: "support",
+        operation: "follow-up",
         threadKey: "customer-1",
       },
       {

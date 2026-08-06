@@ -29,26 +29,27 @@ export async function closeKilledRuntimeInputs({
   runToClose?.emit({ type: "turn-error", message });
   runToClose?.close();
 
-  const queuedItems: QueuedInput[] = [];
-  while (inputQueue.length > 0) {
-    const item = inputQueue.shift();
-    closeRuntimeInput(item?.runtimeInput, message);
-    item?.run.emit({ type: "turn-error", message });
-    item?.run.close();
-    if (item) {
-      queuedItems.push(item);
-    }
-  }
-
+  const queuedItems = [...inputQueue];
   const nonDurableRuns = queuedItems.filter(
     (item) => item.durableMessageId === undefined
   );
+
+  // Durable cancellation must succeed before queued callers are terminalized.
+  // Active callers close promptly on abort, while queued ownership remains
+  // protective and retryable if cancellation fails.
+  await cancelQueuedDurableThreadInputs({
+    executionHost,
+    items: queuedItems,
+    threadKey,
+  });
+
+  for (const item of inputQueue.splice(0)) {
+    closeRuntimeInput(item.runtimeInput, message);
+    item.run.emit({ type: "turn-error", message });
+    item.run.close();
+  }
+
   await Promise.all([
-    cancelQueuedDurableThreadInputs({
-      executionHost,
-      items: queuedItems,
-      threadKey,
-    }),
     cancelThreadExecutionRun({
       executionHost,
       runId: runToClose?.runId,

@@ -102,6 +102,25 @@ describe("ThreadState deletion", () => {
     expect(store.commits).toHaveLength(commitsBefore);
   });
 
+  it("does not let a refresh resurrect a deleted snapshot", async () => {
+    const store = new BaseSpyStore();
+    const seed = new ThreadState({ key: "race-refresh", store });
+    seed.appendUserInput(userText("persisted"));
+    await seed.commit();
+
+    const state = new ThreadState({ key: "race-refresh", store });
+    await state.ensureLoaded();
+    const loadGate = createDeferred<void>();
+    store.loadGate = loadGate.promise;
+    const refresh = state.refresh();
+    const deletion = state.delete();
+    loadGate.resolve();
+    await Promise.all([refresh, deletion]);
+
+    expect(state.modelSnapshot()).toEqual([]);
+    expect(loadStored(store, "race-refresh")).toBeNull();
+  });
+
   it("does not resurrect a thread when delete wins a commit race", async () => {
     const store = new DelayedCommitStore();
     const state = new ThreadState({ key: "race", store });

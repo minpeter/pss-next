@@ -742,7 +742,7 @@ raw-payload capture mode. The wrapper passes every original event through unchan
 Stopping iteration calls the source iterator's `return()` and closes all open
 spans.
 
-Agent instrumentations run for `send`, `steer`, and durable `resume` turns.
+Agent instrumentations run for `send`, `follow-up`, `steer`, and durable `resume` turns.
 Custom `AgentInstrumentation.wrapTurn(turn, context)` implementations receive
 the operation, canonical thread key, optional agent namespace, and the durable
 run ID for resume operations.
@@ -945,6 +945,7 @@ on `event.meta?.source`:
 | `source` | Boundary |
 |----------|----------|
 | `send` | `thread.send()` / `agent.send()` |
+| `follow-up` | `thread.followUp()` / `agent.followUp()` |
 | `steer` | `thread.steer()` and drained steering queue |
 | `notify` | host notification runtime input |
 | `delegate` | parent `delegate_to_*` child `thread.send()` |
@@ -997,11 +998,33 @@ const executionAgent = await createAgent({
 The parent coordinator stays unchanged; only the nested child agent carries the
 hook.
 
-## Send, Host Resume, and Steer
+## Send, Follow-up, Host Resume, and Steer
 
 Use `thread.send(input)` for a new user turn. If a turn is already active, the
-turn is queued until the active turn finishes. Use `thread.steer(input)` when
-the input should steer the active turn; if no turn is active, it starts a normal
+turn is queued until the active turn finishes. Use `thread.followUp(input)` (or
+`agent.followUp(input)` for the default thread) when the caller explicitly wants
+a durable follow-up: it is never injected into the active model step and starts
+only after the active turn reaches a terminal boundary. Its input event carries
+`meta.source === "follow-up"` and `meta.streaming === "follow-up"`, so consumers
+can distinguish it from an ordinary send and from steering.
+
+Follow-ups use admitted-sequence FIFO, one-at-a-time delivery: every accepted
+call owns a distinct `AgentTurn`, model invocation, durable inbox record, and
+terminal event. One-at-a-time drain ownership is process/isolate-local: it
+serializes live `Agent` handles only when they share the exact same host store
+wrapper object and thread key, including one shared memory, file, or Cloudflare
+host instance. It is not a distributed lease and does not serialize separate
+store wrappers or processes that happen to use the same backing storage.
+Durable `admittedSeq` values order inbox records; an older recovered record runs
+before newly admitted work. A later follow-up remains queued when the active
+turn is interrupted or fails, and an orphaned durable claim is recovered on the
+next thread admission. The
+runtime does not currently expose an `all` batching policy; batching would
+collapse multiple accepted calls into one turn and conflict with the
+one-call/one-turn contract.
+
+Use `thread.steer(input)` only when the input should affect the active turn; if
+no turn is active, it preserves its existing behavior and starts a normal send
 turn.
 
 Durable hosts resume completed background work by writing a notification record
@@ -1015,7 +1038,7 @@ host. Check `supportsResume` first when you need to distinguish an unsupported
 host from a missing or already-claimed run.
 
 Runtime-originated input is delivered through the host notification inbox and
-internal runtime paths. App code should use `thread.send()`, `thread.steer()`,
+internal runtime paths. App code should use `thread.send()`, `thread.followUp()`, `thread.steer()`,
 or `agent.resume(runId)` for host-scheduled durable work.
 
 Each accepted call returns one `AgentTurn`. Drain that turn's `events()` stream to

@@ -1,6 +1,10 @@
 import type { AgentTurn } from "../../thread/protocol/turn";
 
-export type AgentInstrumentationOperation = "resume" | "send" | "steer";
+export type AgentInstrumentationOperation =
+  | "follow-up"
+  | "resume"
+  | "send"
+  | "steer";
 
 export interface AgentInstrumentationContext {
   readonly namespace?: string;

@@ -147,6 +147,17 @@ export class ThreadState {
     return await load.promise;
   }
 
+  async refresh(): Promise<void> {
+    await this.ensureLoaded();
+    if (this.#machine.in("deleting", "deleted")) {
+      return;
+    }
+    const applySnapshot = await this.#loadStoredSnapshot();
+    if (!this.#machine.in("deleting", "deleted")) {
+      applySnapshot();
+    }
+  }
+
   modelSnapshot(): ModelMessage[] {
     return this.#history.modelSnapshot();
   }

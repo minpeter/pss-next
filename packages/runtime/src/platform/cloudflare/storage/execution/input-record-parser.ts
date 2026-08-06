@@ -145,6 +145,7 @@ function isOptionalInputMeta(
 function isInputSource(value: unknown): value is InputSource {
   return (
     value === "delegate" ||
+    value === "follow-up" ||
     value === "notify" ||
     value === "overlay" ||
     value === "send" ||
@@ -159,7 +160,7 @@ function isOptionalStreaming(
 }
 
 function parseThreadInputKind(value: unknown): ThreadInputKind {
-  if (value === "send" || value === "steer") {
+  if (value === "follow-up" || value === "send" || value === "steer") {
     return value;
   }
   throw new StoredThreadInputRecordParseError();

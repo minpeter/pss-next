@@ -25,6 +25,7 @@ export interface ThreadInputDrainLoopOptions {
   readonly execution: ThreadExecutionOptions;
   readonly inputQueue: QueuedInput[];
   readonly model: ModelGenerationOptions;
+  readonly onBlocked?: (released: Promise<void>) => void;
   readonly release: () => void;
   readonly state: ThreadState;
   readonly threadKey: string;
@@ -38,24 +39,39 @@ export async function runThreadInputDrainLoop({
   execution,
   inputQueue,
   model,
+  onBlocked,
   release,
   state,
   threadKey,
 }: ThreadInputDrainLoopOptions): Promise<void> {
   let claimOrphanDurableInput = true;
   while (continueDraining()) {
-    const queuedInput = inputQueue.shift();
+    const queuedInput = inputQueue[0];
     if (queuedInput) {
-      const item = await prepareQueuedDurableInput({
+      const preparation = await prepareQueuedDurableInput({
         executionHost: execution.executionHost,
         item: queuedInput,
         threadKey,
       });
-      if (!item) {
+      if (preparation.kind === "blocked") {
+        onBlocked?.(preparation.released);
+        break;
+      }
+      if (preparation.kind === "unavailable") {
+        inputQueue.shift();
         continue;
       }
+      if (preparation.kind === "prepared") {
+        inputQueue.shift();
+      }
 
-      await processInput(item);
+      await processInput(preparation.item);
+      if (
+        preparation.kind === "prepared" &&
+        queuedInput.durableInputKind === "follow-up"
+      ) {
+        claimOrphanDurableInput = false;
+      }
       continue;
     }
 

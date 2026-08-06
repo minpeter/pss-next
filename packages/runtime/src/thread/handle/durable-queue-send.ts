@@ -1,4 +1,4 @@
-import type { AgentHost } from "../../execution/host/types";
+import type { AgentHost, ThreadInputKind } from "../../execution/host/types";
 import {
   cleanupStagedRuntimeAttachments,
   cleanupUnreferencedStagedRuntimeAttachments,
@@ -8,6 +8,7 @@ import {
 } from "../input/attachments";
 import type { AgentInput } from "../input/input";
 import { attachInputMeta, userInputFromEvent } from "../input/input-meta";
+import type { InputEventMeta } from "../input/input-meta-types";
 import { normalizeAgentInput } from "../input/input-normalization";
 import {
   createRuntimeInputState,
@@ -17,8 +18,13 @@ import {
 import type { AgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import { admitDurableThreadInput } from "../runtime/durable-input-admission";
+import {
+  registerLiveThreadInput,
+  unregisterLiveThreadInput,
+} from "../runtime/live-input-ownership";
 import { startThreadQueueDrain } from "../runtime/notification";
 import type { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
+import type { ThreadInputAdmissionReservation } from "../runtime/thread-input-admission-coordinator";
 
 export async function admitThreadSendInput({
   awaitBoundaries,
@@ -28,8 +34,10 @@ export async function admitThreadSendInput({
   executionHost,
   input,
   inputQueue,
+  kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
+  reservation,
   run,
   threadKey,
 }: {
@@ -40,8 +48,10 @@ export async function admitThreadSendInput({
   readonly executionHost: AgentHost | undefined;
   readonly input: AgentInput;
   readonly inputQueue: QueuedInput[];
+  readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
+  readonly reservation?: ThreadInputAdmissionReservation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<void> {
@@ -51,8 +61,10 @@ export async function admitThreadSendInput({
     events,
     executionHost,
     input,
+    kind,
     pendingOverlays,
     pendingRuntimeInputs,
+    reservation,
     run,
     threadKey,
   });
@@ -79,8 +91,10 @@ export async function createQueuedSendInput({
   events,
   executionHost,
   input,
+  kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
+  reservation,
   run,
   threadKey,
 }: {
@@ -89,18 +103,21 @@ export async function createQueuedSendInput({
   readonly events: ThreadEventDispatcher;
   readonly executionHost: AgentHost | undefined;
   readonly input: AgentInput;
+  readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
+  readonly reservation?: ThreadInputAdmissionReservation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<QueuedSendInputResult> {
   const normalized = normalizeAgentInput(input);
   const acceptedInput =
     normalized.meta === undefined
-      ? attachInputMeta(normalized, { source: "send" })
+      ? attachInputMeta(normalized, inputMetaForQueuedKind(kind))
       : normalized;
   const stagedRefs: RuntimeAttachmentReference[] = [];
   let keepStagedAttachments = false;
+  let registeredMessageId: string | undefined;
   try {
     const stagedAcceptedInput = await stageUserInputAttachments(
       acceptedInput,
@@ -122,13 +139,25 @@ export async function createQueuedSendInput({
       attachmentStore,
       { stagedRefs, trustRuntimeAttachmentRefs: true }
     );
+    const messageId = crypto.randomUUID();
+    registerLiveThreadInput(executionHost, threadKey, messageId, run);
+    registeredMessageId = messageId;
     const admission = await admitDurableThreadInput({
       executionHost,
       input: queuedInput,
-      kind: "send",
+      kind,
+      messageId,
       precreateExecutionRun: true,
+      reservation,
       threadKey,
     });
+    if (
+      admission.kind === "unavailable" ||
+      (admission.kind === "admitted" && admission.receipt.duplicate)
+    ) {
+      unregisterLiveThreadInput(executionHost, threadKey, messageId, run);
+      registeredMessageId = undefined;
+    }
     let executionRun: QueuedInput["executionRun"];
     if (admission.kind === "admitted") {
       if (admission.receipt.duplicate) {
@@ -147,6 +176,8 @@ export async function createQueuedSendInput({
       acceptedEvent: processed,
       awaitBoundaries,
       durableInput: admission.kind === "admitted",
+      durableInputKind: kind,
+      durableOwner: run,
       ...(admission.kind === "admitted"
         ? { durableMessageId: admission.receipt.record.messageId }
         : {}),
@@ -168,7 +199,25 @@ export async function createQueuedSendInput({
     return { kind: "queued", item, processed };
   } finally {
     if (!keepStagedAttachments) {
+      if (registeredMessageId) {
+        unregisterLiveThreadInput(
+          executionHost,
+          threadKey,
+          registeredMessageId,
+          run
+        );
+      }
       await cleanupStagedRuntimeAttachments(attachmentStore, stagedRefs);
     }
   }
+}
+
+/** @internal exported for the durable-kind/meta invariant test. */
+export function inputMetaForQueuedKind(
+  kind: Exclude<ThreadInputKind, "steer">
+): InputEventMeta {
+  return {
+    source: kind,
+    ...(kind === "follow-up" ? { streaming: "follow-up" } : {}),
+  };
 }

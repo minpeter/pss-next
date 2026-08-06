@@ -157,6 +157,34 @@ export function describeThreadInputInboxContract({
       });
     });
 
+    it("claims follow-ups only when the thread is idle", async () => {
+      const store = createStore();
+      await store.inputs.admit({
+        admittedAtMs: 1,
+        input: { text: "later", type: "user-input" },
+        kind: "follow-up",
+        messageId: "follow-up-1",
+        threadKey: "thread-follow-up",
+      });
+
+      await expect(
+        store.inputs.claimNext("thread-follow-up", "step-end")
+      ).resolves.toBeNull();
+      await expect(
+        store.inputs.claimNext("thread-follow-up", "step-start")
+      ).resolves.toBeNull();
+      await expect(
+        store.inputs.claimNext("thread-follow-up", "turn-start")
+      ).resolves.toBeNull();
+      await expect(
+        store.inputs.claimNext("thread-follow-up", "turn-idle")
+      ).resolves.toMatchObject({
+        kind: "follow-up",
+        messageId: "follow-up-1",
+        status: "claiming",
+      });
+    });
+
     describeThreadInputInboxRecoveryContract({ createStore });
 
     it("releases and reclaims thread input claims with a fresh claim id", async () => {

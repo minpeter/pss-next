@@ -1,6 +1,16 @@
 import type { AgentHost, TurnRecord } from "../../execution/host/types";
 import type { QueuedInput } from "../input/runtime-input";
 import { DurableThreadInputClaimError } from "./durable-input-acknowledgement";
+import { unregisterLiveThreadInput } from "./live-input-ownership";
+
+export class DurableThreadInputCancellationError extends Error {
+  constructor(messageId: string, threadKey: string) {
+    super(
+      `Could not claim queued input ${messageId} for cancellation on ${threadKey}.`
+    );
+    this.name = "DurableThreadInputCancellationError";
+  }
+}
 
 export async function cancelQueuedDurableThreadInputs({
   executionHost,
@@ -27,7 +37,10 @@ export async function cancelQueuedDurableThreadInputs({
         { messageId: item.durableMessageId }
       );
       if (!claimed) {
-        continue;
+        throw new DurableThreadInputCancellationError(
+          item.durableMessageId,
+          threadKey
+        );
       }
       const promoted = await transaction.inputs.markPromoted(claimed);
       if (!promoted) {
@@ -48,6 +61,14 @@ export async function cancelQueuedDurableThreadInputs({
       }
     }
   });
+  for (const item of durableItems) {
+    unregisterLiveThreadInput(
+      executionHost,
+      threadKey,
+      item.durableMessageId,
+      item.durableOwner
+    );
+  }
 }
 
 function isTerminalTurnStatus(status: TurnRecord["status"]): boolean {

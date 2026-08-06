@@ -10,6 +10,10 @@ import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
 import { readThreadEvents } from "../runtime/thread-event-replay";
+import {
+  reserveThreadInputAdmission,
+  type ThreadInputAdmissionReservation,
+} from "../runtime/thread-input-admission-coordinator";
 import { threadKilledError } from "../state/thread-errors";
 import type {
   ThreadCompactionInput,
@@ -44,15 +48,12 @@ export class AgentThread {
   }
 
   async send(input: AgentInput): Promise<AgentTurn> {
-    this.#assertOpen();
+    return await this.#queueTurnInput(input, "send");
+  }
 
-    const run = new BufferedAgentTurn();
-    const loaded = this.#ensureStarted();
-    await this.#enqueueInputAdmission(async () => {
-      await loaded;
-      await this.#admitSend(input, run);
-    });
-    return run;
+  /** Queue a durable user turn that starts only after the active turn ends. */
+  async followUp(input: AgentInput): Promise<AgentTurn> {
+    return await this.#queueTurnInput(input, "follow-up");
   }
 
   overlay(input: AgentInput): this {
@@ -137,29 +138,35 @@ export class AgentThread {
       return current.deletePromise;
     }
 
-    const killPromise = this.kill();
+    const killPromise =
+      current.tag === "killed" ? current.killPromise : this.kill();
     const settled = deferred();
     const deletePromise = settled.promise;
-    // Transition before wiring the continuation so the machine state never
-    // depends on microtask scheduling.
-    terminal.to({ tag: "deleting", deletePromise, killPromise });
-    killPromise
-      .then(() => this.#deleteThread())
-      .then(
-        () => {
-          terminal.toIf("deleting", {
-            tag: "deleted",
-            deletePromise,
-            killPromise,
-          });
-          settled.resolve();
-        },
-        (error: unknown) => {
-          // Roll back to `killed` so the delete can be retried.
-          terminal.toIf("deleting", { tag: "killed", killPromise });
-          settled.reject(error);
-        }
-      );
+    const remove = async (): Promise<void> => {
+      await killPromise;
+      const afterKill = terminal.state;
+      if (afterKill.tag === "deleting" || afterKill.tag === "deleted") {
+        return await afterKill.deletePromise;
+      }
+      if (afterKill.tag !== "killed") {
+        throw new Error("Thread kill did not reach a terminal state.");
+      }
+      terminal.to({ tag: "deleting", deletePromise, killPromise });
+      try {
+        await this.#deleteThread();
+        terminal.toIf("deleting", {
+          tag: "deleted",
+          deletePromise,
+          killPromise,
+        });
+      } catch (error) {
+        // The durable delete can be retried without repeating the successful
+        // kill teardown.
+        terminal.toIf("deleting", { tag: "killed", killPromise });
+        throw error;
+      }
+    };
+    remove().then(settled.resolve, settled.reject);
     return deletePromise;
   }
 
@@ -180,7 +187,39 @@ export class AgentThread {
     return killAgentThread(this.#context);
   }
 
-  async #admitSend(input: AgentInput, run: BufferedAgentTurn): Promise<void> {
+  async #queueTurnInput(
+    input: AgentInput,
+    kind: "follow-up" | "send"
+  ): Promise<AgentTurn> {
+    this.#assertOpen();
+
+    const run = new BufferedAgentTurn();
+    const executionHost = this.#context.execution.executionHost;
+    const reservation = executionHost
+      ? reserveThreadInputAdmission(executionHost, this.#context.threadKey)
+      : undefined;
+    const loaded = this.#ensureStarted();
+    await this.#enqueueInputAdmission(async () => {
+      const admit = async (): Promise<void> => {
+        await loaded;
+        await this.#admitSend(
+          input,
+          run,
+          kind,
+          async (operation) => await operation()
+        );
+      };
+      await (reservation ? reservation(admit) : admit());
+    });
+    return run;
+  }
+
+  async #admitSend(
+    input: AgentInput,
+    run: BufferedAgentTurn,
+    kind: "follow-up" | "send",
+    reservation?: ThreadInputAdmissionReservation
+  ): Promise<void> {
     this.#assertOpen();
 
     await this.#recoverDurableInputClaims();
@@ -200,8 +239,10 @@ export class AgentThread {
       attachmentStore: this.#context.model.attachmentStore,
       input,
       inputQueue: this.#context.inputQueue,
+      kind,
       pendingOverlays: this.#context.pendingOverlays,
       pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
+      reservation,
       run,
       threadKey: this.#context.threadKey,
     });

@@ -42,9 +42,28 @@ export class InMemoryExecutionStore implements HostStore {
     () => this.#state
   );
   readonly events: EventStore = new InMemoryEventStore(() => this.#state);
-  readonly inputs: ThreadInputInbox = new InMemoryThreadInputInbox(
-    () => this.#state
-  );
+  readonly inputs: ThreadInputInbox = {
+    ack: async (record) =>
+      await this.transaction(async (tx) => await tx.inputs.ack(record)),
+    admit: async (input) =>
+      await this.transaction(async (tx) => await tx.inputs.admit(input)),
+    claimNext: async (threadKey, boundary, options) =>
+      await this.transaction(
+        async (tx) => await tx.inputs.claimNext(threadKey, boundary, options)
+      ),
+    markPromoted: async (record) =>
+      await this.transaction(
+        async (tx) => await tx.inputs.markPromoted(record)
+      ),
+    recoverClaims: async (threadKey) =>
+      await this.transaction(
+        async (tx) => await tx.inputs.recoverClaims(threadKey)
+      ),
+    releaseClaim: async (record) =>
+      await this.transaction(
+        async (tx) => await tx.inputs.releaseClaim(record)
+      ),
+  };
   readonly notifications: NotificationInbox = new InMemoryNotificationInbox(
     () => this.#state
   );

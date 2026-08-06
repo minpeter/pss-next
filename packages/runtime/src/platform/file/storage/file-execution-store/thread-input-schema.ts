@@ -153,6 +153,7 @@ function isOptionalInputMeta(
 function isInputSource(value: unknown): value is InputSource {
   return (
     value === "delegate" ||
+    value === "follow-up" ||
     value === "notify" ||
     value === "overlay" ||
     value === "send" ||
@@ -175,7 +176,7 @@ function isString(value: unknown): value is string {
 }
 
 function isThreadInputKind(value: unknown): value is ThreadInputKind {
-  return value === "send" || value === "steer";
+  return value === "follow-up" || value === "send" || value === "steer";
 }
 
 function isThreadInputPlacement(value: unknown): value is ThreadInputPlacement {
