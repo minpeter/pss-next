@@ -69,7 +69,6 @@
       "@minpeter/pss-source": "./src/extensions/legacy.ts",
       "types": "./dist/extensions/legacy.d.ts",
       "import": "./dist/extensions/legacy.js"
-
     }
   },
   "bin": {
