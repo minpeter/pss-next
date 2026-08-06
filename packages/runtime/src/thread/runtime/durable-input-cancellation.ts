@@ -1,6 +1,7 @@
 import type { AgentHost, TurnRecord } from "../../execution/host/types";
 import type { QueuedInput } from "../input/runtime-input";
 import { DurableThreadInputClaimError } from "./durable-input-acknowledgement";
+import { unregisterLiveThreadInput } from "./live-input-ownership";
 
 export async function cancelQueuedDurableThreadInputs({
   executionHost,
@@ -48,6 +49,9 @@ export async function cancelQueuedDurableThreadInputs({
       }
     }
   });
+  for (const item of durableItems) {
+    unregisterLiveThreadInput(executionHost, threadKey, item.durableMessageId);
+  }
 }
 
 function isTerminalTurnStatus(status: TurnRecord["status"]): boolean {

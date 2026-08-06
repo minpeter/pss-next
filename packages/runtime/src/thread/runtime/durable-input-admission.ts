@@ -9,7 +9,10 @@ import type {
 import { ThreadInputInboxUnavailableError } from "../../execution/host/unsupported-thread-input-inbox";
 import type { UserInput } from "../input/input";
 import { precreateThreadExecutionRun } from "./execution";
-import { withThreadInputAdmission } from "./thread-input-admission-coordinator";
+import {
+  type ThreadInputAdmissionReservation,
+  withThreadInputAdmission,
+} from "./thread-input-admission-coordinator";
 
 export type DurableInputAdmission =
   | {
@@ -25,6 +28,7 @@ export async function admitDurableThreadInput({
   kind,
   placement,
   precreateExecutionRun = false,
+  reservation,
   threadKey,
 }: {
   readonly executionHost: AgentHost | undefined;
@@ -32,13 +36,14 @@ export async function admitDurableThreadInput({
   readonly kind: ThreadInputKind;
   readonly placement?: ThreadInputPlacement;
   readonly precreateExecutionRun?: boolean;
+  readonly reservation?: ThreadInputAdmissionReservation;
   readonly threadKey: string;
 }): Promise<DurableInputAdmission> {
   if (!executionHost) {
     return { kind: "unavailable" };
   }
 
-  return await withThreadInputAdmission(executionHost, threadKey, async () => {
+  const operation = async (): Promise<DurableInputAdmission> => {
     try {
       const messageId = crypto.randomUUID();
       if (precreateExecutionRun) {
@@ -77,5 +82,10 @@ export async function admitDurableThreadInput({
       }
       throw error;
     }
-  });
+  };
+  return await (
+    reservation ??
+    ((reservedOperation) =>
+      withThreadInputAdmission(executionHost, threadKey, reservedOperation))
+  )(operation);
 }

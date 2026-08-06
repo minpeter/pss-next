@@ -18,8 +18,10 @@ import {
 import type { AgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import { admitDurableThreadInput } from "../runtime/durable-input-admission";
+import { registerLiveThreadInput } from "../runtime/live-input-ownership";
 import { startThreadQueueDrain } from "../runtime/notification";
 import type { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
+import type { ThreadInputAdmissionReservation } from "../runtime/thread-input-admission-coordinator";
 
 export async function admitThreadSendInput({
   awaitBoundaries,
@@ -32,6 +34,7 @@ export async function admitThreadSendInput({
   kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
+  reservation,
   run,
   threadKey,
 }: {
@@ -45,6 +48,7 @@ export async function admitThreadSendInput({
   readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
+  readonly reservation?: ThreadInputAdmissionReservation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<void> {
@@ -57,6 +61,7 @@ export async function admitThreadSendInput({
     kind,
     pendingOverlays,
     pendingRuntimeInputs,
+    reservation,
     run,
     threadKey,
   });
@@ -86,6 +91,7 @@ export async function createQueuedSendInput({
   kind = "send",
   pendingOverlays,
   pendingRuntimeInputs,
+  reservation,
   run,
   threadKey,
 }: {
@@ -97,6 +103,7 @@ export async function createQueuedSendInput({
   readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
+  readonly reservation?: ThreadInputAdmissionReservation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<QueuedSendInputResult> {
@@ -133,6 +140,7 @@ export async function createQueuedSendInput({
       input: queuedInput,
       kind,
       precreateExecutionRun: true,
+      reservation,
       threadKey,
     });
     let executionRun: QueuedInput["executionRun"];
@@ -154,6 +162,7 @@ export async function createQueuedSendInput({
       awaitBoundaries,
       durableInput: admission.kind === "admitted",
       durableInputKind: kind,
+      durableOwner: run,
       ...(admission.kind === "admitted"
         ? { durableMessageId: admission.receipt.record.messageId }
         : {}),
@@ -171,6 +180,14 @@ export async function createQueuedSendInput({
       stagedRefs,
       [queuedInput, processed]
     );
+    if (admission.kind === "admitted") {
+      registerLiveThreadInput(
+        executionHost,
+        threadKey,
+        admission.receipt.record.messageId,
+        run
+      );
+    }
     keepStagedAttachments = true;
     return { kind: "queued", item, processed };
   } finally {

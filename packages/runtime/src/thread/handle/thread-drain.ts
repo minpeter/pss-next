@@ -51,6 +51,9 @@ export async function runThreadInputDrainLoop({
         item: queuedInput,
         threadKey,
       });
+      if (preparation.kind === "blocked") {
+        break;
+      }
       if (preparation.kind === "unavailable") {
         inputQueue.shift();
         continue;

@@ -16,6 +16,10 @@ import {
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
 } from "../runtime/execution";
+import {
+  isLiveThreadInputOwnedByOther,
+  unregisterLiveThreadInput,
+} from "../runtime/live-input-ownership";
 import { inputMetaForQueuedKind } from "./durable-queue-send";
 import { isThreadDrainOwned } from "./thread-drain-coordinator";
 
@@ -120,11 +124,25 @@ export async function claimOrphanDurableThreadInput({
   if (claimed.kind === "unavailable" || !claimed.record) {
     return;
   }
+  if (
+    isLiveThreadInputOwnedByOther(
+      executionHost,
+      threadKey,
+      claimed.record.messageId
+    )
+  ) {
+    await releaseDurableThreadInputClaim({
+      executionHost,
+      record: claimed.record,
+    });
+    return;
+  }
   return await queuedInputFromClaim(claimed.record, executionHost);
 }
 
 export type QueuedDurableInputPreparation =
   | { readonly kind: "prepared"; readonly item: QueuedInput }
+  | { readonly kind: "blocked" }
   | { readonly kind: "preceding"; readonly item: QueuedInput }
   | { readonly kind: "unavailable" };
 
@@ -148,10 +166,31 @@ export async function prepareQueuedDurableInput({
   });
   if (claimed.kind === "claimed" && claimed.record) {
     if (claimed.record.messageId !== item.durableMessageId) {
+      if (
+        isLiveThreadInputOwnedByOther(
+          executionHost,
+          threadKey,
+          claimed.record.messageId,
+          item.durableOwner
+        )
+      ) {
+        await releaseDurableThreadInputClaim({
+          executionHost,
+          record: claimed.record,
+        });
+        return { kind: "blocked" };
+      }
       return {
         item: await queuedInputFromClaim(claimed.record, executionHost),
         kind: "preceding",
       };
+    }
+    if (item.durableMessageId) {
+      unregisterLiveThreadInput(
+        executionHost,
+        threadKey,
+        item.durableMessageId
+      );
     }
     return {
       item: { ...item, durableInputClaim: claimed.record },
@@ -159,6 +198,9 @@ export async function prepareQueuedDurableInput({
     };
   }
 
+  if (item.durableMessageId) {
+    unregisterLiveThreadInput(executionHost, threadKey, item.durableMessageId);
+  }
   await cancelThreadExecutionRun({
     executionHost,
     executionRun: item.executionRun,

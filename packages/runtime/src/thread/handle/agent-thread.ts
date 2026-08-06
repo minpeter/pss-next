@@ -10,6 +10,10 @@ import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
 import { readThreadEvents } from "../runtime/thread-event-replay";
+import {
+  reserveThreadInputAdmission,
+  type ThreadInputAdmissionReservation,
+} from "../runtime/thread-input-admission-coordinator";
 import { threadKilledError } from "../state/thread-errors";
 import type {
   ThreadCompactionInput,
@@ -184,10 +188,22 @@ export class AgentThread {
     this.#assertOpen();
 
     const run = new BufferedAgentTurn();
+    const executionHost = this.#context.execution.executionHost;
+    const reservation = executionHost
+      ? reserveThreadInputAdmission(executionHost, this.#context.threadKey)
+      : undefined;
     const loaded = this.#ensureStarted();
     await this.#enqueueInputAdmission(async () => {
-      await loaded;
-      await this.#admitSend(input, run, kind);
+      const admit = async (): Promise<void> => {
+        await loaded;
+        await this.#admitSend(
+          input,
+          run,
+          kind,
+          async (operation) => await operation()
+        );
+      };
+      await (reservation ? reservation(admit) : admit());
     });
     return run;
   }
@@ -195,7 +211,8 @@ export class AgentThread {
   async #admitSend(
     input: AgentInput,
     run: BufferedAgentTurn,
-    kind: "follow-up" | "send"
+    kind: "follow-up" | "send",
+    reservation?: ThreadInputAdmissionReservation
   ): Promise<void> {
     this.#assertOpen();
 
@@ -219,6 +236,7 @@ export class AgentThread {
       kind,
       pendingOverlays: this.#context.pendingOverlays,
       pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
+      reservation,
       run,
       threadKey: this.#context.threadKey,
     });

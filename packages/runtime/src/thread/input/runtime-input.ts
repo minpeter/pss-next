@@ -36,6 +36,7 @@ export interface QueuedInput {
   readonly durableInputClaim?: ClaimedThreadInput;
   readonly durableInputKind?: "follow-up" | "send";
   readonly durableMessageId?: string;
+  readonly durableOwner?: object;
   readonly executionRun?: QueuedThreadExecutionRun;
   readonly initialEvents: AgentEvent[];
   readonly input?: UserInput;

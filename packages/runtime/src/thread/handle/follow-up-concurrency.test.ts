@@ -58,10 +58,12 @@ describe.each(hostFactories)(
       const firstAgent = new Agent({ host, model });
       const secondAgent = new Agent({ host, model });
 
-      const [first, second] = await Promise.all([
-        firstAgent.thread("shared-follow-up").followUp("first"),
-        secondAgent.thread("shared-follow-up").followUp("second"),
-      ]);
+      const first = await firstAgent
+        .thread("shared-follow-up")
+        .followUp("first");
+      const second = await secondAgent
+        .thread("shared-follow-up")
+        .followUp("second");
       const [firstEvents, secondEvents] = await Promise.all([
         collect(first),
         collect(second),
@@ -101,5 +103,44 @@ describe.each(hostFactories)(
       expect(a1.at(-1)?.type).toBe("turn-end");
       expect(b2.at(-1)?.type).toBe("turn-end");
     });
+
+    it.each([
+      ["send", "send"],
+      ["send", "followUp"],
+    ] as const)(
+      "keeps concurrent %s/%s records attached to their caller turns",
+      async (firstMethod, secondMethod) => {
+        const host = await hostFactory();
+        const modelOrder: string[] = [];
+        const model = createCallbackModel(async ({ history }) => {
+          modelOrder.push(JSON.stringify(history));
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return [assistantMessage("DONE")];
+        });
+        const firstThread = new Agent({ host, model }).thread(
+          `caller-turn-${firstMethod}-${secondMethod}`
+        );
+        const secondThread = new Agent({ host, model }).thread(
+          `caller-turn-${firstMethod}-${secondMethod}`
+        );
+
+        const [firstTurn, secondTurn] = await Promise.all([
+          firstThread[firstMethod]("first"),
+          secondThread[secondMethod]("second"),
+        ]);
+        const [firstEvents, secondEvents] = await Promise.all([
+          collect(firstTurn),
+          collect(secondTurn),
+        ]);
+
+        expect(modelOrder).toHaveLength(2);
+        expect(modelOrder.join("\n")).toContain("first");
+        expect(modelOrder.join("\n")).toContain("second");
+        expect(firstEvents[0]).toMatchObject({ text: "first" });
+        expect(firstEvents.at(-1)?.type).toBe("turn-end");
+        expect(secondEvents[0]).toMatchObject({ text: "second" });
+        expect(secondEvents.at(-1)?.type).toBe("turn-end");
+      }
+    );
   }
 );
