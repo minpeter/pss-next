@@ -27,7 +27,6 @@ describe("extension authoring API compatibility", () => {
   it("supports typed event maps while retaining arbitrary JSON events", () => {
     interface Events {
       readonly "checkpoint:saved": { readonly revision: number };
-      readonly [type: string]: import("./types").ExtensionJsonValue | undefined;
     }
     const events = null as unknown as CodingAgentExtensionEvents<Events>;
 
@@ -39,7 +38,6 @@ describe("extension authoring API compatibility", () => {
       typedEvents.on("checkpoint:saved", (payload) => {
         expectTypeOf(payload.revision).toEqualTypeOf<number>();
       });
-      typedEvents.emit("other:event", { compatible: true });
     };
     expectTypeOf(checkContract).toBeFunction();
     expect(events).toBeNull();

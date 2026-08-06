@@ -8,6 +8,7 @@ import type {
 } from "../tui/assistant-renderer";
 import type { TuiCommand } from "../tui/command";
 import type { ToolRendererMap } from "../tui/tool-call-view";
+import { parseAssistantRendererMode } from "./assistant-renderer-mode";
 import type { CodingAgentExtensionModelProvider } from "./types";
 
 export const extensionCapabilityBrand: unique symbol = Symbol.for(
@@ -79,7 +80,7 @@ export function assistantRenderer(
   renderer: AssistantRenderer,
   options: AssistantRendererRegistrationOptions = {}
 ): AssistantRendererCapability {
-  const mode = resolveAssistantRendererMode(options);
+  const mode = parseAssistantRendererMode(options);
   return capability({
     fallback: mode === "fallback",
     kind: "assistant-renderer",
@@ -147,19 +148,4 @@ function capability<Value extends { readonly kind: string }>(
     ...value,
     [extensionCapabilityBrand]: true as const,
   });
-}
-
-function resolveAssistantRendererMode(
-  options: AssistantRendererRegistrationOptions
-): AssistantRendererMode {
-  if ("mode" in options && options.mode !== undefined) {
-    return options.mode;
-  }
-  if ("fallback" in options && options.fallback === true) {
-    return "fallback";
-  }
-  if ("override" in options && options.override === true) {
-    return "override";
-  }
-  return "exclusive";
 }

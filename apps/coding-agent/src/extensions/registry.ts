@@ -4,6 +4,7 @@ import type {
   AssistantRendererRegistrationOptions,
 } from "../tui/assistant-renderer";
 import type { ToolRendererMap } from "../tui/tool-call-view";
+import { parseAssistantRendererMode } from "./assistant-renderer-mode";
 import type { ExtensionCapability } from "./capabilities";
 import {
   snapshotCommand,
@@ -79,8 +80,9 @@ export function createCodingAgentExtensionRegistry({
     if (typeof renderer !== "function") {
       throw new TypeError("Assistant renderer must be a function");
     }
-    const fallback = options.fallback === true || options.mode === "fallback";
-    const override = options.override === true || options.mode === "override";
+    const mode = parseAssistantRendererMode(options);
+    const fallback = mode === "fallback";
+    const override = mode === "override";
     if (fallback && override) {
       throw new TypeError(
         "Assistant renderer cannot be both a fallback and an override"

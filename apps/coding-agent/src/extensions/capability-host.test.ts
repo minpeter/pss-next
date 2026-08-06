@@ -79,6 +79,45 @@ describe("coding-agent extension capabilities", () => {
     );
   });
 
+  it("rejects malformed renderer options through factory and legacy registry paths", async () => {
+    const renderer = () => ({
+      invalidate() {
+        return;
+      },
+      render() {
+        return [];
+      },
+      setText() {
+        return;
+      },
+    });
+    const malformed = [
+      { fallback: true, mode: "fallback" },
+      { fallback: true, override: true },
+      { mode: "replace" },
+      { fallback: false },
+    ] as const;
+
+    for (const options of malformed) {
+      expect(() => assistantRenderer(renderer, options as never)).toThrow(
+        TypeError
+      );
+      await expect(
+        createCodingAgentExtensionHost([
+          {
+            configure(registry) {
+              registry.tui.registerAssistantRenderer(
+                renderer,
+                options as never
+              );
+            },
+            id: "malformed-renderer-options",
+          },
+        ])
+      ).rejects.toMatchObject({ cause: expect.any(TypeError) });
+    }
+  });
+
   it("registers one assistant renderer through the capability API", async () => {
     const renderer = () => ({
       invalidate() {

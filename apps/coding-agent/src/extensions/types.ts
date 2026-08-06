@@ -113,8 +113,13 @@ export interface CodingAgentExtensionEventMap {
   readonly [type: string]: ExtensionJsonValue | undefined;
 }
 
+type CodingAgentExtensionEventMapConstraint<EventMap> = {
+  readonly [Type in keyof EventMap]: ExtensionJsonValue | undefined;
+};
+
 export interface CodingAgentExtensionEvents<
-  EventMap extends CodingAgentExtensionEventMap = CodingAgentExtensionEventMap,
+  EventMap extends
+    CodingAgentExtensionEventMapConstraint<EventMap> = CodingAgentExtensionEventMap,
 > {
   emit<Type extends keyof EventMap & string>(
     type: Type,
