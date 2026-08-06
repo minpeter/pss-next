@@ -327,9 +327,9 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
 `sessions.json` next to the thread files:
 
 - `/new [name]` — start a new empty session
-- `/resume` — interactive picker (switch, rename, or delete a session;
-  deleting the live session is blocked — switch away first);
-  `/resume <key|name>` switches directly (with completions)
+- `/session` (also `/resume`) — interactive picker (switch, rename, or delete
+  a session; deleting the live session is blocked — switch away first);
+  `/session <key|name>` switches directly (with completions)
 - `/name <name>` — name the current session (also `pss --name <name>` at
   startup)
 - `/fork` — pick a branch point: the latest state or *before an earlier
@@ -338,8 +338,11 @@ Metadata (names, fork parentage, the active session) lives in a sidecar
   state under that name. Applied thread migrations carry over so they
   never re-run on the fork, and the parent thread key is recorded
 - `/clear` — wipe the current session in place (legacy behavior)
+- `/compact` — summarize the current durable conversation and replace its
+  model-facing context with the smaller continuation handoff; full history
+  remains available for replay and inspection
 
-Session recency updates on every completed turn, so the `/resume` picker
+Session recency updates on every completed turn, so the `/session` picker
 sorts by actual use.
 
 Extensions observe the lifecycle through host bus events

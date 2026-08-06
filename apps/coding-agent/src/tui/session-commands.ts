@@ -84,8 +84,9 @@ function createNewCommand(context: SessionCommandContext): TuiCommand {
 
 function createResumeCommand(context: SessionCommandContext): TuiCommand {
   return {
+    aliases: ["resume"],
     description:
-      "Resume, rename, or delete a session: /resume [key|name] (no argument opens the picker)",
+      "Resume, rename, or delete a session: /session [key|name] (also /resume; no argument opens the picker)",
     execute: (input) =>
       runSessionCommand(async () => {
         if (input.args.length === 0) {
@@ -138,7 +139,7 @@ function createResumeCommand(context: SessionCommandContext): TuiCommand {
       }
       return completions;
     },
-    name: "resume",
+    name: "session",
   };
 }
 

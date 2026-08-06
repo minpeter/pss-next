@@ -124,7 +124,8 @@ function createContext(overrides?: Partial<SessionCommandContext>): {
 
 function command(context: SessionCommandContext, name: string) {
   const found = createSessionCommands(context).find(
-    (candidate) => candidate.name === name
+    (candidate) =>
+      candidate.name === name || candidate.aliases?.includes(name) === true
   );
   if (found === undefined) {
     throw new Error(`missing command ${name}`);
@@ -171,6 +172,12 @@ describe("/new", () => {
 });
 
 describe("/resume", () => {
+  it("exposes /session as the canonical Pi-compatible command", () => {
+    const { context } = createContext();
+    expect(command(context, "session").name).toBe("session");
+    expect(command(context, "session").aliases).toContain("resume");
+  });
+
   it("opens the inline session selector without arguments", async () => {
     const { context } = createContext();
     const result = await command(context, "resume").execute({ args: [] });

@@ -53,6 +53,7 @@ import { emitUpdateNotice } from "../update/notifier";
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createReloadCommand } from "./command-set";
+import { compactCurrentThread, createCompactCommand } from "./compact-command";
 import { parseDirectStartArguments } from "./direct-start";
 import { createModelCommand } from "./model-command";
 import {
@@ -262,6 +263,28 @@ export async function startTui(
     // opaque, so the selector is not offered then.
     const activeModelSession = modelSession;
     const builtInCommands = [
+      createCompactCommand({
+        compact: async () => {
+          const history = await sessionManager.loadSessionHistory(
+            currentSession.key
+          );
+          const clearCompactingStatus = extensionUi?.status(
+            "Compacting session context..."
+          );
+          try {
+            const result = await compactCurrentThread({
+              commit: (input) => thread.compact(input),
+              history,
+              instructions: currentInstructions(),
+              model,
+            });
+            resetUsageTotals();
+            return result;
+          } finally {
+            clearCompactingStatus?.();
+          }
+        },
+      }),
       // Session commands close over helpers defined below; the wrappers
       // defer evaluation to call time.
       ...createSessionCommands({
