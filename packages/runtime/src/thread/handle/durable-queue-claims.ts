@@ -9,6 +9,7 @@ import { BufferedAgentTurn } from "../protocol/turn";
 import {
   claimDurableThreadInput,
   recoverDurableThreadInputs,
+  releaseDurableThreadInputClaim,
 } from "../runtime/durable-input-claims";
 import {
   cancelThreadExecutionRun,
@@ -138,15 +139,13 @@ export async function prepareQueuedDurableInput({
     return { item, kind: "prepared" };
   }
 
-  const oldestFirst = item.durableInputKind === "follow-up";
   const claimed = await claimDurableThreadInput({
     boundary: "turn-idle",
     executionHost,
-    messageId: oldestFirst ? undefined : item.durableMessageId,
     threadKey,
   });
   if (claimed.kind === "claimed" && claimed.record) {
-    if (oldestFirst && claimed.record.messageId !== item.durableMessageId) {
+    if (claimed.record.messageId !== item.durableMessageId) {
       return {
         item: await queuedInputFromClaim(claimed.record, executionHost),
         kind: "preceding",
@@ -174,12 +173,18 @@ async function queuedInputFromClaim(
     threadKey: record.threadKey,
     turnId: record.messageId,
   });
-  const precreated = await precreateThreadExecutionRun({
-    executionHost,
-    kind: "user-turn",
-    runId,
-    threadKey: record.threadKey,
-  });
+  let precreated: Awaited<ReturnType<typeof precreateThreadExecutionRun>>;
+  try {
+    precreated = await precreateThreadExecutionRun({
+      executionHost,
+      kind: "user-turn",
+      runId,
+      threadKey: record.threadKey,
+    });
+  } catch (error) {
+    await releaseDurableThreadInputClaim({ executionHost, record });
+    throw error;
+  }
   return {
     acceptedEvent: record.input,
     awaitBoundaries: false,

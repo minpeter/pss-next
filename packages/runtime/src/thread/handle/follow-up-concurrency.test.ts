@@ -45,7 +45,9 @@ describe.each(hostFactories)(
       let active = 0;
       let calls = 0;
       let maxActive = 0;
-      const model = createCallbackModel(async () => {
+      const modelOrder: string[] = [];
+      const model = createCallbackModel(async ({ history }) => {
+        modelOrder.push(JSON.stringify(history));
         calls += 1;
         active += 1;
         maxActive = Math.max(maxActive, active);
@@ -67,6 +69,10 @@ describe.each(hostFactories)(
 
       expect(calls).toBe(2);
       expect(maxActive).toBe(1);
+      expect(modelOrder).toHaveLength(2);
+      expect(modelOrder[0]).toContain("first");
+      expect(modelOrder[0]).not.toContain("second");
+      expect(modelOrder[1]).toContain("second");
       expect(firstEvents.at(-1)?.type).toBe("turn-end");
       expect(secondEvents.at(-1)?.type).toBe("turn-end");
     });

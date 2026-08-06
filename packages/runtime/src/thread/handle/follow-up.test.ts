@@ -203,4 +203,35 @@ describe("AgentThread follow-up queue", () => {
       host.store.inputs.claimNext("recovery-during-active", "turn-idle")
     ).resolves.toBeNull();
   });
+
+  it("releases an orphan claim when turn precreation fails", async () => {
+    const host = createInMemoryHost();
+    await host.store.inputs.admit({
+      input: userText("orphan"),
+      kind: "follow-up",
+      messageId: "orphan-precreate-failure",
+      threadKey: "precreate-failure",
+    });
+    const turns = host.store.turns as {
+      create: typeof host.store.turns.create;
+    };
+    turns.create = () => Promise.reject(new Error("turn create failed"));
+    const thread = new Agent({
+      host,
+      model: createCallbackModel(() => [assistantMessage("DONE")]),
+    }).thread("precreate-failure");
+
+    const events = await collect(await thread.send("new"));
+
+    expect(events.at(-1)).toMatchObject({
+      message: "turn create failed",
+      type: "turn-error",
+    });
+    await expect(
+      host.store.inputs.claimNext("precreate-failure", "turn-idle")
+    ).resolves.toMatchObject({
+      messageId: "orphan-precreate-failure",
+      status: "claiming",
+    });
+  });
 });
