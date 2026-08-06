@@ -143,30 +143,35 @@ describe("Agent thread persistence compaction", () => {
     });
   });
 
-  it("rejects manual compaction while a turn is active", async () => {
+  it("waits for an active drain before manual compaction", async () => {
     let releaseModel: (() => void) | undefined;
     const modelGate = new Promise<void>((resolve) => {
       releaseModel = resolve;
     });
-    let modelStarted = false;
+    let modelCalls = 0;
     const agent = new Agent({
       model: createCallbackModel(async () => {
-        modelStarted = true;
-        await modelGate;
-        return [assistantMessage("DONE")];
+        modelCalls += 1;
+        if (modelCalls === 1) {
+          await modelGate;
+          return [assistantMessage("DONE")];
+        }
+        return [assistantMessage("SUMMARY")];
       }),
     });
     const thread = agent.thread("busy");
-    const turn = await thread.send("work");
+    const turn = await thread.send("work ".repeat(200));
     const collecting = collect(turn);
-    await vi.waitFor(() => expect(modelStarted).toBe(true));
+    await vi.waitFor(() => expect(modelCalls).toBe(1));
 
-    await expect(thread.compact()).rejects.toThrow(
-      "Cannot compact while a turn is active."
-    );
-
+    const compacting = thread.compact();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(modelCalls).toBe(1);
     releaseModel?.();
     await collecting;
+
+    await expect(compacting).resolves.toEqual({ status: "compacted" });
+    expect(modelCalls).toBe(2);
   });
 
   it("returns false when beforeCompaction cancels an explicit input", async () => {
@@ -214,47 +219,57 @@ describe("Agent thread persistence compaction", () => {
     expect(order).toEqual(["compact", "turn"]);
   });
 
-  it("serializes compact-before-followUp across Agents sharing a store", async () => {
+  it("refreshes the original owner after another Agent compacts", async () => {
     const store = new SpyStore();
     const host = hostWithThreads(store);
-    const seedAgent = new Agent({
-      host,
-      model: createCallbackModel(() => [assistantMessage("SEED")]),
-    });
-    await collect(
-      await seedAgent.thread("shared-compact-fifo").send("old ".repeat(200))
-    );
-
     let active = 0;
     let maxActive = 0;
     const order: string[] = [];
-    const model = createCallbackModel(async ({ history }) => {
-      const isSummary = history[0]?.role === "system";
-      order.push(isSummary ? "compact" : "turn");
+    const ownerHistories: ModelMessage[][] = [];
+    const ownerModel = createCallbackModel(async ({ history }) => {
+      ownerHistories.push([...history]);
+      order.push("turn");
       active += 1;
       maxActive = Math.max(maxActive, active);
       await new Promise((resolve) => setTimeout(resolve, 15));
       active -= 1;
-      return [assistantMessage(isSummary ? "SHARED SUMMARY" : "DONE")];
+      return [assistantMessage(`OWNER ${ownerHistories.length}`)];
     });
-    const compactThread = new Agent({ host, model }).thread(
+    const compactingModel = createCallbackModel(async () => {
+      order.push("compact");
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      return [assistantMessage("SHARED SUMMARY")];
+    });
+    const ownerThread = new Agent({ host, model: ownerModel }).thread(
       "shared-compact-fifo"
     );
-    const followUpThread = new Agent({ host, model }).thread(
-      "shared-compact-fifo"
-    );
+    await collect(await ownerThread.send("old ".repeat(200)));
+    order.length = 0;
+    const compactingThread = new Agent({
+      host,
+      model: compactingModel,
+    }).thread("shared-compact-fifo");
 
-    const compactPromise = compactThread.compact();
-    const followUpPromise = followUpThread.followUp("after shared compact");
+    const compactPromise = compactingThread.compact();
+    const followUpPromise = ownerThread.followUp("after shared compact");
     const [compaction, followUp] = await Promise.all([
       compactPromise,
       followUpPromise,
     ]);
-    await collect(followUp);
+    const followUpEvents = await collect(followUp);
+    const sendEvents = await collect(await ownerThread.send("after follow-up"));
 
     expect(compaction).toEqual({ status: "compacted" });
-    expect(order).toEqual(["compact", "turn"]);
+    expect(order).toEqual(["compact", "turn", "turn"]);
     expect(maxActive).toBe(1);
+    expect(followUpEvents.at(-1)?.type).toBe("turn-end");
+    expect(sendEvents.at(-1)?.type).toBe("turn-end");
+    expect(JSON.stringify(ownerHistories[1])).toContain("SHARED SUMMARY");
+    expect(JSON.stringify(ownerHistories[1])).toContain("after shared compact");
+    expect(JSON.stringify(ownerHistories[2])).toContain("after follow-up");
     expect(store.threads.get("shared-compact-fifo")?.state).toMatchObject({
       compactions: [
         {

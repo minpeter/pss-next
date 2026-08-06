@@ -40,6 +40,7 @@ import {
 import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
 import { admitThreadSendInput } from "./durable-queue-send";
 import { addDurableSteeringInput } from "./durable-steering";
+import { withThreadDrainOwnership } from "./thread-drain-coordinator";
 import { createOverlayRuntimeInput } from "./thread-overlay";
 
 export class AgentThread {
@@ -118,13 +119,13 @@ export class AgentThread {
   compact(
     options?: CompactionSummaryOptions
   ): Promise<ManualThreadCompactionResult>;
-  compact(
+  async compact(
     input?: CompactionSummaryOptions | ThreadCompactionInput
   ): Promise<boolean | ManualThreadCompactionResult> {
     this.#assertOpen();
 
     if (input !== undefined && "summary" in input) {
-      return this.#compactExplicitSummary(input);
+      return await this.#compactExplicitSummary(input);
     }
 
     const executionHost = this.#context.execution.executionHost;
@@ -134,35 +135,45 @@ export class AgentThread {
     return this.#enqueueInputAdmission(async () => {
       const compact = async (): Promise<ManualThreadCompactionResult> => {
         await this.#ensureStarted();
-        await this.#recoverDurableInputClaims();
-        this.#assertOpen();
-        if (this.#context.turn.state.tag !== "none") {
-          throw new Error("Cannot compact while a turn is active.");
-        }
-        if (this.#context.state.modelSnapshot().length === 0) {
-          return { status: "empty" };
-        }
-        const transforms = createTurnModelTransforms({
-          hookRuntime: this.#context.execution.hookRuntime,
-          state: this.#context.state,
-          threadKey: this.#context.threadKey,
-        });
-        const compacted = await compactThreadManually({
-          compact: (compactionInput, guard) =>
-            this.#context.events.compact(
-              this.#context.state,
-              compactionInput,
-              guard
-            ),
-          latestContextTransform: transforms.latestContextTransform,
-          model: this.#context.model,
-          signal: new AbortController().signal,
-          state: this.#context.state,
-          summaryOptions: input,
-          threadKey: this.#context.threadKey,
-          transformModelContext: transforms.transformModelContext,
-        });
-        return { status: compacted ? "compacted" : "skipped" };
+        return await withThreadDrainOwnership(
+          executionHost,
+          this.#context.threadKey,
+          this.#context,
+          async ({ refreshRequired }) => {
+            await this.#recoverDurableInputClaims();
+            if (refreshRequired) {
+              await this.#context.state.refresh();
+            }
+            this.#assertOpen();
+            if (this.#context.turn.state.tag !== "none") {
+              throw new Error("Cannot compact while a turn is active.");
+            }
+            if (this.#context.state.modelSnapshot().length === 0) {
+              return { status: "empty" };
+            }
+            const transforms = createTurnModelTransforms({
+              hookRuntime: this.#context.execution.hookRuntime,
+              state: this.#context.state,
+              threadKey: this.#context.threadKey,
+            });
+            const compacted = await compactThreadManually({
+              compact: (compactionInput, guard) =>
+                this.#context.events.compact(
+                  this.#context.state,
+                  compactionInput,
+                  guard
+                ),
+              latestContextTransform: transforms.latestContextTransform,
+              model: this.#context.model,
+              signal: new AbortController().signal,
+              state: this.#context.state,
+              summaryOptions: input,
+              threadKey: this.#context.threadKey,
+              transformModelContext: transforms.transformModelContext,
+            });
+            return { status: compacted ? "compacted" : "skipped" };
+          }
+        );
       };
       return await (reservation ? reservation(compact) : compact());
     });
