@@ -51,6 +51,9 @@ jobs:
       - name: Validate Pi compatibility manifest
         run: pnpm check:compatibility
 
+      - name: Check tegami entry sections
+        run: pnpm check:tegami-notes
+
       - name: Lint
         run: pnpm lint
 

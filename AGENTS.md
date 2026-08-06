@@ -17,6 +17,7 @@ packages:
 
 - Target the published package whose behavior changes: `npm:@minpeter/pss-runtime` or `npm:@minpeter/pss-coding-agent`. Changes under `extensions/` target `npm:@minpeter/pss-coding-agent` because the built-in extensions ship inside its bundle.
 - Always use `type: patch` (or minor/major when asked). The `replay: exit-prerelease(...)` form is reserved for changes that must not bump a version (docs-only, CI-only); using it for a code change makes the Version Packages PR silently skip the entry.
+- Give the entry body at least one `## <Title>` section. Tegami only drafts notes whose body parses into a markdown section, so a pending entry without any heading is silently never released; `pnpm check:tegami-notes` enforces this in CI.
 - Copy the form from this template, not from an arbitrary existing entry.
 
 # Releases
