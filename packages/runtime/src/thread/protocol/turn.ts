@@ -17,9 +17,11 @@ interface NextWaiter {
 }
 
 /** Producer side: whether the turn still accepts events. */
-type TurnChannelState =
-  | { readonly tag: "open" }
-  | { readonly tag: "closed"; readonly error: unknown };
+type TurnTerminalState =
+  | { readonly tag: "closed" }
+  | { readonly tag: "failed"; readonly error: unknown };
+
+type TurnChannelState = { readonly tag: "open" } | TurnTerminalState;
 
 /**
  * Consumer side of the event iterator.
@@ -44,8 +46,9 @@ const createChannelMachine = () =>
     initial: { tag: "open" },
     name: "agent-turn-channel",
     transitions: {
-      open: ["closed"],
+      open: ["closed", "failed"],
       closed: [],
+      failed: [],
     },
   });
 
@@ -91,7 +94,7 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   emit(event: AgentEvent): void {
-    if (this.#channel.state.tag === "closed") {
+    if (this.#channel.state.tag !== "open") {
       return;
     }
 
@@ -99,7 +102,7 @@ export class BufferedAgentTurn implements AgentTurn {
   }
 
   emitBoundary(event: AgentEvent): Promise<void> {
-    if (this.#channel.state.tag === "closed") {
+    if (this.#channel.state.tag !== "open") {
       return Promise.resolve();
     }
 
@@ -108,26 +111,12 @@ export class BufferedAgentTurn implements AgentTurn {
     });
   }
 
-  close(error?: unknown): void {
-    if (this.#channel.state.tag === "closed") {
-      return;
-    }
+  close(): void {
+    this.#finish({ tag: "closed" });
+  }
 
-    this.#channel.to({ tag: "closed", error });
-    this.#settlePendingAck();
-    this.#settleQueuedAcks();
-
-    const consumer = this.#consumer.state;
-    if (consumer.tag !== "waiting") {
-      return;
-    }
-
-    this.#consumer.to({ tag: "idle" });
-    if (error) {
-      consumer.waiter.reject(error);
-      return;
-    }
-    consumer.waiter.resolve({ done: true, value: undefined });
+  closeWithError(error: unknown): void {
+    this.#finish({ tag: "failed", error });
   }
 
   events(): AsyncIterable<AgentEvent> {
@@ -163,6 +152,28 @@ export class BufferedAgentTurn implements AgentTurn {
     this.#events.push(event);
   }
 
+  #finish(state: TurnTerminalState): void {
+    if (this.#channel.state.tag !== "open") {
+      return;
+    }
+
+    this.#channel.to(state);
+    this.#settlePendingAck();
+    this.#settleQueuedAcks();
+
+    const consumer = this.#consumer.state;
+    if (consumer.tag !== "waiting") {
+      return;
+    }
+
+    this.#consumer.to({ tag: "idle" });
+    if (state.tag === "failed") {
+      consumer.waiter.reject(state.error);
+      return;
+    }
+    consumer.waiter.resolve({ done: true, value: undefined });
+  }
+
   #next(): Promise<IteratorResult<AgentEvent>> {
     const consumer = this.#consumer.state;
     if (consumer.tag === "delivering" || consumer.tag === "waiting") {
@@ -179,10 +190,10 @@ export class BufferedAgentTurn implements AgentTurn {
     }
 
     const channel = this.#channel.state;
+    if (channel.tag === "failed") {
+      return Promise.reject(channel.error);
+    }
     if (channel.tag === "closed") {
-      if (channel.error) {
-        return Promise.reject(channel.error);
-      }
       return Promise.resolve({ done: true, value: undefined });
     }
 

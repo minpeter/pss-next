@@ -9,6 +9,32 @@ const expectPending = async (promise: Promise<unknown>) => {
   );
 };
 
+const falsyErrors: readonly unknown[] = [
+  false,
+  0,
+  -0,
+  0n,
+  "",
+  null,
+  undefined,
+  Number.NaN,
+];
+
+const expectRejectedWith = async (
+  promise: Promise<unknown>,
+  expected: unknown
+) => {
+  const result = await promise.then(
+    () => ({ status: "fulfilled" as const }),
+    (error: unknown) => ({ error, status: "rejected" as const })
+  );
+
+  expect(result.status).toBe("rejected");
+  if (result.status === "rejected") {
+    expect(Object.is(result.error, expected)).toBe(true);
+  }
+};
+
 describe("AgentTurn", () => {
   it("binds one stable optional durable run id", () => {
     const local = new BufferedAgentTurn();
@@ -160,6 +186,59 @@ describe("AgentTurn", () => {
       value: undefined,
     });
   });
+
+  it("close() completes a pending next request successfully", async () => {
+    const run = new BufferedAgentTurn();
+    const iterator = run.events()[Symbol.asyncIterator]();
+    const next = iterator.next();
+
+    run.close();
+
+    await expect(next).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("preserves the first successful or failed closure outcome", async () => {
+    const successfulRun = new BufferedAgentTurn();
+    successfulRun.close();
+    successfulRun.closeWithError(new Error("late failure"));
+    const successfulIterator = successfulRun.events()[Symbol.asyncIterator]();
+    await expect(successfulIterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+
+    const failure = new Error("first failure");
+    const failedRun = new BufferedAgentTurn();
+    failedRun.closeWithError(failure);
+    failedRun.close();
+    const failedIterator = failedRun.events()[Symbol.asyncIterator]();
+    await expectRejectedWith(failedIterator.next(), failure);
+  });
+
+  it.each(falsyErrors)(
+    "closeWithError rejects a future next request with falsy error %#",
+    async (error) => {
+      const run = new BufferedAgentTurn();
+      run.closeWithError(error);
+      run.emit({ type: "turn-start" });
+      const iterator = run.events()[Symbol.asyncIterator]();
+
+      await expectRejectedWith(iterator.next(), error);
+    }
+  );
+
+  it.each(falsyErrors)(
+    "closeWithError rejects a pending next request with falsy error %#",
+    async (error) => {
+      const run = new BufferedAgentTurn();
+      const iterator = run.events()[Symbol.asyncIterator]();
+      const next = iterator.next();
+
+      run.closeWithError(error);
+
+      await expectRejectedWith(next, error);
+    }
+  );
 
   it("close() settles queued boundary acknowledgements", async () => {
     const run = new BufferedAgentTurn();
