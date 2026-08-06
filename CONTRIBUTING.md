@@ -6,6 +6,13 @@
 the unit-level contract holds, not that the user-facing behavior works. Drive the
 real surface and record what you observed.
 
+The core published packages have a regression coverage gate. Run
+`pnpm coverage` to test `packages/runtime/src` and `apps/coding-agent/src`, print
+a terminal report, enforce the baseline, and write machine-readable results to
+`coverage/core/coverage-summary.json`. Test files and explicit test-support or
+fixture modules are excluded; examples, extensions, and experimental workspaces
+remain outside this focused gate.
+
 Scope the QA to what you touched:
 
 | Change area | Required real-surface QA |
