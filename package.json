@@ -34,6 +34,8 @@
     "format": "ultracite fix .",
     "tegami": "node scripts/tegami.mts",
     "verify:release": "node scripts/verify-release-artifacts.mjs",
+    "api:check": "node scripts/runtime-public-api.mjs check",
+    "api:update": "pnpm --filter @minpeter/pss-runtime build && node scripts/runtime-public-api.mjs update",
     "boundaries": "node scripts/prepare-boundaries.mjs && turbo boundaries",
     "repo:packages": "turbo query ls --output json",
     "repo:affected": "turbo query affected",
