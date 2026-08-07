@@ -94,8 +94,7 @@ describe("Agent compaction budget policy", () => {
     expect(
       events.some(
         (event) =>
-          event.type === "turn-error" &&
-          gateRejectedPattern.test(event.message)
+          event.type === "turn-error" && gateRejectedPattern.test(event.message)
       )
     ).toBe(true);
     expect(calls).toBe(0);
