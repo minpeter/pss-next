@@ -8,7 +8,6 @@
       "type AgentCompactionContext",
       "type AgentCompactionDecision",
       "type AgentCompactionEvent",
-      "type AgentCompactionPolicy",
       "type AgentCompactionReason",
       "type AgentEvent",
       "type AgentEventListener",

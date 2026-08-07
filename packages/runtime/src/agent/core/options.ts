@@ -8,10 +8,7 @@ import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
-import type {
-  AgentCompaction,
-  AgentCompactionPolicy,
-} from "../../thread/runtime/auto-compaction-types";
+import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -25,7 +22,7 @@ import {
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
-  readonly compaction?: AgentCompaction | AgentCompactionPolicy;
+  readonly compaction?: AgentCompaction;
   readonly contextTokens?: ContextTokenOptions;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
@@ -103,25 +100,15 @@ export function assertAgentOptions(
 }
 
 function assertCompactionObject(compaction: AgentOptions["compaction"]): void {
-  if (typeof compaction === "function") {
-    return;
-  }
-  if (compaction === null || typeof compaction !== "object") {
-    throw new TypeError(
-      "Agent: options.compaction must be a function or a compaction policy."
-    );
-  }
-  if (typeof compaction.maxInputTokens !== "function") {
-    throw new TypeError(
-      "Agent: options.compaction.maxInputTokens must be a function."
-    );
+  if (typeof compaction !== "function") {
+    throw new TypeError("Agent: options.compaction must be a function.");
   }
   if (
-    compaction.compact !== undefined &&
-    typeof compaction.compact !== "function"
+    compaction.maxInputTokens !== undefined &&
+    typeof compaction.maxInputTokens !== "function"
   ) {
     throw new TypeError(
-      "Agent: options.compaction.compact must be a function."
+      "Agent: options.compaction.maxInputTokens must be a function."
     );
   }
   if (
@@ -130,6 +117,15 @@ function assertCompactionObject(compaction: AgentOptions["compaction"]): void {
   ) {
     throw new TypeError(
       "Agent: options.compaction.estimateTokens must be a function."
+    );
+  }
+  if (
+    compaction.onOverflow !== undefined &&
+    compaction.onOverflow !== "compact" &&
+    compaction.onOverflow !== "error"
+  ) {
+    throw new TypeError(
+      'Agent: options.compaction.onOverflow must be "compact" or "error".'
     );
   }
 }

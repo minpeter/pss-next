@@ -26,9 +26,13 @@ describe("Agent compaction budget policy", () => {
         return { endSeqExclusive: 1, startSeq: 0, summary: "S" };
       }
     );
+    const compaction = Object.assign(compact, {
+      maxInputTokens,
+      onOverflow: "compact" as const,
+    });
     let calls = 0;
     const agent = agentWithCompaction({
-      compaction: { compact, maxInputTokens, onOverflow: "compact" },
+      compaction,
       host: hostWithThreads(new SpyStore()),
       model: createCallbackModel(() => {
         calls += 1;
@@ -80,7 +84,10 @@ describe("Agent compaction budget policy", () => {
   it("propagates ContextBudgetExceededError when the budget source selects error mode without a compact method", async () => {
     let calls = 0;
     const agent = agentWithCompaction({
-      compaction: { maxInputTokens: () => 64, onOverflow: "error" },
+      compaction: Object.assign(() => undefined, {
+        maxInputTokens: () => 64,
+        onOverflow: "error" as const,
+      }),
       host: hostWithThreads(new SpyStore()),
       model: createCallbackModel(() => {
         calls += 1;

@@ -82,9 +82,16 @@ describe("resolveCodingAgentThreadConfig", () => {
         "/repo/demo",
         "/home/me"
       ).compaction
-    ).toMatchObject({
-      compact: expect.any(Function),
-      maxInputTokens: expect.any(Function),
-    });
+    ).toBeTypeOf("function");
+    expect(
+      resolveCodingAgentThreadConfig(
+        {
+          PSS_AUTO_COMPACTION_MIN_MESSAGES: "12",
+          PSS_AUTO_COMPACTION_RETAIN_MESSAGES: "4",
+        },
+        "/repo/demo",
+        "/home/me"
+      ).compaction?.maxInputTokens?.()
+    ).toBe(128_000);
   });
 });

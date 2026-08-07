@@ -3,30 +3,42 @@ import { createCallbackModel } from "../../testing/test-fixtures";
 import { assertAgentOptions } from "./options";
 
 describe("AgentOptions.compaction", () => {
-  it("rejects non-functions and non-policy objects", () => {
-    expect(() =>
-      assertAgentOptions({
-        compaction: 1 as never,
-        model: createCallbackModel(() => []),
-      })
-    ).toThrow(
-      "Agent: options.compaction must be a function or a compaction policy."
-    );
-  });
-
-  it("rejects a policy object without maxInputTokens", () => {
+  it("rejects non-functions", () => {
     expect(() =>
       assertAgentOptions({
         compaction: {} as never,
         model: createCallbackModel(() => []),
       })
+    ).toThrow("Agent: options.compaction must be a function.");
+  });
+
+  it("rejects a function with a non-function maxInputTokens property", () => {
+    expect(() =>
+      assertAgentOptions({
+        compaction: Object.assign(() => undefined, { maxInputTokens: 1 }),
+        model: createCallbackModel(() => []),
+      })
     ).toThrow("Agent: options.compaction.maxInputTokens must be a function.");
   });
 
-  it("accepts a budget-only policy object", () => {
+  it("rejects a function with an invalid onOverflow property", () => {
     expect(() =>
       assertAgentOptions({
-        compaction: { maxInputTokens: () => 1, onOverflow: "error" },
+        compaction: Object.assign(() => undefined, { onOverflow: "retry" }),
+        model: createCallbackModel(() => []),
+      })
+    ).toThrow(
+      'Agent: options.compaction.onOverflow must be "compact" or "error".'
+    );
+  });
+
+  it("accepts a function carrying budget properties", () => {
+    expect(() =>
+      assertAgentOptions({
+        compaction: Object.assign(() => undefined, {
+          maxInputTokens: () => 1,
+          onOverflow: "error",
+        }),
         model: createCallbackModel(() => []),
       })
     ).not.toThrow();

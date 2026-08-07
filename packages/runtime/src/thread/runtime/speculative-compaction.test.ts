@@ -44,7 +44,7 @@ describe("speculativeCompaction", () => {
     const compaction = speculativeCompaction({ maxInputTokens: 100 });
 
     expect(compaction.estimateTokens).toBeUndefined();
-    expect(compaction.maxInputTokens()).toBe(100);
+    expect(compaction.maxInputTokens?.()).toBe(100);
     expect(compaction.onOverflow).toBe("compact");
   });
 
@@ -78,9 +78,9 @@ describe("speculativeCompaction", () => {
     );
 
     expect(
-      await compaction.compact?.(context(preparedHistory, summarize))
+      await compaction(context(preparedHistory, summarize))
     ).toBeUndefined();
-    const promoted = await compaction.compact?.(
+    const promoted = await compaction(
       context([...preparedHistory, message("tail")], summarize)
     );
 
@@ -101,10 +101,8 @@ describe("speculativeCompaction", () => {
       message(String(index), index % 2 === 0 ? "user" : "assistant")
     );
 
-    await compaction.compact?.(context(history, summarize));
-    await compaction.compact?.(
-      context([...history, message("tail")], summarize)
-    );
+    await compaction(context(history, summarize));
+    await compaction(context([...history, message("tail")], summarize));
 
     expect(summarize).toHaveBeenCalledTimes(1);
   });
@@ -124,12 +122,12 @@ describe("speculativeCompaction", () => {
     const history = Array.from({ length: 6 }, (_, index) =>
       message(String(index), index % 2 === 0 ? "user" : "assistant")
     );
-    await compaction.compact?.(context(history, summarize));
+    await compaction(context(history, summarize));
     const changed = history.map((entry, index) =>
       index === 0 ? message("changed") : entry
     );
 
-    const promoted = await compaction.compact?.(
+    const promoted = await compaction(
       context([...changed, message("tail")], summarize)
     );
 
@@ -151,9 +149,9 @@ describe("speculativeCompaction", () => {
     const history = Array.from({ length: 6 }, (_, index) =>
       message(String(index), index % 2 === 0 ? "user" : "assistant")
     );
-    await compaction.compact?.(context(history, summarizeA));
+    await compaction(context(history, summarizeA));
 
-    const promoted = await compaction.compact?.(
+    const promoted = await compaction(
       context([...history, message("tail")], summarizeB, {
         threadIdentity: identityB,
       })
@@ -179,7 +177,7 @@ describe("speculativeCompaction", () => {
     const prepared = Array.from({ length: 6 }, (_, index) =>
       message(String(index), index % 2 === 0 ? "user" : "assistant")
     );
-    await compaction.compact?.(context(prepared, summarize));
+    await compaction(context(prepared, summarize));
     const overflowHistory = [
       ...prepared,
       message("6"),
@@ -188,7 +186,7 @@ describe("speculativeCompaction", () => {
       message("9", "assistant"),
     ];
 
-    const promoted = await compaction.compact?.(
+    const promoted = await compaction(
       context(overflowHistory, summarize, { reason: "overflow" })
     );
 

@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import type { ContextBudgetSource } from "../../llm/context-gate";
+import type { ModelContextTokenEstimateInput } from "../../llm/context-gate";
 import type { ThreadContextMessage } from "../state/context";
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import type { ThreadCompactionInput } from "../state/thread-state";
@@ -44,51 +44,40 @@ export interface AgentCompactionContext {
   readonly threadKey: string;
 }
 
-/** A per-thread compaction policy. The runtime owns all state and commits. */
-export type AgentCompaction = (
-  context: Readonly<AgentCompactionContext>
-) =>
-  | ThreadCompactionInput
-  | undefined
-  | Promise<ThreadCompactionInput | undefined>;
-
 /**
- * A compaction strategy that owns the context budget it compacts toward. The
- * runtime passes the policy straight to the model-step context gate, which
- * calls `maxInputTokens()` (and `estimateTokens`, when provided) before every
- * model request. A policy without `compact` is a budget-only source: pair it
- * with `onOverflow: "error"` to fail over-budget turns without rewriting
- * history.
+ * A per-thread compaction policy. The runtime owns all state and commits.
+ *
+ * The function may advertise the context budget it compacts toward by
+ * carrying the optional budget properties below. When `maxInputTokens` is
+ * present, the runtime passes the function itself to the model-step context
+ * gate, which calls it before every model request — budget and compaction
+ * thresholds share one source of truth. A bare function without budget
+ * properties runs with the local gate off and reacts to provider-thrown
+ * context-window errors only. For budget enforcement without history
+ * rewriting, attach `maxInputTokens` plus `onOverflow: "error"` to a no-op
+ * function.
  */
-export interface AgentCompactionPolicy extends ContextBudgetSource {
-  readonly compact?: (
+export interface AgentCompaction {
+  readonly bufferTokens?: number;
+  readonly estimateTokens?: (input: ModelContextTokenEstimateInput) => number;
+  readonly maxInputTokens?: () => number;
+  readonly onOverflow?: "compact" | "error";
+  (
     context: Readonly<AgentCompactionContext>
-  ) =>
+  ):
     | ThreadCompactionInput
     | undefined
     | Promise<ThreadCompactionInput | undefined>;
 }
 
-export function invokeCompaction(
-  compaction: AgentCompaction | AgentCompactionPolicy,
-  context: Readonly<AgentCompactionContext>
-):
-  | ThreadCompactionInput
-  | undefined
-  | Promise<ThreadCompactionInput | undefined> {
-  return typeof compaction === "function"
-    ? compaction(context)
-    : compaction.compact?.(context);
-}
-
-/** The thread-history estimator pinned by a policy, when it provides one. */
+/** The thread-history estimator pinned by a compaction, when it provides one. */
 export function threadEstimatorForCompaction(
-  compaction: AgentCompaction | AgentCompactionPolicy
+  compaction: AgentCompaction
 ): ThreadTokenEstimator | undefined {
-  if (typeof compaction === "function" || !compaction.estimateTokens) {
+  const estimateTokens = compaction.estimateTokens;
+  if (estimateTokens === undefined) {
     return;
   }
-  const estimateTokens = compaction.estimateTokens;
   return (messages) => estimateTokens({ messages });
 }
 
