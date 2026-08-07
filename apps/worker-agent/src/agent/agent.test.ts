@@ -8,8 +8,11 @@ import {
 } from "./agent";
 
 describe("worker-agent compaction", () => {
-  it("uses a callable strategy", () => {
-    expect(WORKER_AGENT_COMPACTION).toBeTypeOf("function");
+  it("uses a budget-owning policy strategy", () => {
+    expect(WORKER_AGENT_COMPACTION).toMatchObject({
+      compact: expect.any(Function),
+      maxInputTokens: expect.any(Function),
+    });
   });
 });
 

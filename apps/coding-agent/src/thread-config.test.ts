@@ -82,6 +82,9 @@ describe("resolveCodingAgentThreadConfig", () => {
         "/repo/demo",
         "/home/me"
       ).compaction
-    ).toBeTypeOf("function");
+    ).toMatchObject({
+      compact: expect.any(Function),
+      maxInputTokens: expect.any(Function),
+    });
   });
 });
