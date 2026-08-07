@@ -3,7 +3,7 @@ import type { RuntimeDiagnosticsSink } from "../diagnostics";
 import type { HostAttachmentStore } from "../thread/input/attachments";
 import type { ModelUsage, StreamAgentEvent } from "../thread/protocol/events";
 import type { ThreadContextMessage } from "../thread/state/context";
-import type { ModelContextGateOptions } from "./context-gate";
+import type { ContextBudgetSource } from "./context-gate";
 import type { ContextTokenMeter, ContextTokenOptions } from "./context-tokens";
 import type {
   PreparedModelToolChoice,
@@ -25,7 +25,7 @@ export interface ModelStepResult {
 export interface ModelGenerationOptions {
   alwaysActiveTools?: readonly string[];
   attachmentStore?: HostAttachmentStore;
-  contextGate?: false | ModelContextGateOptions;
+  contextGate?: false | ContextBudgetSource;
   contextTokenMeter?: ContextTokenMeter;
   contextTokens?: ContextTokenOptions;
   diagnostics?: RuntimeDiagnosticsSink;

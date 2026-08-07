@@ -673,7 +673,7 @@ describe("generateModelStep", () => {
           } as never,
           contextGate: {
             estimateTokens,
-            maxInputTokens: 100,
+            maxInputTokens: () => 100,
           },
           model: fakeModel,
           prepareModelStep: () => ({ activeTools: [] }),

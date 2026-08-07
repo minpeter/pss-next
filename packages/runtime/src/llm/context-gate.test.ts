@@ -129,7 +129,7 @@ describe("model prompt measurement", () => {
     ];
 
     enforceContextGate({
-      contextGate: { estimateTokens, maxInputTokens: 2 },
+      contextGate: { estimateTokens, maxInputTokens: () => 2 },
       instructions: "instruction",
       messages,
     });

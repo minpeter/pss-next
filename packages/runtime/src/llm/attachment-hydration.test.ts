@@ -76,7 +76,7 @@ describe("model attachment hydration", () => {
     await runModelStep(
       {
         attachmentStore,
-        contextGate: { maxInputTokens: 200 },
+        contextGate: { maxInputTokens: () => 200 },
         model: fakeModel,
       },
       {

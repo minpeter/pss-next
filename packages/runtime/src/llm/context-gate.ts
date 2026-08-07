@@ -40,10 +40,16 @@ export interface ModelPromptMeasurementProfile {
   ) => ModelPromptMeasurement;
 }
 
-export interface ModelContextGateOptions {
+/**
+ * A budget source consulted before every model request. The gate calls
+ * `maxInputTokens()` (and `estimateTokens`, when provided) on each call, so
+ * hosts may back the budget with live signal such as the active model's
+ * context window.
+ */
+export interface ContextBudgetSource {
   readonly bufferTokens?: number;
   readonly estimateTokens?: (input: ModelContextTokenEstimateInput) => number;
-  readonly maxInputTokens: number;
+  readonly maxInputTokens: () => number;
   readonly onOverflow?: "compact" | "error";
 }
 
@@ -82,7 +88,7 @@ export function enforceContextGate({
   promptTools,
   toolChoice,
 }: {
-  readonly contextGate?: false | ModelContextGateOptions;
+  readonly contextGate?: false | ContextBudgetSource;
   readonly instructions?: string;
   readonly messages: readonly ModelMessage[];
   readonly promptTools?: readonly ModelPromptTool[];
@@ -93,6 +99,7 @@ export function enforceContextGate({
   }
 
   const bufferTokens = contextGate.bufferTokens ?? 0;
+  const maxInputTokens = contextGate.maxInputTokens();
   const estimatedTokens = estimatePromptTokens(
     {
       instructions,
@@ -102,21 +109,21 @@ export function enforceContextGate({
     },
     contextGate.estimateTokens
   );
-  if (estimatedTokens + bufferTokens <= contextGate.maxInputTokens) {
+  if (estimatedTokens + bufferTokens <= maxInputTokens) {
     return;
   }
 
   throw new ContextBudgetExceededError({
     bufferTokens,
     estimatedTokens,
-    maxInputTokens: contextGate.maxInputTokens,
+    maxInputTokens,
     onOverflow: contextGate.onOverflow ?? "compact",
   });
 }
 
 function estimatePromptTokens(
   input: ModelContextTokenEstimateInput,
-  estimator: ModelContextGateOptions["estimateTokens"]
+  estimator: ContextBudgetSource["estimateTokens"]
 ): number {
   if (estimator) {
     return estimator(input);

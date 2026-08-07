@@ -7,8 +7,10 @@ import { createInMemoryHost } from "../../platform/memory";
 import { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentInput } from "../../thread/input/input";
 import type { AgentTurn } from "../../thread/protocol/turn";
-import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
-import { contextGateForCompaction } from "../../thread/runtime/speculative-compaction";
+import type {
+  AgentCompaction,
+  AgentCompactionPolicy,
+} from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -29,7 +31,6 @@ import {
   type AgentOptions,
   assertAgentOptions,
   type CreateAgentOptions,
-  DEFAULT_AGENT_MAX_INPUT_TOKENS,
 } from "./options";
 import {
   type AgentThreadEntry,
@@ -71,7 +72,7 @@ export class Agent {
   readonly #hookRuntime: AgentHookRuntime;
   readonly #notificationOverlays?: AgentOptions["notificationOverlays"];
   readonly #threadMigrations: readonly ThreadStateMigration[];
-  readonly #compaction?: AgentCompaction;
+  readonly #compaction?: AgentCompaction | AgentCompactionPolicy;
   readonly host: AgentHost;
   readonly namespace?: string;
   constructor(options: AgentConstructorOptions) {
@@ -101,12 +102,10 @@ export class Agent {
         providedHost?.attachmentStore ??
         options.attachmentStore ??
         this.#host.attachmentStore,
-      contextGate: options.compaction
-        ? (contextGateForCompaction(options.compaction) ?? {
-            maxInputTokens: DEFAULT_AGENT_MAX_INPUT_TOKENS,
-            onOverflow: "compact",
-          })
-        : false,
+      contextGate:
+        typeof options.compaction === "function"
+          ? false
+          : (options.compaction ?? false),
       diagnostics: this.#host.diagnostics,
       instructions: options.instructions,
       model: options.model,

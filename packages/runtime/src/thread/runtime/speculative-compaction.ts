@@ -1,9 +1,11 @@
-import type { ModelContextGateOptions } from "../../llm/context-gate";
-import { estimateModelMessagesTokens } from "../../llm/context-gate";
+import {
+  estimateModelMessagesTokens,
+  type ModelContextTokenEstimateInput,
+} from "../../llm/context-gate";
 import { selectAutoCompactionRange } from "./auto-compaction-range";
 import type {
-  AgentCompaction,
   AgentCompactionContext,
+  AgentCompactionPolicy,
   ThreadTokenEstimator,
 } from "./auto-compaction-types";
 import { equalSnapshot } from "./snapshot-equal";
@@ -26,31 +28,13 @@ interface Candidate {
   readonly prefix: readonly unknown[];
 }
 
-const contextGateMetadata = new WeakMap<
-  AgentCompaction,
-  ModelContextGateOptions
->();
-const estimatorMetadata = new WeakMap<AgentCompaction, ThreadTokenEstimator>();
-
-export function contextGateForCompaction(
-  compaction: AgentCompaction
-): ModelContextGateOptions | undefined {
-  return contextGateMetadata.get(compaction);
-}
-
-export function estimatorForCompaction(
-  compaction: AgentCompaction
-): ThreadTokenEstimator | undefined {
-  return estimatorMetadata.get(compaction);
-}
-
 /**
  * Prepare a summary at 65% of the context budget and promote it at 80% without
  * another model call. By default the newest 40% of the model context is kept.
  */
 export function speculativeCompaction(
   options: SpeculativeCompactionOptions = {}
-): AgentCompaction {
+): AgentCompactionPolicy {
   const max = options.maxInputTokens ?? 128_000;
   const prepare = options.prepareRatio ?? 0.65;
   const promote = options.promoteRatio ?? 0.8;
@@ -79,7 +63,7 @@ export function speculativeCompaction(
   const customEstimate = options.estimateTokens;
   const estimate = customEstimate ?? estimateModelMessagesTokens;
   const candidates = new WeakMap<object, Candidate>();
-  const compaction: AgentCompaction = async (context) => {
+  const compact = async (context: AgentCompactionContext) => {
     const tokens = context.estimatedContextTokens;
     const candidate = getFreshCandidate(candidates, context);
     if (tokens >= Math.floor(max * promote) || context.reason === "overflow") {
@@ -98,10 +82,14 @@ export function speculativeCompaction(
     await prepareCandidate({ candidates, context, estimate, max, retain });
     return;
   };
-  contextGateMetadata.set(compaction, {
+  return {
+    compact,
     ...(customEstimate
       ? {
-          estimateTokens: ({ instructions, messages }) =>
+          estimateTokens: ({
+            instructions,
+            messages,
+          }: ModelContextTokenEstimateInput) =>
             customEstimate(
               instructions
                 ? [{ content: instructions, role: "system" }, ...messages]
@@ -109,13 +97,9 @@ export function speculativeCompaction(
             ),
         }
       : {}),
-    maxInputTokens: max,
-    onOverflow: "compact",
-  });
-  if (customEstimate) {
-    estimatorMetadata.set(compaction, customEstimate);
-  }
-  return compaction;
+    maxInputTokens: () => max,
+    onOverflow: "compact" as const,
+  };
 }
 
 async function prepareCandidate({

@@ -15,6 +15,7 @@ import {
 } from "./auto-compaction-summary";
 import type {
   AgentCompaction,
+  AgentCompactionPolicy,
   AgentCompactionReason,
   AutoCompactionRange,
   CompactionSummaryOptions,
@@ -22,8 +23,11 @@ import type {
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
+import {
+  invokeCompaction,
+  threadEstimatorForCompaction,
+} from "./auto-compaction-types";
 import { equalSnapshot } from "./snapshot-equal";
-import { estimatorForCompaction } from "./speculative-compaction";
 
 interface ActiveCompaction {
   readonly promise: Promise<boolean>;
@@ -37,7 +41,7 @@ const pendingCompactions = new WeakMap<
 
 interface RunOptions {
   readonly compact?: ThreadCompactionHandler;
-  readonly compaction?: AgentCompaction;
+  readonly compaction?: AgentCompaction | AgentCompactionPolicy;
   readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly reason: AgentCompactionReason;
@@ -129,7 +133,7 @@ function runSingleFlight(options: RunOptions): Promise<boolean> {
 async function compactThreadOnce(options: RunOptions): Promise<boolean> {
   const { state } = options;
   const legacyEstimate = options.compaction
-    ? estimatorForCompaction(options.compaction)
+    ? threadEstimatorForCompaction(options.compaction)
     : undefined;
   const meterView = legacyEstimate
     ? undefined
@@ -209,25 +213,28 @@ ${summaryOptions.instructions}`,
       transformModelContext: options.transformModelContext,
     });
   };
-  const input = await options.compaction?.(
-    Object.freeze({
-      compactions,
-      estimatedContextTokens,
-      estimatedHistory,
-      ...(estimatedHistoryMessageTokens
-        ? { estimatedHistoryMessageTokens }
-        : {}),
-      estimateTokens: estimate,
-      history,
-      instructionsTokens: fixedTokens,
-      modelContext: hydratedModelContext,
-      reason: options.reason,
-      signal,
-      summarize,
-      threadIdentity: state.compactionIdentity,
-      threadKey: options.threadKey,
-    })
-  );
+  const input = options.compaction
+    ? await invokeCompaction(
+        options.compaction,
+        Object.freeze({
+          compactions,
+          estimatedContextTokens,
+          estimatedHistory,
+          ...(estimatedHistoryMessageTokens
+            ? { estimatedHistoryMessageTokens }
+            : {}),
+          estimateTokens: estimate,
+          history,
+          instructionsTokens: fixedTokens,
+          modelContext: hydratedModelContext,
+          reason: options.reason,
+          signal,
+          summarize,
+          threadIdentity: state.compactionIdentity,
+          threadKey: options.threadKey,
+        })
+      )
+    : undefined;
   if (!input) {
     return false;
   }
