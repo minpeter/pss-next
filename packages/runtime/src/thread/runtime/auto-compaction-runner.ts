@@ -15,7 +15,6 @@ import {
 } from "./auto-compaction-summary";
 import type {
   AgentCompaction,
-  AgentCompactionPolicy,
   AgentCompactionReason,
   AutoCompactionRange,
   CompactionSummaryOptions,
@@ -23,10 +22,7 @@ import type {
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
-import {
-  invokeCompaction,
-  threadEstimatorForCompaction,
-} from "./auto-compaction-types";
+import { threadEstimatorForCompaction } from "./auto-compaction-types";
 import { equalSnapshot } from "./snapshot-equal";
 
 interface ActiveCompaction {
@@ -41,7 +37,7 @@ const pendingCompactions = new WeakMap<
 
 interface RunOptions {
   readonly compact?: ThreadCompactionHandler;
-  readonly compaction?: AgentCompaction | AgentCompactionPolicy;
+  readonly compaction?: AgentCompaction;
   readonly latestContextTransform?: ThreadContextTransformObserver;
   readonly model: ModelGenerationOptions;
   readonly reason: AgentCompactionReason;
@@ -213,28 +209,25 @@ ${summaryOptions.instructions}`,
       transformModelContext: options.transformModelContext,
     });
   };
-  const input = options.compaction
-    ? await invokeCompaction(
-        options.compaction,
-        Object.freeze({
-          compactions,
-          estimatedContextTokens,
-          estimatedHistory,
-          ...(estimatedHistoryMessageTokens
-            ? { estimatedHistoryMessageTokens }
-            : {}),
-          estimateTokens: estimate,
-          history,
-          instructionsTokens: fixedTokens,
-          modelContext: hydratedModelContext,
-          reason: options.reason,
-          signal,
-          summarize,
-          threadIdentity: state.compactionIdentity,
-          threadKey: options.threadKey,
-        })
-      )
-    : undefined;
+  const input = await options.compaction?.(
+    Object.freeze({
+      compactions,
+      estimatedContextTokens,
+      estimatedHistory,
+      ...(estimatedHistoryMessageTokens
+        ? { estimatedHistoryMessageTokens }
+        : {}),
+      estimateTokens: estimate,
+      history,
+      instructionsTokens: fixedTokens,
+      modelContext: hydratedModelContext,
+      reason: options.reason,
+      signal,
+      summarize,
+      threadIdentity: state.compactionIdentity,
+      threadKey: options.threadKey,
+    })
+  );
   if (!input) {
     return false;
   }

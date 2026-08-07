@@ -1202,13 +1202,15 @@ const agent = await createAgent({
 });
 ```
 
-`compaction` accepts either a policy object or a bare compaction function. A
-policy owns the context budget it compacts toward:
+A compaction function may advertise the context budget it compacts toward by
+carrying budget properties. The runtime passes the function itself to the
+context gate, so the budget and the compaction thresholds can never drift
+apart:
 
 ```ts
 const agent = await createAgent({
-  compaction: {
-    compact: async (context) => {
+  compaction: Object.assign(
+    async (context) => {
       if (context.reason !== "overflow") {
         return;
       }
@@ -1218,23 +1220,23 @@ const agent = await createAgent({
       };
       return { ...range, summary: await context.summarize(range) };
     },
-    // The gate calls this before every model request; return the active
-    // model's window here.
-    maxInputTokens: () => 200_000,
-    onOverflow: "compact",
-  },
+    {
+      // The gate calls this before every model request; return the active
+      // model's window here.
+      maxInputTokens: () => 200_000,
+      onOverflow: "compact",
+    }
+  ),
   model,
 });
 ```
 
-The runtime passes the policy straight to the context gate, so the budget and
-the compaction thresholds can never drift apart. `estimateTokens` overrides the
-prompt estimator for both the gate and the compaction context; `bufferTokens`
-reserves headroom inside the budget. A policy without `compact` is a
-budget-only source: pair it with `onOverflow: "error"` to fail over-budget
-turns without rewriting history. A bare `AgentCompaction` function carries no
-budget, so the local gate stays off and compaction reacts to provider-thrown
-context-window errors only.
+`estimateTokens` overrides the prompt estimator for both the gate and the
+compaction context; `bufferTokens` reserves headroom inside the budget. Attach
+`maxInputTokens` plus `onOverflow: "error"` to a no-op function to fail
+over-budget turns without rewriting history. A bare function without budget
+properties runs with the local gate off and compaction reacts to
+provider-thrown context-window errors only.
 
 Force runtime-owned compaction on an idle thread with `thread.compact()`. The
 manual path shares automatic compaction's attachment hydration, model-context
@@ -1254,7 +1256,7 @@ available for hosts that already produced a validated summary and returns the
 hook dispatcher's boolean commit decision.
 
 The context gate estimates the prompt immediately before `generateText`, calling
-the policy's `maxInputTokens()` on every request. With `onOverflow: "error"`,
+the compaction's `maxInputTokens` property on every request. With `onOverflow: "error"`,
 the turn fails before the provider is called. With `onOverflow: "compact"` (the
 default), the runtime runs blocking compaction and retries once.
 Provider-thrown context-window errors still use the same blocking

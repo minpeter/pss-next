@@ -177,7 +177,6 @@ export {
 export type {
   AgentCompaction,
   AgentCompactionContext,
-  AgentCompactionPolicy,
   AgentCompactionReason,
   CompactionSummaryOptions,
   ManualThreadCompactionResult,

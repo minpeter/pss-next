@@ -4,8 +4,8 @@ import {
 } from "../../llm/context-gate";
 import { selectAutoCompactionRange } from "./auto-compaction-range";
 import type {
+  AgentCompaction,
   AgentCompactionContext,
-  AgentCompactionPolicy,
   ThreadTokenEstimator,
 } from "./auto-compaction-types";
 import { equalSnapshot } from "./snapshot-equal";
@@ -34,7 +34,7 @@ interface Candidate {
  */
 export function speculativeCompaction(
   options: SpeculativeCompactionOptions = {}
-): AgentCompactionPolicy {
+): AgentCompaction {
   const max = options.maxInputTokens ?? 128_000;
   const prepare = options.prepareRatio ?? 0.65;
   const promote = options.promoteRatio ?? 0.8;
@@ -82,8 +82,7 @@ export function speculativeCompaction(
     await prepareCandidate({ candidates, context, estimate, max, retain });
     return;
   };
-  return {
-    compact,
+  return Object.assign(compact, {
     ...(customEstimate
       ? {
           estimateTokens: ({
@@ -99,7 +98,7 @@ export function speculativeCompaction(
       : {}),
     maxInputTokens: () => max,
     onOverflow: "compact" as const,
-  };
+  });
 }
 
 async function prepareCandidate({

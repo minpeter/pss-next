@@ -7,10 +7,7 @@ import { createInMemoryHost } from "../../platform/memory";
 import { AgentThread } from "../../thread/handle/agent-thread";
 import type { AgentInput } from "../../thread/input/input";
 import type { AgentTurn } from "../../thread/protocol/turn";
-import type {
-  AgentCompaction,
-  AgentCompactionPolicy,
-} from "../../thread/runtime/auto-compaction-types";
+import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -72,7 +69,7 @@ export class Agent {
   readonly #hookRuntime: AgentHookRuntime;
   readonly #notificationOverlays?: AgentOptions["notificationOverlays"];
   readonly #threadMigrations: readonly ThreadStateMigration[];
-  readonly #compaction?: AgentCompaction | AgentCompactionPolicy;
+  readonly #compaction?: AgentCompaction;
   readonly host: AgentHost;
   readonly namespace?: string;
   constructor(options: AgentConstructorOptions) {
@@ -102,10 +99,12 @@ export class Agent {
         providedHost?.attachmentStore ??
         options.attachmentStore ??
         this.#host.attachmentStore,
-      contextGate:
-        typeof options.compaction === "function"
-          ? false
-          : (options.compaction ?? false),
+      contextGate: options.compaction?.maxInputTokens
+        ? {
+            ...options.compaction,
+            maxInputTokens: options.compaction.maxInputTokens,
+          }
+        : false,
       diagnostics: this.#host.diagnostics,
       instructions: options.instructions,
       model: options.model,
