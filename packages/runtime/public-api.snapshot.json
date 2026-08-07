@@ -8,6 +8,7 @@
       "type AgentCompactionContext",
       "type AgentCompactionDecision",
       "type AgentCompactionEvent",
+      "type AgentCompactionPolicy",
       "type AgentCompactionReason",
       "type AgentEvent",
       "type AgentEventListener",
@@ -37,6 +38,7 @@
       "type CommittedThreadMigrations",
       "type CompactionContextMessage",
       "type CompactionSummaryOptions",
+      "type ContextBudgetSource",
       "type ContextTokenOptions",
       "type ContextTokenProfile",
       "type ContextUsageSnapshot",
@@ -119,7 +121,6 @@
       "value COMPACTION_SUMMARY_CONTRACT",
       "value CompactionSummaryNotSmallerError",
       "value ContextBudgetExceededError",
-      "value DEFAULT_AGENT_MAX_INPUT_TOKENS",
       "value DEFAULT_MAX_IMAGE_ATTACHMENT_BYTES",
       "value IMAGE_PREPARE_LOG_MESSAGE",
       "value MAX_IMAGE_DECODED_PIXELS",
@@ -534,7 +535,10 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
+    "./protocol/node": [
+      "type SpawnPssClientOptions",
+      "value spawnPssClient"
+    ],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",

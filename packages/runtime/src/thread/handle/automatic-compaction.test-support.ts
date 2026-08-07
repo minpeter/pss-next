@@ -2,7 +2,7 @@ import type { ModelMessage } from "ai";
 import { expect, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import type { AgentOptions } from "../../agent/core/options";
-import type { AgentCompaction } from "../runtime/auto-compaction-types";
+import type { AgentCompactionPolicy } from "../runtime/auto-compaction-types";
 import { speculativeCompaction } from "../runtime/speculative-compaction";
 
 export type CompactionAgentOptions = ConstructorParameters<typeof Agent>[0] & {
@@ -23,7 +23,7 @@ export const tokenCompactionPolicy = ({
 }: {
   readonly retain: number;
   readonly trigger: number;
-}): AgentCompaction => {
+}): AgentCompactionPolicy => {
   const maxInputTokens = 10_000;
   return speculativeCompaction({
     estimateTokens: tenTokensPerMessage,

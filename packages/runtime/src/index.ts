@@ -35,7 +35,6 @@ export type {
   AgentTransformDecision,
   AgentTurnStartEvent,
 } from "./agent/core/hooks";
-export { DEFAULT_AGENT_MAX_INPUT_TOKENS } from "./agent/core/options";
 export { threadStoreKey } from "./agent/core/thread-entry";
 export {
   type ModelToolCacheFingerprintMetadata,
@@ -52,6 +51,7 @@ export type {
   ThreadEventReadOptions,
 } from "./execution/host/types";
 export type {
+  ContextBudgetSource,
   ModelContextTokenEstimateInput,
   ModelPromptMeasurement,
   ModelPromptMeasurementProfile,
@@ -177,6 +177,7 @@ export {
 export type {
   AgentCompaction,
   AgentCompactionContext,
+  AgentCompactionPolicy,
   AgentCompactionReason,
   CompactionSummaryOptions,
   ManualThreadCompactionResult,

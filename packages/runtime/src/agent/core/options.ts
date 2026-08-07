@@ -1,14 +1,17 @@
 import type { LanguageModel, ToolSet } from "ai";
 import type { RuntimeDiagnosticsSink } from "../../diagnostics";
 import type { AgentHost } from "../../execution/host/types";
-import type { ModelContextGateOptions } from "../../llm/context-gate";
+import type { ContextBudgetSource } from "../../llm/context-gate";
 import type { ContextTokenOptions } from "../../llm/context-tokens";
 import type { PrepareModelStep } from "../../llm/model-step-preparation";
 import type { AgentToolChoice } from "../../llm/model-step-types";
 import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
-import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
+import type {
+  AgentCompaction,
+  AgentCompactionPolicy,
+} from "../../thread/runtime/auto-compaction-types";
 import {
   normalizeThreadStateMigrations,
   type ThreadStateMigration,
@@ -19,14 +22,10 @@ import {
   normalizeAgentInstrumentations,
 } from "./instrumentation";
 
-export const DEFAULT_AGENT_MAX_INPUT_TOKENS = 128_000;
-
-export type AgentContextGateOptions = ModelContextGateOptions;
-
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
-  readonly compaction?: AgentCompaction;
+  readonly compaction?: AgentCompaction | AgentCompactionPolicy;
   readonly contextTokens?: ContextTokenOptions;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
@@ -56,7 +55,7 @@ export type AgentModelOptions = Pick<
   | "toolOrder"
   | "tools"
 > & {
-  readonly contextGate?: false | AgentContextGateOptions;
+  readonly contextGate?: false | ContextBudgetSource;
   readonly contextTokenMeter?: import("../../llm/context-tokens").ContextTokenMeter;
   readonly diagnostics?: RuntimeDiagnosticsSink;
 };
@@ -96,14 +95,43 @@ export function assertAgentOptions(
   ) {
     throw new TypeError("Agent: options.prepareModelStep must be a function.");
   }
-  if (
-    candidate.compaction !== undefined &&
-    typeof candidate.compaction !== "function"
-  ) {
-    throw new TypeError("Agent: options.compaction must be a function.");
+  if (candidate.compaction !== undefined) {
+    assertCompactionObject(candidate.compaction);
   }
   normalizeAgentInstrumentations(candidate.instrumentations);
   normalizeThreadStateMigrations(candidate.threadMigrations);
+}
+
+function assertCompactionObject(compaction: AgentOptions["compaction"]): void {
+  if (typeof compaction === "function") {
+    return;
+  }
+  if (compaction === null || typeof compaction !== "object") {
+    throw new TypeError(
+      "Agent: options.compaction must be a function or a compaction policy."
+    );
+  }
+  if (typeof compaction.maxInputTokens !== "function") {
+    throw new TypeError(
+      "Agent: options.compaction.maxInputTokens must be a function."
+    );
+  }
+  if (
+    compaction.compact !== undefined &&
+    typeof compaction.compact !== "function"
+  ) {
+    throw new TypeError(
+      "Agent: options.compaction.compact must be a function."
+    );
+  }
+  if (
+    compaction.estimateTokens !== undefined &&
+    typeof compaction.estimateTokens !== "function"
+  ) {
+    throw new TypeError(
+      "Agent: options.compaction.estimateTokens must be a function."
+    );
+  }
 }
 
 function assertToolNameList(

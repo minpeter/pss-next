@@ -113,7 +113,7 @@ export async function generateModelStepResult({
     contextTokenMeter?.begin({
       attemptId,
       fixedFingerprint: promptMeasurement.fixedFingerprint,
-      maxInputTokens: contextGate ? contextGate.maxInputTokens : undefined,
+      maxInputTokens: contextGate ? contextGate.maxInputTokens() : undefined,
       measurement: promptMeasurement,
       scope,
     });
