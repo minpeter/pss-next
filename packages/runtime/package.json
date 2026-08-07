@@ -1,6 +1,6 @@
 {
   "name": "@minpeter/pss-runtime",
-  "version": "0.3.0-next.11",
+  "version": "0.3.0-next.12",
   "description": "Generic agent runtime for threads, model loops, and synchronized run events.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",

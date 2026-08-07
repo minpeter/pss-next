@@ -1,6 +1,6 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Turn compaction into budget-owning policy objects\n\n`createAgent` accepts a compaction policy object carrying the context budget it compacts toward; the model-step context gate calls the policy's `maxInputTokens()` before every model request, so custom compaction and the gate can no longer drift apart. `speculativeCompaction` returns such a policy, and `contextGateForCompaction`/`estimatorForCompaction`/`DEFAULT_AGENT_MAX_INPUT_TOKENS` are removed: a bare `AgentCompaction` function now runs with the local gate off (provider-overflow-reactive compaction only) instead of a silent 128K fallback budget. A policy without `compact` is a budget-only source; pair it with `onOverflow: \"error\"` to fail over-budget turns without rewriting history.\n"
-    filename: 2026-08-07-compaction-budget-policy.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Carry the compaction budget as function properties\n\nThe `compaction` option is a single callable type again: `AgentCompaction` gains optional budget properties (`maxInputTokens`, `estimateTokens`, `bufferTokens`, `onOverflow`), and when `maxInputTokens` is present the runtime hands the function itself to the model-step context gate, which calls it before every model request. `speculativeCompaction` returns the callable with its budget attached; `AgentCompactionPolicy` and the interim policy-object form from 0.3.0-next.11 are removed. Bare functions without budget properties keep the local gate off.\n"
+    filename: 2026-08-08-compaction-budget-props.md
     v: 0.0.0
 core:packages:
   - id: npm:@minpeter/pss-coding-agent
@@ -12,7 +12,7 @@ core:packages:
   - id: npm:@minpeter/pss-extension-web
     updated: false
   - changelogIds:
-      - 2026-08-07-compaction-budget-policy.md
+      - 2026-08-08-compaction-budget-props.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
