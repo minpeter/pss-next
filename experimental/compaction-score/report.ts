@@ -24,8 +24,10 @@ interface TrialIdentity {
 }
 
 export interface CompactionHopRecord {
+  readonly compactionMs?: number;
   readonly endSeqExclusive: number;
   readonly prefixTokens: number;
+  readonly summarizerInputTokens?: number;
   readonly summaryTokens: number;
 }
 

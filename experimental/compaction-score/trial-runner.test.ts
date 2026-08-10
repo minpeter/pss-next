@@ -220,6 +220,19 @@ describe("runCompactionTrial", () => {
     expect(record.hops.map(({ endSeqExclusive }) => endSeqExclusive)).toEqual(
       chainedFixture.compactionEnds
     );
+    expect(record.hops.map(({ prefixTokens }) => prefixTokens)).toEqual(
+      chainedFixture.compactionEnds.map((endSeqExclusive) =>
+        estimateModelMessagesTokens(
+          chainedFixture.messages.slice(0, endSeqExclusive)
+        )
+      )
+    );
+    expect(
+      record.hops.every(
+        ({ summarizerInputTokens }) =>
+          summarizerInputTokens !== undefined && summarizerInputTokens > 0
+      )
+    ).toBe(true);
     expect(record.hops[0]?.summaryTokens).toBe(
       estimateModelMessagesTokens([
         compactionContextForModel({

@@ -1,4 +1,5 @@
 import {
+  buildCompactionSummaryInstructions,
   CompactionSummaryNotSmallerError,
   compactionContextForModel,
   estimateModelMessagesTokens,
@@ -137,15 +138,25 @@ async function generateCompactionHops(
     hopIndex += 1
   ) {
     const endSeqExclusive = input.fixture.compactionEnds[hopIndex] ?? 0;
+    const compactionStartedAt = performance.now();
     const range = { endSeqExclusive, startSeq: 0 };
     const summaryHistory = summaryHistoryForRange({
       compactions: history.compactionSnapshot(),
       history: fullContext,
       range,
     });
-    const summaryInputTokens = estimateModelMessagesTokens(
-      toModelMessages(summaryHistory)
-    );
+    const modelSummaryHistory = toModelMessages(summaryHistory);
+    const summaryInputTokens =
+      estimateModelMessagesTokens(modelSummaryHistory);
+    const summaryInstructions =
+      input.summaryInstructions ?? buildCompactionSummaryInstructions();
+    const summarizerInputTokens = estimateModelMessagesTokens([
+      { content: summaryInstructions, role: "system" },
+      ...modelSummaryHistory,
+      ...(modelSummaryHistory.at(-1)?.role === "assistant"
+        ? [{ content: "Create the compaction summary now.", role: "user" as const }]
+        : []),
+    ]);
     try {
       summary = await summarizeCompactionRange({
         history: summaryHistory,
@@ -183,8 +194,12 @@ async function generateCompactionHops(
       summary: { content: summary, role: "system" },
     });
     hops.push({
+      compactionMs: performance.now() - compactionStartedAt,
       endSeqExclusive,
-      prefixTokens: summaryInputTokens,
+      prefixTokens: estimateModelMessagesTokens(
+        fullContext.slice(0, endSeqExclusive)
+      ),
+      summarizerInputTokens,
       summaryTokens: estimateModelMessagesTokens([
         compactionContextForModel({
           endSeqExclusive,

@@ -120,7 +120,12 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 interface ArmResult {
   readonly error?: string;
-  readonly hops?: readonly { prefixTokens: number; summaryTokens: number }[];
+  readonly hops?: readonly {
+    readonly compactionMs?: number;
+    readonly prefixTokens: number;
+    readonly summarizerInputTokens?: number;
+    readonly summaryTokens: number;
+  }[];
   readonly score?: CompactionScore;
   readonly semanticCorrect?: number;
   readonly status: string;
@@ -295,7 +300,13 @@ async function runPssArm(
   }
   return {
     hops: record.hops.map((hop) => ({
+      ...(hop.compactionMs === undefined
+        ? {}
+        : { compactionMs: hop.compactionMs }),
       prefixTokens: hop.prefixTokens,
+      ...(hop.summarizerInputTokens === undefined
+        ? {}
+        : { summarizerInputTokens: hop.summarizerInputTokens }),
       summaryTokens: hop.summaryTokens,
     })),
     score: record.score,
@@ -310,17 +321,26 @@ async function runPiArm(
 ): Promise<ArmResult> {
   const history = new ModelMessageHistory(fixture.messages);
   const fullContext = history.modelSnapshot();
-  const hops: { prefixTokens: number; summaryTokens: number }[] = [];
+  const hops: {
+    compactionMs: number;
+    prefixTokens: number;
+    summarizerInputTokens: number;
+    summaryTokens: number;
+  }[] = [];
   const fileOps = { edited: new Set<string>(), read: new Set<string>() };
   let previousSummary: string | undefined;
   let previousEnd = 0;
 
   for (const endSeqExclusive of fixture.compactionEnds) {
+    const compactionStartedAt = performance.now();
     const newMessages = fullContext.slice(previousEnd, endSeqExclusive);
     collectFileOps(newMessages, fileOps);
-    let summary: string;
+    let generated: {
+      readonly summarizerInputTokens: number;
+      readonly summary: string;
+    };
     try {
-      summary = await generatePiSummary({
+      generated = await generatePiSummary({
         model,
         newMessages,
         previousSummary,
@@ -328,6 +348,7 @@ async function runPiArm(
     } catch (cause) {
       return { error: String(cause), status: "summary-provider-failure" };
     }
+    let { summary } = generated;
     if (summary.length === 0) {
       return { error: "empty pi summary", status: "protocol-failure" };
     }
@@ -339,9 +360,11 @@ async function runPiArm(
       summary: { content: summary, role: "system" },
     });
     hops.push({
+      compactionMs: performance.now() - compactionStartedAt,
       prefixTokens: estimateModelMessagesTokens(
         fullContext.slice(0, endSeqExclusive)
       ),
+      summarizerInputTokens: generated.summarizerInputTokens,
       summaryTokens: estimateModelMessagesTokens([
         compactionContextForModel({
           endSeqExclusive,
@@ -382,7 +405,12 @@ async function evaluateBothArms({
 }: {
   readonly compactedContext: ModelMessage[];
   readonly fullContext: ModelMessage[];
-  readonly hops: { prefixTokens: number; summaryTokens: number }[];
+  readonly hops: readonly {
+    readonly compactionMs?: number;
+    readonly prefixTokens: number;
+    readonly summarizerInputTokens?: number;
+    readonly summaryTokens: number;
+  }[];
   readonly model: LanguageModel;
   readonly questions: readonly FixtureQuestion[];
   readonly repetition: number;
@@ -426,7 +454,10 @@ async function generatePiSummary({
   readonly model: LanguageModel;
   readonly newMessages: readonly ModelMessage[];
   readonly previousSummary: string | undefined;
-}): Promise<string> {
+}): Promise<{
+  readonly summarizerInputTokens: number;
+  readonly summary: string;
+}> {
   const conversationText = serializePiConversation(newMessages);
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary !== undefined) {
@@ -436,15 +467,22 @@ async function generatePiSummary({
     previousSummary === undefined
       ? PI_SUMMARIZATION_PROMPT
       : PI_UPDATE_SUMMARIZATION_PROMPT;
+  const messages = [{ content: promptText, role: "user" as const }];
   const { text } = await generateText({
     abortSignal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     maxOutputTokens: Math.floor(0.8 * PI_RESERVE_TOKENS),
-    messages: [{ content: promptText, role: "user" }],
+    messages,
     model,
     system: PI_SUMMARIZATION_SYSTEM_PROMPT,
     temperature: 0,
   });
-  return text.trim();
+  return {
+    summarizerInputTokens: estimateModelMessagesTokens([
+      { content: PI_SUMMARIZATION_SYSTEM_PROMPT, role: "system" },
+      ...messages,
+    ]),
+    summary: text.trim(),
+  };
 }
 
 function serializePiConversation(messages: readonly ModelMessage[]): string {

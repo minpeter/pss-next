@@ -91,6 +91,31 @@ classifications and remain eligible for normal attempt retries.
 The default output directory is
 `/tmp/compaction-score-<ISO timestamp>/`.
 
+## Head-to-head comparison
+
+Run the same fixture matrix, cut points, evaluator, and model against PSS and
+the pi-coding-agent summary protocol:
+
+```sh
+pnpm --dir experimental/compaction-score exec tsx \
+  --conditions=@minpeter/pss-source compare-pi.ts /tmp/compaction-vs-pi
+pnpm --dir experimental/compaction-score table -- \
+  /tmp/compaction-vs-pi/comparison.json
+```
+
+The generated table reports exact and semantic retention, invalid attempts,
+summary ratio and savings, total source/summary/removed token estimates,
+retained facts per 1,000 summary tokens, and per-hop compaction latency
+including total direct critical-path time, mean, p50, p95, maximum, and
+summarizer-input throughput.
+
+Token counts use the runtime's deterministic message-token estimator so both
+methods are measured consistently; they are not provider billing usage.
+Synchronous block time measures the awaited compaction critical path in this
+runner. A coding agent that overlaps speculative compaction with other work can
+have a lower user-visible delay, which requires a separate runtime gate
+benchmark rather than subtracting an assumed overlap here.
+
 ## Interpretation
 
 Compare distributions, not a single best run. The earlier one-call-per-question
