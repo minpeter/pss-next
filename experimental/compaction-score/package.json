@@ -8,6 +8,7 @@
     "packets": "tsx --conditions=@minpeter/pss-source export-packets.ts",
     "score": "tsx --conditions=@minpeter/pss-source run.ts",
     "screen": "tsx --conditions=@minpeter/pss-source profile-screening.ts",
+    "table": "tsx --conditions=@minpeter/pss-source comparison-report-cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

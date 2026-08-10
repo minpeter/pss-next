@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { runComparisonReportCli } from "./comparison-report-cli";
 import type { ReportRole } from "./stability-comparison";
 import {
   evaluateStabilityComparison,
@@ -8,10 +9,12 @@ import {
   type StabilityGateDecision,
 } from "./stability-gates";
 
-const HELP = `Usage: pnpm compare -- BASELINE_SUMMARY CANDIDATE_SUMMARY
+const HELP = `Usage:
+  pnpm compare -- BASELINE_SUMMARY CANDIDATE_SUMMARY
+  pnpm compare -- --table COMPARISON_JSON
 
 Compare frozen baseline and candidate compaction TrialSummary JSON files.
-Exits 0 only when every stability gate passes.`;
+With --table, render a PSS vs pi-coding-agent Markdown report.`;
 
 interface ComparisonCliIo {
   readonly stderr: (text: string) => void;
@@ -43,6 +46,9 @@ export async function runComparisonCli(
   if (positional.length === 1 && positional[0] === "--help") {
     io.stdout(`${HELP}\n`);
     return 0;
+  }
+  if (positional[0] === "--table") {
+    return runComparisonReportCli(positional.slice(1), io);
   }
   const baselinePath = positional[0];
   const candidatePath = positional[1];
