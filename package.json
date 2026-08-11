@@ -49,7 +49,7 @@
     "@babel/core": "8.0.1",
     "@babel/parser": "8.0.4",
     "@biomejs/biome": "2.5.5",
-    "@earendil-works/pi-tui": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.84.1",
     "@minpeter/pss-coding-agent": "workspace:*",
     "@minpeter/pss-runtime": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
