@@ -215,7 +215,7 @@ importers:
         version: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       evlog:
         specifier: ^2.22.4
-        version: 2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.0)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+        version: 2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.1)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -449,8 +449,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime
       '@oh-my-pi/hashline':
-        specifier: 17.2.4
-        version: 17.2.4
+        specifier: 17.2.11
+        version: 17.2.11
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -1562,42 +1562,46 @@ packages:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.3
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.3
 
-  '@oh-my-pi/hashline@17.2.4':
-    resolution: {integrity: sha512-p/hMMzk3Qhk3EOKEZhUsCMR4GOpnr0ZZuMqsJcSia2psGRFwsinnJDvFLiUpeIFA11o54LbnjhwnpAYuZ890NA==}
+  '@oh-my-pi/hashline@17.2.11':
+    resolution: {integrity: sha512-wwpRdSQcpCsr/9EFTsgqSC584pC0GLm9jI8hXZCFqr1TYPhHpuo7tiAQvL31meNz9wdna64/m+f1r4WRzlXmkA==}
     engines: {bun: '>=1.3.14'}
 
-  '@oh-my-pi/pi-natives-darwin-arm64@17.2.4':
-    resolution: {integrity: sha512-/MQbqu4PRK7MLuRVS0RHNhUhj/F39/V21WJXPwUsFklbFtfLpNuu88+ML0ZDpMxzYZd/r0kJYlMV5x0nVa3/zg==}
+  '@oh-my-pi/pi-natives-darwin-arm64@17.2.11':
+    resolution: {integrity: sha512-t/sICqAyACLtUdDPuREIfVJM14i4Hv2+kMS+AfuRpglc3tNT8b4XVV2dXHfTquNCosxzI2F8RqO9FTRfoYqqYw==}
     engines: {bun: '>=1.3.14'}
     cpu: [arm64]
     os: [darwin]
 
-  '@oh-my-pi/pi-natives-darwin-x64@17.2.4':
-    resolution: {integrity: sha512-kBzh52/6nJQUzqzYyQl3ea2z5+/fQ8OCjKNvzw+v+uIkad9UK2MnjK9O4pxiE3xJrYSiXVJkNxsN/9MzCGBx1Q==}
+  '@oh-my-pi/pi-natives-darwin-x64@17.2.11':
+    resolution: {integrity: sha512-NeMakCUa5tfz1fWIFEC3V4iYCJ6hvnxPnHRYYnnNrQ9O2asrQ4pwL0K9uB/yTRXl/pKrZfdqQmdWihIgVLuglw==}
     engines: {bun: '>=1.3.14'}
     cpu: [x64]
     os: [darwin]
 
-  '@oh-my-pi/pi-natives-linux-arm64@17.2.4':
-    resolution: {integrity: sha512-MkOvum84gSKDoxCHslld1B6gVLWMV6dMajmWwHg2ySjXEoKm+HECjqubHhdEjHmYra/HtUjzs39LTOulceditg==}
+  '@oh-my-pi/pi-natives-linux-arm64@17.2.11':
+    resolution: {integrity: sha512-I+7vPMDzxWGfq4gGPuUT1uAhyKGg70DswxP2w2VOaTPKc0g5ufD0UEW+Den7OFfenog50yKyWxRXFQxkCWtmeQ==}
     engines: {bun: '>=1.3.14'}
     cpu: [arm64]
     os: [linux]
 
-  '@oh-my-pi/pi-natives-linux-x64@17.2.4':
-    resolution: {integrity: sha512-w2h1kA+6bv4hG3uXUcYcdLYQjRJ461NRRmAAD65FAQwEnAFvMCvHGMX3PjbL5dwVTuZDV5DTKeyotrkRVqj3ug==}
+  '@oh-my-pi/pi-natives-linux-x64@17.2.11':
+    resolution: {integrity: sha512-qGGoU1l8vKngPd8vU6NYHmY7yjlDT+SURB0e75TOmNiVuoplS4xUlEFDywzvFMUnMMlWeBoQwxNDnuunDNIlsw==}
     engines: {bun: '>=1.3.14'}
     cpu: [x64]
     os: [linux]
 
-  '@oh-my-pi/pi-natives-win32-x64@17.2.4':
-    resolution: {integrity: sha512-DHxtW75SW0eEDZp5YNEFTixuHtOGo8ntBamgrUAuD+DRp4h9jY8rgVLirmD6wLvpxfZXEYFOcvUpRyF8v3Gl3A==}
+  '@oh-my-pi/pi-natives-win32-x64@17.2.11':
+    resolution: {integrity: sha512-zXnSlbMR59D8jlGVead/qaNkmrcLZ475otJmUP2mBiQ9rJ0IH2PR6I+3KcxAXA/uFjc6VGZa9WcX+snHkBVd7Q==}
     engines: {bun: '>=1.3.14'}
     cpu: [x64]
     os: [win32]
 
-  '@oh-my-pi/pi-natives@17.2.4':
-    resolution: {integrity: sha512-+feLzUzLzs7fI2dC1XFlBWF5ou7oPegX6rAzrGka3R1oWJ5Bep73nyRijckzlli5iYe3G6r4+Rt1EsgQiQSLZA==}
+  '@oh-my-pi/pi-natives@17.2.11':
+    resolution: {integrity: sha512-/OGTui8Awv2k/Ch4taiZje1m1oVjPvfp56RfMEj747nXbN+485dqTuZ5c/smf7jafPgJ/4Gq5zofOLrCbpuTSQ==}
+    engines: {bun: '>=1.3.14'}
+
+  '@oh-my-pi/pi-utils@17.2.11':
+    resolution: {integrity: sha512-axHTlAzs8cwRiGClx433fnIB58ecTvNFVI7R8048mz2zdCpeUMBmVVyvEvpIab9J/izktvbg2EENAa04KMmfiA==}
     engines: {bun: '>=1.3.14'}
 
   '@opentelemetry/api@1.9.0':
@@ -3268,8 +3272,8 @@ packages:
     resolution: {integrity: sha512-0fB3O3WMk38+PScbHLVp66jcNhsZ/ErtQ6u2lMYu/YxXgbBtl+oKOhGQHa4RpvE68k8IzbWkABzHnyAIjR758A==}
     engines: {node: '>=8.0.0'}
 
-  hono@4.13.0:
-    resolution: {integrity: sha512-jhunvfHWxd7J5EFfSgH4xsYJzSe/lfqbUCxiyyeaQasUsXeEHXtzVid+7EOGByc5JnFa23SSFL3Y2RV/z1T+eQ==}
+  hono@4.13.1:
+    resolution: {integrity: sha512-kdJoFVv2xmayw6cY09H7AbMJMt8Jn5jdlEdXsP7AGBdF2DIptVlKlOLKXP41yPip4/a3yQPv9gVcJYI8YY04dw==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.1:
@@ -3328,8 +3332,8 @@ packages:
   iobuffer@6.0.1:
     resolution: {integrity: sha512-SZWYkWNfjIXIBYSDpXDYIgshqtbOPsi4lviawAEceR1Kqk+sHDlcQjWrzNQsii80AyBY0q5c8HCTNjqo74ul+Q==}
 
-  ip-address@10.4.0:
-    resolution: {integrity: sha512-oSK96Grm3aP6OrS263xVxbNDGVL7rzBtYdpGqlDG8iQdoenDoTs/nkki+DflYbAEE8Xl6o5YxhxlrKvI3nqKXQ==}
+  ip-address@10.5.0:
+    resolution: {integrity: sha512-R5SnVLJmgYYvf2F2ZgwSBnelz5G4q5AxIC277GDfUaNbrZKNANcBC7RHqYYePlszf4kBolVkJauG0ZjHHFh55g==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -3875,6 +3879,11 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
+    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+    hasBin: true
+
   nanoid@5.1.16:
     resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
     engines: {node: ^18 || >=20}
@@ -4069,8 +4078,8 @@ packages:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
 
-  postcss@8.5.25:
-    resolution: {integrity: sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw==}
+  postcss@8.5.26:
+    resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   prelude-ls@1.2.1:
@@ -5525,9 +5534,9 @@ snapshots:
       protobufjs: 7.6.5
       yargs: 17.7.3
 
-  '@hono/node-server@2.1.0(hono@4.13.0)':
+  '@hono/node-server@2.1.0(hono@4.13.1)':
     dependencies:
-      hono: 4.13.0
+      hono: 4.13.1
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -5723,7 +5732,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 2.1.0(hono@4.13.0)
+      '@hono/node-server': 2.1.0(hono@4.13.1)
       ajv: 8.20.0
       ajv-formats: 3.0.1
       content-type: 1.0.5
@@ -5733,7 +5742,7 @@ snapshots:
       eventsource-parser: 3.1.0
       express: 5.2.1
       express-rate-limit: 8.6.2(express@5.2.1)
-      hono: 4.13.0
+      hono: 4.13.1
       jose: 6.2.8
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -5766,33 +5775,37 @@ snapshots:
       '@tybys/wasm-util': 0.10.3
     optional: true
 
-  '@oh-my-pi/hashline@17.2.4':
+  '@oh-my-pi/hashline@17.2.11':
     dependencies:
-      '@oh-my-pi/pi-natives': 17.2.4
-      lru-cache: 11.5.2
+      '@oh-my-pi/pi-natives': 17.2.11
+      '@oh-my-pi/pi-utils': 17.2.11
 
-  '@oh-my-pi/pi-natives-darwin-arm64@17.2.4':
+  '@oh-my-pi/pi-natives-darwin-arm64@17.2.11':
     optional: true
 
-  '@oh-my-pi/pi-natives-darwin-x64@17.2.4':
+  '@oh-my-pi/pi-natives-darwin-x64@17.2.11':
     optional: true
 
-  '@oh-my-pi/pi-natives-linux-arm64@17.2.4':
+  '@oh-my-pi/pi-natives-linux-arm64@17.2.11':
     optional: true
 
-  '@oh-my-pi/pi-natives-linux-x64@17.2.4':
+  '@oh-my-pi/pi-natives-linux-x64@17.2.11':
     optional: true
 
-  '@oh-my-pi/pi-natives-win32-x64@17.2.4':
+  '@oh-my-pi/pi-natives-win32-x64@17.2.11':
     optional: true
 
-  '@oh-my-pi/pi-natives@17.2.4':
+  '@oh-my-pi/pi-natives@17.2.11':
     optionalDependencies:
-      '@oh-my-pi/pi-natives-darwin-arm64': 17.2.4
-      '@oh-my-pi/pi-natives-darwin-x64': 17.2.4
-      '@oh-my-pi/pi-natives-linux-arm64': 17.2.4
-      '@oh-my-pi/pi-natives-linux-x64': 17.2.4
-      '@oh-my-pi/pi-natives-win32-x64': 17.2.4
+      '@oh-my-pi/pi-natives-darwin-arm64': 17.2.11
+      '@oh-my-pi/pi-natives-darwin-x64': 17.2.11
+      '@oh-my-pi/pi-natives-linux-arm64': 17.2.11
+      '@oh-my-pi/pi-natives-linux-x64': 17.2.11
+      '@oh-my-pi/pi-natives-win32-x64': 17.2.11
+
+  '@oh-my-pi/pi-utils@17.2.11':
+    dependencies:
+      '@oh-my-pi/pi-natives': 17.2.11
 
   '@opentelemetry/api@1.9.0': {}
 
@@ -7085,11 +7098,11 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.0
 
-  evlog@2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.0)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)):
+  evlog@2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.1)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)):
     optionalDependencies:
       ai: 7.0.51(zod@4.4.3)
       express: 5.2.1
-      hono: 4.13.0
+      hono: 4.13.1
       react: 19.2.8
       vite: 8.1.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
 
@@ -7099,7 +7112,7 @@ snapshots:
     dependencies:
       debug: 4.4.3
       express: 5.2.1
-      ip-address: 10.4.0
+      ip-address: 10.5.0
     transitivePeerDependencies:
       - supports-color
 
@@ -7322,7 +7335,7 @@ snapshots:
     dependencies:
       libheif-js: 1.19.8
 
-  hono@4.13.0: {}
+  hono@4.13.1: {}
 
   hookable@6.1.1: {}
 
@@ -7379,7 +7392,7 @@ snapshots:
 
   iobuffer@6.0.1: {}
 
-  ip-address@10.4.0: {}
+  ip-address@10.5.0: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -8058,6 +8071,8 @@ snapshots:
 
   nanoid@3.3.17: {}
 
+  nanoid@3.3.18: {}
+
   nanoid@5.1.16: {}
 
   natural-compare@1.4.0: {}
@@ -8236,9 +8251,9 @@ snapshots:
 
   possible-typed-array-names@1.1.0: {}
 
-  postcss@8.5.25:
+  postcss@8.5.26:
     dependencies:
-      nanoid: 3.3.17
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -9056,7 +9071,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.5
-      postcss: 8.5.25
+      postcss: 8.5.26
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
