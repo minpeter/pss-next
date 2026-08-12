@@ -26,6 +26,7 @@ import type {
   AgentCompaction,
   ThreadCompactionHandler,
 } from "./auto-compaction-types";
+import "./auto-compaction-runner-failure-cases";
 import { speculativeCompaction } from "./speculative-compaction";
 
 const model = {
