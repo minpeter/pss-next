@@ -35,6 +35,91 @@ async function stateWithHistory(): Promise<ThreadState> {
 }
 
 describe("compaction runner failure recovery", () => {
+  it("retries one failed completed-turn compaction before the next input", async () => {
+    const state = await stateWithHistory();
+    let attempts = 0;
+    const compaction: AgentCompaction = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new TypeError("first summary failed");
+      }
+      return { endSeqExclusive: 2, startSeq: 0, summary: "retried" };
+    };
+
+    await scheduleThreadCompaction({
+      compaction,
+      model,
+      state,
+      threadKey: "background-retry-success",
+    });
+
+    expect(attempts).toBe(2);
+    expect(state.compactionSnapshot()).toMatchObject([
+      { summary: { content: "retried", role: "system" } },
+    ]);
+  });
+
+  it("stops after one background retry and still permits fresh overflow", async () => {
+    const state = await stateWithHistory();
+    const reasons: string[] = [];
+    const compaction: AgentCompaction = async (context) => {
+      reasons.push(context.reason);
+      if (context.reason === "completed-turn") {
+        throw new TypeError("background summary failed");
+      }
+      return { endSeqExclusive: 2, startSeq: 0, summary: "overflow recovery" };
+    };
+    const options = {
+      compaction,
+      model,
+      state,
+      threadKey: "background-retry-exhaustion",
+    };
+
+    await scheduleThreadCompaction(options);
+    expect(reasons).toEqual(["completed-turn", "completed-turn"]);
+
+    await expect(compactThreadBlocking(options)).resolves.toBe(true);
+    expect(reasons).toEqual([
+      "completed-turn",
+      "completed-turn",
+      "overflow",
+    ]);
+  });
+
+  it("coalesces a pending completed-turn schedule with the retry", async () => {
+    const state = await stateWithHistory();
+    const firstStarted = createDeferred();
+    const releaseFirst = createDeferred();
+    let attempts = 0;
+    const compaction: AgentCompaction = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+        throw new TypeError("first summary failed");
+      }
+      return { endSeqExclusive: 2, startSeq: 0, summary: "coalesced" };
+    };
+    const options = {
+      compaction,
+      model,
+      state,
+      threadKey: "background-retry-coalescing",
+    };
+
+    const firstSchedule = scheduleThreadCompaction(options);
+    await firstStarted.promise;
+    scheduleThreadCompaction(options);
+    releaseFirst.resolve();
+    await firstSchedule;
+
+    expect(attempts).toBe(2);
+    expect(state.compactionSnapshot()).toMatchObject([
+      { summary: { content: "coalesced", role: "system" } },
+    ]);
+  });
+
   it("retries overflow after an active background flight rejects", async () => {
     const state = await stateWithHistory();
     const started = createDeferred();

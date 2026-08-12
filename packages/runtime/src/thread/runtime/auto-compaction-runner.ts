@@ -34,6 +34,7 @@ const pendingCompactions = new WeakMap<
   ThreadState,
   Omit<RunOptions, "reason">
 >();
+const blockingCompactions = new WeakSet<ThreadState>();
 
 interface RunOptions {
   readonly compact?: ThreadCompactionHandler;
@@ -49,15 +50,25 @@ interface RunOptions {
 
 export function scheduleThreadCompaction(
   options: Omit<RunOptions, "reason">
-): void {
+): Promise<void> {
   if (!options.compaction) {
-    return;
+    return Promise.resolve();
   }
   if (activeCompactions.has(options.state)) {
     pendingCompactions.set(options.state, options);
-    return;
+    return Promise.resolve();
   }
-  runSingleFlight({ ...options, reason: "completed-turn" }).catch(() => false);
+  return runSingleFlight({ ...options, reason: "completed-turn" })
+    .catch(async () => {
+      if (blockingCompactions.has(options.state)) {
+        return;
+      }
+      await runSingleFlight({
+        ...options,
+        reason: "completed-turn",
+      }).catch(() => false);
+    })
+    .then(() => undefined);
 }
 
 export async function compactThreadBlocking(
@@ -66,7 +77,12 @@ export async function compactThreadBlocking(
   if (!options.compaction) {
     return false;
   }
-  return await runSingleFlight({ ...options, reason: "overflow" });
+  blockingCompactions.add(options.state);
+  try {
+    return await runSingleFlight({ ...options, reason: "overflow" });
+  } finally {
+    blockingCompactions.delete(options.state);
+  }
 }
 
 /** Force a compaction through the same snapshot, transform, and freshness

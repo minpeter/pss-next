@@ -2,6 +2,7 @@ import {
   estimateModelMessagesTokens,
   type ModelContextTokenEstimateInput,
 } from "../../llm/context-gate";
+import { compactionContextForModel } from "../state/context";
 import { selectAutoCompactionRange } from "./auto-compaction-range";
 import type {
   AgentCompaction,
@@ -150,7 +151,8 @@ async function promoteCandidate({
     context.reason === "overflow" &&
     candidate !== undefined &&
     currentRange !== undefined &&
-    currentRange.endSeqExclusive > candidate.input.endSeqExclusive;
+    currentRange.endSeqExclusive > candidate.input.endSeqExclusive &&
+    !candidateFits({ candidate, context, estimate, max });
   if (candidate && !needsBroaderOverflowSummary) {
     return candidate.input;
   }
@@ -160,6 +162,41 @@ async function promoteCandidate({
   }
   const summary = await context.summarize(range);
   return summary.trim() ? { ...range, summary } : undefined;
+}
+
+function candidateFits({
+  candidate,
+  context,
+  estimate,
+  max,
+}: {
+  readonly candidate: Candidate;
+  readonly context: AgentCompactionContext;
+  readonly estimate: ThreadTokenEstimator;
+  readonly max: number;
+}): boolean {
+  if (
+    context.compactions.length > 0 ||
+    !equalSnapshot(context.modelContext, context.history)
+  ) {
+    return false;
+  }
+  const wrapper = compactionContextForModel({
+    endSeqExclusive: candidate.input.endSeqExclusive,
+    role: "compaction",
+    startSeq: candidate.input.startSeq,
+    summary: candidate.input.summary,
+  });
+  const tail = context.estimatedHistory.slice(
+    candidate.input.endSeqExclusive
+  );
+  const historyTokens = context.estimatedHistoryMessageTokens
+    ? estimate([wrapper]) +
+      context.estimatedHistoryMessageTokens
+        .slice(candidate.input.endSeqExclusive)
+        .reduce((total, tokens) => total + tokens, 0)
+    : estimate([wrapper, ...tail]);
+  return context.instructionsTokens + historyTokens <= max;
 }
 
 function getFreshCandidate(
