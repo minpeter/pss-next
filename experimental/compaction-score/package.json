@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "block-time": "tsx --conditions=@minpeter/pss-source runtime-block-time-cli.ts",
     "campaigns": "tsx --conditions=@minpeter/pss-source campaign-aggregation.ts",
     "compare": "tsx --conditions=@minpeter/pss-source compare-reports.ts",
     "packets": "tsx --conditions=@minpeter/pss-source export-packets.ts",

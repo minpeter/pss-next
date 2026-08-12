@@ -126,3 +126,48 @@ provider/protocol/control failures as invalid attempts.
 
 See [`RESULTS.md`](./RESULTS.md) for the six-trial baseline and the
 evidence-driven prompt iteration.
+
+## Runtime speculative block time
+
+The quality comparator calls compaction directly, so its latency is summary
+service time rather than user-visible runtime blocking. The runtime block-time
+campaign exercises the real `createAgent` path and measures:
+
+```text
+treatment request = speculative target send -> provider request start
+matched control = fresh compaction-disabled target with identical inputs
+user delta = treatment request - matched control
+user block = max(0, user delta)
+block avoidance = max(0, summary service - user block) / summary service
+```
+
+Four controlled scenarios use the same model and compaction policy:
+
+- `overlap-nonblocking`: a background summary is in flight while the next
+  request uses the original context without waiting.
+- `prepared-hit`: the candidate finishes before the measured target, which
+  automatically promotes it before provider dispatch and uses compacted context.
+- `late-overflow-miss`: the next request crosses the ceiling before the
+  candidate can cover the broader range and waits for the fallback summary.
+- `summary-failure-recovery`: the background summary fails, then the overflow
+  path retries with a fresh summary instead of surfacing that failure.
+
+The report decomposes the signed user delta into pre-step queue/commit delta
+and post-step context-gate delta before clipping only the final user block.
+Benchmark messages contain real payload proportional to their exact synthetic
+units, so provider-written summaries cannot alter the 65% prepare, 80%
+promote, or overflow boundaries and runtime summary-size validation remains
+representative.
+Live mode uses real provider summary calls and runtime concurrency;
+deterministic mode uses a mock provider and logical clock to validate the
+measurement channel. Failed turns, failed summaries, wrong summary-call
+counts, and wrong overlap paths invalidate the campaign. User block of at most
+10 ms counts as zero-block.
+
+```bash
+pnpm --dir experimental/compaction-score block-time -- \
+  --mode deterministic --repetitions 3 --output /tmp/block-time-deterministic
+
+pnpm --dir experimental/compaction-score block-time -- \
+  --mode live --repetitions 3 --output /tmp/block-time-live
+```
