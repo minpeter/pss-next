@@ -1,8 +1,10 @@
 export type RuntimeBlockScenario =
-  | "late-overflow-miss"
+  | "candidate-fit-late-hit"
+  | "candidate-too-broad-fallback"
   | "overlap-nonblocking"
   | "prepared-hit"
-  | "summary-failure-recovery";
+  | "repeated-failure-overflow-recovery"
+  | "summary-failure-retry-hit";
 
 export interface RuntimeSummarySpan {
   readonly endedAtMs: number;
@@ -48,11 +50,13 @@ export interface RuntimeBlockTrial {
 
 export interface RuntimeBlockAggregate {
   readonly blockAvoidanceRatioMean: number;
+  readonly candidateAppliedRate: number;
   readonly gateDeltaMeanMs: number;
   readonly overlapRate: number;
   readonly preStepDeltaMeanMs: number;
   readonly scenario: RuntimeBlockScenario;
   readonly summaryServiceMeanMs: number;
+  readonly summaryCallsMean: number;
   readonly trials: number;
   readonly userDeltaMeanMs: number;
   readonly userBlockMaxMs: number;
@@ -142,6 +146,9 @@ export function aggregateRuntimeBlockTrials(
     blockAvoidanceRatioMean: mean(
       matching.map((trial) => trial.blockAvoidanceRatio)
     ),
+    candidateAppliedRate:
+      matching.filter((trial) => trial.candidateApplied).length /
+      matching.length,
     gateDeltaMeanMs: mean(matching.map((trial) => trial.gateDeltaMs)),
     overlapRate:
       matching.filter((trial) => trial.overlapAtProviderStart).length /
@@ -153,6 +160,7 @@ export function aggregateRuntimeBlockTrials(
     summaryServiceMeanMs: mean(
       matching.map((trial) => trial.summaryServiceMs)
     ),
+    summaryCallsMean: mean(matching.map((trial) => trial.summaryCalls)),
     trials: matching.length,
     userDeltaMeanMs: mean(matching.map((trial) => trial.userDeltaMs)),
     userBlockMaxMs: Math.max(...blocks),

@@ -38,8 +38,12 @@ export function createRuntimeBlockTimeReport({
 }): RuntimeBlockTimeReport {
   return {
     aggregates: {
-      "late-overflow-miss": aggregateRuntimeBlockTrials(
-        "late-overflow-miss",
+      "candidate-fit-late-hit": aggregateRuntimeBlockTrials(
+        "candidate-fit-late-hit",
+        trials
+      ),
+      "candidate-too-broad-fallback": aggregateRuntimeBlockTrials(
+        "candidate-too-broad-fallback",
         trials
       ),
       "overlap-nonblocking": aggregateRuntimeBlockTrials(
@@ -50,8 +54,12 @@ export function createRuntimeBlockTimeReport({
         "prepared-hit",
         trials
       ),
-      "summary-failure-recovery": aggregateRuntimeBlockTrials(
-        "summary-failure-recovery",
+      "repeated-failure-overflow-recovery": aggregateRuntimeBlockTrials(
+        "repeated-failure-overflow-recovery",
+        trials
+      ),
+      "summary-failure-retry-hit": aggregateRuntimeBlockTrials(
+        "summary-failure-retry-hit",
         trials
       ),
     },
@@ -77,8 +85,10 @@ export function renderRuntimeBlockTimeMarkdown(
   const aggregates = [
     report.aggregates["overlap-nonblocking"],
     report.aggregates["prepared-hit"],
-    report.aggregates["late-overflow-miss"],
-    report.aggregates["summary-failure-recovery"],
+    report.aggregates["candidate-fit-late-hit"],
+    report.aggregates["candidate-too-broad-fallback"],
+    report.aggregates["summary-failure-retry-hit"],
+    report.aggregates["repeated-failure-overflow-recovery"],
   ];
   return `${[
     "# Runtime speculative compaction block time",
@@ -86,8 +96,8 @@ export function renderRuntimeBlockTimeMarkdown(
     `Model: \`${report.model}\``,
     `Mode: \`${report.mode}\``,
     "",
-    "| Scenario | Trials | Summary service mean | User delta mean | User block mean | P50 | P95 | Max | Pre-step delta mean | Gate delta mean | Zero-block rate | Block avoidance | Overlap rate |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Scenario | Trials | Summary calls mean | Summary service mean | User delta mean | User block mean | P50 | P95 | Max | Pre-step delta mean | Gate delta mean | Candidate applied | Zero-block rate | Block avoidance | Overlap rate |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...aggregates.map(renderAggregate),
     "",
     "## Trial details",
@@ -106,6 +116,7 @@ function renderAggregate(aggregate: RuntimeBlockAggregate): string {
   return [
     `| ${scenarioLabel(aggregate.scenario)}`,
     aggregate.trials,
+    aggregate.summaryCallsMean.toFixed(2),
     milliseconds(aggregate.summaryServiceMeanMs),
     signedMilliseconds(aggregate.userDeltaMeanMs),
     milliseconds(aggregate.userBlockMeanMs),
@@ -114,6 +125,7 @@ function renderAggregate(aggregate: RuntimeBlockAggregate): string {
     milliseconds(aggregate.userBlockMaxMs),
     signedMilliseconds(aggregate.preStepDeltaMeanMs),
     signedMilliseconds(aggregate.gateDeltaMeanMs),
+    percentage(aggregate.candidateAppliedRate),
     percentage(aggregate.zeroBlockRate),
     percentage(aggregate.blockAvoidanceRatioMean),
     `${percentage(aggregate.overlapRate)} |`,

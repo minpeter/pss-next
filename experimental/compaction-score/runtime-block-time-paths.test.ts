@@ -28,7 +28,13 @@ function deferred(): Deferred {
 }
 
 describe("runtime block-time path validity", () => {
-  it.each(["prepared-hit", "late-overflow-miss"] as const)(
+  it.each([
+    "prepared-hit",
+    "candidate-fit-late-hit",
+    "candidate-too-broad-fallback",
+    "summary-failure-retry-hit",
+    "repeated-failure-overflow-recovery",
+  ] as const)(
     "validates the %s runtime path",
     async (scenario) => {
       let logicalNow = 0;
@@ -53,8 +59,18 @@ describe("runtime block-time path validity", () => {
 
       expect(observation.pathValid).toBe(true);
       expect(observation.candidateApplied).toBe(true);
-      expect(observation.summarySpans).toHaveLength(
-        scenario === "prepared-hit" ? 1 : 2
+      expect(observation.summarySpans.map((span) => span.status)).toEqual(
+        {
+          "candidate-fit-late-hit": ["completed"],
+          "candidate-too-broad-fallback": ["completed", "completed"],
+          "prepared-hit": ["completed"],
+          "repeated-failure-overflow-recovery": [
+            "error",
+            "error",
+            "completed",
+          ],
+          "summary-failure-retry-hit": ["error", "completed"],
+        }[scenario]
       );
     }
   );
@@ -88,7 +104,7 @@ describe("runtime block-time path validity", () => {
     );
   });
 
-  it("records failed-summary recovery as a valid overflow path", async () => {
+  it("records one failed summary followed by a background retry hit", async () => {
     let summaryCalls = 0;
     const model = createMockLanguageModelV4(async ({ prompt }) => {
       if (isCompactionProviderPrompt(prompt)) {
@@ -104,7 +120,7 @@ describe("runtime block-time path validity", () => {
     const observation = await runRuntimeBlockTrial({
       model,
       repetition: 1,
-      scenario: "summary-failure-recovery",
+      scenario: "summary-failure-retry-hit",
     });
 
     expect(observation.summarySpans.map((span) => span.status)).toEqual([

@@ -141,16 +141,20 @@ user block = max(0, user delta)
 block avoidance = max(0, summary service - user block) / summary service
 ```
 
-Four controlled scenarios use the same model and compaction policy:
+Six controlled scenarios use the same model and compaction policy:
 
 - `overlap-nonblocking`: a background summary is in flight while the next
   request uses the original context without waiting.
 - `prepared-hit`: the candidate finishes before the measured target, which
   automatically promotes it before provider dispatch and uses compacted context.
-- `late-overflow-miss`: the next request crosses the ceiling before the
-  candidate can cover the broader range and waits for the fallback summary.
-- `summary-failure-recovery`: the background summary fails, then the overflow
-  path retries with a fresh summary instead of surfacing that failure.
+- `candidate-fit-late-hit`: the target widens the desired range, but the
+  prepared candidate plus its full tail still fits and avoids a second summary.
+- `candidate-too-broad-fallback`: the prepared candidate leaves an oversized
+  tail, so the broader overflow summary remains blocking.
+- `summary-failure-retry-hit`: one failed background summary is retried before
+  the target, which promotes the recovered candidate without blocking.
+- `repeated-failure-overflow-recovery`: two background failures exhaust the
+  retry budget, then the overflow path performs a fresh blocking recovery.
 
 The report decomposes the signed user delta into pre-step queue/commit delta
 and post-step context-gate delta before clipping only the final user block.

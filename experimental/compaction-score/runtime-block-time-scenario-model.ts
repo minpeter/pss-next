@@ -24,7 +24,7 @@ export function createRuntimeBlockScenarioModel(
       const summary = isCompactionProviderPrompt(params.prompt);
       if (summary) {
         summaryCalls += 1;
-        if (scenario === "summary-failure-recovery" && summaryCalls === 1) {
+        if (shouldFailSummary(scenario, summaryCalls)) {
           throw new TypeError("injected summary failure");
         }
       }
@@ -35,7 +35,7 @@ export function createRuntimeBlockScenarioModel(
       const summary = isCompactionProviderPrompt(params.prompt);
       if (summary) {
         summaryCalls += 1;
-        if (scenario === "summary-failure-recovery" && summaryCalls === 1) {
+        if (shouldFailSummary(scenario, summaryCalls)) {
           throw new TypeError("injected summary failure");
         }
       }
@@ -53,4 +53,14 @@ export function createRuntimeBlockScenarioModel(
       model,
     }),
   };
+}
+
+function shouldFailSummary(
+  scenario: RuntimeBlockScenario,
+  summaryCalls: number
+): boolean {
+  return (
+    (scenario === "summary-failure-retry-hit" && summaryCalls === 1) ||
+    (scenario === "repeated-failure-overflow-recovery" && summaryCalls <= 2)
+  );
 }

@@ -27,7 +27,10 @@ export function createDeterministicRuntimeBlockModel(
     if (isCompactionProviderPrompt(prompt)) {
       summaryCalls += 1;
       if (summaryCalls === 1) {
-        if (scenario !== "prepared-hit") {
+        if (
+          scenario === "overlap-nonblocking" ||
+          scenario === "candidate-too-broad-fallback"
+        ) {
           await firstSummaryRelease.promise;
         }
         advance(100);
@@ -46,8 +49,7 @@ export function createDeterministicRuntimeBlockModel(
   return {
     model,
     onTargetStepStart:
-      scenario === "late-overflow-miss" ||
-      scenario === "summary-failure-recovery"
+      scenario === "candidate-too-broad-fallback"
         ? () => {
             advance(80);
             firstSummaryRelease.resolve();

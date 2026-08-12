@@ -65,15 +65,12 @@ async function runTreatment(
   const trace = createRuntimeBlockModelTrace(options.model, now);
   const summarySpans: RuntimeSummaryTraceSpan[] = [];
   const activeSummaries = new Set<Promise<void>>();
-  let resolveFirstSummary: (() => void) | undefined;
-  const firstSummarySettled = new Promise<void>((resolve) => {
-    resolveFirstSummary = resolve;
-  });
+  const summaryWaiters = new Map<number, () => void>();
   const compaction = createObservedRuntimeCompaction(
     summarySpans,
     activeSummaries,
     now,
-    () => resolveFirstSummary?.()
+    () => summaryWaiters.get(summarySpans.length)?.()
   );
   const agent = await createAgent({ compaction, model: trace.model });
   const thread = agent.thread(
@@ -93,8 +90,15 @@ async function runTreatment(
       now
     );
     await trace.waitForCall("summary", summaryAfter);
-    if (options.scenario === "prepared-hit") {
-      await firstSummarySettled;
+    const summariesBeforeTarget = requiredSummariesBeforeTarget(
+      options.scenario
+    );
+    if (summariesBeforeTarget > 0) {
+      await waitForSummaryCount(
+        summarySpans,
+        summaryWaiters,
+        summariesBeforeTarget
+      );
     }
     const target = await measureTurn(
       () =>
@@ -159,7 +163,39 @@ function targetUnits(scenario: RuntimeBlockScenario): number {
   if (scenario === "overlap-nonblocking") {
     return 50;
   }
-  return scenario === "prepared-hit" ? 150 : 200;
+  if (scenario === "prepared-hit") {
+    return 150;
+  }
+  return scenario === "candidate-too-broad-fallback" ? 350 : 200;
+}
+
+function requiredSummariesBeforeTarget(
+  scenario: RuntimeBlockScenario
+): number {
+  if (
+    scenario === "prepared-hit" ||
+    scenario === "candidate-fit-late-hit"
+  ) {
+    return 1;
+  }
+  if (scenario === "summary-failure-retry-hit") {
+    return 2;
+  }
+  return scenario === "repeated-failure-overflow-recovery" ? 2 : 0;
+}
+
+async function waitForSummaryCount(
+  spans: readonly RuntimeSummaryTraceSpan[],
+  waiters: Map<number, () => void>,
+  count: number
+): Promise<void> {
+  if (spans.length >= count && spans[count - 1]?.status !== "running") {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    waiters.set(count, resolve);
+  });
+  waiters.delete(count);
 }
 
 interface MeasuredTurn {

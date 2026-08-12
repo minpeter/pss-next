@@ -23,8 +23,10 @@ import {
 const SCENARIOS = [
   "overlap-nonblocking",
   "prepared-hit",
-  "late-overflow-miss",
-  "summary-failure-recovery",
+  "candidate-fit-late-hit",
+  "candidate-too-broad-fallback",
+  "summary-failure-retry-hit",
+  "repeated-failure-overflow-recovery",
 ] as const satisfies readonly RuntimeBlockScenario[];
 
 interface CliOptions {
@@ -125,8 +127,10 @@ function parseOptions(args: readonly string[]): CliOptions {
         "Scenarios:",
         "  overlap-nonblocking       summary active; target uses original context",
         "  prepared-hit              ready candidate auto-promoted before provider",
-        "  late-overflow-miss        late candidate plus broader overflow summary",
-        "  summary-failure-recovery  failed background summary retried on overflow",
+        "  candidate-fit-late-hit    widened candidate reused without fallback",
+        "  candidate-too-broad-fallback  oversized tail needs broader summary",
+        "  summary-failure-retry-hit one background failure recovered before target",
+        "  repeated-failure-overflow-recovery  two failures then overflow recovery",
       ].join("\n")
     );
     process.exit(0);

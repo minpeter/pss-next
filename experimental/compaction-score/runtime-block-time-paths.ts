@@ -13,7 +13,12 @@ interface ExpectedPath {
 const EXPECTED_PATHS: Readonly<
   Record<RuntimeBlockScenario, ExpectedPath>
 > = {
-  "late-overflow-miss": {
+  "candidate-fit-late-hit": {
+    candidateApplied: true,
+    overlaps: false,
+    statuses: ["completed"],
+  },
+  "candidate-too-broad-fallback": {
     candidateApplied: true,
     overlaps: false,
     statuses: ["completed", "completed"],
@@ -28,7 +33,12 @@ const EXPECTED_PATHS: Readonly<
     overlaps: false,
     statuses: ["completed"],
   },
-  "summary-failure-recovery": {
+  "repeated-failure-overflow-recovery": {
+    candidateApplied: true,
+    overlaps: false,
+    statuses: ["error", "error", "completed"],
+  },
+  "summary-failure-retry-hit": {
     candidateApplied: true,
     overlaps: false,
     statuses: ["error", "completed"],

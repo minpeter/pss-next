@@ -118,8 +118,10 @@ describe("runtime block-time metrics", () => {
     const scenarios: readonly RuntimeBlockScenario[] = [
       "overlap-nonblocking",
       "prepared-hit",
-      "late-overflow-miss",
-      "summary-failure-recovery",
+      "candidate-fit-late-hit",
+      "candidate-too-broad-fallback",
+      "summary-failure-retry-hit",
+      "repeated-failure-overflow-recovery",
     ];
     const trials = scenarios.map((scenario) => ({ ...hit, scenario }));
 
@@ -181,7 +183,7 @@ describe("runtime block-time metrics", () => {
       model,
       onTargetStepStart: () => firstSummaryRelease.resolve(),
       repetition: 1,
-      scenario: "late-overflow-miss",
+      scenario: "candidate-too-broad-fallback",
     });
     const trial = calculateRuntimeBlockTrial(observation);
 
