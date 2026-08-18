@@ -180,11 +180,15 @@ export async function summarizeCompactionRange({
           },
         ]
       : transformedHistoryBase;
+  // Compaction summarize is an internal control call. Do not inherit the
+  // agent persona / policy instructions (e.g. reminder silence: "produce zero
+  // text") — those can suppress the summary assistant output and leave the
+  // thread uncompacted. The handoff contract already lives on the leading
+  // system history message and is hoisted by promptForModel.
   const output = await generateModelStep({
     attachmentStore: model.attachmentStore,
     contextGate: false,
     history: transformedHistory,
-    instructions: model.instructions,
     maxOutputTokens,
     model: model.model,
     seed: model.seed,

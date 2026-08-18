@@ -76,6 +76,36 @@ describe("automatic compaction summary contract", () => {
     });
   });
 
+  it("does not inherit agent persona instructions on the summary model call", async () => {
+    let captured: MockLanguageModelV4CallOptions | undefined;
+    const model = createMockLanguageModelV4((options) => {
+      captured = options;
+      return Promise.resolve(mockLanguageModelV4Text("summary"));
+    });
+    const personaSilence =
+      "PRODUCE_ZERO_TEXT_SILENCE_MARKER: Produce zero text when investigation is empty.";
+
+    await expect(
+      summarizeCompactionRange({
+        history: [
+          { content: "reminder history. ".repeat(200), role: "user" },
+          { content: "tool result noted", role: "assistant" },
+        ],
+        model: {
+          instructions: personaSilence,
+          model,
+          temperature: 1,
+        },
+      })
+    ).resolves.toBe("summary");
+
+    const serialized = JSON.stringify(captured);
+    expect(serialized).not.toContain("PRODUCE_ZERO_TEXT_SILENCE_MARKER");
+    expect(serialized).toContain(
+      "[INTERNAL COMPACTION INSTRUCTION - NOT CONVERSATION HISTORY]"
+    );
+  });
+
   it("ends assistant-ended history with an explicit summary request", async () => {
     let captured: MockLanguageModelV4CallOptions | undefined;
     const model = createMockLanguageModelV4((options) => {
