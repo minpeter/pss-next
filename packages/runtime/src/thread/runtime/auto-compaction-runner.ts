@@ -11,7 +11,7 @@ import type { ContextTokenView } from "../../llm/context-tokens";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import { hydrateRuntimeAttachments } from "../input/attachments";
 import { compactionContextForModel } from "../state/context";
-import type { ThreadState } from "../state/thread-state";
+import type { ThreadCompactionInput, ThreadState } from "../state/thread-state";
 import {
   buildCompactionSummaryInstructions,
   summarizeCompactionRange,
@@ -101,7 +101,12 @@ export function scheduleThreadCompaction(
     pendingCompactions.set(options.state, options);
     return Promise.resolve();
   }
-  const deadline = compactionDeadline(options.compaction);
+  let deadline: ReturnType<typeof compactionDeadline>;
+  try {
+    deadline = compactionDeadline(options.compaction);
+  } catch {
+    return Promise.resolve();
+  }
   const runOptions = {
     ...options,
     ...deadline,
@@ -157,9 +162,11 @@ export async function compactThreadManually(
     readonly summaryOptions?: CompactionSummaryOptions;
   }
 ): Promise<boolean> {
-  const compaction: AgentCompaction = async (context) => {
+  const compaction: AgentCompaction = async (
+    context
+  ): Promise<ThreadCompactionInput | undefined> => {
     if (context.history.length === 0) {
-      return undefined;
+      return;
     }
     const range = { endSeqExclusive: context.history.length, startSeq: 0 };
     return {

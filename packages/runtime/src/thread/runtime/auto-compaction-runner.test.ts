@@ -119,9 +119,9 @@ describe("compaction runner concurrency", () => {
     const startedAt = Date.now();
 
     await compactThreadBlocking({
-      compaction: async (context) => {
+      compaction: (context) => {
         deadlineAt = context.deadlineAt;
-        return undefined;
+        return;
       },
       model,
       state,
@@ -134,6 +134,55 @@ describe("compaction runner concurrency", () => {
     expect(deadlineAt).toBeLessThan(
       startedAt + DEFAULT_COMPACTION_DEADLINE_MS + 1000
     );
+  });
+
+  it("does not throw from scheduleThreadCompaction when deadlineMs throws", async () => {
+    const state = await stateWithHistory();
+    const before = state.modelSnapshot();
+    const compaction = Object.assign(
+      async () => ({
+        endSeqExclusive: 2,
+        startSeq: 0,
+        summary: "summary",
+      }),
+      {
+        deadlineMs: () => {
+          throw new Error("boom");
+        },
+      }
+    ) satisfies AgentCompaction;
+
+    await expect(
+      scheduleThreadCompaction({
+        compaction,
+        model,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBeUndefined();
+    expect(state.modelSnapshot()).toEqual(before);
+    expect(state.compactionSnapshot()).toEqual([]);
+  });
+
+  it("does not throw from scheduleThreadCompaction when deadlineMs is invalid", async () => {
+    const state = await stateWithHistory();
+    const before = state.modelSnapshot();
+    const compaction = Object.assign(
+      (): undefined => {
+        return;
+      },
+      { deadlineMs: () => 0 }
+    ) satisfies AgentCompaction;
+
+    await expect(
+      scheduleThreadCompaction({
+        compaction,
+        model,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBeUndefined();
+    expect(state.modelSnapshot()).toEqual(before);
   });
 
   it("applies the shared episode bound to manual compaction", async () => {

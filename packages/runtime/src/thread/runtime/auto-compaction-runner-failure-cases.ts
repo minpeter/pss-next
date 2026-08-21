@@ -77,25 +77,35 @@ describe("compaction runner failure recovery", () => {
   });
 
   it("does not start a background retry after its absolute deadline expires", async () => {
+    vi.useFakeTimers();
     const state = await stateWithHistory();
     let attempts = 0;
+    const started = createDeferred();
     const compaction = Object.assign(
       () => {
         attempts += 1;
+        started.resolve();
         return new Promise<never>(() => undefined);
       },
-      { deadlineMs: () => 1 }
+      { deadlineMs: () => 50 }
     ) satisfies AgentCompaction;
 
-    await scheduleThreadCompaction({
-      compaction,
-      model,
-      state,
-      threadKey: "background-deadline",
-    });
-
-    expect(attempts).toBe(1);
-    expect(state.compactionSnapshot()).toEqual([]);
+    try {
+      const scheduled = scheduleThreadCompaction({
+        compaction,
+        model,
+        state,
+        threadKey: "background-deadline",
+      });
+      await started.promise;
+      expect(attempts).toBe(1);
+      await vi.advanceTimersByTimeAsync(50);
+      await scheduled;
+      expect(attempts).toBe(1);
+      expect(state.compactionSnapshot()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("retries one failed completed-turn compaction before the next input", async () => {

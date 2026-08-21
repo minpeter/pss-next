@@ -118,8 +118,10 @@
       "type VisibleAgentEvent",
       "value AgentHookError",
       "value COMPACTION_SUMMARY_CONTRACT",
+      "value CompactionDeadlineExceededError",
       "value CompactionSummaryNotSmallerError",
       "value ContextBudgetExceededError",
+      "value DEFAULT_COMPACTION_DEADLINE_MS",
       "value DEFAULT_MAX_IMAGE_ATTACHMENT_BYTES",
       "value IMAGE_PREPARE_LOG_MESSAGE",
       "value MAX_IMAGE_DECODED_PIXELS",
@@ -534,7 +536,10 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
+    "./protocol/node": [
+      "type SpawnPssClientOptions",
+      "value spawnPssClient"
+    ],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",

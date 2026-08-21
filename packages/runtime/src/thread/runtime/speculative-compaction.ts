@@ -6,6 +6,7 @@ import {
   compactionContextForModel,
   compactionContextMessage,
 } from "../state/context";
+import type { ThreadCompactionInput } from "../state/thread-state";
 import {
   latestPrefixCompaction,
   selectAutoCompactionRange,
@@ -79,7 +80,9 @@ export function speculativeCompaction(
   const customEstimate = options.estimateTokens;
   const estimate = customEstimate ?? estimateModelMessagesTokens;
   const candidates = new WeakMap<object, Candidate>();
-  const compact = async (context: AgentCompactionContext) => {
+  const compact = async (
+    context: AgentCompactionContext
+  ): Promise<ThreadCompactionInput | undefined> => {
     const tokens = context.estimatedContextTokens;
     const candidate = getFreshCandidate(candidates, context);
     if (tokens >= Math.floor(max * promote) || context.reason === "overflow") {
@@ -197,18 +200,21 @@ async function promoteCandidate({
 }) {
   candidates.delete(context.threadIdentity);
   const currentRange = selectRange(context, estimate, max, retain);
+  const fit =
+    candidate !== undefined &&
+    candidateFits({ candidate, context, estimate, max });
   const needsBroaderOverflowSummary =
     context.reason === "overflow" &&
     candidate !== undefined &&
     currentRange !== undefined &&
     currentRange.endSeqExclusive > candidate.input.endSeqExclusive &&
-    !candidateFits({ candidate, context, estimate, max });
-  if (candidate && !needsBroaderOverflowSummary) {
+    !fit;
+  if (candidate && fit && !needsBroaderOverflowSummary) {
     return candidate.input;
   }
   const range = currentRange;
   if (!range) {
-    return candidate?.input;
+    return;
   }
   const summary = await context.summarize(range);
   return summary.trim() ? { ...range, summary } : undefined;
@@ -252,12 +258,13 @@ function candidateFits({
     summary: candidate.input.summary,
   });
   const tail = context.estimatedHistory.slice(candidate.input.endSeqExclusive);
+  const tokensFor = context.estimateTokens ?? estimate;
   const historyTokens = context.estimatedHistoryMessageTokens
-    ? estimate([wrapper]) +
+    ? tokensFor([wrapper]) +
       context.estimatedHistoryMessageTokens
         .slice(candidate.input.endSeqExclusive)
         .reduce((total, tokens) => total + tokens, 0)
-    : estimate([wrapper, ...tail]);
+    : tokensFor([wrapper, ...tail]);
   return context.instructionsTokens + historyTokens <= max;
 }
 
