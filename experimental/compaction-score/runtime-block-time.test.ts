@@ -4,17 +4,17 @@ import {
   mockLanguageModelV4Text,
 } from "./mock-language-model";
 import {
+  isCompactionProviderPrompt,
+  runtimeBlockEstimator,
+  runtimeBlockInput,
+} from "./runtime-block-time-instrumentation";
+import {
   calculateRuntimeBlockTrial,
   type RuntimeBlockObservation,
   type RuntimeBlockScenario,
 } from "./runtime-block-time-metrics";
-import {
-  isCompactionProviderPrompt,
-  runtimeBlockInput,
-  runtimeBlockEstimator,
-  runRuntimeBlockTrial,
-} from "./runtime-block-time-runner";
 import { createRuntimeBlockTimeReport } from "./runtime-block-time-report";
+import { runRuntimeBlockTrial } from "./runtime-block-time-runner";
 
 interface Deferred {
   readonly promise: Promise<void>;
@@ -193,7 +193,7 @@ describe("runtime block-time metrics", () => {
 
   it("rejects a target turn that reaches the provider but ends in error", async () => {
     let foregroundCalls = 0;
-    const model = createMockLanguageModelV4(async ({ prompt }) => {
+    const model = createMockLanguageModelV4(({ prompt }) => {
       if (isCompactionProviderPrompt(prompt)) {
         return mockLanguageModelV4Text("compact handoff");
       }

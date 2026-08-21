@@ -2,11 +2,11 @@ import {
   createMockLanguageModelV4,
   mockLanguageModelV4Text,
 } from "./mock-language-model";
-import type { RuntimeBlockScenario } from "./runtime-block-time-metrics";
 import {
   isCompactionProviderPrompt,
   type RuntimeBlockLanguageModel,
-} from "./runtime-block-time-runner";
+} from "./runtime-block-time-instrumentation";
+import type { RuntimeBlockScenario } from "./runtime-block-time-metrics";
 
 interface Deferred {
   readonly promise: Promise<void>;

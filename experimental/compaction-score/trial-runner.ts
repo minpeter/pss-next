@@ -146,15 +146,19 @@ async function generateCompactionHops(
       range,
     });
     const modelSummaryHistory = toModelMessages(summaryHistory);
-    const summaryInputTokens =
-      estimateModelMessagesTokens(modelSummaryHistory);
+    const summaryInputTokens = estimateModelMessagesTokens(modelSummaryHistory);
     const summaryInstructions =
       input.summaryInstructions ?? buildCompactionSummaryInstructions();
     const summarizerInputTokens = estimateModelMessagesTokens([
       { content: summaryInstructions, role: "system" },
       ...modelSummaryHistory,
       ...(modelSummaryHistory.at(-1)?.role === "assistant"
-        ? [{ content: "Create the compaction summary now.", role: "user" as const }]
+        ? [
+            {
+              content: "Create the compaction summary now.",
+              role: "user" as const,
+            },
+          ]
         : []),
     ]);
     try {

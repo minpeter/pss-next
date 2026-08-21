@@ -37,8 +37,7 @@ export function summarizeComparisonStatistics({
     invalid,
     latencyStandardDeviation:
       durations.length === 0 ? null : standardDeviation(durations),
-    semanticWilson95:
-      total === 0 ? null : wilson95(semanticRetained, total),
+    semanticWilson95: total === 0 ? null : wilson95(semanticRetained, total),
     valid,
   };
 }

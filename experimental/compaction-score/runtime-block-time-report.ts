@@ -50,10 +50,7 @@ export function createRuntimeBlockTimeReport({
         "overlap-nonblocking",
         trials
       ),
-      "prepared-hit": aggregateRuntimeBlockTrials(
-        "prepared-hit",
-        trials
-      ),
+      "prepared-hit": aggregateRuntimeBlockTrials("prepared-hit", trials),
       "repeated-failure-overflow-recovery": aggregateRuntimeBlockTrials(
         "repeated-failure-overflow-recovery",
         trials

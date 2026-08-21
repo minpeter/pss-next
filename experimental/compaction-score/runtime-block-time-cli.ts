@@ -14,11 +14,11 @@ import {
   createRuntimeBlockTimeReport,
   renderRuntimeBlockTimeMarkdown,
 } from "./runtime-block-time-report";
-import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 import {
-  runRuntimeBlockTrial,
   type RuntimeBlockLanguageModel,
+  runRuntimeBlockTrial,
 } from "./runtime-block-time-runner";
+import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 
 const SCENARIOS = [
   "overlap-nonblocking",
@@ -52,12 +52,9 @@ async function main(): Promise<void> {
       let logicalNow = 0;
       const deterministic =
         options.mode === "deterministic"
-          ? createDeterministicRuntimeBlockModel(
-              scenario,
-              (milliseconds) => {
-                logicalNow += milliseconds;
-              }
-            )
+          ? createDeterministicRuntimeBlockModel(scenario, (milliseconds) => {
+              logicalNow += milliseconds;
+            })
           : undefined;
       const scenarioModel = createRuntimeBlockScenarioModel(
         requireConcreteModel(liveModel ?? deterministic?.model),
@@ -99,10 +96,7 @@ async function main(): Promise<void> {
       join(options.outputDirectory, "runtime-block-time.json"),
       `${JSON.stringify(report, null, 2)}\n`
     ),
-    writeFile(
-      join(options.outputDirectory, "runtime-block-time.md"),
-      markdown
-    ),
+    writeFile(join(options.outputDirectory, "runtime-block-time.md"), markdown),
   ]);
   console.log(markdown);
   console.log(`report: ${options.outputDirectory}`);
@@ -112,7 +106,9 @@ function requireConcreteModel(
   model: LanguageModel | undefined
 ): RuntimeBlockLanguageModel {
   if (model === undefined || typeof model === "string") {
-    throw new TypeError("Runtime block-time benchmark requires a model object.");
+    throw new TypeError(
+      "Runtime block-time benchmark requires a model object."
+    );
   }
   return model;
 }

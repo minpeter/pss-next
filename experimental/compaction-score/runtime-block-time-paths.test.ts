@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   createMockLanguageModelV4,
-  mockLanguageModelV4Text,
   type MockLanguageModelV4CallOptions,
+  mockLanguageModelV4Text,
 } from "./mock-language-model";
+import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
 import {
   isCompactionProviderPrompt,
   runRuntimeBlockTrial,
 } from "./runtime-block-time-runner";
-import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
 import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 
 interface Deferred {
@@ -34,46 +34,39 @@ describe("runtime block-time path validity", () => {
     "candidate-too-broad-fallback",
     "summary-failure-retry-hit",
     "repeated-failure-overflow-recovery",
-  ] as const)(
-    "validates the %s runtime path",
-    async (scenario) => {
-      let logicalNow = 0;
-      const deterministic = createDeterministicRuntimeBlockModel(
-        scenario,
-        (milliseconds) => {
-          logicalNow += milliseconds;
-        }
-      );
-      const scenarioModel = createRuntimeBlockScenarioModel(
-        deterministic.model,
-        scenario
-      );
+  ] as const)("validates the %s runtime path", async (scenario) => {
+    let logicalNow = 0;
+    const deterministic = createDeterministicRuntimeBlockModel(
+      scenario,
+      (milliseconds) => {
+        logicalNow += milliseconds;
+      }
+    );
+    const scenarioModel = createRuntimeBlockScenarioModel(
+      deterministic.model,
+      scenario
+    );
 
-      const observation = await runRuntimeBlockTrial({
-        model: scenarioModel.model,
-        now: () => logicalNow,
-        onTargetStepStart: deterministic.onTargetStepStart,
-        repetition: 1,
-        scenario,
-      });
+    const observation = await runRuntimeBlockTrial({
+      model: scenarioModel.model,
+      now: () => logicalNow,
+      onTargetStepStart: deterministic.onTargetStepStart,
+      repetition: 1,
+      scenario,
+    });
 
-      expect(observation.pathValid).toBe(true);
-      expect(observation.candidateApplied).toBe(true);
-      expect(observation.summarySpans.map((span) => span.status)).toEqual(
-        {
-          "candidate-fit-late-hit": ["completed"],
-          "candidate-too-broad-fallback": ["completed", "completed"],
-          "prepared-hit": ["completed"],
-          "repeated-failure-overflow-recovery": [
-            "error",
-            "error",
-            "completed",
-          ],
-          "summary-failure-retry-hit": ["error", "completed"],
-        }[scenario]
-      );
-    }
-  );
+    expect(observation.pathValid).toBe(true);
+    expect(observation.candidateApplied).toBe(true);
+    expect(observation.summarySpans.map((span) => span.status)).toEqual(
+      {
+        "candidate-fit-late-hit": ["completed"],
+        "candidate-too-broad-fallback": ["completed", "completed"],
+        "prepared-hit": ["completed"],
+        "repeated-failure-overflow-recovery": ["error", "error", "completed"],
+        "summary-failure-retry-hit": ["error", "completed"],
+      }[scenario]
+    );
+  });
 
   it("does not classify mere summary overlap as a prepared hit", async () => {
     const summaryRelease = deferred();
@@ -106,7 +99,7 @@ describe("runtime block-time path validity", () => {
 
   it("records one failed summary followed by a background retry hit", async () => {
     let summaryCalls = 0;
-    const model = createMockLanguageModelV4(async ({ prompt }) => {
+    const model = createMockLanguageModelV4(({ prompt }) => {
       if (isCompactionProviderPrompt(prompt)) {
         summaryCalls += 1;
         if (summaryCalls === 1) {

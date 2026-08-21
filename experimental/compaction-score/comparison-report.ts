@@ -1,13 +1,14 @@
 import {
+  type ArmAggregate,
+  parseComparisonArtifact,
+} from "./comparison-artifact";
+import {
   type ComparisonDetailMetrics,
   formatMilliseconds,
   renderComparisonDetails,
 } from "./comparison-detail-metrics";
-import {
-  type ArmAggregate,
-  parseComparisonArtifact,
-} from "./comparison-artifact";
 
+// biome-ignore lint/performance/noBarrelFile: Preserve the established import path for CLI error handling.
 export { ComparisonArtifactError } from "./comparison-artifact";
 
 const METHODS = [

@@ -3,11 +3,11 @@ import {
   simulateStreamingMiddleware,
   wrapLanguageModel,
 } from "ai";
-import type { RuntimeBlockScenario } from "./runtime-block-time-metrics";
 import {
   isCompactionProviderPrompt,
   type RuntimeBlockLanguageModel,
-} from "./runtime-block-time-runner";
+} from "./runtime-block-time-instrumentation";
+import type { RuntimeBlockScenario } from "./runtime-block-time-metrics";
 
 export interface RuntimeBlockScenarioModel {
   readonly model: RuntimeBlockLanguageModel;

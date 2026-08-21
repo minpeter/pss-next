@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runComparisonCli } from "./compare-reports";
+
 const temporaryDirectories: string[] = [];
 afterEach(async () => {
   await Promise.all(

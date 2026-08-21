@@ -1,29 +1,19 @@
+import { type AgentTurn, createAgent } from "@minpeter/pss-runtime";
 import {
-  type AgentTurn,
-  createAgent,
-} from "@minpeter/pss-runtime";
+  awaitRuntimeBlockSummaries,
+  createObservedRuntimeCompaction,
+  createRuntimeBlockModelTrace,
+  type RuntimeBlockLanguageModel,
+  type RuntimeBlockModelTrace,
+  type RuntimeSummaryTraceSpan,
+  runtimeBlockInput,
+} from "./runtime-block-time-instrumentation";
 import type {
   RuntimeBlockObservation,
   RuntimeBlockScenario,
   RuntimeSummarySpan,
 } from "./runtime-block-time-metrics";
-import {
-  awaitRuntimeBlockSummaries,
-  createObservedRuntimeCompaction,
-  createRuntimeBlockModelTrace,
-  runtimeBlockInput,
-  type RuntimeBlockLanguageModel,
-  type RuntimeBlockModelTrace,
-  type RuntimeSummaryTraceSpan,
-} from "./runtime-block-time-instrumentation";
 import { validateRuntimeBlockPath } from "./runtime-block-time-paths";
-
-export {
-  isCompactionProviderPrompt,
-  type RuntimeBlockLanguageModel,
-  runtimeBlockInput,
-  runtimeBlockEstimator,
-} from "./runtime-block-time-instrumentation";
 
 export interface RuntimeBlockTrialOptions {
   readonly model: RuntimeBlockLanguageModel;
@@ -78,17 +68,9 @@ async function runTreatment(
   );
 
   try {
-    await measureTurn(
-      () => thread.send(runtimeBlockInput(700)),
-      trace,
-      now
-    );
+    await measureTurn(() => thread.send(runtimeBlockInput(700)), trace, now);
     const summaryAfter = trace.calls.length;
-    await measureTurn(
-      () => thread.send(runtimeBlockInput(50)),
-      trace,
-      now
-    );
+    await measureTurn(() => thread.send(runtimeBlockInput(50)), trace, now);
     await trace.waitForCall("summary", summaryAfter);
     const summariesBeforeTarget = requiredSummariesBeforeTarget(
       options.scenario
@@ -101,10 +83,7 @@ async function runTreatment(
       );
     }
     const target = await measureTurn(
-      () =>
-        thread.send(
-          runtimeBlockInput(targetUnits(options.scenario))
-        ),
+      () => thread.send(runtimeBlockInput(targetUnits(options.scenario))),
       trace,
       now,
       options.onTargetStepStart
@@ -136,21 +115,10 @@ async function runControl(
     `runtime-block-control-${options.scenario}-${options.repetition}-${crypto.randomUUID()}`
   );
   try {
-    await measureTurn(
-      () => thread.send(runtimeBlockInput(700)),
-      trace,
-      now
-    );
-    await measureTurn(
-      () => thread.send(runtimeBlockInput(50)),
-      trace,
-      now
-    );
+    await measureTurn(() => thread.send(runtimeBlockInput(700)), trace, now);
+    await measureTurn(() => thread.send(runtimeBlockInput(50)), trace, now);
     return await measureTurn(
-      () =>
-        thread.send(
-          runtimeBlockInput(targetUnits(options.scenario))
-        ),
+      () => thread.send(runtimeBlockInput(targetUnits(options.scenario))),
       trace,
       now
     );
@@ -169,13 +137,8 @@ function targetUnits(scenario: RuntimeBlockScenario): number {
   return scenario === "candidate-too-broad-fallback" ? 350 : 200;
 }
 
-function requiredSummariesBeforeTarget(
-  scenario: RuntimeBlockScenario
-): number {
-  if (
-    scenario === "prepared-hit" ||
-    scenario === "candidate-fit-late-hit"
-  ) {
+function requiredSummariesBeforeTarget(scenario: RuntimeBlockScenario): number {
+  if (scenario === "prepared-hit" || scenario === "candidate-fit-late-hit") {
     return 1;
   }
   if (scenario === "summary-failure-retry-hit") {
@@ -199,9 +162,7 @@ async function waitForSummaryCount(
 }
 
 interface MeasuredTurn {
-  readonly call: Awaited<
-    ReturnType<RuntimeBlockModelTrace["waitForCall"]>
-  >;
+  readonly call: Awaited<ReturnType<RuntimeBlockModelTrace["waitForCall"]>>;
   readonly providerStartedAtMs: number;
   readonly sentAtMs: number;
   readonly stepStartedAtMs: number;

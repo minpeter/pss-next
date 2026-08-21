@@ -43,8 +43,8 @@ export interface RuntimeBlockTrial {
   readonly summaryServiceMs: number;
   readonly targetPreparationMs: number;
   readonly targetRequestMs: number;
-  readonly userDeltaMs: number;
   readonly userBlockMs: number;
+  readonly userDeltaMs: number;
   readonly zeroBlock: boolean;
 }
 
@@ -55,14 +55,14 @@ export interface RuntimeBlockAggregate {
   readonly overlapRate: number;
   readonly preStepDeltaMeanMs: number;
   readonly scenario: RuntimeBlockScenario;
-  readonly summaryServiceMeanMs: number;
   readonly summaryCallsMean: number;
+  readonly summaryServiceMeanMs: number;
   readonly trials: number;
-  readonly userDeltaMeanMs: number;
   readonly userBlockMaxMs: number;
   readonly userBlockMeanMs: number;
   readonly userBlockP50Ms: number;
   readonly userBlockP95Ms: number;
+  readonly userDeltaMeanMs: number;
   readonly zeroBlockRate: number;
 }
 
@@ -73,8 +73,7 @@ export function calculateRuntimeBlockTrial(
 ): RuntimeBlockTrial {
   const controlPreparationMs = Math.max(
     0,
-    observation.controlProviderStartedAtMs -
-      observation.controlStepStartedAtMs
+    observation.controlProviderStartedAtMs - observation.controlStepStartedAtMs
   );
   const controlRequestMs = Math.max(
     0,
@@ -153,13 +152,9 @@ export function aggregateRuntimeBlockTrials(
     overlapRate:
       matching.filter((trial) => trial.overlapAtProviderStart).length /
       matching.length,
-    preStepDeltaMeanMs: mean(
-      matching.map((trial) => trial.preStepDeltaMs)
-    ),
+    preStepDeltaMeanMs: mean(matching.map((trial) => trial.preStepDeltaMs)),
     scenario,
-    summaryServiceMeanMs: mean(
-      matching.map((trial) => trial.summaryServiceMs)
-    ),
+    summaryServiceMeanMs: mean(matching.map((trial) => trial.summaryServiceMs)),
     summaryCallsMean: mean(matching.map((trial) => trial.summaryCalls)),
     trials: matching.length,
     userDeltaMeanMs: mean(matching.map((trial) => trial.userDeltaMs)),

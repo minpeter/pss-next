@@ -82,6 +82,11 @@ export function summarizeComparisonDetails({
     ? sum(hops.map((hop) => hop.summarizerInputTokens ?? 0))
     : null;
   const densityScale = summaryTokens === 0 ? 0 : 1000 / summaryTokens;
+  let inputTokensPerSecond: number | null = null;
+  if (timedInputTokens !== null) {
+    inputTokensPerSecond =
+      totalMs === 0 ? 0 : (timedInputTokens * 1000) / totalMs;
+  }
 
   return {
     compactions: hops.length,
@@ -95,12 +100,7 @@ export function summarizeComparisonDetails({
             measured: durations.length,
             p50Ms: quantile(durations, 0.5),
             p95Ms: quantile(durations, 0.95),
-            inputTokensPerSecond:
-              timedInputTokens === null
-                ? null
-                : totalMs === 0
-                  ? 0
-                  : (timedInputTokens * 1000) / totalMs,
+            inputTokensPerSecond,
             totalMs,
           },
     meanSummaryTokens: summaryTokens / hops.length,
@@ -178,7 +178,7 @@ function renderTokenRow({ label, metrics }: LabeledDetail): string {
 
 function renderLatencyRow({ label, metrics }: LabeledDetail): string {
   const latency = metrics?.latency;
-  if (!metrics || !latency) {
+  if (!(metrics && latency)) {
     return `| ${label} | 0/${metrics?.compactions ?? 0} | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |`;
   }
   return [

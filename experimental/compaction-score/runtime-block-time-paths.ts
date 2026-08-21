@@ -1,8 +1,8 @@
+import type { RuntimeSummaryTraceSpan } from "./runtime-block-time-instrumentation";
 import type {
   RuntimeBlockScenario,
   RuntimeSummarySpan,
 } from "./runtime-block-time-metrics";
-import type { RuntimeSummaryTraceSpan } from "./runtime-block-time-instrumentation";
 
 interface ExpectedPath {
   readonly candidateApplied: boolean;
@@ -10,9 +10,7 @@ interface ExpectedPath {
   readonly statuses: readonly RuntimeSummarySpan["status"][];
 }
 
-const EXPECTED_PATHS: Readonly<
-  Record<RuntimeBlockScenario, ExpectedPath>
-> = {
+const EXPECTED_PATHS: Readonly<Record<RuntimeBlockScenario, ExpectedPath>> = {
   "candidate-fit-late-hit": {
     candidateApplied: true,
     overlaps: false,
@@ -64,19 +62,17 @@ export function validateRuntimeBlockPath(
   ) {
     throw new TypeError(`Invalid ${scenario} summary status path.`);
   }
-  const settled = causal.map(
-    (span): RuntimeSummarySpan => {
-      if (span.status === "running") {
-        throw new TypeError(`Invalid ${scenario} running summary path.`);
-      }
-      return Object.freeze({
-        endedAtMs: span.endedAtMs,
-        kind: span.kind,
-        startedAtMs: span.startedAtMs,
-        status: span.status,
-      });
+  const settled = causal.map((span): RuntimeSummarySpan => {
+    if (span.status === "running") {
+      throw new TypeError(`Invalid ${scenario} running summary path.`);
     }
-  );
+    return Object.freeze({
+      endedAtMs: span.endedAtMs,
+      kind: span.kind,
+      startedAtMs: span.startedAtMs,
+      status: span.status,
+    });
+  });
   const overlaps = settled.some(
     (span) =>
       span.startedAtMs <= providerStartedAtMs &&
