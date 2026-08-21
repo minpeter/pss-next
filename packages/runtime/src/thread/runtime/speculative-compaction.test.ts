@@ -1,6 +1,14 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentCompactionContext } from "./auto-compaction-types";
+import {
+  compactionContextForModel,
+  compactionContextMessage,
+} from "../state/context";
+import type { ThreadCompactionRecord } from "../state/snapshot";
+import {
+  type AgentCompactionContext,
+  DEFAULT_COMPACTION_DEADLINE_MS,
+} from "./auto-compaction-types";
 import { speculativeCompaction } from "./speculative-compaction";
 
 const message = (
@@ -30,6 +38,19 @@ function context(
   };
 }
 
+function committedProjection(
+  record: ThreadCompactionRecord,
+  history: readonly ModelMessage[]
+): Partial<AgentCompactionContext> {
+  return {
+    compactions: [record],
+    modelContext: [
+      compactionContextForModel(compactionContextMessage(record)),
+      ...history.slice(record.endSeqExclusive),
+    ],
+  };
+}
+
 describe("speculativeCompaction", () => {
   it.each([
     { maxInputTokens: 0 },
@@ -43,6 +64,7 @@ describe("speculativeCompaction", () => {
   it("exposes its budget through the policy surface without an estimator", () => {
     const compaction = speculativeCompaction({ maxInputTokens: 100 });
 
+    expect(compaction.deadlineMs?.()).toBe(DEFAULT_COMPACTION_DEADLINE_MS);
     expect(compaction.estimateTokens).toBeUndefined();
     expect(compaction.maxInputTokens?.()).toBe(100);
     expect(compaction.onOverflow).toBe("compact");
@@ -88,23 +110,69 @@ describe("speculativeCompaction", () => {
     expect(summarize).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps one prepared candidate while completed turns remain below promotion", async () => {
-    const summarize = vi.fn(async () => "summary");
+  it("retains the last valid candidate after one failed replacement attempt", async () => {
+    const ranges: {
+      readonly endSeqExclusive: number;
+      readonly startSeq: number;
+    }[] = [];
+    const summarize = vi.fn<AgentCompactionContext["summarize"]>((range) => {
+      ranges.push(range);
+      return Promise.resolve(ranges.length === 1 ? "prepared" : "   ");
+    });
     const compaction = speculativeCompaction({
       estimateTokens: (messages) => messages.length * 10,
       maxInputTokens: 100,
       prepareRatio: 0.5,
-      promoteRatio: 0.8,
+      promoteRatio: 0.9,
       retainRatio: 0.2,
     });
-    const history = Array.from({ length: 6 }, (_, index) =>
+    const prepared = Array.from({ length: 6 }, (_, index) =>
       message(String(index), index % 2 === 0 ? "user" : "assistant")
     );
 
-    await compaction(context(history, summarize));
-    await compaction(context([...history, message("tail")], summarize));
+    await compaction(context(prepared, summarize));
+    const widened = [...prepared, message("6"), message("7", "assistant")];
+    await compaction(context(widened, summarize));
+    await compaction(context(widened, summarize));
+    const promoted = await compaction(
+      context([...widened, message("8")], summarize)
+    );
 
-    expect(summarize).toHaveBeenCalledTimes(1);
+    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(ranges[1]?.endSeqExclusive).toBeGreaterThan(
+      ranges[0]?.endSeqExclusive ?? Number.POSITIVE_INFINITY
+    );
+    expect(promoted).toEqual({ ...ranges[0], summary: "prepared" });
+  });
+
+  it("promotes one successful bounded replacement without a third summary", async () => {
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockResolvedValueOnce("prepared")
+      .mockResolvedValueOnce("replacement")
+      .mockResolvedValueOnce("unexpected");
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.9,
+      retainRatio: 0.2,
+    });
+    const prepared = Array.from({ length: 6 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+
+    await compaction(context(prepared, summarize));
+    const widened = [...prepared, message("6"), message("7", "assistant")];
+    await compaction(context(widened, summarize));
+    await compaction(context(widened, summarize));
+    const promoted = await compaction(
+      context([...widened, message("8")], summarize)
+    );
+
+    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(promoted?.summary).toBe("replacement");
+    expect(promoted?.endSeqExclusive).toBeGreaterThan(2);
   });
 
   it("discards a candidate when its source prefix changes", async () => {
@@ -275,6 +343,208 @@ describe("speculativeCompaction", () => {
 
     expect(promoted?.summary).toBe("overflow");
     expect(summarize).toHaveBeenCalledTimes(2);
+  });
+
+  it("promotes a candidate prepared after a committed prefix compaction", async () => {
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockResolvedValueOnce("hop1")
+      .mockResolvedValueOnce("hop2")
+      .mockResolvedValueOnce("unexpected");
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.8,
+      retainRatio: 0.1,
+    });
+    const history = Array.from({ length: 12 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+
+    expect(
+      await compaction(context(history.slice(0, 6), summarize))
+    ).toBeUndefined();
+    const hop1 = await compaction(context(history.slice(0, 8), summarize));
+    expect(hop1).toEqual({
+      endSeqExclusive: 4,
+      startSeq: 0,
+      summary: "hop1",
+    });
+    expect(summarize).toHaveBeenCalledTimes(1);
+    const record: ThreadCompactionRecord = {
+      endSeqExclusive: 4,
+      schemaVersion: 1,
+      startSeq: 0,
+      summary: { content: "hop1", role: "system" },
+    };
+    const prepared = history.slice(0, 7);
+    const promotedHistory = history.slice(0, 8);
+
+    expect(
+      await compaction(
+        context(prepared, summarize, committedProjection(record, prepared))
+      )
+    ).toBeUndefined();
+    expect(summarize).toHaveBeenCalledTimes(2);
+    const hop2 = await compaction(
+      context(
+        promotedHistory,
+        summarize,
+        committedProjection(record, promotedHistory)
+      )
+    );
+
+    expect(hop2).toEqual({ endSeqExclusive: 6, startSeq: 0, summary: "hop2" });
+    expect(summarize).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses a candidate prepared after a committed prefix compaction on overflow", async () => {
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockResolvedValueOnce("hop1")
+      .mockResolvedValueOnce("hop2")
+      .mockResolvedValueOnce("unexpected");
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.8,
+      retainRatio: 0.1,
+    });
+    const history = Array.from({ length: 10 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+
+    expect(
+      await compaction(context(history.slice(0, 6), summarize))
+    ).toBeUndefined();
+    await compaction(context(history.slice(0, 8), summarize));
+    const record: ThreadCompactionRecord = {
+      endSeqExclusive: 4,
+      schemaVersion: 1,
+      startSeq: 0,
+      summary: { content: "hop1", role: "system" },
+    };
+    const prepared = history.slice(0, 7);
+    expect(
+      await compaction(
+        context(prepared, summarize, committedProjection(record, prepared))
+      )
+    ).toBeUndefined();
+    expect(summarize).toHaveBeenCalledTimes(2);
+
+    const promoted = await compaction(
+      context(history, summarize, {
+        ...committedProjection(record, history),
+        reason: "overflow",
+      })
+    );
+
+    expect(promoted).toEqual({
+      endSeqExclusive: 6,
+      startSeq: 0,
+      summary: "hop2",
+    });
+    expect(summarize).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses reuse when a hook transformed the compacted model context", async () => {
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockResolvedValueOnce("hop1")
+      .mockResolvedValueOnce("hop2")
+      .mockResolvedValueOnce("overflow");
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.8,
+      retainRatio: 0.1,
+    });
+    const history = Array.from({ length: 10 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+
+    expect(
+      await compaction(context(history.slice(0, 6), summarize))
+    ).toBeUndefined();
+    await compaction(context(history.slice(0, 8), summarize));
+    const record: ThreadCompactionRecord = {
+      endSeqExclusive: 4,
+      schemaVersion: 1,
+      startSeq: 0,
+      summary: { content: "hop1", role: "system" },
+    };
+    const prepared = history.slice(0, 7);
+    expect(
+      await compaction(
+        context(prepared, summarize, committedProjection(record, prepared))
+      )
+    ).toBeUndefined();
+    expect(summarize).toHaveBeenCalledTimes(2);
+
+    const promoted = await compaction(
+      context(history, summarize, {
+        compactions: [record],
+        modelContext: [
+          compactionContextForModel(compactionContextMessage(record)),
+          message("hook-injected"),
+          ...history.slice(record.endSeqExclusive),
+        ],
+        reason: "overflow",
+      })
+    );
+
+    expect(promoted?.summary).toBe("overflow");
+    expect(summarize).toHaveBeenCalledTimes(3);
+  });
+
+  it("refuses reuse when wrapper plus tail exceeds the remaining budget", async () => {
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockResolvedValueOnce("hop1")
+      .mockResolvedValueOnce("hop2")
+      .mockResolvedValueOnce("overflow");
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.8,
+      retainRatio: 0.1,
+    });
+    const history = Array.from({ length: 10 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+
+    expect(
+      await compaction(context(history.slice(0, 6), summarize))
+    ).toBeUndefined();
+    await compaction(context(history.slice(0, 8), summarize));
+    const record: ThreadCompactionRecord = {
+      endSeqExclusive: 4,
+      schemaVersion: 1,
+      startSeq: 0,
+      summary: { content: "hop1", role: "system" },
+    };
+    const prepared = history.slice(0, 7);
+    expect(
+      await compaction(
+        context(prepared, summarize, committedProjection(record, prepared))
+      )
+    ).toBeUndefined();
+    expect(summarize).toHaveBeenCalledTimes(2);
+
+    const promoted = await compaction(
+      context(history, summarize, {
+        ...committedProjection(record, history),
+        instructionsTokens: 100,
+        reason: "overflow",
+      })
+    );
+
+    expect(promoted?.summary).toBe("overflow");
+    expect(summarize).toHaveBeenCalledTimes(3);
   });
 
   it("counts fixed instructions and calibrated tail marginals before reuse", async () => {

@@ -21,6 +21,15 @@ describe("AgentOptions.compaction", () => {
     ).toThrow("Agent: options.compaction.maxInputTokens must be a function.");
   });
 
+  it("rejects a function with a non-function deadlineMs property", () => {
+    expect(() =>
+      assertAgentOptions({
+        compaction: Object.assign(() => undefined, { deadlineMs: 5000 }),
+        model: createCallbackModel(() => []),
+      })
+    ).toThrow("Agent: options.compaction.deadlineMs must be a function.");
+  });
+
   it("rejects a function with an invalid onOverflow property", () => {
     expect(() =>
       assertAgentOptions({
@@ -36,6 +45,7 @@ describe("AgentOptions.compaction", () => {
     expect(() =>
       assertAgentOptions({
         compaction: Object.assign(() => undefined, {
+          deadlineMs: () => 5000,
           maxInputTokens: () => 1,
           onOverflow: "error",
         }),

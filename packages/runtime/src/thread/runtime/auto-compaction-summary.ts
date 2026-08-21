@@ -124,18 +124,23 @@ export async function summarizeCompactionRange({
   estimateTokens = estimateModelMessagesTokens,
   history,
   model,
+  onOutputBudget,
   signal = new AbortController().signal,
   summaryInstructions,
   toolEvidence = "deterministic",
   transformModelContext,
+  transformSummary,
 }: {
   readonly estimateTokens?: (messages: readonly ModelMessage[]) => number;
   readonly history: readonly ThreadContextMessage[];
   readonly model: ModelGenerationOptions;
+  readonly onOutputBudget?: (maxOutputTokens: number) => void;
   readonly signal?: AbortSignal;
   readonly summaryInstructions?: string;
   readonly toolEvidence?: "deterministic" | "omit";
   readonly transformModelContext?: ThreadModelContextTransform;
+  /** Applied after deterministic tool evidence and before size validation. */
+  readonly transformSummary?: (summary: string) => string;
 }): Promise<string> {
   const sourceContext = history.map((message) =>
     message.role === "compaction" ? compactionContextForModel(message) : message
@@ -157,6 +162,7 @@ export async function summarizeCompactionRange({
     estimateTokens,
     sourceTokens,
   });
+  onOutputBudget?.(maxOutputTokens);
   const summaryHistory: readonly ThreadContextMessage[] = [
     {
       content:
@@ -197,7 +203,11 @@ export async function summarizeCompactionRange({
     )
     .join("\n\n")
     .trim();
-  const summary = withToolEvidenceLedger(generatedSummary, ledger);
+  const assembledSummary = withToolEvidenceLedger(generatedSummary, ledger);
+  const summary =
+    transformSummary === undefined
+      ? assembledSummary
+      : transformSummary(assembledSummary);
   const summaryTokens = estimateTokens([
     compactionContextForModel({
       endSeqExclusive: history.length,

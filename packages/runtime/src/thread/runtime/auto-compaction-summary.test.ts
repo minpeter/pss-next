@@ -128,6 +128,38 @@ describe("automatic compaction summary contract", () => {
     ).resolves.toContain("5 passed, 4 failed");
   });
 
+  it("transforms the assembled summary before size validation", async () => {
+    let assembledSummary = "";
+    const model = createMockLanguageModelV4(() =>
+      Promise.resolve(mockLanguageModelV4Text("x".repeat(4000)))
+    );
+
+    const summary = await summarizeCompactionRange({
+      history: [
+        { content: "context ".repeat(2000), role: "user" },
+        {
+          content: [
+            {
+              output: { type: "text", value: "5 passed, 4 failed" },
+              toolCallId: "tool-1",
+              toolName: "run_tests",
+              type: "tool-result",
+            },
+          ],
+          role: "tool",
+        },
+      ],
+      model: { model },
+      transformSummary: (assembled) => {
+        assembledSummary = assembled;
+        return assembled.slice(0, 128);
+      },
+    });
+
+    expect(assembledSummary).toContain("5 passed, 4 failed");
+    expect(summary).toHaveLength(128);
+  });
+
   it("omits deterministic tool evidence when requested", async () => {
     const model = createMockLanguageModelV4(() =>
       Promise.resolve(mockLanguageModelV4Text("Semantic outcome only."))
@@ -264,6 +296,29 @@ describe("automatic compaction summary contract", () => {
     const maxOutputTokens = captured?.maxOutputTokens;
     expect(maxOutputTokens).toBeGreaterThanOrEqual(128);
     expect(maxOutputTokens).toBeLessThan(1000);
+  });
+
+  it("reports the effective summary output budget", async () => {
+    let captured: MockLanguageModelV4CallOptions | undefined;
+    let reported: number | undefined;
+    const model = createMockLanguageModelV4((options) => {
+      captured = options;
+      return Promise.resolve(mockLanguageModelV4Text("summary"));
+    });
+
+    await summarizeCompactionRange({
+      history: [
+        { content: "fact ".repeat(300), role: "user" },
+        { content: "noted", role: "assistant" },
+      ],
+      model: { maxOutputTokens: 100_000, model },
+      onOutputBudget: (maxOutputTokens) => {
+        reported = maxOutputTokens;
+      },
+    });
+
+    expect(reported).toBe(captured?.maxOutputTokens);
+    expect(reported).toBeLessThan(1000);
   });
 
   it("rejects a summary that does not reduce the source context", async () => {

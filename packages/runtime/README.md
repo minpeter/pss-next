@@ -1193,7 +1193,9 @@ There is a single host contract: `AgentHost` (`HostStore` + `HostScheduler` + op
 `createCloudflareHost` is the Cloudflare Agents SDK path (fibers + schedule).
 For store/alarm-only DO tooling use `createCloudflareStorageHost`.
 
-Speculative compaction prepares a summary in the background before promoting it:
+Speculative compaction prepares a summary in the background before promoting it.
+Each episode is bounded by `DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds) unless
+the policy supplies `deadlineMs`:
 
 ```ts
 const agent = await createAgent({

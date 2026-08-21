@@ -166,7 +166,10 @@ export {
   streamAgentEventTypes,
 } from "./thread/protocol/events";
 export type { AgentTurn } from "./thread/protocol/turn";
-export { selectSummaryOutputTokenLimit } from "./thread/runtime/auto-compaction-runner";
+export {
+  CompactionDeadlineExceededError,
+  selectSummaryOutputTokenLimit,
+} from "./thread/runtime/auto-compaction-runner";
 export {
   buildCompactionSummaryInstructions,
   COMPACTION_SUMMARY_CONTRACT,
@@ -174,12 +177,13 @@ export {
   summarizeCompactionRange,
   summaryHistoryForRange,
 } from "./thread/runtime/auto-compaction-summary";
-export type {
-  AgentCompaction,
-  AgentCompactionContext,
-  AgentCompactionReason,
-  CompactionSummaryOptions,
-  ManualThreadCompactionResult,
+export {
+  type AgentCompaction,
+  type AgentCompactionContext,
+  type AgentCompactionReason,
+  type CompactionSummaryOptions,
+  DEFAULT_COMPACTION_DEADLINE_MS,
+  type ManualThreadCompactionResult,
 } from "./thread/runtime/auto-compaction-types";
 export {
   type SpeculativeCompactionOptions,

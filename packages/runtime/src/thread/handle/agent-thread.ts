@@ -168,7 +168,7 @@ export class AgentThread {
                 ),
               latestContextTransform: transforms.latestContextTransform,
               model: this.#context.model,
-              signal: new AbortController().signal,
+              signal: input?.signal ?? new AbortController().signal,
               state: this.#context.state,
               summaryOptions: input,
               threadKey: this.#context.threadKey,

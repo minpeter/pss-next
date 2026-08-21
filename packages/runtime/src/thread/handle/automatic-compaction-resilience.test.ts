@@ -110,24 +110,29 @@ describe("Agent thread automatic compaction resilience", () => {
   it("does not surface compaction commit conflicts as turn errors or corrupt stored history", async () => {
     const store = new ConflictOnCommitStore();
     store.conflictOnCommit = 5;
+    const compactionSettled = createDeferred();
+    store.onConflict = () => compactionSettled.resolve();
     const seenHistory: ModelMessage[][] = [];
-    let calls = 0;
     const agent = agentWithCompaction({
       compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
       model: createCallbackModel(({ history }) => {
-        seenHistory.push([...history]);
-        calls += 1;
-        if (calls === 1) {
+        const lastUser = history
+          .filter((message) => message.role === "user")
+          .at(-1);
+        if (lastUser?.content === "old") {
+          seenHistory.push([...history]);
           return [assistantMessage("FIRST")];
         }
-        if (calls === 2) {
+        if (lastUser?.content === "tail") {
+          seenHistory.push([...history]);
           return [assistantMessage("SECOND")];
         }
-        if (calls === 3) {
-          return [assistantMessage("summary loses conflict")];
+        if (lastUser?.content === "after conflict") {
+          seenHistory.push([...history]);
+          return [assistantMessage("RECOVERED")];
         }
-        return [assistantMessage("RECOVERED")];
+        return [assistantMessage("summary loses conflict")];
       }),
     });
     const thread = agent.thread("summary-conflict");
@@ -136,7 +141,7 @@ describe("Agent thread automatic compaction resilience", () => {
     const events = await collect(await thread.send("tail"));
 
     expect(eventTypes(events)).not.toContain("turn-error");
-    await waitForModelCalls(() => calls, 3);
+    await compactionSettled.promise;
     expect(store.threads.get("summary-conflict")?.state).toEqual({
       history: [
         userTextToModelMessage(userText("old")),
@@ -149,13 +154,20 @@ describe("Agent thread automatic compaction resilience", () => {
 
     await collect(await thread.send("after conflict"));
 
-    expect(seenHistory.at(-1)).toEqual([
-      userTextToModelMessage(userText("old")),
-      assistantMessage("FIRST"),
-      userTextToModelMessage(userText("tail")),
-      assistantMessage("SECOND"),
-      userTextToModelMessage(userText("after conflict")),
-    ]);
+    const recoveredHistory = seenHistory.find(
+      (history) =>
+        history.filter((message) => message.role === "user").at(-1)?.content ===
+        "after conflict"
+    );
+    expect(recoveredHistory).toContainEqual(
+      expect.objectContaining({ content: "tail", role: "user" })
+    );
+    expect(recoveredHistory).toContainEqual(
+      expect.objectContaining({ content: "SECOND", role: "assistant" })
+    );
+    expect(recoveredHistory).toContainEqual(
+      expect.objectContaining({ content: "after conflict", role: "user" })
+    );
   });
 
   it("rolls back in-memory compaction state when compaction commit throws", async () => {

@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
+import type { RuntimeDiagnostic } from "../../diagnostics";
 import {
   ContextTokenCalibrationRegistry,
   ContextTokenMeter,
@@ -19,14 +20,18 @@ import {
 } from "../input/attachments";
 import { ThreadState } from "../state/thread-state";
 import {
+  CompactionDeadlineExceededError,
   compactThreadBlocking,
+  compactThreadManually,
   scheduleThreadCompaction,
 } from "./auto-compaction-runner";
-import type {
-  AgentCompaction,
-  ThreadCompactionHandler,
+import {
+  type AgentCompaction,
+  DEFAULT_COMPACTION_DEADLINE_MS,
+  type ThreadCompactionHandler,
 } from "./auto-compaction-types";
 import "./auto-compaction-runner-failure-cases";
+import { runAgentLoopWithOverflowCompaction } from "./loop-overflow";
 import { speculativeCompaction } from "./speculative-compaction";
 
 const model = {
@@ -65,6 +70,209 @@ function attachmentMessage(ref: RuntimeAttachmentReference): ModelMessage {
 }
 
 describe("compaction runner concurrency", () => {
+  it("reports bounded lifecycle accounting without thread contents", async () => {
+    const diagnostics: RuntimeDiagnostic[] = [];
+    const state = await stateWithHistory();
+    const localModel = {
+      ...model,
+      diagnostics: {
+        report(diagnostic: RuntimeDiagnostic): void {
+          diagnostics.push(diagnostic);
+        },
+      },
+    };
+
+    await compactThreadBlocking({
+      compaction: async () => ({
+        endSeqExclusive: 2,
+        startSeq: 0,
+        summary: "secret summary",
+      }),
+      model: localModel,
+      state,
+      threadKey: "secret-thread",
+    });
+
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "compaction.completed",
+        level: "info",
+        compaction: expect.objectContaining({
+          outcome: "committed",
+          reason: "overflow",
+          runnerAttempt: 1,
+          summaryCalls: 0,
+        }),
+        phase: "auto-compaction",
+      }),
+    ]);
+    const serialized = JSON.stringify(diagnostics);
+    expect(serialized).not.toContain("secret summary");
+    expect(serialized).not.toContain("secret-thread");
+    expect(serialized).not.toContain("old");
+    expect(serialized).not.toContain("tail");
+  });
+
+  it("applies the shared episode bound when a policy omits deadlineMs", async () => {
+    const state = await stateWithHistory();
+    let deadlineAt: number | undefined;
+    const startedAt = Date.now();
+
+    await compactThreadBlocking({
+      compaction: async (context) => {
+        deadlineAt = context.deadlineAt;
+        return undefined;
+      },
+      model,
+      state,
+      threadKey: "thread",
+    });
+
+    expect(deadlineAt).toBeGreaterThanOrEqual(
+      startedAt + DEFAULT_COMPACTION_DEADLINE_MS
+    );
+    expect(deadlineAt).toBeLessThan(
+      startedAt + DEFAULT_COMPACTION_DEADLINE_MS + 1000
+    );
+  });
+
+  it("applies the shared episode bound to manual compaction", async () => {
+    const diagnostics: RuntimeDiagnostic[] = [];
+    const state = new ThreadState({
+      key: "runner-test",
+      store: new MemoryThreadStore(),
+    });
+    await state.ensureLoaded();
+    const paragraph = "lorem ipsum dolor sit amet ".repeat(12);
+    for (let index = 0; index < 4; index += 1) {
+      state.history.appendModelMessage({ content: paragraph, role: "user" });
+    }
+    const localModel = {
+      diagnostics: {
+        report(diagnostic: RuntimeDiagnostic): void {
+          diagnostics.push(diagnostic);
+        },
+      },
+      model: createCallbackModel(() => [assistantMessage("s")]),
+    };
+    const startedAt = Date.now();
+
+    const compacted = await compactThreadManually({
+      model: localModel,
+      state,
+      threadKey: "thread",
+    });
+
+    expect(compacted).toBe(true);
+    const manualDeadlineAt = diagnostics[0]?.compaction?.deadlineAt;
+    expect(manualDeadlineAt).toBeGreaterThanOrEqual(
+      startedAt + DEFAULT_COMPACTION_DEADLINE_MS
+    );
+    expect(manualDeadlineAt).toBeLessThan(
+      startedAt + DEFAULT_COMPACTION_DEADLINE_MS + 1000
+    );
+  });
+
+  it("attaches the original overflow as cause when overflow compaction times out", async () => {
+    vi.useFakeTimers();
+    const state = await stateWithHistory();
+    const overflow = new Error("context_length_exceeded: too many tokens");
+    const callbackStarted = createDeferred();
+    const compaction = Object.assign(
+      () => {
+        callbackStarted.resolve();
+        return new Promise<never>(() => undefined);
+      },
+      { deadlineMs: () => 1 }
+    ) satisfies AgentCompaction;
+
+    try {
+      const observed = runAgentLoopWithOverflowCompaction({
+        execution: { compaction },
+        model,
+        runLoop: () => Promise.reject(overflow),
+        state,
+        threadKey: "overflow-cause",
+      }).then(
+        () => undefined,
+        (error: unknown) => error
+      );
+      await callbackStarted.promise;
+      await vi.advanceTimersByTimeAsync(1);
+
+      const failure = await observed;
+      if (!(failure instanceof CompactionDeadlineExceededError)) {
+        throw new Error("Expected a CompactionDeadlineExceededError.");
+      }
+      expect(failure.reason).toBe("overflow");
+      expect(failure.cause).toBe(overflow);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("isolates a rejecting diagnostics sink from compaction", async () => {
+    const state = await stateWithHistory();
+    const localModel = {
+      ...model,
+      diagnostics: {
+        report(): Promise<never> {
+          return Promise.reject(new Error("sink failed"));
+        },
+      },
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compaction: async () => ({
+          endSeqExclusive: 2,
+          startSeq: 0,
+          summary: "summary",
+        }),
+        model: localModel,
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBe(true);
+  });
+
+  it("waits for an already-started custom commit after the deadline", async () => {
+    vi.useFakeTimers();
+    const state = await stateWithHistory();
+    const commitStarted = createDeferred();
+    const releaseCommit = createDeferred();
+    const compaction = Object.assign(
+      async () => ({
+        endSeqExclusive: 2,
+        startSeq: 0,
+        summary: "summary",
+      }),
+      { deadlineMs: () => 1 }
+    ) satisfies AgentCompaction;
+    const compact: ThreadCompactionHandler = async () => {
+      commitStarted.resolve();
+      await releaseCommit.promise;
+      return true;
+    };
+
+    try {
+      const result = compactThreadBlocking({
+        compact,
+        compaction,
+        model,
+        state,
+        threadKey: "commit-deadline",
+      });
+      await commitStarted.promise;
+      await vi.advanceTimersByTimeAsync(1);
+      releaseCommit.resolve();
+
+      await expect(result).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reserves a background flight synchronously", async () => {
     const state = await stateWithHistory();
     const started = createDeferred();
@@ -116,6 +324,44 @@ describe("compaction runner concurrency", () => {
     await expect(blocking).resolves.toBe(true);
     expect(reasons).toEqual(["completed-turn", "overflow"]);
     expect(compact).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invoke overflow after its deadline expires behind background work", async () => {
+    vi.useFakeTimers();
+    const state = await stateWithHistory();
+    const backgroundStarted = createDeferred();
+    const releaseBackground = createDeferred();
+    const reasons: string[] = [];
+    const compaction = Object.assign(
+      async (
+        context: Parameters<AgentCompaction>[0]
+      ): Promise<Awaited<ReturnType<AgentCompaction>>> => {
+        reasons.push(context.reason);
+        if (context.reason === "completed-turn") {
+          backgroundStarted.resolve();
+          await releaseBackground.promise;
+        }
+        return;
+      },
+      { deadlineMs: () => 1 }
+    ) satisfies AgentCompaction;
+    const options = { compaction, model, state, threadKey: "wait-deadline" };
+
+    try {
+      scheduleThreadCompaction(options);
+      await backgroundStarted.promise;
+      const blocking = compactThreadBlocking(options);
+      const rejected = expect(blocking).rejects.toBeInstanceOf(
+        CompactionDeadlineExceededError
+      );
+      await vi.advanceTimersByTimeAsync(1);
+      releaseBackground.resolve();
+
+      await rejected;
+      expect(reasons).toEqual(["completed-turn"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("re-evaluates overflow after a completed-turn flight commits", async () => {

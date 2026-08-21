@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryThreadStore } from "../../platform/memory";
 import {
   assistantMessage,
@@ -7,6 +7,7 @@ import {
   createDeferred,
 } from "../../testing/test-fixtures";
 import { ThreadState } from "../state/thread-state";
+import type { CompactionDeadlineExceededError } from "./auto-compaction-runner";
 import {
   compactThreadBlocking,
   scheduleThreadCompaction,
@@ -35,10 +36,72 @@ async function stateWithHistory(): Promise<ThreadState> {
 }
 
 describe("compaction runner failure recovery", () => {
+  it("bounds an overflow callback that ignores cancellation and preserves history", async () => {
+    vi.useFakeTimers();
+    const state = await stateWithHistory();
+    const before = state.modelSnapshot();
+    const callbackStarted = createDeferred();
+    let capturedSignal: AbortSignal | undefined;
+    const compaction = Object.assign(
+      (context: Parameters<AgentCompaction>[0]) => {
+        capturedSignal = context.signal;
+        callbackStarted.resolve();
+        return new Promise<never>(() => undefined);
+      },
+      { deadlineMs: () => 1 }
+    ) satisfies AgentCompaction;
+
+    try {
+      const blocking = compactThreadBlocking({
+        compaction,
+        model,
+        state,
+        threadKey: "overflow-deadline",
+      });
+      const rejected = expect(blocking).rejects.toMatchObject({
+        deadlineMs: 1,
+        name: "CompactionDeadlineExceededError",
+        reason: "overflow",
+        threadKey: "overflow-deadline",
+      } satisfies Partial<CompactionDeadlineExceededError>);
+      await callbackStarted.promise;
+      await vi.advanceTimersByTimeAsync(1);
+
+      await rejected;
+      expect(capturedSignal?.aborted).toBe(true);
+      expect(state.modelSnapshot()).toEqual(before);
+      expect(state.compactionSnapshot()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not start a background retry after its absolute deadline expires", async () => {
+    const state = await stateWithHistory();
+    let attempts = 0;
+    const compaction = Object.assign(
+      () => {
+        attempts += 1;
+        return new Promise<never>(() => undefined);
+      },
+      { deadlineMs: () => 1 }
+    ) satisfies AgentCompaction;
+
+    await scheduleThreadCompaction({
+      compaction,
+      model,
+      state,
+      threadKey: "background-deadline",
+    });
+
+    expect(attempts).toBe(1);
+    expect(state.compactionSnapshot()).toEqual([]);
+  });
+
   it("retries one failed completed-turn compaction before the next input", async () => {
     const state = await stateWithHistory();
     let attempts = 0;
-    const compaction: AgentCompaction = async () => {
+    const compaction: AgentCompaction = () => {
       attempts += 1;
       if (attempts === 1) {
         throw new TypeError("first summary failed");
@@ -62,7 +125,7 @@ describe("compaction runner failure recovery", () => {
   it("stops after one background retry and still permits fresh overflow", async () => {
     const state = await stateWithHistory();
     const reasons: string[] = [];
-    const compaction: AgentCompaction = async (context) => {
+    const compaction: AgentCompaction = (context) => {
       reasons.push(context.reason);
       if (context.reason === "completed-turn") {
         throw new TypeError("background summary failed");
@@ -80,11 +143,7 @@ describe("compaction runner failure recovery", () => {
     expect(reasons).toEqual(["completed-turn", "completed-turn"]);
 
     await expect(compactThreadBlocking(options)).resolves.toBe(true);
-    expect(reasons).toEqual([
-      "completed-turn",
-      "completed-turn",
-      "overflow",
-    ]);
+    expect(reasons).toEqual(["completed-turn", "completed-turn", "overflow"]);
   });
 
   it("coalesces a pending completed-turn schedule with the retry", async () => {

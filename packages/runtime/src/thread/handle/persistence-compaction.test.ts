@@ -143,6 +143,37 @@ describe("Agent thread persistence compaction", () => {
     });
   });
 
+  it("cancels manual compaction through its public signal", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    let markCompactionStarted: (() => void) | undefined;
+    const compactionStarted = new Promise<void>((resolve) => {
+      markCompactionStarted = resolve;
+    });
+    const agent = new Agent({
+      model: createCallbackModel(({ signal }) => {
+        calls += 1;
+        if (calls === 1) {
+          return [assistantMessage("OLD")];
+        }
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+          markCompactionStarted?.();
+        });
+      }),
+    });
+    const thread = agent.thread("cancel-manual-compact");
+    await collect(await thread.send("old"));
+    const compacting = thread.compact({ signal: controller.signal });
+    await compactionStarted;
+
+    controller.abort(new TypeError("manual compaction cancelled"));
+
+    await expect(compacting).rejects.toThrow("manual compaction cancelled");
+  });
+
   it("rejects same-handle manual compaction while a turn is active", async () => {
     let releaseModel: (() => void) | undefined;
     const modelGate = new Promise<void>((resolve) => {

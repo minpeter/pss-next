@@ -2,16 +2,24 @@ import {
   estimateModelMessagesTokens,
   type ModelContextTokenEstimateInput,
 } from "../../llm/context-gate";
-import { compactionContextForModel } from "../state/context";
-import { selectAutoCompactionRange } from "./auto-compaction-range";
-import type {
-  AgentCompaction,
-  AgentCompactionContext,
-  ThreadTokenEstimator,
+import {
+  compactionContextForModel,
+  compactionContextMessage,
+} from "../state/context";
+import {
+  latestPrefixCompaction,
+  selectAutoCompactionRange,
+} from "./auto-compaction-range";
+import {
+  type AgentCompaction,
+  type AgentCompactionContext,
+  DEFAULT_COMPACTION_DEADLINE_MS,
+  type ThreadTokenEstimator,
 } from "./auto-compaction-types";
 import { equalSnapshot } from "./snapshot-equal";
 
 export interface SpeculativeCompactionOptions {
+  readonly deadlineMs?: number;
   readonly estimateTokens?: ThreadTokenEstimator;
   readonly maxInputTokens?: number;
   readonly prepareRatio?: number;
@@ -27,6 +35,7 @@ interface Candidate {
     readonly summary: string;
   };
   readonly prefix: readonly unknown[];
+  replacementAttempted: boolean;
 }
 
 /**
@@ -37,6 +46,7 @@ export function speculativeCompaction(
   options: SpeculativeCompactionOptions = {}
 ): AgentCompaction {
   const max = options.maxInputTokens ?? 128_000;
+  const deadlineMs = options.deadlineMs ?? DEFAULT_COMPACTION_DEADLINE_MS;
   const prepare = options.prepareRatio ?? 0.65;
   const promote = options.promoteRatio ?? 0.8;
   const retain = options.retainRatio ?? 0.4;
@@ -54,6 +64,11 @@ export function speculativeCompaction(
   if (!(Number.isSafeInteger(max) && max > 0)) {
     throw new TypeError(
       "speculativeCompaction: maxInputTokens must be a positive integer."
+    );
+  }
+  if (!(Number.isSafeInteger(deadlineMs) && deadlineMs > 0)) {
+    throw new TypeError(
+      "speculativeCompaction: deadlineMs must be a positive integer."
     );
   }
   if (prepare >= promote) {
@@ -77,13 +92,37 @@ export function speculativeCompaction(
         retain,
       });
     }
-    if (tokens < Math.floor(max * prepare) || candidate) {
+    if (tokens < Math.floor(max * prepare)) {
       return;
     }
-    await prepareCandidate({ candidates, context, estimate, max, retain });
+    if (candidate) {
+      if (candidate.replacementAttempted) {
+        return;
+      }
+      candidate.replacementAttempted = true;
+      await prepareCandidate({
+        candidates,
+        context,
+        estimate,
+        expectedCandidate: candidate,
+        max,
+        replacementAttempted: true,
+        retain,
+      });
+      return;
+    }
+    await prepareCandidate({
+      candidates,
+      context,
+      estimate,
+      max,
+      replacementAttempted: false,
+      retain,
+    });
     return;
   };
   return Object.assign(compact, {
+    deadlineMs: () => deadlineMs,
     ...(customEstimate
       ? {
           estimateTokens: ({
@@ -106,13 +145,17 @@ async function prepareCandidate({
   candidates,
   context,
   estimate,
+  expectedCandidate,
   max,
+  replacementAttempted,
   retain,
 }: {
   readonly candidates: WeakMap<object, Candidate>;
   readonly context: AgentCompactionContext;
   readonly estimate: ThreadTokenEstimator;
+  readonly expectedCandidate?: Candidate;
   readonly max: number;
+  readonly replacementAttempted: boolean;
   readonly retain: number;
 }): Promise<void> {
   const range = selectRange(context, estimate, max, retain);
@@ -123,10 +166,17 @@ async function prepareCandidate({
   if (!input.summary.trim()) {
     return;
   }
+  if (
+    expectedCandidate &&
+    candidates.get(context.threadIdentity) !== expectedCandidate
+  ) {
+    return;
+  }
   candidates.set(context.threadIdentity, {
     compactions: structuredClone(context.compactions),
     input,
     prefix: structuredClone(context.history.slice(0, range.endSeqExclusive)),
+    replacementAttempted,
   });
 }
 
@@ -175,10 +225,24 @@ function candidateFits({
   readonly estimate: ThreadTokenEstimator;
   readonly max: number;
 }): boolean {
+  if (candidate.input.startSeq !== 0) {
+    return false;
+  }
+  const prefix = latestPrefixCompaction(context.compactions);
   if (
-    context.compactions.length > 0 ||
-    !equalSnapshot(context.modelContext, context.history)
+    prefix !== undefined &&
+    candidate.input.endSeqExclusive < prefix.endSeqExclusive
   ) {
+    return false;
+  }
+  const projected =
+    prefix === undefined
+      ? context.history
+      : [
+          compactionContextForModel(compactionContextMessage(prefix)),
+          ...context.history.slice(prefix.endSeqExclusive),
+        ];
+  if (!equalSnapshot(context.modelContext, projected)) {
     return false;
   }
   const wrapper = compactionContextForModel({
@@ -187,9 +251,7 @@ function candidateFits({
     startSeq: candidate.input.startSeq,
     summary: candidate.input.summary,
   });
-  const tail = context.estimatedHistory.slice(
-    candidate.input.endSeqExclusive
-  );
+  const tail = context.estimatedHistory.slice(candidate.input.endSeqExclusive);
   const historyTokens = context.estimatedHistoryMessageTokens
     ? estimate([wrapper]) +
       context.estimatedHistoryMessageTokens

@@ -104,6 +104,14 @@ function assertCompactionObject(compaction: AgentOptions["compaction"]): void {
     throw new TypeError("Agent: options.compaction must be a function.");
   }
   if (
+    compaction.deadlineMs !== undefined &&
+    typeof compaction.deadlineMs !== "function"
+  ) {
+    throw new TypeError(
+      "Agent: options.compaction.deadlineMs must be a function."
+    );
+  }
+  if (
     compaction.maxInputTokens !== undefined &&
     typeof compaction.maxInputTokens !== "function"
   ) {

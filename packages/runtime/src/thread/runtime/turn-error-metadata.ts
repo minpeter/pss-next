@@ -258,6 +258,9 @@ const classifyTransportError = (
   if (errorName === "TimeoutError") {
     return { category: "timeout" };
   }
+  if (errorName === "CompactionDeadlineExceededError") {
+    return { category: "timeout", code: "COMPACTION_DEADLINE_EXCEEDED" };
+  }
 
   const errorCode = findNamedErrorField(error, "code");
   if (errorCode !== undefined && TIMEOUT_ERROR_CODES.has(errorCode)) {

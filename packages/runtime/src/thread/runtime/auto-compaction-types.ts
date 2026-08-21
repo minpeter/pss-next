@@ -18,12 +18,15 @@ export type ManualThreadCompactionResult =
 export interface CompactionSummaryOptions {
   /** Appends an `Additional focus` section to the default handoff contract. */
   readonly instructions?: string;
+  /** Cancels manual compaction and its active provider request. */
+  readonly signal?: AbortSignal;
   /** Controls whether raw tool-result evidence is appended after model output. */
   readonly toolEvidence?: "deterministic" | "omit";
 }
 
 export interface AgentCompactionContext {
   readonly compactions: readonly ThreadCompactionRecord[];
+  readonly deadlineAt?: number;
   readonly estimatedContextTokens: number;
   readonly estimatedHistory: readonly ModelMessage[];
   /** Marginal costs aligned by index with estimatedHistory. */
@@ -59,6 +62,7 @@ export interface AgentCompactionContext {
  */
 export interface AgentCompaction {
   readonly bufferTokens?: number;
+  readonly deadlineMs?: () => number;
   readonly estimateTokens?: (input: ModelContextTokenEstimateInput) => number;
   readonly maxInputTokens?: () => number;
   readonly onOverflow?: "compact" | "error";
@@ -69,6 +73,11 @@ export interface AgentCompaction {
     | undefined
     | Promise<ThreadCompactionInput | undefined>;
 }
+
+/** Episode bound used when a policy omits `deadlineMs`. Live `gpt-5.6-luna`
+ * summaries complete in about 8-18s; 5s timed out prepared, late, retry, and
+ * overflow-recovery paths, while 15s kept those paths at 100% provider start. */
+export const DEFAULT_COMPACTION_DEADLINE_MS = 15_000;
 
 /** The thread-history estimator pinned by a compaction, when it provides one. */
 export function threadEstimatorForCompaction(

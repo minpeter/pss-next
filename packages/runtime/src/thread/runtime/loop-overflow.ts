@@ -1,7 +1,10 @@
 import { ContextBudgetExceededError } from "../../llm/context-gate";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { ThreadState } from "../state/thread-state";
-import { compactThreadBlocking } from "./auto-compaction-runner";
+import {
+  CompactionDeadlineExceededError,
+  compactThreadBlocking,
+} from "./auto-compaction-runner";
 import type {
   ThreadCompactionHandler,
   ThreadContextTransformObserver,
@@ -54,7 +57,16 @@ export async function runAgentLoopWithOverflowCompaction({
         threadKey,
         transformModelContext,
       });
-    } catch {
+    } catch (compactionError) {
+      if (compactionError instanceof CompactionDeadlineExceededError) {
+        throw new CompactionDeadlineExceededError({
+          cause: error,
+          deadlineAt: compactionError.deadlineAt,
+          deadlineMs: compactionError.deadlineMs,
+          reason: compactionError.reason,
+          threadKey: compactionError.threadKey,
+        });
+      }
       throw error;
     }
 
