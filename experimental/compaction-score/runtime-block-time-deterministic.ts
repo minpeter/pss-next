@@ -21,7 +21,7 @@ export function createDeterministicRuntimeBlockModel(
   readonly onTargetStepStart: (() => void) | undefined;
 } {
   const firstSummaryRelease = deferred();
-  let foregroundCalls = 0;
+  let firstSummaryReleased = false;
   let summaryCalls = 0;
   const model = createMockLanguageModelV4(async ({ prompt }) => {
     if (isCompactionProviderPrompt(prompt)) {
@@ -29,7 +29,7 @@ export function createDeterministicRuntimeBlockModel(
       if (summaryCalls === 1) {
         if (
           scenario === "overlap-nonblocking" ||
-          scenario === "candidate-too-broad-fallback"
+          scenario === "candidate-fit-hard-block"
         ) {
           await firstSummaryRelease.promise;
         }
@@ -39,8 +39,12 @@ export function createDeterministicRuntimeBlockModel(
       }
       return mockLanguageModelV4Text("compact handoff");
     }
-    foregroundCalls += 1;
-    if (scenario === "overlap-nonblocking" && foregroundCalls === 3) {
+    if (
+      scenario === "overlap-nonblocking" &&
+      summaryCalls === 1 &&
+      !firstSummaryReleased
+    ) {
+      firstSummaryReleased = true;
       advance(1);
       firstSummaryRelease.resolve();
     }
@@ -49,7 +53,7 @@ export function createDeterministicRuntimeBlockModel(
   return {
     model,
     onTargetStepStart:
-      scenario === "candidate-too-broad-fallback"
+      scenario === "candidate-fit-hard-block"
         ? () => {
             advance(80);
             firstSummaryRelease.resolve();

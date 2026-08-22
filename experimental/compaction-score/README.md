@@ -157,8 +157,9 @@ Six controlled scenarios use the same model and compaction policy:
   automatically promotes it before provider dispatch and uses compacted context.
 - `candidate-fit-late-hit`: the target widens the desired range, but the
   prepared candidate plus its full tail still fits and avoids a second summary.
-- `candidate-too-broad-fallback`: the prepared candidate leaves an oversized
-  tail, so the broader overflow summary remains blocking.
+- `candidate-fit-hard-block`: the target waits for an in-flight prepared
+  summary and applies the still-fitting candidate, providing a hard-block
+  control without inventing a broader fallback.
 - `summary-failure-retry-hit`: one failed background summary is retried before
   the target, which promotes the recovered candidate without blocking.
 - `repeated-failure-overflow-recovery`: two background failures exhaust the
@@ -186,65 +187,3 @@ pnpm --dir experimental/compaction-score block-time -- \
 pnpm --dir experimental/compaction-score block-time -- \
   --mode live --repetitions 3 --output /tmp/block-time-live
 ```
-
-## Human calibration
-
-The quality comparator's exact-match scorer can mark a semantically fine answer
-wrong. Human calibration measures that gap: a person labels blinded candidate
-answers, and the scorer's agreement with the human labels is compared against
-machine exact-match.
-
-Export a blinded annotation packet from a quality report:
-
-```sh
-pnpm --dir experimental/compaction-score exec tsx \
-  --conditions=@minpeter/pss-source human-calibration-cli.ts export \
-  --input QUALITY.json --output /tmp/human-packet
-```
-
-The packet splits into an `annotator/` directory (blinded packets, a prefilled
-`labels-template.csv`, and instructions) and a `sealed/packets.keys.jsonl`
-file that maps blinded rows back to arms and gold answers. The keys stay
-sealed until every label is final; annotators must not read them, and must not
-use an LLM, automated grader, or search tool. Labels come from a real person
-following `annotator/README.md`; the coordinator saves the completed CSV
-outside the packet directory.
-
-Verify a packet is intact at any time:
-
-```sh
-pnpm --dir experimental/compaction-score exec tsx \
-  --conditions=@minpeter/pss-source human-calibration-cli.ts validate-export \
-  --packet /tmp/human-packet
-```
-
-Once real labels exist, score them against the sealed keys:
-
-```sh
-pnpm --dir experimental/compaction-score exec tsx \
-  --conditions=@minpeter/pss-source human-calibration-cli.ts score \
-  --packet /tmp/human-packet --labels labels.csv --output /tmp/human-score
-pnpm --dir experimental/compaction-score exec tsx \
-  --conditions=@minpeter/pss-source human-calibration-cli.ts validate-score \
-  --input /tmp/human-score/human-calibration.json
-```
-
-The five-track report consumes only a real scored report: its `--human` input
-must pass human-calibration report validation, so an unlabeled packet or a
-placeholder file can't stand in for one. Until labels are collected and
-scored, the five-track analysis keeps `matchedQuality` at `"inferred"` along
-with the other inferred evidence slots.
-
-### Live packet status
-
-The current live packet is `/tmp/pss-five-track-live-human-packet-v3`
-(12 packets, protocol `human-calib-v2`, awaiting human labels). Export
-validation passes:
-
-```text
-$ pnpm --dir experimental/compaction-score exec tsx --conditions=@minpeter/pss-source human-calibration-cli.ts validate-export --packet /tmp/pss-five-track-live-human-packet-v3
-packets=12 digest=sha256:e755f0d3024ac406f042580eab41e05cf9c46eec18087286a9f2c47eba532b25 valid=true
-```
-
-No `labels.csv` exists for this packet yet; filling the template requires a
-human annotator working from `packets.blinded.jsonl` alone.

@@ -247,4 +247,179 @@ describe("comparison report", () => {
       "| pi-coding-agent | 71.12%-86.66% | 76.72%-90.69% | 0.00% | 200.00 ms | 0/2 (0.00%) |"
     );
   });
+
+  it("accepts zero for nonnegative hop metrics", async () => {
+    // Given
+    const artifact = await comparisonArtifact({
+      aggregate: {
+        overall: {
+          pi: {
+            compressionMean: 0,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 1,
+          },
+          pss: {
+            compressionMean: null,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 1,
+          },
+        },
+      },
+      model: "benchmark-model",
+      rows: [
+        {
+          pi: {
+            hops: [
+              {
+                compactionMs: 0,
+                prefixTokens: 1,
+                summarizerInputTokens: 0,
+                summaryTokens: 0,
+              },
+            ],
+            status: "valid",
+          },
+          pss: { status: "valid" },
+        },
+      ],
+    });
+
+    // When
+    const result = await invoke(["--table", artifact]);
+
+    // Then
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("rejects a zero prefix token count", async () => {
+    // Given
+    const artifact = await comparisonArtifact({
+      aggregate: {
+        overall: {
+          pi: {
+            compressionMean: 0,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 1,
+          },
+          pss: {
+            compressionMean: null,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 1,
+          },
+        },
+      },
+      model: "benchmark-model",
+      rows: [
+        {
+          pi: {
+            hops: [{ prefixTokens: 0, summaryTokens: 0 }],
+            status: "valid",
+          },
+          pss: { status: "valid" },
+        },
+      ],
+    });
+
+    // When
+    const result = await invoke(["--table", artifact]);
+
+    // Then
+    expect(result).toEqual({
+      exitCode: 1,
+      stderr: "COMPARISON_ARTIFACT_INVALID\n",
+      stdout: "",
+    });
+  });
+
+  it("renders every token metric cell when one method is unavailable", async () => {
+    // Given
+    const artifact = await comparisonArtifact({
+      aggregate: {
+        overall: {
+          pi: {
+            compressionMean: null,
+            invalid: 1,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 0,
+          },
+          pss: {
+            compressionMean: 0.5,
+            invalid: 0,
+            retained: 1,
+            semanticRetained: 1,
+            total: 1,
+            valid: 1,
+          },
+        },
+      },
+      model: "benchmark-model",
+      rows: [
+        {
+          pi: { status: "summary-provider-failure" },
+          pss: {
+            hops: [{ prefixTokens: 2, summaryTokens: 1 }],
+            status: "valid",
+          },
+        },
+      ],
+    });
+
+    // When
+    const result = await invoke(["--table", artifact]);
+
+    // Then
+    expect(result.stdout).toContain(
+      "| pi-coding-agent | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |"
+    );
+  });
+
+  it("renders a model containing backticks and newlines as safe inline code", async () => {
+    // Given
+    const artifact = await comparisonArtifact({
+      aggregate: {
+        overall: {
+          pi: {
+            compressionMean: null,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 0,
+          },
+          pss: {
+            compressionMean: null,
+            invalid: 0,
+            retained: 0,
+            semanticRetained: 0,
+            total: 0,
+            valid: 0,
+          },
+        },
+      },
+      model: "benchmark`model\ncontinuation",
+      rows: [],
+    });
+
+    // When
+    const result = await invoke(["--table", artifact]);
+
+    // Then
+    expect(result.stdout).toContain(
+      "Model: `` benchmark`model continuation ``\n"
+    );
+  });
 });

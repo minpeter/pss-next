@@ -159,7 +159,7 @@ export function formatMilliseconds(value: number): string {
 
 function renderTokenRow({ label, metrics }: LabeledDetail): string {
   if (metrics === null) {
-    return `| ${label} | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |`;
+    return `| ${label} | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |`;
   }
   return [
     `| ${label}`,

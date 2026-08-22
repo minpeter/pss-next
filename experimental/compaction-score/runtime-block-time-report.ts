@@ -42,8 +42,8 @@ export function createRuntimeBlockTimeReport({
         "candidate-fit-late-hit",
         trials
       ),
-      "candidate-too-broad-fallback": aggregateRuntimeBlockTrials(
-        "candidate-too-broad-fallback",
+      "candidate-fit-hard-block": aggregateRuntimeBlockTrials(
+        "candidate-fit-hard-block",
         trials
       ),
       "overlap-nonblocking": aggregateRuntimeBlockTrials(
@@ -63,7 +63,7 @@ export function createRuntimeBlockTimeReport({
     createdAt,
     methodology: {
       blockFormula:
-        "max(0, treatment send-to-provider-start - matched control send-to-provider-start)",
+        "max(0, treatment send-to-first-visible-assistant-output - matched control send-to-first-visible-assistant-output)",
       clock:
         mode === "live" ? "performance.now" : "logical deterministic clock",
       thresholdUnits: "synthetic benchmark units",
@@ -83,7 +83,7 @@ export function renderRuntimeBlockTimeMarkdown(
     report.aggregates["overlap-nonblocking"],
     report.aggregates["prepared-hit"],
     report.aggregates["candidate-fit-late-hit"],
-    report.aggregates["candidate-too-broad-fallback"],
+    report.aggregates["candidate-fit-hard-block"],
     report.aggregates["summary-failure-retry-hit"],
     report.aggregates["repeated-failure-overflow-recovery"],
   ];
@@ -93,17 +93,17 @@ export function renderRuntimeBlockTimeMarkdown(
     `Model: \`${report.model}\``,
     `Mode: \`${report.mode}\``,
     "",
-    "| Scenario | Trials | Summary calls mean | Summary service mean | User delta mean | User block mean | P50 | P95 | Max | Pre-step delta mean | Gate delta mean | Candidate applied | Zero-block rate | Block avoidance | Overlap rate |",
+    "| Scenario | Trials | Summary calls mean | Summary service mean | TTFV delta mean | User block mean | P50 | P95 | Max | Pre-step delta mean | Gate delta mean | Candidate applied | Zero-block rate | Block avoidance | Overlap rate |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...aggregates.map(renderAggregate),
     "",
     "## Trial details",
     "",
-    "| Scenario | Run | Matched control | Treatment request | User delta | Pre-step delta | Gate delta | Summary calls | Summary service | User block | Avoided block | Block avoidance | Summary active at provider start | Path valid |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Scenario | Run | Control TTFV | Treatment TTFV | TTFV delta | Control provider dispatch | Treatment provider dispatch | Pre-step delta | Gate delta | Summary calls | Summary service | User block | Avoided block | Block avoidance | Summary active at provider start |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...report.trials.map(renderTrial),
     "",
-    "_User delta is treatment send-to-provider-start minus a fresh compaction-disabled control with the same three-turn inputs. Pre-step delta plus gate delta equals user delta; user block clips only the final matched delta at zero._",
+    "_TTFV is measured from send until the first non-empty `assistant-output-delta` or `assistant-output` event. User delta is treatment TTFV minus a fresh compaction-disabled control with the same three-turn inputs; user block clips that matched delta at zero. Provider dispatch remains reported separately and is not treated as visible output._",
     "",
     "_Benchmark payload size matches its synthetic threshold units. Live mode uses real provider latency and runtime concurrency; deterministic mode validates the measurement channel with a logical clock. Prepared hit completes its candidate before the target, which automatically promotes it before provider dispatch. A nonblocking path has user block at most 10 ms._",
   ].join("\n")}\n`;
@@ -133,9 +133,11 @@ function renderTrial(trial: RuntimeBlockTrial): string {
   return [
     `| ${scenarioLabel(trial.scenario)}`,
     trial.repetition,
-    milliseconds(trial.controlRequestMs),
-    milliseconds(trial.targetRequestMs),
+    milliseconds(trial.controlTtfvMs),
+    milliseconds(trial.treatmentTtfvMs),
     signedMilliseconds(trial.userDeltaMs),
+    milliseconds(trial.controlProviderDispatchMs),
+    milliseconds(trial.treatmentProviderDispatchMs),
     signedMilliseconds(trial.preStepDeltaMs),
     signedMilliseconds(trial.gateDeltaMs),
     trial.summaryCalls,
@@ -143,8 +145,7 @@ function renderTrial(trial: RuntimeBlockTrial): string {
     milliseconds(trial.userBlockMs),
     milliseconds(trial.avoidedBlockMs),
     percentage(trial.blockAvoidanceRatio),
-    trial.overlapAtProviderStart ? "yes" : "no",
-    `${trial.pathValid ? "yes" : "no"} |`,
+    `${trial.overlapAtProviderStart ? "yes" : "no"} |`,
   ].join(" | ");
 }
 

@@ -16,6 +16,7 @@ interface ProviderCall {
   readonly kind: "foreground" | "summary";
   readonly prompt: unknown;
   readonly startedAtMs: number;
+  readonly startedSequence: number;
 }
 
 export interface RuntimeBlockModelTrace {
@@ -29,9 +30,19 @@ export interface RuntimeBlockModelTrace {
 
 export interface RuntimeSummaryTraceSpan {
   endedAtMs: number;
+  endedSequence: number;
   readonly kind: "summary";
   readonly startedAtMs: number;
+  readonly startedSequence: number;
   status: "completed" | "error" | "running";
+}
+
+interface ObservedRuntimeCompactionOptions {
+  readonly active: Set<Promise<void>>;
+  readonly nextSequence: () => number;
+  readonly now: () => number;
+  readonly onSummarySettled?: (span: RuntimeSummaryTraceSpan) => void;
+  readonly spans: RuntimeSummaryTraceSpan[];
 }
 
 const MAX_INPUT_UNITS = 1000;
@@ -68,15 +79,34 @@ export function isCompactionProviderPrompt(prompt: unknown): boolean {
   );
 }
 
+export function wrapRuntimeBlockModel(
+  model: RuntimeBlockLanguageModel,
+  middleware: LanguageModelMiddleware
+): RuntimeBlockLanguageModel {
+  return wrapLanguageModel({
+    middleware:
+      typeof Reflect.get(model, "doStream") === "function"
+        ? middleware
+        : [middleware, simulateStreamingMiddleware()],
+    model,
+  });
+}
+
 export function createRuntimeBlockModelTrace(
   model: RuntimeBlockLanguageModel,
-  now: () => number
+  now: () => number,
+  nextSequence: () => number
 ): RuntimeBlockModelTrace {
   const calls: ProviderCall[] = [];
   const listeners = new Set<() => void>();
   const record = (prompt: unknown): void => {
     const kind = isCompactionProviderPrompt(prompt) ? "summary" : "foreground";
-    calls.push({ kind, prompt, startedAtMs: now() });
+    calls.push({
+      kind,
+      prompt,
+      startedAtMs: now(),
+      startedSequence: nextSequence(),
+    });
     for (const listener of listeners) {
       listener();
     }
@@ -92,16 +122,9 @@ export function createRuntimeBlockModelTrace(
       return await doStream();
     },
   };
-  const supportsStream =
-    typeof (model as { readonly doStream?: unknown }).doStream === "function";
   return {
     calls,
-    model: wrapLanguageModel({
-      middleware: supportsStream
-        ? middleware
-        : [middleware, simulateStreamingMiddleware()],
-      model,
-    }),
+    model: wrapRuntimeBlockModel(model, middleware),
     waitForCall: async (kind, afterIndex) => {
       const find = () =>
         calls.slice(afterIndex).find((call) => call.kind === kind);
@@ -123,12 +146,13 @@ export function createRuntimeBlockModelTrace(
   };
 }
 
-export function createObservedRuntimeCompaction(
-  spans: RuntimeSummaryTraceSpan[],
-  active: Set<Promise<void>>,
-  now: () => number,
-  onSummarySettled?: (span: RuntimeSummaryTraceSpan) => void
-): AgentCompaction {
+export function createObservedRuntimeCompaction({
+  active,
+  nextSequence,
+  now,
+  onSummarySettled,
+  spans,
+}: ObservedRuntimeCompactionOptions): AgentCompaction {
   const base = speculativeCompaction({
     estimateTokens: (messages) => runtimeBlockEstimator({ messages }),
     maxInputTokens: MAX_INPUT_UNITS,
@@ -144,19 +168,23 @@ export function createObservedRuntimeCompaction(
       summarize: async (...args) => {
         const span: RuntimeSummaryTraceSpan = {
           endedAtMs: 0,
+          endedSequence: 0,
           kind: "summary",
           startedAtMs: now(),
+          startedSequence: nextSequence(),
           status: "running",
         };
         const completion = context.summarize(...args).then(
           (summary) => {
             span.endedAtMs = now();
+            span.endedSequence = nextSequence();
             span.status = "completed";
             onSummarySettled?.(span);
             return summary;
           },
           (error: unknown) => {
             span.endedAtMs = now();
+            span.endedSequence = nextSequence();
             span.status = "error";
             onSummarySettled?.(span);
             throw error;

@@ -4,27 +4,26 @@ import { readOpenAICompatibleModelEnv } from "@minpeter/pss-coding-agent/env";
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
 import type { LanguageModel } from "ai";
 import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
+import type { RuntimeBlockLanguageModel } from "./runtime-block-time-instrumentation";
 import {
   calculateRuntimeBlockTrial,
   type RuntimeBlockObservation,
   type RuntimeBlockScenario,
   type RuntimeBlockTrial,
 } from "./runtime-block-time-metrics";
+import { parseRuntimeBlockRepetitions } from "./runtime-block-time-options";
 import {
   createRuntimeBlockTimeReport,
   renderRuntimeBlockTimeMarkdown,
 } from "./runtime-block-time-report";
-import {
-  type RuntimeBlockLanguageModel,
-  runRuntimeBlockTrial,
-} from "./runtime-block-time-runner";
+import { runRuntimeBlockTrial } from "./runtime-block-time-runner";
 import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 
 const SCENARIOS = [
   "overlap-nonblocking",
   "prepared-hit",
   "candidate-fit-late-hit",
-  "candidate-too-broad-fallback",
+  "candidate-fit-hard-block",
   "summary-failure-retry-hit",
   "repeated-failure-overflow-recovery",
 ] as const satisfies readonly RuntimeBlockScenario[];
@@ -37,12 +36,12 @@ interface CliOptions {
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
-  const env =
-    options.mode === "live" ? readOpenAICompatibleModelEnv() : undefined;
   const liveModel =
     options.mode === "live"
       ? createCodingLanguageModel({ providerName: "runtime-block-time" })
       : undefined;
+  const env =
+    options.mode === "live" ? readOpenAICompatibleModelEnv() : undefined;
   const modelName = env?.AI_MODEL ?? "deterministic-mock";
   const observations: RuntimeBlockObservation[] = [];
   const trials: RuntimeBlockTrial[] = [];
@@ -118,13 +117,13 @@ function parseOptions(args: readonly string[]): CliOptions {
   if (normalizedArgs.includes("--help")) {
     console.log(
       [
-        "Usage: runtime-block-time [--mode deterministic|live] [--repetitions N] [--output DIR]",
+        "Usage: runtime-block-time [--mode deterministic|live] [--repetitions N (1-100)] [--output DIR]",
         "",
         "Scenarios:",
         "  overlap-nonblocking       summary active; target uses original context",
         "  prepared-hit              ready candidate auto-promoted before provider",
         "  candidate-fit-late-hit    widened candidate reused without fallback",
-        "  candidate-too-broad-fallback  oversized tail needs broader summary",
+        "  candidate-fit-hard-block    in-flight fitting candidate blocks target",
         "  summary-failure-retry-hit one background failure recovered before target",
         "  repeated-failure-overflow-recovery  two failures then overflow recovery",
       ].join("\n")
@@ -141,13 +140,8 @@ function parseOptions(args: readonly string[]): CliOptions {
       mode = value;
     } else if (flag === "--output" && value) {
       outputDirectory = value;
-    } else if (
-      flag === "--repetitions" &&
-      value &&
-      Number.isInteger(Number(value)) &&
-      Number(value) > 0
-    ) {
-      repetitions = Number(value);
+    } else if (flag === "--repetitions" && value) {
+      repetitions = parseRuntimeBlockRepetitions(value);
     } else {
       throw new TypeError(`Invalid runtime block-time option: ${flag ?? ""}`);
     }

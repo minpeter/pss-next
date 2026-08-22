@@ -1,6 +1,6 @@
 export type RuntimeBlockScenario =
   | "candidate-fit-late-hit"
-  | "candidate-too-broad-fallback"
+  | "candidate-fit-hard-block"
   | "overlap-nonblocking"
   | "prepared-hit"
   | "repeated-failure-overflow-recovery"
@@ -15,13 +15,14 @@ export interface RuntimeSummarySpan {
 
 export interface RuntimeBlockObservation {
   readonly candidateApplied: boolean;
+  readonly controlFirstVisibleAtMs: number;
   readonly controlProviderStartedAtMs: number;
   readonly controlSentAtMs: number;
   readonly controlStepStartedAtMs: number;
-  readonly pathValid: true;
   readonly repetition: number;
   readonly scenario: RuntimeBlockScenario;
   readonly summarySpans: readonly RuntimeSummarySpan[];
+  readonly targetFirstVisibleAtMs: number;
   readonly targetProviderStartedAtMs: number;
   readonly targetSentAtMs: number;
   readonly targetStepStartedAtMs: number;
@@ -32,17 +33,18 @@ export interface RuntimeBlockTrial {
   readonly blockAvoidanceRatio: number;
   readonly candidateApplied: boolean;
   readonly controlPreparationMs: number;
-  readonly controlRequestMs: number;
+  readonly controlProviderDispatchMs: number;
+  readonly controlTtfvMs: number;
   readonly gateDeltaMs: number;
   readonly overlapAtProviderStart: boolean;
-  readonly pathValid: true;
   readonly preStepDeltaMs: number;
   readonly repetition: number;
   readonly scenario: RuntimeBlockScenario;
   readonly summaryCalls: number;
   readonly summaryServiceMs: number;
-  readonly targetPreparationMs: number;
-  readonly targetRequestMs: number;
+  readonly treatmentPreparationMs: number;
+  readonly treatmentProviderDispatchMs: number;
+  readonly treatmentTtfvMs: number;
   readonly userBlockMs: number;
   readonly userDeltaMs: number;
   readonly zeroBlock: boolean;
@@ -75,20 +77,28 @@ export function calculateRuntimeBlockTrial(
     0,
     observation.controlProviderStartedAtMs - observation.controlStepStartedAtMs
   );
-  const controlRequestMs = Math.max(
+  const controlProviderDispatchMs = Math.max(
     0,
     observation.controlProviderStartedAtMs - observation.controlSentAtMs
   );
-  const targetPreparationMs = Math.max(
+  const treatmentPreparationMs = Math.max(
     0,
     observation.targetProviderStartedAtMs - observation.targetStepStartedAtMs
   );
-  const gateDeltaMs = targetPreparationMs - controlPreparationMs;
-  const targetRequestMs = Math.max(
+  const gateDeltaMs = treatmentPreparationMs - controlPreparationMs;
+  const treatmentProviderDispatchMs = Math.max(
     0,
     observation.targetProviderStartedAtMs - observation.targetSentAtMs
   );
-  const userDeltaMs = targetRequestMs - controlRequestMs;
+  const controlTtfvMs = Math.max(
+    0,
+    observation.controlFirstVisibleAtMs - observation.controlSentAtMs
+  );
+  const treatmentTtfvMs = Math.max(
+    0,
+    observation.targetFirstVisibleAtMs - observation.targetSentAtMs
+  );
+  const userDeltaMs = treatmentTtfvMs - controlTtfvMs;
   const userBlockMs = Math.max(0, userDeltaMs);
   const targetPreStepMs = Math.max(
     0,
@@ -111,21 +121,22 @@ export function calculateRuntimeBlockTrial(
       summaryServiceMs === 0 ? 0 : avoidedBlockMs / summaryServiceMs,
     candidateApplied: observation.candidateApplied,
     controlPreparationMs,
-    controlRequestMs,
+    controlProviderDispatchMs,
+    controlTtfvMs,
     gateDeltaMs,
     overlapAtProviderStart: observation.summarySpans.some(
       ({ endedAtMs, startedAtMs }) =>
         startedAtMs <= observation.targetProviderStartedAtMs &&
         observation.targetProviderStartedAtMs < endedAtMs
     ),
-    pathValid: observation.pathValid,
     preStepDeltaMs,
     repetition: observation.repetition,
     scenario: observation.scenario,
     summaryCalls: observation.summarySpans.length,
     summaryServiceMs,
-    targetPreparationMs,
-    targetRequestMs,
+    treatmentPreparationMs,
+    treatmentProviderDispatchMs,
+    treatmentTtfvMs,
     userDeltaMs,
     userBlockMs,
     zeroBlock: userBlockMs <= ZERO_BLOCK_THRESHOLD_MS,

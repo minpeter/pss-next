@@ -116,7 +116,7 @@ function parseHop(value: unknown, path: string): ComparisonHopMetric {
       : nonnegativeNumber(hop.compactionMs, `${path}.compactionMs`);
   return {
     ...(compactionMs === undefined ? {} : { compactionMs }),
-    prefixTokens: nonnegativeInteger(hop.prefixTokens, `${path}.prefixTokens`),
+    prefixTokens: positiveInteger(hop.prefixTokens, `${path}.prefixTokens`),
     ...(hop.summarizerInputTokens === undefined
       ? {}
       : {
@@ -173,6 +173,14 @@ function nonnegativeInteger(value: unknown, path: string): number {
     throw new ComparisonArtifactError(
       `${path} must be a non-negative integer.`
     );
+  }
+  return parsed;
+}
+
+function positiveInteger(value: unknown, path: string): number {
+  const parsed = finiteNumber(value, path);
+  if (!(Number.isInteger(parsed) && parsed > 0)) {
+    throw new ComparisonArtifactError(`${path} must be a positive integer.`);
   }
   return parsed;
 }

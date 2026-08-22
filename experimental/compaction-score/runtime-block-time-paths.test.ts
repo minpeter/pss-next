@@ -5,10 +5,8 @@ import {
   mockLanguageModelV4Text,
 } from "./mock-language-model";
 import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
-import {
-  isCompactionProviderPrompt,
-  runRuntimeBlockTrial,
-} from "./runtime-block-time-runner";
+import { isCompactionProviderPrompt } from "./runtime-block-time-instrumentation";
+import { runRuntimeBlockTrial } from "./runtime-block-time-runner";
 import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 
 interface Deferred {
@@ -28,23 +26,69 @@ function deferred(): Deferred {
 }
 
 describe("runtime block-time path validity", () => {
-  it.each([
-    "prepared-hit",
-    "candidate-fit-late-hit",
-    "candidate-too-broad-fallback",
-    "summary-failure-retry-hit",
-    "repeated-failure-overflow-recovery",
-  ] as const)("validates the %s runtime path", async (scenario) => {
+  it.each(
+    (
+      [
+        "overlap-nonblocking",
+        "prepared-hit",
+        "candidate-fit-late-hit",
+        "candidate-fit-hard-block",
+        "summary-failure-retry-hit",
+        "repeated-failure-overflow-recovery",
+      ] as const
+    ).flatMap((scenario) =>
+      [1, 2].map((repetition) => ({ repetition, scenario }))
+    )
+  )(
+    "validates the $scenario runtime path at repetition $repetition",
+    async ({ repetition, scenario }) => {
+      let logicalNow = 0;
+      const deterministic = createDeterministicRuntimeBlockModel(
+        scenario,
+        (milliseconds) => {
+          logicalNow += milliseconds;
+        }
+      );
+      const scenarioModel = createRuntimeBlockScenarioModel(
+        deterministic.model,
+        scenario
+      );
+
+      const observation = await runRuntimeBlockTrial({
+        model: scenarioModel.model,
+        now: () => logicalNow,
+        onTargetStepStart: deterministic.onTargetStepStart,
+        repetition,
+        scenario,
+      });
+
+      expect(observation.candidateApplied).toBe(
+        scenario !== "overlap-nonblocking"
+      );
+      expect(observation.summarySpans.map((span) => span.status)).toEqual(
+        {
+          "candidate-fit-hard-block": ["completed"],
+          "candidate-fit-late-hit": ["completed"],
+          "overlap-nonblocking": ["completed"],
+          "prepared-hit": ["completed"],
+          "repeated-failure-overflow-recovery": ["error", "error", "completed"],
+          "summary-failure-retry-hit": ["error", "completed"],
+        }[scenario]
+      );
+    }
+  );
+
+  it("keeps the in-flight candidate hard block causal at a tied timestamp", async () => {
     let logicalNow = 0;
     const deterministic = createDeterministicRuntimeBlockModel(
-      scenario,
+      "candidate-fit-hard-block",
       (milliseconds) => {
         logicalNow += milliseconds;
       }
     );
     const scenarioModel = createRuntimeBlockScenarioModel(
       deterministic.model,
-      scenario
+      "candidate-fit-hard-block"
     );
 
     const observation = await runRuntimeBlockTrial({
@@ -52,20 +96,18 @@ describe("runtime block-time path validity", () => {
       now: () => logicalNow,
       onTargetStepStart: deterministic.onTargetStepStart,
       repetition: 1,
-      scenario,
+      scenario: "candidate-fit-hard-block",
     });
 
-    expect(observation.pathValid).toBe(true);
-    expect(observation.candidateApplied).toBe(true);
-    expect(observation.summarySpans.map((span) => span.status)).toEqual(
+    expect(observation.targetProviderStartedAtMs).toBe(180);
+    expect(observation.summarySpans).toEqual([
       {
-        "candidate-fit-late-hit": ["completed"],
-        "candidate-too-broad-fallback": ["completed", "completed"],
-        "prepared-hit": ["completed"],
-        "repeated-failure-overflow-recovery": ["error", "error", "completed"],
-        "summary-failure-retry-hit": ["error", "completed"],
-      }[scenario]
-    );
+        endedAtMs: 180,
+        kind: "summary",
+        startedAtMs: 0,
+        status: "completed",
+      },
+    ]);
   });
 
   it("does not classify mere summary overlap as a prepared hit", async () => {
@@ -105,9 +147,9 @@ describe("runtime block-time path validity", () => {
         if (summaryCalls === 1) {
           throw new TypeError("injected summary failure");
         }
-        return mockLanguageModelV4Text("recovered handoff");
+        return Promise.resolve(mockLanguageModelV4Text("recovered handoff"));
       }
-      return mockLanguageModelV4Text("DONE");
+      return Promise.resolve(mockLanguageModelV4Text("DONE"));
     });
 
     const observation = await runRuntimeBlockTrial({

@@ -16,10 +16,10 @@ const EXPECTED_PATHS: Readonly<Record<RuntimeBlockScenario, ExpectedPath>> = {
     overlaps: false,
     statuses: ["completed"],
   },
-  "candidate-too-broad-fallback": {
+  "candidate-fit-hard-block": {
     candidateApplied: true,
     overlaps: false,
-    statuses: ["completed", "completed"],
+    statuses: ["completed"],
   },
   "overlap-nonblocking": {
     candidateApplied: false,
@@ -43,17 +43,24 @@ const EXPECTED_PATHS: Readonly<Record<RuntimeBlockScenario, ExpectedPath>> = {
   },
 };
 
-export function validateRuntimeBlockPath(
-  spans: readonly RuntimeSummaryTraceSpan[],
-  targetPrompt: unknown,
-  providerStartedAtMs: number,
-  scenario: RuntimeBlockScenario
-): {
+interface RuntimeBlockPathInput {
+  readonly providerStartedSequence: number;
+  readonly scenario: RuntimeBlockScenario;
+  readonly spans: readonly RuntimeSummaryTraceSpan[];
+  readonly targetPrompt: unknown;
+}
+
+export function validateRuntimeBlockPath({
+  providerStartedSequence,
+  scenario,
+  spans,
+  targetPrompt,
+}: RuntimeBlockPathInput): {
   readonly candidateApplied: boolean;
   readonly spans: readonly RuntimeSummarySpan[];
 } {
   const causal = spans.filter(
-    (span) => span.startedAtMs <= providerStartedAtMs
+    (span) => span.startedSequence < providerStartedSequence
   );
   const expected = EXPECTED_PATHS[scenario];
   if (
@@ -62,21 +69,22 @@ export function validateRuntimeBlockPath(
   ) {
     throw new TypeError(`Invalid ${scenario} summary status path.`);
   }
-  const settled = causal.map((span): RuntimeSummarySpan => {
-    if (span.status === "running") {
-      throw new TypeError(`Invalid ${scenario} running summary path.`);
-    }
-    return Object.freeze({
-      endedAtMs: span.endedAtMs,
-      kind: span.kind,
-      startedAtMs: span.startedAtMs,
-      status: span.status,
-    });
-  });
-  const overlaps = settled.some(
+  const settled = causal.flatMap((span): readonly RuntimeSummarySpan[] =>
+    span.status === "running"
+      ? []
+      : [
+          Object.freeze({
+            endedAtMs: span.endedAtMs,
+            kind: span.kind,
+            startedAtMs: span.startedAtMs,
+            status: span.status,
+          }),
+        ]
+  );
+  const overlaps = causal.some(
     (span) =>
-      span.startedAtMs <= providerStartedAtMs &&
-      providerStartedAtMs < span.endedAtMs
+      span.startedSequence < providerStartedSequence &&
+      providerStartedSequence < span.endedSequence
   );
   if (overlaps !== expected.overlaps) {
     throw new TypeError(`Invalid ${scenario} provider overlap path.`);

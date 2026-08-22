@@ -14,6 +14,7 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { readOpenAICompatibleModelEnv } from "@minpeter/pss-coding-agent/env";
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
 import {
@@ -30,6 +31,7 @@ import { type CompactionScore, scoreAnswers } from "./scorer";
 import { runCompactionTrial } from "./trial-runner";
 
 const PI_RESERVE_TOKENS = 16_384;
+const PI_SUMMARY_MAX_CHARS = 4 * Math.floor(0.8 * PI_RESERVE_TOKENS);
 const PI_TOOL_RESULT_MAX_CHARS = 2000;
 const PROVIDER_TIMEOUT_MS = 120_000;
 const MAX_ATTEMPTS = 3;
@@ -348,11 +350,10 @@ async function runPiArm(
     } catch (cause) {
       return { error: String(cause), status: "summary-provider-failure" };
     }
-    let { summary } = generated;
-    if (summary.length === 0) {
+    if (generated.summary.length === 0) {
       return { error: "empty pi summary", status: "protocol-failure" };
     }
-    summary += formatFileOperations(fileOps);
+    const summary = assemblePiSummary(generated.summary, fileOps);
     history.recordCompaction({
       endSeqExclusive,
       schemaVersion: 1,
@@ -616,9 +617,22 @@ function recordFileOp(
   }
 }
 
+export function assemblePiSummary(
+  providerSummary: string,
+  fileOps: {
+    readonly edited: ReadonlySet<string>;
+    readonly read: ReadonlySet<string>;
+  }
+): string {
+  return `${providerSummary}${formatFileOperations(fileOps)}`.slice(
+    0,
+    PI_SUMMARY_MAX_CHARS
+  );
+}
+
 function formatFileOperations(fileOps: {
-  edited: Set<string>;
-  read: Set<string>;
+  readonly edited: ReadonlySet<string>;
+  readonly read: ReadonlySet<string>;
 }): string {
   const compareFiles = (a: string, b: string) => a.localeCompare(b);
   const modified = [...fileOps.edited].sort(compareFiles);
@@ -690,4 +704,7 @@ function describeArm(result: ArmResult): string {
   return `valid ${result.score.headline.correct}/${result.score.headline.total}${semantic} ratio=[${ratio}]`;
 }
 
-await main();
+const executable = process.argv[1];
+if (executable && import.meta.url === pathToFileURL(executable).href) {
+  await main();
+}

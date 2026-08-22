@@ -1,11 +1,8 @@
-import {
-  type LanguageModelMiddleware,
-  simulateStreamingMiddleware,
-  wrapLanguageModel,
-} from "ai";
+import type { LanguageModelMiddleware } from "ai";
 import {
   isCompactionProviderPrompt,
   type RuntimeBlockLanguageModel,
+  wrapRuntimeBlockModel,
 } from "./runtime-block-time-instrumentation";
 import type { RuntimeBlockScenario } from "./runtime-block-time-metrics";
 
@@ -43,16 +40,7 @@ export function createRuntimeBlockScenarioModel(
       return result;
     },
   };
-  const supportsStream =
-    typeof (model as { readonly doStream?: unknown }).doStream === "function";
-  return {
-    model: wrapLanguageModel({
-      middleware: supportsStream
-        ? middleware
-        : [middleware, simulateStreamingMiddleware()],
-      model,
-    }),
-  };
+  return { model: wrapRuntimeBlockModel(model, middleware) };
 }
 
 function shouldFailSummary(

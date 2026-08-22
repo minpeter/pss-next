@@ -1,9 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import {
-  ComparisonArtifactError,
-  renderComparisonMarkdown,
-} from "./comparison-report";
+import { ComparisonArtifactError } from "./comparison-artifact";
+import { renderComparisonMarkdown } from "./comparison-report";
 
 const HELP = `Usage: pnpm table -- COMPARISON_JSON
 

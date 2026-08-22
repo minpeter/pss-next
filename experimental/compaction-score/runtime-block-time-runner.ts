@@ -27,17 +27,25 @@ export async function runRuntimeBlockTrial(
   options: RuntimeBlockTrialOptions
 ): Promise<RuntimeBlockObservation> {
   const now = options.now ?? performance.now.bind(performance);
-  const treatment = await runTreatment(options, now);
-  const control = await runControl(options, now);
+  let treatment: Awaited<ReturnType<typeof runTreatment>>;
+  let control: MeasuredTurn;
+  if (options.repetition % 2 === 1) {
+    treatment = await runTreatment(options, now);
+    control = await runControl(options, now);
+  } else {
+    control = await runControl(options, now);
+    treatment = await runTreatment(options, now);
+  }
   return {
     candidateApplied: treatment.candidateApplied,
+    controlFirstVisibleAtMs: control.firstVisibleAtMs,
     controlProviderStartedAtMs: control.providerStartedAtMs,
     controlSentAtMs: control.sentAtMs,
     controlStepStartedAtMs: control.stepStartedAtMs,
-    pathValid: true,
     repetition: options.repetition,
     scenario: options.scenario,
     summarySpans: treatment.summarySpans,
+    targetFirstVisibleAtMs: treatment.target.firstVisibleAtMs,
     targetProviderStartedAtMs: treatment.target.providerStartedAtMs,
     targetSentAtMs: treatment.target.sentAtMs,
     targetStepStartedAtMs: treatment.target.stepStartedAtMs,
@@ -52,16 +60,22 @@ async function runTreatment(
   readonly summarySpans: readonly RuntimeSummarySpan[];
   readonly target: MeasuredTurn;
 }> {
-  const trace = createRuntimeBlockModelTrace(options.model, now);
+  let sequence = 0;
+  const nextSequence = (): number => {
+    sequence += 1;
+    return sequence;
+  };
+  const trace = createRuntimeBlockModelTrace(options.model, now, nextSequence);
   const summarySpans: RuntimeSummaryTraceSpan[] = [];
   const activeSummaries = new Set<Promise<void>>();
   const summaryWaiters = new Map<number, () => void>();
-  const compaction = createObservedRuntimeCompaction(
-    summarySpans,
-    activeSummaries,
+  const compaction = createObservedRuntimeCompaction({
+    active: activeSummaries,
+    nextSequence,
     now,
-    () => summaryWaiters.get(summarySpans.length)?.()
-  );
+    onSummarySettled: () => summaryWaiters.get(summarySpans.length)?.(),
+    spans: summarySpans,
+  });
   const agent = await createAgent({ compaction, model: trace.model });
   const thread = agent.thread(
     `runtime-block-treatment-${options.scenario}-${options.repetition}-${crypto.randomUUID()}`
@@ -89,12 +103,12 @@ async function runTreatment(
       options.onTargetStepStart
     );
     await awaitRuntimeBlockSummaries(activeSummaries);
-    const path = validateRuntimeBlockPath(
-      summarySpans,
-      target.call.prompt,
-      target.providerStartedAtMs,
-      options.scenario
-    );
+    const path = validateRuntimeBlockPath({
+      providerStartedSequence: target.call.startedSequence,
+      scenario: options.scenario,
+      spans: summarySpans,
+      targetPrompt: target.call.prompt,
+    });
     return {
       candidateApplied: path.candidateApplied,
       summarySpans: path.spans,
@@ -109,7 +123,11 @@ async function runControl(
   options: RuntimeBlockTrialOptions,
   now: () => number
 ): Promise<MeasuredTurn> {
-  const trace = createRuntimeBlockModelTrace(options.model, now);
+  let sequence = 0;
+  const trace = createRuntimeBlockModelTrace(options.model, now, () => {
+    sequence += 1;
+    return sequence;
+  });
   const agent = await createAgent({ model: trace.model });
   const thread = agent.thread(
     `runtime-block-control-${options.scenario}-${options.repetition}-${crypto.randomUUID()}`
@@ -134,7 +152,7 @@ function targetUnits(scenario: RuntimeBlockScenario): number {
   if (scenario === "prepared-hit") {
     return 150;
   }
-  return scenario === "candidate-too-broad-fallback" ? 350 : 200;
+  return scenario === "candidate-fit-hard-block" ? 350 : 200;
 }
 
 function requiredSummariesBeforeTarget(scenario: RuntimeBlockScenario): number {
@@ -163,6 +181,7 @@ async function waitForSummaryCount(
 
 interface MeasuredTurn {
   readonly call: Awaited<ReturnType<RuntimeBlockModelTrace["waitForCall"]>>;
+  readonly firstVisibleAtMs: number;
   readonly providerStartedAtMs: number;
   readonly sentAtMs: number;
   readonly stepStartedAtMs: number;
@@ -178,6 +197,7 @@ async function measureTurn(
   const providerCall = trace.waitForCall("foreground", afterIndex);
   const sentAtMs = now();
   const turn = await send();
+  let firstVisibleAtMs: number | undefined;
   let stepStartedAtMs: number | undefined;
   let turnEnded = false;
   for await (const event of turn.events()) {
@@ -188,18 +208,31 @@ async function measureTurn(
       stepStartedAtMs = now();
       onStepStart?.();
     }
+    if (
+      firstVisibleAtMs === undefined &&
+      (event.type === "assistant-output" ||
+        event.type === "assistant-output-delta") &&
+      event.text.trim().length > 0
+    ) {
+      firstVisibleAtMs = now();
+    }
     if (event.type === "turn-end") {
       turnEnded = true;
     }
   }
   const call = await providerCall;
-  if (stepStartedAtMs === undefined || !turnEnded) {
+  if (
+    firstVisibleAtMs === undefined ||
+    stepStartedAtMs === undefined ||
+    !turnEnded
+  ) {
     throw new TypeError(
       "Runtime block-time trial did not complete one successful turn."
     );
   }
   return {
     call,
+    firstVisibleAtMs,
     providerStartedAtMs: call.startedAtMs,
     sentAtMs,
     stepStartedAtMs,

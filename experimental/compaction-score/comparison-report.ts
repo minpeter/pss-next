@@ -8,9 +8,6 @@ import {
   renderComparisonDetails,
 } from "./comparison-detail-metrics";
 
-// biome-ignore lint/performance/noBarrelFile: Preserve the established import path for CLI error handling.
-export { ComparisonArtifactError } from "./comparison-artifact";
-
 const METHODS = [
   { artifactKey: "pss", label: "PSS" },
   { artifactKey: "pi", label: "pi-coding-agent" },
@@ -18,10 +15,19 @@ const METHODS = [
 
 export function renderComparisonMarkdown(value: unknown): string {
   const artifact = parseComparisonArtifact(value);
+  const normalizedModel = artifact.model.replace(/[\r\n]+/g, " ");
+  const backtickRuns = normalizedModel.match(/`+/g) ?? [];
+  const modelFence = "`".repeat(
+    Math.max(1, ...backtickRuns.map((run) => run.length + 1))
+  );
+  const renderedModel =
+    backtickRuns.length === 0
+      ? `${modelFence}${normalizedModel}${modelFence}`
+      : `${modelFence} ${normalizedModel} ${modelFence}`;
   const lines = [
     "# Compaction comparison",
     "",
-    `Model: \`${artifact.model}\``,
+    `Model: ${renderedModel}`,
     "",
     "| Method | Valid | Invalid | Exact retention | Semantic retention | Summary ratio | Savings | Compaction latency |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
