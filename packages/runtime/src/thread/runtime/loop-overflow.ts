@@ -1,16 +1,18 @@
 import { ContextBudgetExceededError } from "../../llm/context-gate";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { ThreadState } from "../state/thread-state";
-import {
-  CompactionDeadlineExceededError,
-  compactThreadBlocking,
-} from "./auto-compaction-runner";
+import { CompactionDeadlineExceededError } from "./auto-compaction-episode";
+import { compactThreadBlocking } from "./auto-compaction-runner";
 import type {
   ThreadCompactionHandler,
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
 import type { ThreadExecutionOptions } from "./execution";
+import {
+  type NormalizedTurnError,
+  normalizeTurnError,
+} from "./turn-error-metadata";
 
 export async function runAgentLoopWithOverflowCompaction({
   compact,
@@ -60,14 +62,13 @@ export async function runAgentLoopWithOverflowCompaction({
     } catch (compactionError) {
       if (compactionError instanceof CompactionDeadlineExceededError) {
         throw new CompactionDeadlineExceededError({
-          cause: error,
+          cause: sanitizedOverflowTrigger(error),
           deadlineAt: compactionError.deadlineAt,
           deadlineMs: compactionError.deadlineMs,
           reason: compactionError.reason,
-          threadKey: compactionError.threadKey,
         });
       }
-      throw error;
+      throw compactionError;
     }
 
     if (!compacted) {
@@ -76,6 +77,18 @@ export async function runAgentLoopWithOverflowCompaction({
 
     return await runLoop();
   }
+}
+
+function sanitizedOverflowTrigger(error: unknown): NormalizedTurnError {
+  const normalized = normalizeTurnError(error);
+  return Object.freeze({
+    error: Object.freeze({
+      ...(normalized.error ?? {}),
+      category: "context-overflow" as const,
+      version: 1 as const,
+    }),
+    message: "The request exceeded the context limit.",
+  });
 }
 
 function isContextOverflowError(error: unknown, depth = 0): boolean {

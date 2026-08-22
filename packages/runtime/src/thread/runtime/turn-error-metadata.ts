@@ -6,6 +6,8 @@ import type {
 } from "../protocol/events";
 
 const CORRELATION_HEADER = /^x-[a-z0-9-]+-(?:correlation|request|trace)-id$/;
+const MAX_CORRELATION_IDS = 8;
+const MAX_CORRELATION_SOURCE_LENGTH = 64;
 const NETWORK_ERROR_CODES = new Set([
   "EAI_AGAIN",
   "ECONNREFUSED",
@@ -169,44 +171,58 @@ const safeMessageForCategory = (category: TurnErrorCategory): string => {
   }
 };
 
-const headerEntries = (
-  headers: Record<string, string> | undefined
-): readonly [string, string][] =>
-  Object.entries(headers ?? {}).map(([name, value]) => [
-    name.toLowerCase(),
-    value,
-  ]);
-
 const isCorrelationHeader = (name: string): boolean =>
-  name === "cf-ray" ||
-  name === "request-id" ||
-  name === "x-amzn-requestid" ||
-  name === "x-request-id" ||
-  CORRELATION_HEADER.test(name);
+  name.length <= MAX_CORRELATION_SOURCE_LENGTH &&
+  (name === "cf-ray" ||
+    name === "request-id" ||
+    name === "x-amzn-requestid" ||
+    name === "x-request-id" ||
+    CORRELATION_HEADER.test(name));
 
 const correlationIdsFromHeaders = (
   headers: Record<string, string> | undefined
 ): readonly TurnErrorCorrelationId[] => {
-  const correlationIds = headerEntries(headers)
-    .filter(([name]) => isCorrelationHeader(name))
-    .flatMap(([source, rawValue]) => {
-      const value = boundedMetadataString(rawValue);
-      return value === undefined ? [] : [{ source, value }];
-    });
+  const correlationIds: TurnErrorCorrelationId[] = [];
+  for (const [rawSource, rawValue] of Object.entries(headers ?? {})) {
+    const source = boundedMetadataString(
+      rawSource.toLowerCase(),
+      MAX_CORRELATION_SOURCE_LENGTH
+    );
+    if (source === undefined || !isCorrelationHeader(source)) {
+      continue;
+    }
+    const value = boundedMetadataString(rawValue);
+    if (value !== undefined) {
+      correlationIds.push({ source, value });
+    }
+    if (correlationIds.length === MAX_CORRELATION_IDS) {
+      break;
+    }
+  }
   correlationIds.sort((left, right) => left.source.localeCompare(right.source));
   return correlationIds;
+};
+
+const headerValue = (
+  headers: Record<string, string> | undefined,
+  target: string
+): string | undefined => {
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (name.toLowerCase() === target) {
+      return value;
+    }
+  }
 };
 
 const retryAfterMsFromHeaders = (
   headers: Record<string, string> | undefined
 ): number | undefined => {
-  const normalizedHeaders = new Map(headerEntries(headers));
-  const retryAfterMs = Number(normalizedHeaders.get("retry-after-ms"));
+  const retryAfterMs = Number(headerValue(headers, "retry-after-ms"));
   if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
     return Math.round(retryAfterMs);
   }
 
-  const retryAfter = normalizedHeaders.get("retry-after");
+  const retryAfter = headerValue(headers, "retry-after");
   if (retryAfter === undefined) {
     return;
   }

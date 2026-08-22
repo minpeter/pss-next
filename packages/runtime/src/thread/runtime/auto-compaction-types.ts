@@ -10,6 +10,11 @@ export type ThreadTokenEstimator = (
 
 export type AgentCompactionReason = "completed-turn" | "manual" | "overflow";
 
+export type AgentCompactionModelContextProvenance =
+  | "standard"
+  | "transformed"
+  | "unknown";
+
 export type ManualThreadCompactionResult =
   | { readonly status: "compacted" }
   | { readonly status: "empty" }
@@ -36,6 +41,8 @@ export interface AgentCompactionContext {
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens: number;
   readonly modelContext: readonly ModelMessage[];
+  /** Whether modelContext is proven to be the standard persisted projection. */
+  readonly modelContextProvenance: AgentCompactionModelContextProvenance;
   readonly reason: AgentCompactionReason;
   readonly signal: AbortSignal;
   readonly summarize: (
@@ -79,6 +86,9 @@ export interface AgentCompaction {
  * overflow-recovery paths, while 15s kept those paths at 100% provider start. */
 export const DEFAULT_COMPACTION_DEADLINE_MS = 15_000;
 
+/** Largest delay accepted by JavaScript timer implementations. */
+export const MAX_COMPACTION_DEADLINE_MS = 2_147_483_647;
+
 /** The thread-history estimator pinned by a compaction, when it provides one. */
 export function threadEstimatorForCompaction(
   compaction: AgentCompaction
@@ -113,7 +123,13 @@ export type ThreadCompactionFreshnessGuard = (
   input: ThreadCompactionInput
 ) => boolean;
 
+export interface ThreadCompactionHandlerContext {
+  readonly freshnessGuard: ThreadCompactionFreshnessGuard;
+  readonly markCommitStarted: () => void;
+  readonly signal: AbortSignal;
+}
+
 export type ThreadCompactionHandler = (
   input: ThreadCompactionInput,
-  freshnessGuard?: ThreadCompactionFreshnessGuard
+  context: ThreadCompactionHandlerContext
 ) => Promise<boolean>;

@@ -6,6 +6,6 @@ packages:
 
 ## Bound automatic compaction blocking
 
-Automatic compaction now keeps one bounded speculative replacement, applies a
-shared 15-second deadline to each compaction episode, surfaces typed overflow
-timeouts, and reports privacy-bounded lifecycle diagnostics.
+Bound compaction preparation with one shared deadline, safely reuse prepared
+summaries across retries and committed prefixes, and report privacy-bounded
+timeouts with sanitized overflow context.

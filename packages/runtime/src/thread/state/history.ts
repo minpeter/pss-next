@@ -53,10 +53,22 @@ export class ModelMessageHistory {
     return structuredClone(this.#compactions);
   }
 
-  recordCompaction(record: ThreadCompactionRecord): void {
-    this.#compactions.push(
-      validateThreadCompactionRecord(record, this.#modelHistory.length)
+  recordCompaction(record: ThreadCompactionRecord): ThreadCompactionRecord {
+    const stored = validateThreadCompactionRecord(
+      record,
+      this.#modelHistory.length
     );
+    this.#compactions.push(stored);
+    this.#triggerChange();
+    return stored;
+  }
+
+  removeCompaction(record: ThreadCompactionRecord): void {
+    const index = this.#compactions.indexOf(record);
+    if (index === -1) {
+      return;
+    }
+    this.#compactions.splice(index, 1);
     this.#triggerChange();
   }
 

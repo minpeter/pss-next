@@ -46,6 +46,11 @@ export interface PreparedThreadCommit {
   readonly next: ThreadStoreCommit;
 }
 
+interface ThreadCommitBoundaryOptions {
+  readonly markCommitStarted?: () => void;
+  readonly signal?: AbortSignal;
+}
+
 export class ThreadCommitConflictError extends Error {
   constructor(key: string) {
     super(`Thread ${JSON.stringify(key)} commit conflict`);
@@ -199,36 +204,40 @@ export class ThreadState {
     this.#history.rollback(snapshot);
   }
 
-  async compact(input: ThreadCompactionInput): Promise<void> {
+  async compact(
+    input: ThreadCompactionInput,
+    options: ThreadCommitBoundaryOptions = {}
+  ): Promise<void> {
     if (this.#machine.in("deleting", "deleted")) {
       return;
     }
 
-    const previous = {
-      compactions: this.#history.compactionSnapshot(),
-      history: this.#history.modelSnapshot(),
-      storeVersion: this.#storeVersion,
-    };
-    const record: ThreadCompactionRecord = {
-      endSeqExclusive: input.endSeqExclusive,
-      schemaVersion: 1,
-      startSeq: input.startSeq,
-      summary: { content: input.summary, role: "system" },
-    };
-    this.#history.recordCompaction(record);
-    try {
-      await this.commit();
-    } catch (error) {
-      if (!(error instanceof ThreadCommitConflictError)) {
-        this.#storeVersion = previous.storeVersion;
-        this.#history = new ModelMessageHistory(
-          previous.history,
-          undefined,
-          previous.compactions
-        );
+    await this.#enqueueWrite(async () => {
+      if (this.#machine.in("deleting", "deleted")) {
+        return;
       }
-      throw error;
-    }
+
+      const record = this.#history.recordCompaction({
+        endSeqExclusive: input.endSeqExclusive,
+        schemaVersion: 1,
+        startSeq: input.startSeq,
+        summary: { content: input.summary, role: "system" },
+      });
+      try {
+        await this.#commitSnapshotWith(
+          async (commit) =>
+            await this.#persistence.store.commit(commit.key, commit.next, {
+              expectedVersion: commit.expectedVersion,
+            }),
+          options
+        );
+      } catch (error) {
+        if (!(error instanceof ThreadCommitConflictError)) {
+          this.#history.removeCompaction(record);
+        }
+        throw error;
+      }
+    }, options);
   }
 
   async commit(): Promise<void> {
@@ -241,38 +250,20 @@ export class ThreadState {
   }
 
   async commitWith(
-    commit: (input: PreparedThreadCommit) => Promise<CommitResult>
+    commit: (input: PreparedThreadCommit) => Promise<CommitResult>,
+    options: ThreadCommitBoundaryOptions = {}
   ): Promise<void> {
     if (this.#machine.in("deleting", "deleted")) {
       return;
     }
 
-    const snapshot = this.#history.modelSnapshot();
-    const compactions = this.#history.compactionSnapshot();
     await this.#enqueueWrite(async () => {
       if (this.#machine.in("deleting", "deleted")) {
         return;
       }
 
-      const result = await commit({
-        expectedVersion: this.#storeVersion ?? null,
-        key: this.#persistence.key,
-        next: {
-          state: encodeThreadSnapshot(
-            snapshot,
-            compactions,
-            this.#appliedMigrations
-          ),
-        },
-      });
-
-      if (!result.ok) {
-        await this.#replaceWithStoredThread();
-        throw new ThreadCommitConflictError(this.#persistence.key);
-      }
-
-      this.#storeVersion = result.version;
-    });
+      await this.#commitSnapshotWith(commit, options);
+    }, options);
   }
 
   async delete(): Promise<void> {
@@ -321,8 +312,43 @@ export class ThreadState {
     return await del.promise;
   }
 
-  #enqueueWrite(operation: () => Promise<void>): Promise<void> {
-    const next = this.#writeQueue.then(operation, operation);
+  async #commitSnapshotWith(
+    commit: (input: PreparedThreadCommit) => Promise<CommitResult>,
+    options: ThreadCommitBoundaryOptions
+  ): Promise<void> {
+    const snapshot = this.#history.modelSnapshot();
+    const compactions = this.#history.compactionSnapshot();
+    const prepared: PreparedThreadCommit = {
+      expectedVersion: this.#storeVersion ?? null,
+      key: this.#persistence.key,
+      next: {
+        state: encodeThreadSnapshot(
+          snapshot,
+          compactions,
+          this.#appliedMigrations
+        ),
+      },
+    };
+    options.markCommitStarted?.();
+    const result = await commit(prepared);
+
+    if (!result.ok) {
+      await this.#replaceWithStoredThread();
+      throw new ThreadCommitConflictError(this.#persistence.key);
+    }
+
+    this.#storeVersion = result.version;
+  }
+
+  #enqueueWrite(
+    operation: () => Promise<void>,
+    options: ThreadCommitBoundaryOptions = {}
+  ): Promise<void> {
+    const run = async () => {
+      options.signal?.throwIfAborted();
+      await operation();
+    };
+    const next = this.#writeQueue.then(run, run);
     this.#writeQueue = next.catch(() => undefined);
     return next;
   }

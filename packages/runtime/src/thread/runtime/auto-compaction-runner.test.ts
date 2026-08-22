@@ -19,8 +19,8 @@ import {
   type RuntimeAttachmentReference,
 } from "../input/attachments";
 import { ThreadState } from "../state/thread-state";
+import { CompactionDeadlineExceededError } from "./auto-compaction-episode";
 import {
-  CompactionDeadlineExceededError,
   compactThreadBlocking,
   compactThreadManually,
   scheduleThreadCompaction,
@@ -136,7 +136,7 @@ describe("compaction runner concurrency", () => {
     );
   });
 
-  it("does not throw from scheduleThreadCompaction when deadlineMs throws", async () => {
+  it("falls back when scheduleThreadCompaction deadlineMs throws", async () => {
     const state = await stateWithHistory();
     const before = state.modelSnapshot();
     const compaction = Object.assign(
@@ -161,7 +161,9 @@ describe("compaction runner concurrency", () => {
       })
     ).resolves.toBeUndefined();
     expect(state.modelSnapshot()).toEqual(before);
-    expect(state.compactionSnapshot()).toEqual([]);
+    expect(state.compactionSnapshot()).toMatchObject([
+      { summary: { content: "summary", role: "system" } },
+    ]);
   });
 
   it("does not throw from scheduleThreadCompaction when deadlineMs is invalid", async () => {
@@ -222,7 +224,7 @@ describe("compaction runner concurrency", () => {
     );
   });
 
-  it("attaches the original overflow as cause when overflow compaction times out", async () => {
+  it("attaches sanitized overflow metadata when overflow compaction times out", async () => {
     vi.useFakeTimers();
     const state = await stateWithHistory();
     const overflow = new Error("context_length_exceeded: too many tokens");
@@ -254,7 +256,10 @@ describe("compaction runner concurrency", () => {
         throw new Error("Expected a CompactionDeadlineExceededError.");
       }
       expect(failure.reason).toBe("overflow");
-      expect(failure.cause).toBe(overflow);
+      expect(failure.cause).toEqual({
+        error: { category: "context-overflow", version: 1 },
+        message: "The request exceeded the context limit.",
+      });
     } finally {
       vi.useRealTimers();
     }
@@ -298,7 +303,9 @@ describe("compaction runner concurrency", () => {
       }),
       { deadlineMs: () => 1 }
     ) satisfies AgentCompaction;
-    const compact: ThreadCompactionHandler = async () => {
+    const compact: ThreadCompactionHandler = async (_input, context) => {
+      context.signal.throwIfAborted();
+      context.markCommitStarted();
       commitStarted.resolve();
       await releaseCommit.promise;
       return true;
@@ -333,13 +340,14 @@ describe("compaction runner concurrency", () => {
     });
     const options = { compaction, model, state, threadKey: "same-key" };
 
-    scheduleThreadCompaction(options);
-    scheduleThreadCompaction(options);
+    const first = scheduleThreadCompaction(options);
+    const second = scheduleThreadCompaction(options);
     await started.promise;
 
     expect(compaction).toHaveBeenCalledTimes(1);
     release.resolve();
-    await vi.waitFor(() => expect(compaction).toHaveBeenCalledTimes(2));
+    await Promise.all([first, second]);
+    expect(compaction).toHaveBeenCalledTimes(2);
   });
 
   it("waits for background preparation then performs overflow fallback", async () => {
@@ -356,10 +364,12 @@ describe("compaction runner concurrency", () => {
       }
       return { endSeqExclusive: 2, startSeq: 0, summary: "summary" };
     };
-    const compact = vi.fn(async (input, guard) => {
-      if (!guard?.(input)) {
+    const compact = vi.fn<ThreadCompactionHandler>(async (input, context) => {
+      if (!context.freshnessGuard(input)) {
         return false;
       }
+      context.signal.throwIfAborted();
+      context.markCommitStarted();
       await state.compact(input);
       return true;
     });
@@ -375,7 +385,7 @@ describe("compaction runner concurrency", () => {
     expect(compact).toHaveBeenCalledTimes(1);
   });
 
-  it("does not invoke overflow after its deadline expires behind background work", async () => {
+  it("starts the overflow deadline after background work", async () => {
     vi.useFakeTimers();
     const state = await stateWithHistory();
     const backgroundStarted = createDeferred();
@@ -400,20 +410,17 @@ describe("compaction runner concurrency", () => {
       scheduleThreadCompaction(options);
       await backgroundStarted.promise;
       const blocking = compactThreadBlocking(options);
-      const rejected = expect(blocking).rejects.toBeInstanceOf(
-        CompactionDeadlineExceededError
-      );
       await vi.advanceTimersByTimeAsync(1);
       releaseBackground.resolve();
 
-      await rejected;
-      expect(reasons).toEqual(["completed-turn"]);
+      await expect(blocking).resolves.toBe(false);
+      expect(reasons).toEqual(["completed-turn", "overflow"]);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("re-evaluates overflow after a completed-turn flight commits", async () => {
+  it("uses a committed completed-turn flight for overflow", async () => {
     const state = await stateWithHistory();
     const started = createDeferred();
     const release = createDeferred();
@@ -427,10 +434,12 @@ describe("compaction runner concurrency", () => {
       }
       return;
     };
-    const compact: ThreadCompactionHandler = async (input, guard) => {
-      if (!guard?.(input)) {
+    const compact: ThreadCompactionHandler = async (input, context) => {
+      if (!context.freshnessGuard(input)) {
         return false;
       }
+      context.signal.throwIfAborted();
+      context.markCommitStarted();
       await state.compact(input);
       return true;
     };
@@ -442,7 +451,7 @@ describe("compaction runner concurrency", () => {
     release.resolve();
 
     await expect(blocking).resolves.toBe(true);
-    expect(reasons).toEqual(["completed-turn", "overflow"]);
+    expect(reasons).toEqual(["completed-turn"]);
   });
 
   it("rejects a callback result when the compaction baseline changes before commit", async () => {
@@ -452,16 +461,9 @@ describe("compaction runner concurrency", () => {
       startSeq: 0,
       summary: "candidate",
     });
-    const compact = async (
-      input: {
-        endSeqExclusive: number;
-        startSeq: number;
-        summary: string;
-      },
-      guard?: (candidate: typeof input) => boolean
-    ): Promise<boolean> => {
+    const compact: ThreadCompactionHandler = async (input, context) => {
       await state.compact({ ...input, summary: "newer baseline" });
-      return guard?.(input) ?? true;
+      return context.freshnessGuard(input);
     };
 
     await expect(
@@ -590,13 +592,13 @@ describe("compaction runner concurrency", () => {
           contextTokenMeter,
           contextTokens: { measurementProfile },
         },
-        latestContextTransform: () => ({
-          input: [{ content: "before", role: "user" }],
-          output: [
-            { content: "before", role: "user" },
-            { content: "added", role: "user" },
-          ],
-        }),
+        latestContextTransform: () => {
+          const input = state.modelContextSnapshot();
+          return {
+            input,
+            output: [...input, { content: "added", role: "user" }],
+          };
+        },
         state,
         threadKey: "thread",
       })
@@ -629,17 +631,17 @@ describe("compaction runner concurrency", () => {
       maxInputTokens: 1_000_000,
     });
 
-    scheduleThreadCompaction({
+    await scheduleThreadCompaction({
       compaction,
-      latestContextTransform: () => ({
-        input: [],
-        output: [attachmentMessage(ref)],
-      }),
+      latestContextTransform: () => {
+        const input = state.modelContextSnapshot();
+        return { input, output: [...input, attachmentMessage(ref)] };
+      },
       model: { ...model, attachmentStore },
       state,
       threadKey: "thread",
     });
 
-    await vi.waitFor(() => expect(hydratedBytes).toBe(8000));
+    expect(hydratedBytes).toBe(8000);
   });
 });

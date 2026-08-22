@@ -160,12 +160,13 @@ export class AgentThread {
               threadKey: this.#context.threadKey,
             });
             const compacted = await compactThreadManually({
-              compact: (compactionInput, guard) =>
+              compact: (compactionInput, context) =>
                 this.#context.events.compact(
                   this.#context.state,
                   compactionInput,
-                  guard
+                  context
                 ),
+              deadlineMs: this.#context.execution.compaction?.deadlineMs,
               latestContextTransform: transforms.latestContextTransform,
               model: this.#context.model,
               signal: input?.signal ?? new AbortController().signal,

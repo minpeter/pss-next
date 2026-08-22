@@ -1194,8 +1194,11 @@ There is a single host contract: `AgentHost` (`HostStore` + `HostScheduler` + op
 For store/alarm-only DO tooling use `createCloudflareStorageHost`.
 
 Speculative compaction prepares a summary in the background before promoting it.
-Each episode is bounded by `DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds) unless
-the policy supplies `deadlineMs`:
+Each episode has one absolute pre-commit deadline:
+`DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds), unless the policy supplies
+`deadlineMs`. The deadline covers preparation, summaries, retries, transforms,
+hooks, and freshness checks. Once the durable state mutation begins, the
+runtime awaits its atomic commit or rollback instead of abandoning it:
 
 ```ts
 const agent = await createAgent({
@@ -1253,9 +1256,10 @@ await thread.compact({ instructions: "Prioritize unresolved decisions." });
 
 Manual compaction returns a `compacted`, `empty`, or `skipped` status and rejects
 while a turn is active. `skipped` distinguishes a hook cancellation or freshness
-race from empty history. Passing an explicit `ThreadCompactionInput` remains
-available for hosts that already produced a validated summary and returns the
-hook dispatcher's boolean commit decision.
+race from empty history. It inherits the configured compaction policy's
+`deadlineMs`, with the same 15-second fallback. Passing an explicit
+`ThreadCompactionInput` remains available for hosts that already produced a
+validated summary and returns the hook dispatcher's boolean commit decision.
 
 The context gate estimates the prompt immediately before `generateText`, calling
 the compaction's `maxInputTokens` property on every request. With `onOverflow: "error"`,

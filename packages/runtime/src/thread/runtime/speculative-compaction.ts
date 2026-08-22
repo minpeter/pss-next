@@ -2,22 +2,15 @@ import {
   estimateModelMessagesTokens,
   type ModelContextTokenEstimateInput,
 } from "../../llm/context-gate";
-import {
-  compactionContextForModel,
-  compactionContextMessage,
-} from "../state/context";
 import type { ThreadCompactionInput } from "../state/thread-state";
-import {
-  latestPrefixCompaction,
-  selectAutoCompactionRange,
-} from "./auto-compaction-range";
 import {
   type AgentCompaction,
   type AgentCompactionContext,
   DEFAULT_COMPACTION_DEADLINE_MS,
+  MAX_COMPACTION_DEADLINE_MS,
   type ThreadTokenEstimator,
 } from "./auto-compaction-types";
-import { equalSnapshot } from "./snapshot-equal";
+import { SpeculativeCompactionCandidates } from "./speculative-compaction-candidates";
 
 export interface SpeculativeCompactionOptions {
   readonly deadlineMs?: number;
@@ -26,17 +19,6 @@ export interface SpeculativeCompactionOptions {
   readonly prepareRatio?: number;
   readonly promoteRatio?: number;
   readonly retainRatio?: number;
-}
-
-interface Candidate {
-  readonly compactions: readonly unknown[];
-  readonly input: {
-    readonly startSeq: number;
-    readonly endSeqExclusive: number;
-    readonly summary: string;
-  };
-  readonly prefix: readonly unknown[];
-  replacementAttempted: boolean;
 }
 
 /**
@@ -67,9 +49,15 @@ export function speculativeCompaction(
       "speculativeCompaction: maxInputTokens must be a positive integer."
     );
   }
-  if (!(Number.isSafeInteger(deadlineMs) && deadlineMs > 0)) {
+  if (
+    !(
+      Number.isSafeInteger(deadlineMs) &&
+      deadlineMs > 0 &&
+      deadlineMs <= MAX_COMPACTION_DEADLINE_MS
+    )
+  ) {
     throw new TypeError(
-      "speculativeCompaction: deadlineMs must be a positive integer."
+      `speculativeCompaction: deadlineMs must be a positive integer no greater than ${MAX_COMPACTION_DEADLINE_MS}.`
     );
   }
   if (prepare >= promote) {
@@ -79,49 +67,22 @@ export function speculativeCompaction(
   }
   const customEstimate = options.estimateTokens;
   const estimate = customEstimate ?? estimateModelMessagesTokens;
-  const candidates = new WeakMap<object, Candidate>();
+  const candidates = new SpeculativeCompactionCandidates({
+    estimate,
+    max,
+    retain,
+  });
   const compact = async (
     context: AgentCompactionContext
   ): Promise<ThreadCompactionInput | undefined> => {
     const tokens = context.estimatedContextTokens;
-    const candidate = getFreshCandidate(candidates, context);
     if (tokens >= Math.floor(max * promote) || context.reason === "overflow") {
-      return await promoteCandidate({
-        candidate,
-        candidates,
-        context,
-        estimate,
-        max,
-        retain,
-      });
+      return await candidates.promote(context);
     }
     if (tokens < Math.floor(max * prepare)) {
       return;
     }
-    if (candidate) {
-      if (candidate.replacementAttempted) {
-        return;
-      }
-      candidate.replacementAttempted = true;
-      await prepareCandidate({
-        candidates,
-        context,
-        estimate,
-        expectedCandidate: candidate,
-        max,
-        replacementAttempted: true,
-        retain,
-      });
-      return;
-    }
-    await prepareCandidate({
-      candidates,
-      context,
-      estimate,
-      max,
-      replacementAttempted: false,
-      retain,
-    });
+    await candidates.prepare(context);
     return;
   };
   return Object.assign(compact, {
@@ -141,167 +102,5 @@ export function speculativeCompaction(
       : {}),
     maxInputTokens: () => max,
     onOverflow: "compact" as const,
-  });
-}
-
-async function prepareCandidate({
-  candidates,
-  context,
-  estimate,
-  expectedCandidate,
-  max,
-  replacementAttempted,
-  retain,
-}: {
-  readonly candidates: WeakMap<object, Candidate>;
-  readonly context: AgentCompactionContext;
-  readonly estimate: ThreadTokenEstimator;
-  readonly expectedCandidate?: Candidate;
-  readonly max: number;
-  readonly replacementAttempted: boolean;
-  readonly retain: number;
-}): Promise<void> {
-  const range = selectRange(context, estimate, max, retain);
-  if (!range) {
-    return;
-  }
-  const input = { ...range, summary: await context.summarize(range) };
-  if (!input.summary.trim()) {
-    return;
-  }
-  if (
-    expectedCandidate &&
-    candidates.get(context.threadIdentity) !== expectedCandidate
-  ) {
-    return;
-  }
-  candidates.set(context.threadIdentity, {
-    compactions: structuredClone(context.compactions),
-    input,
-    prefix: structuredClone(context.history.slice(0, range.endSeqExclusive)),
-    replacementAttempted,
-  });
-}
-
-async function promoteCandidate({
-  candidate,
-  candidates,
-  context,
-  estimate,
-  max,
-  retain,
-}: {
-  readonly candidate: Candidate | undefined;
-  readonly candidates: WeakMap<object, Candidate>;
-  readonly context: AgentCompactionContext;
-  readonly estimate: ThreadTokenEstimator;
-  readonly max: number;
-  readonly retain: number;
-}) {
-  candidates.delete(context.threadIdentity);
-  const currentRange = selectRange(context, estimate, max, retain);
-  const fit =
-    candidate !== undefined &&
-    candidateFits({ candidate, context, estimate, max });
-  const needsBroaderOverflowSummary =
-    context.reason === "overflow" &&
-    candidate !== undefined &&
-    currentRange !== undefined &&
-    currentRange.endSeqExclusive > candidate.input.endSeqExclusive &&
-    !fit;
-  if (candidate && fit && !needsBroaderOverflowSummary) {
-    return candidate.input;
-  }
-  const range = currentRange;
-  if (!range) {
-    return;
-  }
-  const summary = await context.summarize(range);
-  return summary.trim() ? { ...range, summary } : undefined;
-}
-
-function candidateFits({
-  candidate,
-  context,
-  estimate,
-  max,
-}: {
-  readonly candidate: Candidate;
-  readonly context: AgentCompactionContext;
-  readonly estimate: ThreadTokenEstimator;
-  readonly max: number;
-}): boolean {
-  if (candidate.input.startSeq !== 0) {
-    return false;
-  }
-  const prefix = latestPrefixCompaction(context.compactions);
-  if (
-    prefix !== undefined &&
-    candidate.input.endSeqExclusive < prefix.endSeqExclusive
-  ) {
-    return false;
-  }
-  const projected =
-    prefix === undefined
-      ? context.history
-      : [
-          compactionContextForModel(compactionContextMessage(prefix)),
-          ...context.history.slice(prefix.endSeqExclusive),
-        ];
-  if (!equalSnapshot(context.modelContext, projected)) {
-    return false;
-  }
-  const wrapper = compactionContextForModel({
-    endSeqExclusive: candidate.input.endSeqExclusive,
-    role: "compaction",
-    startSeq: candidate.input.startSeq,
-    summary: candidate.input.summary,
-  });
-  const tail = context.estimatedHistory.slice(candidate.input.endSeqExclusive);
-  const tokensFor = context.estimateTokens ?? estimate;
-  const historyTokens = context.estimatedHistoryMessageTokens
-    ? tokensFor([wrapper]) +
-      context.estimatedHistoryMessageTokens
-        .slice(candidate.input.endSeqExclusive)
-        .reduce((total, tokens) => total + tokens, 0)
-    : tokensFor([wrapper, ...tail]);
-  return context.instructionsTokens + historyTokens <= max;
-}
-
-function getFreshCandidate(
-  candidates: WeakMap<object, Candidate>,
-  context: AgentCompactionContext
-): Candidate | undefined {
-  const candidate = candidates.get(context.threadIdentity);
-  if (
-    candidate &&
-    equalSnapshot(
-      candidate.prefix,
-      context.history.slice(0, candidate.input.endSeqExclusive)
-    ) &&
-    equalSnapshot(candidate.compactions, context.compactions)
-  ) {
-    return candidate;
-  }
-  candidates.delete(context.threadIdentity);
-  return;
-}
-
-function selectRange(
-  context: AgentCompactionContext,
-  estimate: ThreadTokenEstimator,
-  max: number,
-  retain: number
-) {
-  return selectAutoCompactionRange({
-    compactions: context.compactions,
-    history: context.estimatedHistory,
-    instructionsTokens: context.instructionsTokens,
-    messageTokenCosts: context.estimatedHistoryMessageTokens,
-    policy: {
-      estimateTokens: context.estimateTokens ?? estimate,
-      retainTokens: Math.floor(max * retain),
-      triggerTokens: 1,
-    },
   });
 }

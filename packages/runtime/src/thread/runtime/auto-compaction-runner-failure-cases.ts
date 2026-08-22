@@ -7,7 +7,7 @@ import {
   createDeferred,
 } from "../../testing/test-fixtures";
 import { ThreadState } from "../state/thread-state";
-import type { CompactionDeadlineExceededError } from "./auto-compaction-runner";
+import type { CompactionDeadlineExceededError } from "./auto-compaction-episode";
 import {
   compactThreadBlocking,
   scheduleThreadCompaction,
@@ -62,7 +62,6 @@ describe("compaction runner failure recovery", () => {
         deadlineMs: 1,
         name: "CompactionDeadlineExceededError",
         reason: "overflow",
-        threadKey: "overflow-deadline",
       } satisfies Partial<CompactionDeadlineExceededError>);
       await callbackStarted.promise;
       await vi.advanceTimersByTimeAsync(1);

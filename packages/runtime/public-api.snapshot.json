@@ -8,6 +8,7 @@
       "type AgentCompactionContext",
       "type AgentCompactionDecision",
       "type AgentCompactionEvent",
+      "type AgentCompactionModelContextProvenance",
       "type AgentCompactionReason",
       "type AgentEvent",
       "type AgentEventListener",
@@ -33,6 +34,7 @@
       "type AssistantOutputDelta",
       "type AssistantReasoning",
       "type AssistantReasoningDelta",
+      "type AutoCompactionDiagnosticMetadata",
       "type CommitResult",
       "type CommittedThreadMigrations",
       "type CompactionContextMessage",
@@ -536,10 +538,7 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": [
-      "type SpawnPssClientOptions",
-      "value spawnPssClient"
-    ],
+    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",

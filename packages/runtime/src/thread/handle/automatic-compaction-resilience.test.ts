@@ -112,7 +112,7 @@ describe("Agent thread automatic compaction resilience", () => {
     store.conflictOnCommit = 5;
     const compactionSettled = createDeferred();
     store.onConflict = () => compactionSettled.resolve();
-    const seenHistory: ModelMessage[][] = [];
+    let recoveryHistory: ModelMessage[] | undefined;
     const agent = agentWithCompaction({
       compaction: tokenCompactionPolicy({ retain: 20, trigger: 40 }),
       host: hostWithThreads(store),
@@ -121,15 +121,13 @@ describe("Agent thread automatic compaction resilience", () => {
           .filter((message) => message.role === "user")
           .at(-1);
         if (lastUser?.content === "old") {
-          seenHistory.push([...history]);
           return [assistantMessage("FIRST")];
         }
         if (lastUser?.content === "tail") {
-          seenHistory.push([...history]);
           return [assistantMessage("SECOND")];
         }
         if (lastUser?.content === "after conflict") {
-          seenHistory.push([...history]);
+          recoveryHistory = [...history];
           return [assistantMessage("RECOVERED")];
         }
         return [assistantMessage("summary loses conflict")];
@@ -154,18 +152,13 @@ describe("Agent thread automatic compaction resilience", () => {
 
     await collect(await thread.send("after conflict"));
 
-    const recoveredHistory = seenHistory.find(
-      (history) =>
-        history.filter((message) => message.role === "user").at(-1)?.content ===
-        "after conflict"
-    );
-    expect(recoveredHistory).toContainEqual(
+    expect(recoveryHistory).toContainEqual(
       expect.objectContaining({ content: "tail", role: "user" })
     );
-    expect(recoveredHistory).toContainEqual(
+    expect(recoveryHistory).toContainEqual(
       expect.objectContaining({ content: "SECOND", role: "assistant" })
     );
-    expect(recoveredHistory).toContainEqual(
+    expect(recoveryHistory).toContainEqual(
       expect.objectContaining({ content: "after conflict", role: "user" })
     );
   });

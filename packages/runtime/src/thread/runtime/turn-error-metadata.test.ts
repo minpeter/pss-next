@@ -78,4 +78,36 @@ describe("normalizeTurnError", () => {
       expect(serialized).not.toContain(forbidden);
     }
   });
+
+  it("bounds retained correlation metadata", () => {
+    const responseHeaders = Object.fromEntries([
+      ...Array.from({ length: 12 }, (_, index) => [
+        `x-provider-${index}-request-id`,
+        `request-${index}`,
+      ]),
+      [`x-${"a".repeat(80)}-request-id`, "oversized-source"],
+    ]);
+    const providerError = new APICallError({
+      isRetryable: true,
+      message: "provider failure",
+      requestBodyValues: {},
+      responseHeaders,
+      statusCode: 500,
+      url: "https://provider.example/v1/chat/completions",
+    });
+
+    const correlationIds =
+      normalizeTurnError(providerError).error?.correlationIds;
+
+    expect(correlationIds).toHaveLength(8);
+    expect(correlationIds).toSatisfy(
+      (
+        entries: readonly { readonly source: string; readonly value: string }[]
+      ) =>
+        entries.every(
+          ({ source, value }) => source.length <= 64 && value.length <= 256
+        )
+    );
+    expect(JSON.stringify(correlationIds)).not.toContain("oversized-source");
+  });
 });

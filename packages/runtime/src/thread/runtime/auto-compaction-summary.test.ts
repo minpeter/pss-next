@@ -136,7 +136,7 @@ describe("automatic compaction summary contract", () => {
 
     const summary = await summarizeCompactionRange({
       history: [
-        { content: "context ".repeat(2000), role: "user" },
+        { content: "context ".repeat(100), role: "user" },
         {
           content: [
             {

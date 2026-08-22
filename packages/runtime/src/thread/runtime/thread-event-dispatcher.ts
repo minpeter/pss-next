@@ -16,6 +16,7 @@ import type {
 } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import type { ThreadCompactionInput, ThreadState } from "../state/thread-state";
+import type { ThreadCompactionHandlerContext } from "./auto-compaction-types";
 import { interceptAgentEvent } from "./event-interception";
 
 interface ThreadEventDispatcherOptions {
@@ -167,23 +168,29 @@ export class ThreadEventDispatcher {
   async compact(
     state: ThreadState,
     input: ThreadCompactionInput,
-    freshnessGuard?: (input: ThreadCompactionInput) => boolean
+    context?: ThreadCompactionHandlerContext
   ): Promise<boolean> {
+    const signal = context?.signal ?? this.#activeSignal();
     const decision = await this.#hookRuntime.beforeCompaction(
       this.#threadKey,
       input,
       this.#history(),
-      this.#activeSignal()
+      signal
     );
+    signal.throwIfAborted();
     if (decision?.action === "cancel") {
       return false;
     }
     const compactedInput =
       decision?.action === "transform" ? decision.input : input;
-    if (freshnessGuard && !freshnessGuard(compactedInput)) {
+    if (context && !context.freshnessGuard(compactedInput)) {
       return false;
     }
-    await state.compact(compactedInput);
+    signal.throwIfAborted();
+    await state.compact(compactedInput, {
+      markCommitStarted: context?.markCommitStarted,
+      signal,
+    });
     return true;
   }
 
