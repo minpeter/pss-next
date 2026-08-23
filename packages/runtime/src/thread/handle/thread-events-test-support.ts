@@ -15,10 +15,12 @@ export function hostWithOneUsageAppendFailure(
   onFailure: () => void
 ): AgentHost {
   let shouldFail = true;
+  const deleteThread = base.store.deleteThread?.bind(base.store);
   return {
     ...base,
     store: {
       checkpoints: base.store.checkpoints,
+      ...(deleteThread === undefined ? {} : { deleteThread }),
       events: base.store.events,
       inputs: base.store.inputs,
       notifications: base.store.notifications,
@@ -57,10 +59,12 @@ export function hostWithOneUsageAppendFailure(
 }
 
 export function hostWithTurnErrorAppendFailure(base: AgentHost): AgentHost {
+  const deleteThread = base.store.deleteThread?.bind(base.store);
   return {
     ...base,
     store: {
       checkpoints: base.store.checkpoints,
+      ...(deleteThread === undefined ? {} : { deleteThread }),
       events: base.store.events,
       inputs: base.store.inputs,
       notifications: base.store.notifications,

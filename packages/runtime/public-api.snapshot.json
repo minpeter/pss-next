@@ -270,6 +270,7 @@
       "type NotificationRecord",
       "type NotificationStatus",
       "type NotificationWriteResult",
+      "type RecoverThreadInputClaimsOptions",
       "type RecoverThreadInputClaimsResult",
       "type ResumeThreadOptions",
       "type RuntimeToolExecutionCheckpoint",

@@ -30,6 +30,7 @@ export class DurableInputRecoveryState extends RecoveryState {}
 export function recoverThreadDurableInputClaims(options: {
   readonly allowOwned?: boolean;
   readonly executionHost: AgentHost | undefined;
+  readonly signal?: AbortSignal;
   readonly state: DurableInputRecoveryState;
   readonly threadKey: string;
 }): Promise<void> {

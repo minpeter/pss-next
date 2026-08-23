@@ -150,6 +150,47 @@ describe("compaction runner concurrency", () => {
     ).resolves.toBe(false);
   });
 
+  it("preserves an active zero-cost fixed prompt during preparation", async () => {
+    const state = await stateWithHistory();
+    const contextTokenMeter = new ContextTokenMeter(
+      new ContextTokenCalibrationRegistry()
+    );
+    const measurementProfile = {
+      measureMessages: (messages: readonly ModelMessage[]) =>
+        messages.map(() => 10),
+      measurePrompt: () => ({
+        fixedFingerprint: "zero-fixed",
+        fixedUnits: 0,
+        messageUnits: [10, 10, 10],
+        totalUnits: 30,
+      }),
+    };
+    contextTokenMeter.begin({
+      attemptId: "attempt",
+      fixedFingerprint: "zero-fixed",
+      measurement: measurementProfile.measurePrompt(),
+    });
+    const compaction: AgentCompaction = (context): undefined => {
+      expect(context.instructionsTokens).toBe(0);
+      expect(context.estimatedContextTokens).toBe(30);
+      return;
+    };
+
+    await expect(
+      compactThreadBlocking({
+        compaction,
+        model: {
+          ...model,
+          contextTokenMeter,
+          contextTokens: { measurementProfile },
+          instructions: "zero-cost instructions",
+        },
+        state,
+        threadKey: "thread",
+      })
+    ).resolves.toBe(false);
+  });
+
   it("hydrates transform-added attachments before estimating overhead", async () => {
     const attachmentStore = new MemoryAttachmentStore();
     const ref = await attachmentStore.put({

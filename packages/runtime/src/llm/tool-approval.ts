@@ -1,5 +1,43 @@
 import type { ToolSet } from "ai";
 
+function snapshotToolDefinition(
+  toolName: string,
+  toolDefinition: unknown
+): unknown {
+  if (
+    (typeof toolDefinition !== "object" &&
+      typeof toolDefinition !== "function") ||
+    toolDefinition === null
+  ) {
+    return toolDefinition;
+  }
+
+  const snapshot: Record<PropertyKey, unknown> = {};
+  for (const property of Reflect.ownKeys(toolDefinition)) {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      toolDefinition,
+      property
+    );
+    if (descriptor === undefined) {
+      continue;
+    }
+    if (property === "needsApproval") {
+      throw new TypeError(
+        `Agent tools.${toolName}.needsApproval is not supported. ` +
+          "Use the pss tool.call.before checkpoint recovery hook instead of AI SDK tool approval."
+      );
+    }
+    if (!(descriptor.enumerable && "value" in descriptor)) {
+      continue;
+    }
+    Object.defineProperty(snapshot, property, {
+      enumerable: true,
+      value: descriptor.value,
+    });
+  }
+  return snapshot;
+}
+
 export function assertNoUnsupportedToolApproval(tools: unknown): void {
   snapshotToolsWithoutUnsupportedApproval(tools);
 }
@@ -26,21 +64,10 @@ export function snapshotToolsWithoutUnsupportedApproval(
     if (!("value" in descriptor)) {
       throw new TypeError(`Agent tools.${toolName} must be a data property.`);
     }
-    const toolDefinition = descriptor.value;
-    if (
-      (typeof toolDefinition === "object" ||
-        typeof toolDefinition === "function") &&
-      toolDefinition !== null &&
-      "needsApproval" in toolDefinition
-    ) {
-      throw new TypeError(
-        `Agent tools.${toolName}.needsApproval is not supported. ` +
-          "Use the pss tool.call.before checkpoint recovery hook instead of AI SDK tool approval."
-      );
-    }
+    const toolDefinition: unknown = descriptor.value;
     Object.defineProperty(snapshot, toolName, {
       enumerable: true,
-      value: toolDefinition,
+      value: snapshotToolDefinition(toolName, toolDefinition),
     });
   }
   return snapshot;

@@ -6,6 +6,7 @@ import {
 } from "../state/context";
 import { equalSnapshot } from "../state/snapshot-equal";
 import type { ThreadCompactionInput } from "../state/thread-state";
+import { deepFreeze } from "./auto-compaction-deep-freeze";
 import type { AutoCompactionEpisodeOptions } from "./auto-compaction-episode";
 import {
   buildCompactionSummaryInstructions,
@@ -40,9 +41,8 @@ export async function prepareAutoCompaction(
   const { state } = options;
   const history = deepFreeze(structuredClone(state.modelSnapshot()));
   const compactions = deepFreeze(structuredClone(state.compactionSnapshot()));
-  const standardContext = deepFreeze(
-    structuredClone(state.modelContextSnapshot())
-  );
+  const standardContextSnapshot = structuredClone(state.modelContextSnapshot());
+  const standardContext = deepFreeze(standardContextSnapshot);
   const observationSnapshot = options.latestContextTransform?.();
   const observation = observationSnapshot
     ? deepFreeze(structuredClone(observationSnapshot))
@@ -53,9 +53,11 @@ export async function prepareAutoCompaction(
     standardContext,
   });
   const legacyEstimate = threadEstimatorForCompaction(options.compaction);
-  const meterView = legacyEstimate
-    ? undefined
-    : options.model.contextTokenMeter?.view();
+  const meter = legacyEstimate ? undefined : options.model.contextTokenMeter;
+  const accountingMeter = meter && {
+    attempt: meter.checkpoint().attempt,
+    view: meter.view(),
+  };
   const standardContextHydration = hydrateRuntimeAttachments(
     modelMessages(standardContext),
     options.model.attachmentStore
@@ -91,7 +93,7 @@ export async function prepareAutoCompaction(
     estimatedHistory: deepFreeze(estimatedHistory),
     hydratedModelContext: deepFreeze(accountingModelContext),
     legacyEstimate,
-    meterView,
+    meter: accountingMeter,
     model: options.model,
     observedInput,
     observedOutput,
@@ -108,22 +110,24 @@ export async function prepareAutoCompaction(
       rejected.catch(() => undefined);
       return rejected;
     }
-    recordSummaryCall();
-    assertRange(range, history.length);
-    const running = summarizeCompactionRange({
-      estimateTokens: accounting.estimate,
-      history: summaryHistoryForRange({ compactions, history, range }),
-      model: { ...options.model, temperature: 0 },
-      signal,
-      summaryInstructions:
-        summaryOptions.instructions === undefined
-          ? undefined
-          : `${buildCompactionSummaryInstructions()}
+    const running = Promise.resolve().then(() => {
+      recordSummaryCall();
+      assertRange(range, history.length);
+      return summarizeCompactionRange({
+        estimateTokens: accounting.estimate,
+        history: summaryHistoryForRange({ compactions, history, range }),
+        model: { ...options.model, temperature: 0 },
+        signal,
+        summaryInstructions:
+          summaryOptions.instructions === undefined
+            ? undefined
+            : `${buildCompactionSummaryInstructions()}
 
 ## Additional focus
 ${summaryOptions.instructions}`,
-      toolEvidence: summaryOptions.toolEvidence,
-      transformModelContext: options.transformModelContext,
+        toolEvidence: summaryOptions.toolEvidence,
+        transformModelContext: options.transformModelContext,
+      });
     });
     running.catch(() => undefined);
     return running;
@@ -241,17 +245,4 @@ function modelMessages(
   return messages.map((message) =>
     message.role === "compaction" ? compactionContextForModel(message) : message
   );
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    if (ArrayBuffer.isView(value)) {
-      return value;
-    }
-    Object.freeze(value);
-    for (const child of Object.values(value)) {
-      deepFreeze(child);
-    }
-  }
-  return value;
 }

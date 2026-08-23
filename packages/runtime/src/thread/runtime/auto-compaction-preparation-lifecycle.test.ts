@@ -83,6 +83,36 @@ describe("summary episode capability", () => {
     }
   );
 
+  it("returns a rejected promise for an invalid summary range", async () => {
+    // Given
+    const state = await stateWithHistory("summary-invalid-range");
+    let summary: Promise<string> | undefined;
+    const compaction: AgentCompaction = (context): undefined => {
+      expect(() => {
+        summary = context.summarize({ endSeqExclusive: 4, startSeq: 0 });
+      }).not.toThrow();
+      return;
+    };
+
+    // When
+    await expect(
+      compactThreadBlocking({
+        compaction,
+        model: {
+          model: createCallbackModel(() => [assistantMessage("unused")]),
+        },
+        state,
+        threadKey: "summary-invalid-range",
+      })
+    ).resolves.toBe(false);
+
+    // Then
+    expect(summary).toBeDefined();
+    await expect(summary).rejects.toThrow(
+      "Compaction callback returned an invalid source range."
+    );
+  });
+
   it("closes retained summarize after a custom handler returns", async () => {
     // Given
     const state = await stateWithHistory("summary-capability-handler");

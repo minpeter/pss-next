@@ -21,6 +21,7 @@ import {
   type AgentInstrumentation,
   normalizeAgentInstrumentations,
 } from "./instrumentation";
+import { assertThreadStateMigrationList } from "./options-thread-migration-validation";
 
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
@@ -232,31 +233,4 @@ function assertToolNameList(
     }
     seen.add(name);
   }
-}
-
-function assertThreadStateMigrationList(
-  value: unknown
-): asserts value is readonly ThreadStateMigration[] | undefined {
-  if (value === undefined) {
-    return;
-  }
-  if (Array.isArray(value) && value.every(isThreadStateMigration)) {
-    return;
-  }
-  throw new TypeError(
-    "Agent: options.threadMigrations must be an array of migrations."
-  );
-}
-
-function isThreadStateMigration(value: unknown): value is ThreadStateMigration {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "id" in value &&
-    typeof value.id === "string" &&
-    "version" in value &&
-    typeof value.version === "number" &&
-    "migrate" in value &&
-    typeof value.migrate === "function"
-  );
 }

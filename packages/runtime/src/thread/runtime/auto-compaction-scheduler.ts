@@ -1,5 +1,8 @@
 import { type Deferred, deferred } from "../../internal/deferred";
-import type { CompactionDeadline } from "./auto-compaction-deadline";
+import {
+  type CompactionDeadline,
+  earliestCompactionDeadline,
+} from "./auto-compaction-deadline";
 import type { AutoCompactionEpisodeOptions } from "./auto-compaction-episode";
 import type {
   AgentCompaction,
@@ -46,6 +49,7 @@ export interface CompactionCoordinator {
 /** Coalesced completed-turn request awaiting the blocking lane. */
 export interface PendingCompaction extends ScheduledCompactionRequest {
   abortFromQueue: (() => void) | undefined;
+  deadline: CompactionDeadline;
   readonly deferred: Deferred;
   options: RunnableCompactionRequest;
   queueDeadline: CompactionQueueDeadline | undefined;
@@ -79,6 +83,10 @@ export function enqueuePending(
   const pending = coordinator.pending;
   if (pending) {
     disarmPendingDeadline(pending);
+    pending.deadline = earliestCompactionDeadline(
+      pending.deadline,
+      request.deadline
+    );
     pending.options = request.options;
     armPendingDeadline(coordinator, pending);
     return pending.deferred.promise;
@@ -115,6 +123,10 @@ export function restorePendingAfterFailedRetry(
   }
   const newer = takePending(coordinator);
   if (newer) {
+    covered.deadline = earliestCompactionDeadline(
+      covered.deadline,
+      newer.deadline
+    );
     covered.options = newer.options;
     covered.deferred.promise.then(
       () => newer.deferred.resolve(undefined),

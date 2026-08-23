@@ -78,6 +78,7 @@ export async function compactAgentThread(
               await recoverThreadDurableInputClaims({
                 allowOwned: executionHost !== undefined,
                 executionHost,
+                signal: queueDeadline.signal,
                 state: context.durableInputRecovery,
                 threadKey: context.threadKey,
               });

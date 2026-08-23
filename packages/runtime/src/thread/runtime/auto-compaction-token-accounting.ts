@@ -3,15 +3,23 @@ import {
   defaultModelPromptMeasurementProfile,
   estimateModelMessagesTokens,
 } from "../../llm/context-gate";
-import type { ContextTokenView } from "../../llm/context-tokens";
+import type {
+  ContextTokenMeterCheckpoint,
+  ContextTokenView,
+} from "../../llm/context-tokens";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { ThreadTokenEstimator } from "./auto-compaction-types";
+
+interface CompactionMeterAccountingView {
+  readonly attempt: ContextTokenMeterCheckpoint["attempt"];
+  readonly view: ContextTokenView;
+}
 
 export interface CompactionTokenAccountingInput {
   readonly estimatedHistory: readonly ModelMessage[];
   readonly hydratedModelContext: readonly ModelMessage[];
   readonly legacyEstimate?: ThreadTokenEstimator;
-  readonly meterView?: ContextTokenView;
+  readonly meter?: CompactionMeterAccountingView;
   readonly model: ModelGenerationOptions;
   readonly observedInput: readonly ModelMessage[];
   readonly observedOutput: readonly ModelMessage[];
@@ -28,7 +36,7 @@ export function compactionTokenAccounting({
   estimatedHistory,
   hydratedModelContext,
   legacyEstimate,
-  meterView,
+  meter,
   model,
   observedInput,
   observedOutput,
@@ -36,6 +44,7 @@ export function compactionTokenAccounting({
   const measurementProfile =
     model.contextTokens?.measurementProfile ??
     defaultModelPromptMeasurementProfile;
+  const meterView = meter?.view;
   const estimate: ThreadTokenEstimator = meterView
     ? (messages) =>
         meterView
@@ -52,7 +61,7 @@ export function compactionTokenAccounting({
     historyMessageUnits: measurementProfile.measureMessages(estimatedHistory),
   });
   const instructionsTokens =
-    meterProfile?.fixedPrompt || !model.instructions
+    meter?.attempt !== undefined || !model.instructions
       ? 0
       : estimate([{ content: model.instructions, role: "system" }]);
   const estimatedHistoryMessageTokens =

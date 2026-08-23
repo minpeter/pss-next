@@ -77,6 +77,54 @@ describe("compaction runner scheduling", () => {
     }
   });
 
+  it("uses the earlier deadline from a later coalesced request", async () => {
+    // Given
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    const state = await stateWithHistory();
+    const coordinator: CompactionCoordinator = {
+      active: undefined,
+      blockingWaiters: 0,
+      pending: undefined,
+    };
+    const firstCompaction: AgentCompaction = (): undefined => undefined;
+    const latestCompaction: AgentCompaction = (): undefined => undefined;
+    const first = enqueuePending(coordinator, {
+      deadline: { deadlineAt: 200, deadlineMs: 200 },
+      options: {
+        compaction: firstCompaction,
+        model,
+        state,
+        threadKey: "coalesced-earlier-deadline",
+      },
+    });
+    vi.setSystemTime(new Date(10));
+
+    // When
+    const latest = enqueuePending(coordinator, {
+      deadline: { deadlineAt: 100, deadlineMs: 90 },
+      options: {
+        compaction: latestCompaction,
+        model,
+        state,
+        threadKey: "coalesced-earlier-deadline",
+      },
+    });
+    const selectedDeadlineAt = coordinator.pending?.deadline.deadlineAt;
+    const selectedCompaction = coordinator.pending?.options.compaction;
+    await vi.advanceTimersByTimeAsync(90);
+    const pendingAtDeadline = coordinator.pending;
+    const remaining = takePendingForRetry(coordinator);
+    remaining?.deferred.resolve(undefined);
+    await Promise.all([first, latest]);
+
+    // Then
+    expect(latest).toBe(first);
+    expect(selectedDeadlineAt).toBe(100);
+    expect(selectedCompaction).toBe(latestCompaction);
+    expect(pendingAtDeadline).toBeUndefined();
+  });
+
   it("restores the covered deadline with newer pending options", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
@@ -115,5 +163,54 @@ describe("compaction runner scheduling", () => {
     const restored = takePendingForRetry(coordinator);
     restored?.deferred.resolve(undefined);
     await Promise.all([coveredPromise, newerPromise]);
+  });
+
+  it("restores newer pending options under their earlier deadline", async () => {
+    // Given
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    const state = await stateWithHistory();
+    const coordinator: CompactionCoordinator = {
+      active: undefined,
+      blockingWaiters: 0,
+      pending: undefined,
+    };
+    const coveredCompaction: AgentCompaction = (): undefined => undefined;
+    const newerCompaction: AgentCompaction = (): undefined => undefined;
+    const coveredPromise = enqueuePending(coordinator, {
+      deadline: { deadlineAt: 200, deadlineMs: 200 },
+      options: {
+        compaction: coveredCompaction,
+        model,
+        state,
+        threadKey: "restore-earlier-newer-deadline",
+      },
+    });
+    const covered = takePendingForRetry(coordinator);
+    vi.setSystemTime(new Date(10));
+    const newerPromise = enqueuePending(coordinator, {
+      deadline: { deadlineAt: 100, deadlineMs: 90 },
+      options: {
+        compaction: newerCompaction,
+        model,
+        state,
+        threadKey: "restore-earlier-newer-deadline",
+      },
+    });
+
+    // When
+    restorePendingAfterFailedRetry(coordinator, covered);
+    const selectedDeadlineAt = coordinator.pending?.deadline.deadlineAt;
+    const selectedCompaction = coordinator.pending?.options.compaction;
+    await vi.advanceTimersByTimeAsync(90);
+    const pendingAtDeadline = coordinator.pending;
+    const remaining = takePendingForRetry(coordinator);
+    remaining?.deferred.resolve(undefined);
+    await Promise.all([coveredPromise, newerPromise]);
+
+    // Then
+    expect(selectedDeadlineAt).toBe(100);
+    expect(selectedCompaction).toBe(newerCompaction);
+    expect(pendingAtDeadline).toBeUndefined();
   });
 });

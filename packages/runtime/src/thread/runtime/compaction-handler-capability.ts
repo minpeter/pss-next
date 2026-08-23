@@ -48,9 +48,13 @@ export async function runCompactionHandler(
     return running;
   };
   const handlerOutcome = Promise.resolve()
-    .then(() =>
-      options.handler(options.input, { commit, signal: controller.signal })
-    )
+    .then(() => {
+      controller.signal.throwIfAborted();
+      return options.handler(options.input, {
+        commit,
+        signal: controller.signal,
+      });
+    })
     .then<HandlerOutcome, HandlerOutcome>(
       (value) => ({ kind: "handler-returned", value }),
       (error: unknown) => ({ error, kind: "handler-failed" })

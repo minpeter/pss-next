@@ -1,45 +1,25 @@
 import type { AgentHost } from "../../execution/host/types";
 import { Fsm } from "../../fsm";
 import { assertNever } from "../../internal/guards";
-import { recoverDurableThreadInputs } from "../runtime/durable-input-claims";
+import {
+  cancelRecoveryLease,
+  leaseRecoveryFlight,
+  type RecoveryLease,
+} from "./durable-queue-recovery-flight";
 import { isThreadDrainOwned } from "./thread-drain-coordinator";
-
-const sharedRecoveries = new WeakMap<object, Map<string, Promise<void>>>();
-
-async function recoverAfterLiveDrain(
-  executionHost: AgentHost,
-  threadKey: string
-): Promise<void> {
-  let byThread = sharedRecoveries.get(executionHost.store);
-  if (!byThread) {
-    byThread = new Map();
-    sharedRecoveries.set(executionHost.store, byThread);
-  }
-  const existing = byThread.get(threadKey);
-  if (existing) {
-    return await existing;
-  }
-  const recovery = (async () => {
-    await recoverDurableThreadInputs({ executionHost, threadKey });
-  })();
-  byThread.set(threadKey, recovery);
-  try {
-    await recovery;
-  } finally {
-    if (byThread.get(threadKey) === recovery) {
-      byThread.delete(threadKey);
-    }
-  }
-}
 
 /**
  * One-shot recovery of orphaned durable input claims:
  * `pending -> recovering -> recovered`, rolling back to `pending` when the
- * recovery fails so the next admission retries it.
+ * exact recovery lease fails or is cancelled so the next admission retries.
  */
 type DurableInputRecoveryPhase =
   | { readonly tag: "pending" }
-  | { readonly promise: Promise<void>; readonly tag: "recovering" }
+  | {
+      readonly lease: RecoveryLease;
+      readonly promise: Promise<void>;
+      readonly tag: "recovering";
+    }
   | { readonly tag: "recovered" };
 
 export class DurableInputRecoveryState {
@@ -57,14 +37,19 @@ export class DurableInputRecoveryState {
 export function recoverThreadDurableInputClaims({
   allowOwned = false,
   executionHost,
+  signal,
   state,
   threadKey,
 }: {
   readonly allowOwned?: boolean;
   readonly executionHost: AgentHost | undefined;
+  readonly signal?: AbortSignal;
   readonly state: DurableInputRecoveryState;
   readonly threadKey: string;
 }): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason);
+  }
   const current = state.machine.state;
   switch (current.tag) {
     case "recovering":
@@ -84,19 +69,45 @@ export function recoverThreadDurableInputClaims({
     return Promise.resolve();
   }
 
-  const recovery: Promise<void> = (
-    executionHost
-      ? recoverAfterLiveDrain(executionHost, threadKey)
-      : recoverDurableThreadInputs({ executionHost, threadKey })
-  ).then(
+  const lease = leaseRecoveryFlight(executionHost, threadKey);
+  let removeAbortListener = (): void => undefined;
+  const promise = lease.settled.promise.then(
     () => {
-      state.machine.to({ tag: "recovered" });
+      removeAbortListener();
+      transitionExactLease(state, lease, "recovered");
     },
     (error: unknown) => {
-      state.machine.to({ tag: "pending" });
+      removeAbortListener();
+      transitionExactLease(state, lease, "pending");
       throw error;
     }
   );
-  state.machine.to({ promise: recovery, tag: "recovering" });
-  return recovery;
+  state.machine.to({ lease, promise, tag: "recovering" });
+  if (signal) {
+    const abortFromCaller = (): void => {
+      if (!lease.active) {
+        return;
+      }
+      transitionExactLease(state, lease, "pending");
+      cancelRecoveryLease(lease, signal.reason);
+    };
+    signal.addEventListener("abort", abortFromCaller, { once: true });
+    removeAbortListener = () =>
+      signal.removeEventListener("abort", abortFromCaller);
+    if (signal.aborted) {
+      abortFromCaller();
+    }
+  }
+  return promise;
+}
+
+function transitionExactLease(
+  state: DurableInputRecoveryState,
+  lease: RecoveryLease,
+  target: "pending" | "recovered"
+): void {
+  const current = state.machine.state;
+  if (current.tag === "recovering" && current.lease === lease) {
+    state.machine.to({ tag: target });
+  }
 }

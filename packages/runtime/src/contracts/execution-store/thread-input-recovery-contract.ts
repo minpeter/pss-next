@@ -41,6 +41,36 @@ export function describeThreadInputInboxRecoveryContract({
     });
   });
 
+  it("preserves a claimed input when recovery is already aborted", async () => {
+    // Given: an active claim and a caller that aborted before recovery.
+    const store = createStore();
+    await store.inputs.admit({
+      admittedAtMs: 1,
+      input: { text: "claimed", type: "user-input" },
+      kind: "send",
+      messageId: "message-aborted-recovery",
+      threadKey: "thread-aborted-recovery",
+    });
+    const claimed = await expectClaimed(
+      store.inputs.claimNext("thread-aborted-recovery", "turn-idle")
+    );
+    const controller = new AbortController();
+    const reason = new TypeError("input recovery already aborted");
+    controller.abort(reason);
+
+    // When: recovery receives the already-aborted signal.
+    const recovering = store.inputs.recoverClaims("thread-aborted-recovery", {
+      signal: controller.signal,
+    });
+
+    // Then: no mutation occurs and the original claim remains releasable.
+    await expect(recovering).rejects.toBe(reason);
+    await expect(store.inputs.releaseClaim(claimed)).resolves.toMatchObject({
+      messageId: "message-aborted-recovery",
+      status: "pending",
+    });
+  });
+
   it("recovers claiming inputs as pending and promoted inputs as acked", async () => {
     const store = createStore();
     await store.inputs.admit({

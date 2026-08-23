@@ -225,7 +225,7 @@ describe("AgentOptions.compaction", () => {
     expect(reads).toBe(1);
   });
 
-  it("checks each tool approval capability once in createAgent", async () => {
+  it("does not query approval through tool proxy traps in createAgent", async () => {
     let reads = 0;
     const toolDefinition = new Proxy(
       tool({
@@ -251,6 +251,6 @@ describe("AgentOptions.compaction", () => {
         tools: { x: toolDefinition },
       })
     ).resolves.toBeInstanceOf(Agent);
-    expect(reads).toBe(1);
+    expect(reads).toBe(0);
   });
 });
