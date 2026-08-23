@@ -19,8 +19,10 @@ export function createDeterministicRuntimeBlockModel(
 ): {
   readonly model: RuntimeBlockLanguageModel;
   readonly onTargetStepStart: (() => void) | undefined;
+  readonly summaryTimeOffsetMs: () => number;
 } {
   const firstSummaryRelease = deferred();
+  let concurrentSummaryServiceMs = 0;
   let firstSummaryReleased = false;
   let summaryCalls = 0;
   const model = createMockLanguageModelV4(async ({ prompt }) => {
@@ -33,7 +35,11 @@ export function createDeterministicRuntimeBlockModel(
         ) {
           await firstSummaryRelease.promise;
         }
-        advance(100);
+        if (scenario === "overlap-nonblocking") {
+          concurrentSummaryServiceMs += 100;
+        } else {
+          advance(100);
+        }
       } else {
         advance(30);
       }
@@ -45,7 +51,6 @@ export function createDeterministicRuntimeBlockModel(
       !firstSummaryReleased
     ) {
       firstSummaryReleased = true;
-      advance(1);
       firstSummaryRelease.resolve();
     }
     return mockLanguageModelV4Text("DONE");
@@ -59,6 +64,7 @@ export function createDeterministicRuntimeBlockModel(
             firstSummaryRelease.resolve();
           }
         : undefined,
+    summaryTimeOffsetMs: () => concurrentSummaryServiceMs,
   };
 }
 

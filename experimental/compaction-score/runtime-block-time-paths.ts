@@ -10,6 +10,8 @@ interface ExpectedPath {
   readonly statuses: readonly RuntimeSummarySpan["status"][];
 }
 
+const SUMMARY_WRAPPER = /(?:^|\n)<summary>\n[\s\S]*\n<\/summary>$/;
+
 const EXPECTED_PATHS: Readonly<Record<RuntimeBlockScenario, ExpectedPath>> = {
   "candidate-fit-late-hit": {
     candidateApplied: true,
@@ -89,9 +91,7 @@ export function validateRuntimeBlockPath({
   if (overlaps !== expected.overlaps) {
     throw new TypeError(`Invalid ${scenario} provider overlap path.`);
   }
-  const candidateApplied = JSON.stringify(targetPrompt).includes(
-    "The conversation history before this point was compacted"
-  );
+  const candidateApplied = hasCompactionSummary(targetPrompt);
   if (candidateApplied !== expected.candidateApplied) {
     throw new TypeError(`Invalid ${scenario} candidate application path.`);
   }
@@ -99,4 +99,36 @@ export function validateRuntimeBlockPath({
     candidateApplied,
     spans: Object.freeze(settled),
   };
+}
+
+function hasCompactionSummary(prompt: unknown): boolean {
+  return (
+    Array.isArray(prompt) &&
+    prompt.some(
+      (message) =>
+        isRecord(message) &&
+        message.role === "user" &&
+        hasSummaryText(message.content)
+    )
+  );
+}
+
+function hasSummaryText(content: unknown): boolean {
+  if (typeof content === "string") {
+    return SUMMARY_WRAPPER.test(content);
+  }
+  return (
+    Array.isArray(content) &&
+    content.some(
+      (part) =>
+        isRecord(part) &&
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        SUMMARY_WRAPPER.test(part.text)
+    )
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
 }

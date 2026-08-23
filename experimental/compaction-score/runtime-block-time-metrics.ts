@@ -73,48 +73,51 @@ const ZERO_BLOCK_THRESHOLD_MS = 10;
 export function calculateRuntimeBlockTrial(
   observation: RuntimeBlockObservation
 ): RuntimeBlockTrial {
-  const controlPreparationMs = Math.max(
-    0,
-    observation.controlProviderStartedAtMs - observation.controlStepStartedAtMs
+  const controlPreparationMs = elapsed(
+    observation.controlProviderStartedAtMs,
+    observation.controlStepStartedAtMs
   );
-  const controlProviderDispatchMs = Math.max(
-    0,
-    observation.controlProviderStartedAtMs - observation.controlSentAtMs
+  const controlProviderDispatchMs = elapsed(
+    observation.controlProviderStartedAtMs,
+    observation.controlSentAtMs
   );
-  const treatmentPreparationMs = Math.max(
-    0,
-    observation.targetProviderStartedAtMs - observation.targetStepStartedAtMs
+  const treatmentPreparationMs = elapsed(
+    observation.targetProviderStartedAtMs,
+    observation.targetStepStartedAtMs
   );
-  const gateDeltaMs = treatmentPreparationMs - controlPreparationMs;
-  const treatmentProviderDispatchMs = Math.max(
-    0,
-    observation.targetProviderStartedAtMs - observation.targetSentAtMs
+  const gateDeltaMs = finiteDifference(
+    treatmentPreparationMs,
+    controlPreparationMs
   );
-  const controlTtfvMs = Math.max(
-    0,
-    observation.controlFirstVisibleAtMs - observation.controlSentAtMs
+  const treatmentProviderDispatchMs = elapsed(
+    observation.targetProviderStartedAtMs,
+    observation.targetSentAtMs
   );
-  const treatmentTtfvMs = Math.max(
-    0,
-    observation.targetFirstVisibleAtMs - observation.targetSentAtMs
+  const controlTtfvMs = elapsed(
+    observation.controlFirstVisibleAtMs,
+    observation.controlSentAtMs
   );
-  const userDeltaMs = treatmentTtfvMs - controlTtfvMs;
+  const treatmentTtfvMs = elapsed(
+    observation.targetFirstVisibleAtMs,
+    observation.targetSentAtMs
+  );
+  const userDeltaMs = finiteDifference(treatmentTtfvMs, controlTtfvMs);
   const userBlockMs = Math.max(0, userDeltaMs);
-  const targetPreStepMs = Math.max(
-    0,
-    observation.targetStepStartedAtMs - observation.targetSentAtMs
+  const targetPreStepMs = elapsed(
+    observation.targetStepStartedAtMs,
+    observation.targetSentAtMs
   );
-  const controlPreStepMs = Math.max(
-    0,
-    observation.controlStepStartedAtMs - observation.controlSentAtMs
+  const controlPreStepMs = elapsed(
+    observation.controlStepStartedAtMs,
+    observation.controlSentAtMs
   );
-  const preStepDeltaMs = targetPreStepMs - controlPreStepMs;
+  const preStepDeltaMs = finiteDifference(targetPreStepMs, controlPreStepMs);
   const summaryServiceMs = sum(
     observation.summarySpans.map(({ endedAtMs, startedAtMs }) =>
-      Math.max(0, endedAtMs - startedAtMs)
+      elapsed(endedAtMs, startedAtMs)
     )
   );
-  const avoidedBlockMs = Math.max(0, summaryServiceMs - userBlockMs);
+  const avoidedBlockMs = elapsed(summaryServiceMs, userBlockMs);
   return {
     avoidedBlockMs,
     blockAvoidanceRatio:
@@ -169,7 +172,10 @@ export function aggregateRuntimeBlockTrials(
     summaryCallsMean: mean(matching.map((trial) => trial.summaryCalls)),
     trials: matching.length,
     userDeltaMeanMs: mean(matching.map((trial) => trial.userDeltaMs)),
-    userBlockMaxMs: Math.max(...blocks),
+    userBlockMaxMs: blocks.reduce(
+      (maximum, block) => Math.max(maximum, block),
+      Number.NEGATIVE_INFINITY
+    ),
     userBlockMeanMs: mean(blocks),
     userBlockP50Ms: quantile(blocks, 0.5),
     userBlockP95Ms: quantile(blocks, 0.95),
@@ -179,7 +185,10 @@ export function aggregateRuntimeBlockTrials(
 }
 
 function mean(values: readonly number[]): number {
-  return sum(values) / values.length;
+  const result = boundedSum(values, 1);
+  return result.overflowed
+    ? boundedSum(values, values.length).value
+    : result.value / values.length;
 }
 
 function quantile(values: readonly number[], probability: number): number {
@@ -199,5 +208,48 @@ function quantile(values: readonly number[], probability: number): number {
 }
 
 function sum(values: readonly number[]): number {
-  return values.reduce((total, value) => total + value, 0);
+  return boundedSum(values, 1).value;
+}
+
+function elapsed(endedAtMs: number, startedAtMs: number): number {
+  return Math.max(0, finiteDifference(endedAtMs, startedAtMs));
+}
+
+function finiteDifference(minuend: number, subtrahend: number): number {
+  if (!(Number.isFinite(minuend) && Number.isFinite(subtrahend))) {
+    throw new TypeError(
+      "Cannot derive a non-finite runtime block-time measurement."
+    );
+  }
+  if (subtrahend < 0 && minuend > Number.MAX_VALUE + subtrahend) {
+    return Number.MAX_VALUE;
+  }
+  if (subtrahend > 0 && minuend < -Number.MAX_VALUE + subtrahend) {
+    return -Number.MAX_VALUE;
+  }
+  return minuend - subtrahend;
+}
+
+function boundedSum(
+  values: readonly number[],
+  divisor: number
+): { readonly overflowed: boolean; readonly value: number } {
+  let overflowed = false;
+  let total = 0;
+  for (const value of values) {
+    if (!Number.isFinite(value)) {
+      throw new TypeError("Cannot summarize a non-finite measurement.");
+    }
+    const scaled = value / divisor;
+    if (scaled > 0 && total > Number.MAX_VALUE - scaled) {
+      overflowed = true;
+      total = Number.MAX_VALUE;
+    } else if (scaled < 0 && total < -Number.MAX_VALUE - scaled) {
+      overflowed = true;
+      total = -Number.MAX_VALUE;
+    } else {
+      total += scaled;
+    }
+  }
+  return { overflowed, value: total };
 }

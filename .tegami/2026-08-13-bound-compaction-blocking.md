@@ -1,11 +1,13 @@
 ---
 packages:
+  npm:@minpeter/pss-coding-agent:
+    type: patch
   npm:@minpeter/pss-runtime:
     type: patch
 ---
 
 ## Bound automatic compaction blocking
 
-Bound compaction preparation with one shared deadline, safely reuse prepared
-summaries across retries and committed prefixes, and report privacy-bounded
-timeouts with sanitized overflow context.
+Enforce one deadline at the serialized store boundary, preserve compatible
+conflict tails, coalesce retries, and reuse only source-stable candidates.
+Bound diagnostics and add causal benchmark evidence.

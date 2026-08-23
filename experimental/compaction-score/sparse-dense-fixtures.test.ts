@@ -1,15 +1,18 @@
 import { estimateModelMessagesTokens } from "@minpeter/pss-runtime";
 import { describe, expect, it } from "vitest";
-import type { BenchmarkScenario } from "./fixture";
 import {
   createMockLanguageModelV4,
   mockLanguageModelV4Text,
 } from "./mock-language-model";
 import { BENCHMARK_SCENARIOS, buildScenarioFixture } from "./scenario-fixtures";
+import {
+  buildDenseSmallRangeFixture,
+  buildSparseFactFixture,
+} from "./sparse-dense-fixtures";
 import { runCompactionTrial } from "./trial-runner";
 
-const SPARSE = "sparse-fact" as BenchmarkScenario;
-const DENSE = "dense-small-range" as BenchmarkScenario;
+const SPARSE = buildSparseFactFixture("sparse-scenario").scenario;
+const DENSE = buildDenseSmallRangeFixture("dense-scenario").scenario;
 
 describe("sparse and dense fixtures", () => {
   it("registers both compression-pressure scenarios", () => {
@@ -79,7 +82,7 @@ describe("sparse and dense fixtures", () => {
       model,
       repetition: 1,
       seed: 42,
-      summaryMaxOutputTokens: 768,
+      summaryMaxOutputTokens: 2048,
     });
 
     expect(record.status).toBe("non-compressing-summary");

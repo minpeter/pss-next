@@ -37,13 +37,7 @@ export async function evaluateArm({
 
 export function stableTrialError(
   status: Exclude<TrialRecord["status"], "valid">,
-  cause: unknown
+  _cause: unknown
 ): string {
-  if (
-    status === "evaluation-provider-failure" ||
-    status === "summary-provider-failure"
-  ) {
-    return status;
-  }
-  return cause instanceof Error ? cause.message : String(cause);
+  return status;
 }

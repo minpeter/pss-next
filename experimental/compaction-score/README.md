@@ -138,7 +138,7 @@ evidence-driven prompt iteration.
 
 The quality comparator calls compaction directly, so its latency is summary
 service time rather than user-visible runtime blocking. The runtime block-time
-campaign exercises the real `createAgent` path and measures:
+benchmark exercises the real `createAgent` path and measures:
 
 ```text
 treatment TTFV = speculative target send -> first visible assistant output
@@ -174,11 +174,9 @@ representative.
 Live mode uses real provider summary calls and runtime concurrency;
 deterministic mode uses a mock provider and logical clock to validate the
 measurement channel. Failed turns, failed summaries, wrong summary-call
-counts, and wrong overlap paths invalidate the campaign. User block of at most
+counts, and wrong overlap paths invalidate the benchmark. User block of at most
 10 ms counts as zero-block. Production `speculativeCompaction` and a bare
-policy without `deadlineMs` share `DEFAULT_COMPACTION_DEADLINE_MS` (15s);
-live `gpt-5.6-luna` 5s arms timed out prepared, late, retry, and overflow
-recovery, while 15s kept those paths at 100% provider start.
+policy without `deadlineMs` share `DEFAULT_COMPACTION_DEADLINE_MS` (15s).
 
 ```bash
 pnpm --dir experimental/compaction-score block-time -- \

@@ -105,7 +105,7 @@ function parseInvalidStatuses(
       invalid(
         "$.trials.invalidByStatus",
         "known invalid status keys",
-        status,
+        "unknown invalid status key",
         report
       );
     }

@@ -134,8 +134,6 @@ describe("runtime block-time metrics", () => {
       model: "mock",
       observations: [observation],
       trials,
-    } as Parameters<typeof createRuntimeBlockTimeReport>[0] & {
-      readonly observations: readonly RuntimeBlockObservation[];
     });
 
     expect(report).toMatchObject({ observations: [observation] });

@@ -13,7 +13,10 @@ import {
 } from "./runtime-block-time-metrics";
 import { parseRuntimeBlockRepetitions } from "./runtime-block-time-options";
 import {
+  admitRuntimeBlockTerminalText,
   createRuntimeBlockTimeReport,
+  RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH,
+  RUNTIME_BLOCK_OUTPUT_PATH_MAX_LENGTH,
   renderRuntimeBlockTimeMarkdown,
 } from "./runtime-block-time-report";
 import { runRuntimeBlockTrial } from "./runtime-block-time-runner";
@@ -36,13 +39,16 @@ interface CliOptions {
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
+  const env =
+    options.mode === "live" ? readOpenAICompatibleModelEnv() : undefined;
+  const modelName = admitRuntimeBlockTerminalText(
+    env?.AI_MODEL ?? "deterministic-mock",
+    RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH
+  );
   const liveModel =
     options.mode === "live"
       ? createCodingLanguageModel({ providerName: "runtime-block-time" })
       : undefined;
-  const env =
-    options.mode === "live" ? readOpenAICompatibleModelEnv() : undefined;
-  const modelName = env?.AI_MODEL ?? "deterministic-mock";
   const observations: RuntimeBlockObservation[] = [];
   const trials: RuntimeBlockTrial[] = [];
 
@@ -68,6 +74,7 @@ async function main(): Promise<void> {
         onTargetStepStart: deterministic?.onTargetStepStart,
         repetition,
         scenario,
+        summaryTimeOffsetMs: deterministic?.summaryTimeOffsetMs,
       });
       const trial = calculateRuntimeBlockTrial(observation);
       observations.push(observation);
@@ -139,7 +146,10 @@ function parseOptions(args: readonly string[]): CliOptions {
     if (flag === "--mode" && (value === "deterministic" || value === "live")) {
       mode = value;
     } else if (flag === "--output" && value) {
-      outputDirectory = value;
+      outputDirectory = admitRuntimeBlockTerminalText(
+        value,
+        RUNTIME_BLOCK_OUTPUT_PATH_MAX_LENGTH
+      );
     } else if (flag === "--repetitions" && value) {
       repetitions = parseRuntimeBlockRepetitions(value);
     } else {
@@ -149,4 +159,7 @@ function parseOptions(args: readonly string[]): CliOptions {
   return { mode, outputDirectory, repetitions };
 }
 
-await main();
+await main().then(undefined, () => {
+  process.stderr.write("RUNTIME_BLOCK_TIME_OPTIONS_INVALID\n");
+  process.exitCode = 1;
+});

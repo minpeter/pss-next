@@ -74,8 +74,14 @@ export const runtimeBlockEstimator: NonNullable<
   }, 0);
 
 export function isCompactionProviderPrompt(prompt: unknown): boolean {
-  return JSON.stringify(prompt).includes(
-    "[INTERNAL COMPACTION INSTRUCTION - NOT CONVERSATION HISTORY]"
+  if (!Array.isArray(prompt)) {
+    return false;
+  }
+  const firstMessage: unknown = prompt[0];
+  return (
+    typeof firstMessage === "object" &&
+    firstMessage !== null &&
+    Reflect.get(firstMessage, "role") === "system"
   );
 }
 

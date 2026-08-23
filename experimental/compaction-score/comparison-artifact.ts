@@ -3,6 +3,8 @@ import {
   type ComparisonHopMetric,
   summarizeComparisonDetails,
 } from "./comparison-detail-metrics";
+import type { InvalidTrialStatus } from "./report";
+import { isBoundedTerminalText } from "./terminal-text";
 
 export type ComparisonMethod = "pi" | "pss";
 
@@ -27,6 +29,16 @@ export interface ComparisonArtifact {
 }
 
 const METHODS: readonly ComparisonMethod[] = ["pss", "pi"];
+const MAX_LABEL_LENGTH = 256;
+const TRIAL_STATUSES = {
+  "compaction-prompt-failure": true,
+  "evaluation-provider-failure": true,
+  "invalid-full-control": true,
+  "non-compressing-summary": true,
+  "protocol-failure": true,
+  "summary-provider-failure": true,
+  valid: true,
+} as const satisfies Readonly<Record<InvalidTrialStatus | "valid", true>>;
 
 export class ComparisonArtifactError extends Error {
   readonly name = "ComparisonArtifactError";
@@ -48,16 +60,17 @@ export function parseComparisonArtifact(value: unknown): ComparisonArtifact {
     const row = record(rowValue, "row");
     for (const method of METHODS) {
       const arm = record(row[method], `row.${method}`);
-      const status = string(arm.status, `row.${method}.status`);
+      const status = trialStatus(arm.status, `row.${method}.status`);
       if (status !== "valid") {
         const counts = failures[method];
         counts.set(status, (counts.get(status) ?? 0) + 1);
       } else if (arm.hops !== undefined) {
-        hops[method].push(
-          ...array(arm.hops, `row.${method}.hops`).map((hop, index) =>
-            parseHop(hop, `row.${method}.hops[${index}]`)
-          )
-        );
+        for (const [index, hop] of array(
+          arm.hops,
+          `row.${method}.hops`
+        ).entries()) {
+          hops[method].push(parseHop(hop, `row.${method}.hops[${index}]`));
+        }
       }
     }
   }
@@ -65,9 +78,9 @@ export function parseComparisonArtifact(value: unknown): ComparisonArtifact {
     pi: parseArm(overall.pi, "aggregate.overall.pi"),
     pss: parseArm(overall.pss, "aggregate.overall.pss"),
   };
-  return {
-    arms,
-    details: {
+  let details: ComparisonArtifact["details"];
+  try {
+    details = {
       pi: summarizeComparisonDetails({
         hops: hops.pi,
         invalid: arms.pi.invalid,
@@ -84,39 +97,78 @@ export function parseComparisonArtifact(value: unknown): ComparisonArtifact {
         total: arms.pss.total,
         valid: arms.pss.valid,
       }),
-    },
+    };
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new ComparisonArtifactError(error.message);
+    }
+    throw error;
+  }
+  return {
+    arms,
+    details,
     failures,
-    model: string(root.model, "model"),
+    model: label(root.model, "model"),
   };
 }
 
 function parseArm(value: unknown, path: string): ArmAggregate {
   const arm = record(value, path);
+  const invalid = nonnegativeInteger(arm.invalid, `${path}.invalid`);
+  const retained = nonnegativeInteger(arm.retained, `${path}.retained`);
+  const semanticRetained = nonnegativeInteger(
+    arm.semanticRetained,
+    `${path}.semanticRetained`
+  );
+  const total = nonnegativeInteger(arm.total, `${path}.total`);
+  const valid = nonnegativeInteger(arm.valid, `${path}.valid`);
+  if (
+    retained > total ||
+    semanticRetained < retained ||
+    semanticRetained > total
+  ) {
+    throw new ComparisonArtifactError(
+      `${path} retained counts must be ordered within total.`
+    );
+  }
+  if (valid > Number.MAX_SAFE_INTEGER - invalid) {
+    throw new ComparisonArtifactError(`${path} attempt count is too large.`);
+  }
   return {
-    compressionMean: nullableNumber(
+    compressionMean: nullableRatio(
       arm.compressionMean,
       `${path}.compressionMean`
     ),
-    invalid: nonnegativeInteger(arm.invalid, `${path}.invalid`),
-    retained: nonnegativeInteger(arm.retained, `${path}.retained`),
-    semanticRetained: nonnegativeInteger(
-      arm.semanticRetained,
-      `${path}.semanticRetained`
-    ),
-    total: nonnegativeInteger(arm.total, `${path}.total`),
-    valid: nonnegativeInteger(arm.valid, `${path}.valid`),
+    invalid,
+    retained,
+    semanticRetained,
+    total,
+    valid,
   };
 }
 
 function parseHop(value: unknown, path: string): ComparisonHopMetric {
   const hop = record(value, path);
+  const prefixTokens = positiveInteger(
+    hop.prefixTokens,
+    `${path}.prefixTokens`
+  );
+  const summaryTokens = nonnegativeInteger(
+    hop.summaryTokens,
+    `${path}.summaryTokens`
+  );
+  if (summaryTokens > prefixTokens) {
+    throw new ComparisonArtifactError(
+      `${path}.summaryTokens must not exceed prefixTokens.`
+    );
+  }
   const compactionMs =
     hop.compactionMs === undefined
       ? undefined
-      : nonnegativeNumber(hop.compactionMs, `${path}.compactionMs`);
+      : boundedDuration(hop.compactionMs, `${path}.compactionMs`);
   return {
     ...(compactionMs === undefined ? {} : { compactionMs }),
-    prefixTokens: positiveInteger(hop.prefixTokens, `${path}.prefixTokens`),
+    prefixTokens,
     ...(hop.summarizerInputTokens === undefined
       ? {}
       : {
@@ -125,10 +177,7 @@ function parseHop(value: unknown, path: string): ComparisonHopMetric {
             `${path}.summarizerInputTokens`
           ),
         }),
-    summaryTokens: nonnegativeInteger(
-      hop.summaryTokens,
-      `${path}.summaryTokens`
-    ),
+    summaryTokens,
   };
 }
 
@@ -153,25 +202,38 @@ function array(value: unknown, path: string): readonly unknown[] {
   return value;
 }
 
-function string(value: unknown, path: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ComparisonArtifactError(`${path} must be a non-empty string.`);
+function trialStatus(value: unknown, path: string): string {
+  const status = label(value, path);
+  if (!Object.hasOwn(TRIAL_STATUSES, status)) {
+    throw new ComparisonArtifactError(`${path} must be a known trial status.`);
+  }
+  return status;
+}
+
+function label(value: unknown, path: string): string {
+  const message = `${path} must be a non-empty terminal-safe string of at most ${MAX_LABEL_LENGTH} characters.`;
+  if (!isBoundedTerminalText(value, MAX_LABEL_LENGTH)) {
+    throw new ComparisonArtifactError(message);
   }
   return value;
 }
 
-function nullableNumber(value: unknown, path: string): number | null {
+function nullableRatio(value: unknown, path: string): number | null {
   if (value === null) {
     return null;
   }
-  return finiteNumber(value, path);
+  const parsed = finiteNumber(value, path);
+  if (parsed < 0 || parsed > 1) {
+    throw new ComparisonArtifactError(`${path} must be between zero and one.`);
+  }
+  return parsed;
 }
 
 function nonnegativeInteger(value: unknown, path: string): number {
   const parsed = finiteNumber(value, path);
-  if (!(Number.isInteger(parsed) && parsed >= 0)) {
+  if (!(Number.isSafeInteger(parsed) && parsed >= 0)) {
     throw new ComparisonArtifactError(
-      `${path} must be a non-negative integer.`
+      `${path} must be a non-negative safe integer.`
     );
   }
   return parsed;
@@ -179,8 +241,10 @@ function nonnegativeInteger(value: unknown, path: string): number {
 
 function positiveInteger(value: unknown, path: string): number {
   const parsed = finiteNumber(value, path);
-  if (!(Number.isInteger(parsed) && parsed > 0)) {
-    throw new ComparisonArtifactError(`${path} must be a positive integer.`);
+  if (!(Number.isSafeInteger(parsed) && parsed > 0)) {
+    throw new ComparisonArtifactError(
+      `${path} must be a positive safe integer.`
+    );
   }
   return parsed;
 }
@@ -192,10 +256,12 @@ function finiteNumber(value: unknown, path: string): number {
   return value;
 }
 
-function nonnegativeNumber(value: unknown, path: string): number {
+function boundedDuration(value: unknown, path: string): number {
   const parsed = finiteNumber(value, path);
-  if (parsed < 0) {
-    throw new ComparisonArtifactError(`${path} must be non-negative.`);
+  if (parsed < 0 || parsed > Number.MAX_SAFE_INTEGER) {
+    throw new ComparisonArtifactError(
+      `${path} must be between zero and ${Number.MAX_SAFE_INTEGER}.`
+    );
   }
   return parsed;
 }

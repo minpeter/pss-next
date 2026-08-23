@@ -57,8 +57,8 @@ export function summarizeComparisonDetails({
   if (hops.length === 0) {
     return null;
   }
-  const prefixTokens = sum(hops.map((hop) => hop.prefixTokens));
-  const summaryTokens = sum(hops.map((hop) => hop.summaryTokens));
+  const prefixTokens = checkedSum(hops.map((hop) => hop.prefixTokens));
+  const summaryTokens = checkedSum(hops.map((hop) => hop.summaryTokens));
   const timed = hops.filter(
     (
       hop
@@ -70,16 +70,16 @@ export function summarizeComparisonDetails({
   const compressionRatios = hops.map(
     (hop) => hop.summaryTokens / hop.prefixTokens
   );
-  const totalMs = sum(durations);
+  const totalMs = checkedSum(durations);
   const timedInputTokens = timed.every(
     (hop) => hop.summarizerInputTokens !== undefined
   )
-    ? sum(timed.map((hop) => hop.summarizerInputTokens ?? 0))
+    ? checkedSum(timed.map((hop) => hop.summarizerInputTokens ?? 0))
     : null;
   const summarizerInputTokens = hops.every(
     (hop) => hop.summarizerInputTokens !== undefined
   )
-    ? sum(hops.map((hop) => hop.summarizerInputTokens ?? 0))
+    ? checkedSum(hops.map((hop) => hop.summarizerInputTokens ?? 0))
     : null;
   const densityScale = summaryTokens === 0 ? 0 : 1000 / summaryTokens;
   let inputTokensPerSecond: number | null = null;
@@ -87,15 +87,17 @@ export function summarizeComparisonDetails({
     inputTokensPerSecond =
       totalMs === 0 ? 0 : (timedInputTokens * 1000) / totalMs;
   }
-
-  return {
+  const metrics: ComparisonDetailMetrics = {
     compactions: hops.length,
     exactFactsPerThousandSummaryTokens: retained * densityScale,
     latency:
       durations.length === 0
         ? null
         : {
-            maxMs: Math.max(...durations),
+            maxMs: durations.reduce(
+              (maximum, duration) => Math.max(maximum, duration),
+              0
+            ),
             meanMs: totalMs / durations.length,
             measured: durations.length,
             p50Ms: quantile(durations, 0.5),
@@ -119,6 +121,8 @@ export function summarizeComparisonDetails({
     summarizerInputTokens,
     summaryTokens,
   };
+  assertFiniteMetrics(metrics);
+  return metrics;
 }
 
 export function renderComparisonDetails(
@@ -197,8 +201,34 @@ function renderLatencyRow({ label, metrics }: LabeledDetail): string {
   ].join(" | ");
 }
 
-function sum(values: readonly number[]): number {
-  return values.reduce((total, value) => total + value, 0);
+function checkedSum(values: readonly number[]): number {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+    if (!Number.isFinite(total) || total > Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("Metric total exceeds the supported numeric range.");
+    }
+  }
+  return total;
+}
+
+function assertFiniteMetrics(metrics: ComparisonDetailMetrics): void {
+  const values = [
+    metrics.exactFactsPerThousandSummaryTokens,
+    metrics.meanSummaryTokens,
+    metrics.removedTokens,
+    metrics.semanticFactsPerThousandSummaryTokens,
+    metrics.statistics.compressionRatioStandardDeviation,
+    ...(metrics.statistics.latencyStandardDeviation === null
+      ? []
+      : [metrics.statistics.latencyStandardDeviation]),
+    ...(metrics.latency === null
+      ? []
+      : Object.values(metrics.latency).filter((value) => value !== null)),
+  ];
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError("Derived comparison metrics must be finite.");
+  }
 }
 
 function quantile(values: readonly number[], probability: number): number {

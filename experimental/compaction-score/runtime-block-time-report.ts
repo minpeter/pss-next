@@ -5,6 +5,10 @@ import {
   type RuntimeBlockScenario,
   type RuntimeBlockTrial,
 } from "./runtime-block-time-metrics";
+import { isBoundedTerminalText } from "./terminal-text";
+
+export const RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH = 256;
+export const RUNTIME_BLOCK_OUTPUT_PATH_MAX_LENGTH = 4096;
 
 export interface RuntimeBlockTimeReport {
   readonly aggregates: Readonly<
@@ -87,10 +91,25 @@ export function renderRuntimeBlockTimeMarkdown(
     report.aggregates["summary-failure-retry-hit"],
     report.aggregates["repeated-failure-overflow-recovery"],
   ];
+  const model = admitRuntimeBlockTerminalText(
+    report.model,
+    RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH
+  )
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  const backtickRuns = model.match(/`+/g) ?? [];
+  const modelFence = "`".repeat(
+    backtickRuns.reduce((longest, run) => Math.max(longest, run.length + 1), 1)
+  );
+  const renderedModel =
+    backtickRuns.length === 0
+      ? `${modelFence}${model}${modelFence}`
+      : `${modelFence} ${model} ${modelFence}`;
   return `${[
     "# Runtime speculative compaction block time",
     "",
-    `Model: \`${report.model}\``,
+    `Model: ${renderedModel}`,
     `Mode: \`${report.mode}\``,
     "",
     "| Scenario | Trials | Summary calls mean | Summary service mean | TTFV delta mean | User block mean | P50 | P95 | Max | Pre-step delta mean | Gate delta mean | Candidate applied | Zero-block rate | Block avoidance | Overlap rate |",
@@ -107,6 +126,16 @@ export function renderRuntimeBlockTimeMarkdown(
     "",
     "_Benchmark payload size matches its synthetic threshold units. Live mode uses real provider latency and runtime concurrency; deterministic mode validates the measurement channel with a logical clock. Prepared hit completes its candidate before the target, which automatically promotes it before provider dispatch. A nonblocking path has user block at most 10 ms._",
   ].join("\n")}\n`;
+}
+
+export function admitRuntimeBlockTerminalText(
+  value: string,
+  maximumLength: number
+): string {
+  if (!isBoundedTerminalText(value, maximumLength)) {
+    throw new TypeError("Runtime block-time value is not terminal-safe.");
+  }
+  return value;
 }
 
 function renderAggregate(aggregate: RuntimeBlockAggregate): string {

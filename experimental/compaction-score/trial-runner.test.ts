@@ -10,7 +10,8 @@ import {
   type MockLanguageModelV4CallOptions,
   mockLanguageModelV4Text,
 } from "./mock-language-model";
-import { classifySummaryFailure, runCompactionTrial } from "./trial-runner";
+import { classifySummaryFailure } from "./trial-compaction-hops";
+import { runCompactionTrial } from "./trial-runner";
 
 const fixture = buildCompactionFixture("trial-runner-test");
 

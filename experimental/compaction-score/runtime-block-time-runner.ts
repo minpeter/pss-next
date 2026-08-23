@@ -21,6 +21,7 @@ export interface RuntimeBlockTrialOptions {
   readonly onTargetStepStart?: () => void;
   readonly repetition: number;
   readonly scenario: RuntimeBlockScenario;
+  readonly summaryTimeOffsetMs?: () => number;
 }
 
 export async function runRuntimeBlockTrial(
@@ -72,7 +73,7 @@ async function runTreatment(
   const compaction = createObservedRuntimeCompaction({
     active: activeSummaries,
     nextSequence,
-    now,
+    now: () => now() + (options.summaryTimeOffsetMs?.() ?? 0),
     onSummarySettled: () => summaryWaiters.get(summarySpans.length)?.(),
     spans: summarySpans,
   });

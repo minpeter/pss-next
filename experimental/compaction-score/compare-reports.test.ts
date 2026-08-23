@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runComparisonCli } from "./compare-reports";
+import { parseComparisonCliOutput } from "./compare-reports-cli-output.test-support";
 import type { FixtureQuestion } from "./fixture";
 import { summarizeTrials, type TrialRecord } from "./report";
 import { scoreAnswers } from "./scorer";
@@ -100,38 +101,128 @@ describe("compare reports CLI", () => {
     const paths = await fixtureFiles(candidate);
 
     const result = await invoke([paths.baselinePath, paths.candidatePath]);
-    const output = JSON.parse(result.stdout) as {
-      failures: { code: string }[];
-      passed: boolean;
-    };
+    const output = parseComparisonCliOutput(result.stdout);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("");
     expect(output.passed).toBe(false);
-    expect(output.failures.map(({ code }) => code)).toContain(
-      "HOP_RATIO_NOT_BELOW_ONE"
-    );
+    expect(output.failureCodes).toContain("HOP_RATIO_NOT_BELOW_ONE");
   });
 
-  it("rejects malformed JSON without exposing parser details", async () => {
+  it("classifies an untrusted invalid status without reflecting its bytes", async () => {
+    // Given
+    const candidate = report();
+    const unsafeStatus =
+      'provider token sk-secret <img src=x onerror="alert(1)">\u001b[31m\n\u202e\u2029\udc00';
+    const paths = await fixtureFiles({
+      ...candidate,
+      trials: {
+        ...candidate.trials,
+        invalidByStatus: { [unsafeStatus]: 0 },
+      },
+    });
+
+    // When
+    const result = await invoke([paths.baselinePath, paths.candidatePath]);
+
+    // Then
+    expect(result).toEqual({
+      exitCode: 1,
+      stderr: "",
+      stdout: `${JSON.stringify(
+        {
+          failures: [
+            {
+              code: "REPORT_METRIC_INVALID",
+              payload: {
+                actual: "unknown invalid status key",
+                expected: "known invalid status keys",
+                path: "$.trials.invalidByStatus",
+                report: "candidate",
+              },
+            },
+          ],
+          passed: false,
+        },
+        null,
+        2
+      )}\n`,
+    });
+  });
+
+  it("classifies an untrusted retention category without reflecting its bytes", async () => {
+    // Given
+    const candidate = report();
+    const unsafeCategory =
+      'provider token sk-category-secret <img src=x onerror="alert(1)">\u001b[31m\n\u2028\u2029\u202e\ud800';
+    const paths = await fixtureFiles({
+      ...candidate,
+      retention: candidate.retention
+        ? {
+            ...candidate.retention,
+            byCategory: candidate.retention.byCategory.map((row, index) =>
+              index === 0 ? { ...row, category: unsafeCategory } : row
+            ),
+          }
+        : null,
+    });
+
+    // When
+    const result = await invoke([paths.baselinePath, paths.candidatePath]);
+
+    // Then
+    expect(result).toEqual({
+      exitCode: 1,
+      stderr: "",
+      stdout: `${JSON.stringify(
+        {
+          failures: [
+            {
+              code: "REPORT_METRIC_INVALID",
+              payload: {
+                actual: "unknown question category",
+                expected: "known question category",
+                path: "$.retention.byCategory[0].category",
+                report: "candidate",
+              },
+            },
+          ],
+          passed: false,
+        },
+        null,
+        2
+      )}\n`,
+    });
+  });
+
+  it("rejects malformed JSON with a stable sentinel", async () => {
+    // Given
     const paths = await fixtureFiles('{"compression":');
 
+    // When
     const result = await invoke([paths.baselinePath, paths.candidatePath]);
-    const output = JSON.parse(result.stdout) as {
-      failures: { code: string; payload: { report: string } }[];
-      passed: boolean;
-    };
 
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toBe("");
-    expect(output).toMatchObject({
-      failures: [
-        {
-          code: "REPORT_JSON_INVALID",
-          payload: { report: "candidate" },
-        },
-      ],
-      passed: false,
+    // Then
+    expect(result).toEqual({
+      exitCode: 1,
+      stderr: "REPORT_JSON_INVALID\n",
+      stdout: "",
+    });
+  });
+
+  it("rejects an unsafe missing input path without reflecting it", async () => {
+    // Given
+    const paths = await fixtureFiles();
+    const unsafePath = `${paths.baselinePath}-secret-<img>-\u202e`;
+
+    // When
+    const result = await invoke([unsafePath, paths.candidatePath]);
+
+    // Then
+    expect(result).toEqual({
+      exitCode: 1,
+      stderr: "REPORT_READ_FAILED\n",
+      stdout: "",
     });
   });
 });

@@ -6,6 +6,8 @@ import {
 } from "./mock-language-model";
 import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
 import { isCompactionProviderPrompt } from "./runtime-block-time-instrumentation";
+import { calculateRuntimeBlockTrial } from "./runtime-block-time-metrics";
+import { validateRuntimeBlockPath } from "./runtime-block-time-paths";
 import { runRuntimeBlockTrial } from "./runtime-block-time-runner";
 import { createRuntimeBlockScenarioModel } from "./runtime-block-time-scenario-model";
 
@@ -26,6 +28,36 @@ function deferred(): Deferred {
 }
 
 describe("runtime block-time path validity", () => {
+  it("classifies an applied candidate after summary wrapper prose changes", () => {
+    const result = validateRuntimeBlockPath({
+      providerStartedSequence: 2,
+      scenario: "prepared-hit",
+      spans: [
+        {
+          endedAtMs: 10,
+          endedSequence: 1,
+          kind: "summary",
+          startedAtMs: 0,
+          startedSequence: 1,
+          status: "completed",
+        },
+      ],
+      targetPrompt: [
+        {
+          content: [
+            {
+              text: "Earlier context is represented structurally below.\n<summary>\ncompact handoff\n</summary>",
+              type: "text",
+            },
+          ],
+          role: "user",
+        },
+      ],
+    });
+
+    expect(result.candidateApplied).toBe(true);
+  });
+
   it.each(
     (
       [
@@ -60,6 +92,7 @@ describe("runtime block-time path validity", () => {
         onTargetStepStart: deterministic.onTargetStepStart,
         repetition,
         scenario,
+        summaryTimeOffsetMs: deterministic.summaryTimeOffsetMs,
       });
 
       expect(observation.candidateApplied).toBe(
@@ -97,6 +130,7 @@ describe("runtime block-time path validity", () => {
       onTargetStepStart: deterministic.onTargetStepStart,
       repetition: 1,
       scenario: "candidate-fit-hard-block",
+      summaryTimeOffsetMs: deterministic.summaryTimeOffsetMs,
     });
 
     expect(observation.targetProviderStartedAtMs).toBe(180);
@@ -108,6 +142,35 @@ describe("runtime block-time path validity", () => {
         status: "completed",
       },
     ]);
+  });
+
+  it("attributes zero user block when target dispatch overlaps the summary", async () => {
+    let logicalNow = 0;
+    const deterministic = createDeterministicRuntimeBlockModel(
+      "overlap-nonblocking",
+      (milliseconds) => {
+        logicalNow += milliseconds;
+      }
+    );
+    const scenarioModel = createRuntimeBlockScenarioModel(
+      deterministic.model,
+      "overlap-nonblocking"
+    );
+
+    const observation = await runRuntimeBlockTrial({
+      model: scenarioModel.model,
+      now: () => logicalNow,
+      onTargetStepStart: deterministic.onTargetStepStart,
+      repetition: 1,
+      scenario: "overlap-nonblocking",
+      summaryTimeOffsetMs: deterministic.summaryTimeOffsetMs,
+    });
+    const trial = calculateRuntimeBlockTrial(observation);
+
+    expect(trial.overlapAtProviderStart).toBe(true);
+    expect(trial.treatmentProviderDispatchMs).toBe(0);
+    expect(trial.userBlockMs).toBe(0);
+    expect(trial.zeroBlock).toBe(true);
   });
 
   it("does not classify mere summary overlap as a prepared hit", async () => {
@@ -134,9 +197,7 @@ describe("runtime block-time path validity", () => {
     });
 
     expect(observation.candidateApplied).toBe(false);
-    expect(JSON.stringify(targetPrompt)).not.toContain(
-      "The conversation history before this point was compacted"
-    );
+    expect(JSON.stringify(targetPrompt)).not.toContain("<summary>");
   });
 
   it("records one failed summary followed by a background retry hit", async () => {
