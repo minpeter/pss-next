@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const INVALID_EXEC_OPTION_OUTPUT = "Invalid pss exec option.\n";
+const codingAgentRoot = resolve(import.meta.dirname, "..");
+const repositoryRoot = resolve(codingAgentRoot, "../..");
 
 describe("exec CLI option error output", () => {
   it("does not reflect a terminal-active unknown option", () => {
@@ -12,8 +14,8 @@ describe("exec CLI option error output", () => {
     // When
     const result = spawnSync(
       process.execPath,
-      [resolve("bin/pss.js"), "exec", hostileOption, "value"],
-      { cwd: resolve("../.."), encoding: "utf8" }
+      [resolve(codingAgentRoot, "bin/pss.js"), "exec", hostileOption, "value"],
+      { cwd: repositoryRoot, encoding: "utf8" }
     );
 
     // Then

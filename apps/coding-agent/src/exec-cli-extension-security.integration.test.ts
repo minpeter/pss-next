@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+const codingAgentRoot = resolve(import.meta.dirname, "..");
+const repositoryRoot = resolve(codingAgentRoot, "../..");
+
 describe("exec CLI extension validation", () => {
   let root: string;
 
@@ -44,7 +47,7 @@ describe("exec CLI extension validation", () => {
     const child = spawn(
       process.execPath,
       [
-        resolve("bin/pss.js"),
+        join(codingAgentRoot, "bin/pss.js"),
         "exec",
         "--prompt",
         "do not run",
@@ -52,7 +55,7 @@ describe("exec CLI extension validation", () => {
         workspace,
       ],
       {
-        cwd: resolve("../.."),
+        cwd: repositoryRoot,
         env: {
           ...process.env,
           AI_API_KEY: "test",
@@ -116,7 +119,7 @@ describe("exec CLI extension validation", () => {
     const child = spawn(
       process.execPath,
       [
-        resolve("bin/pss.js"),
+        join(codingAgentRoot, "bin/pss.js"),
         "exec",
         "--prompt",
         "do not run",
@@ -124,7 +127,7 @@ describe("exec CLI extension validation", () => {
         workspace,
       ],
       {
-        cwd: resolve("../.."),
+        cwd: repositoryRoot,
         env: {
           ...process.env,
           AI_API_KEY: "test",
