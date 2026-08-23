@@ -13,6 +13,7 @@ import {
   createRuntimeBlockTimeReport,
   renderRuntimeBlockTimeMarkdown,
 } from "./runtime-block-time-report";
+import { typescriptSubprocessArguments } from "./typescript-subprocess.test-support";
 
 const temporaryDirectories: string[] = [];
 const TERMINAL_ACTIVE_CATEGORY = /[\p{Cf}\p{Zl}\p{Zp}]/u;
@@ -75,12 +76,11 @@ async function runCli(
   environment: Readonly<Record<string, string>> = {}
 ) {
   const child = spawn(
-    join(import.meta.dirname, "node_modules/.bin/tsx"),
-    [
-      "--conditions=@minpeter/pss-source",
+    process.execPath,
+    typescriptSubprocessArguments(
       join(import.meta.dirname, "runtime-block-time-cli.ts"),
-      ...args,
-    ],
+      args
+    ),
     {
       cwd: import.meta.dirname,
       env: { ...process.env, ...environment },
