@@ -85,5 +85,5 @@ export function parseExecOutputLine(line: string): ParsedExecOutputLine {
 }
 
 export function isParsedStreamAgentEvent(event: ParsedAgentEvent): boolean {
-  return event.type in streamAgentEventTypes;
+  return Object.hasOwn(streamAgentEventTypes, event.type);
 }

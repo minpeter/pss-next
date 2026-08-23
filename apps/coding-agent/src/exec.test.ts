@@ -81,6 +81,17 @@ describe("runCodingAgentExec", () => {
     await rm(workspace, { force: true, recursive: true });
   });
 
+  it("rejects inherited stream classifier keys in NDJSON", () => {
+    const line = parseExecOutputLine(
+      JSON.stringify({ event: { type: "toString" }, type: "agent_event" })
+    );
+    if (line.type !== "agent_event") {
+      throw new TypeError("expected an agent event line");
+    }
+
+    expect(isParsedStreamAgentEvent(line.event)).toBe(false);
+  });
+
   it("streams delta events as NDJSON but excludes them from the result", async () => {
     const captured = createCapturedOutput();
 
