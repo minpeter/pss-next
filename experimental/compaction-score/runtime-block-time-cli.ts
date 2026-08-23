@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readOpenAICompatibleModelEnv } from "@minpeter/pss-coding-agent/env";
 import { createCodingLanguageModel } from "@minpeter/pss-coding-agent/model";
 import type { LanguageModel } from "ai";
 import { createDeterministicRuntimeBlockModel } from "./runtime-block-time-deterministic";
@@ -37,18 +36,17 @@ interface CliOptions {
   readonly repetitions: number;
 }
 
-async function main(): Promise<void> {
-  const options = parseOptions(process.argv.slice(2));
-  const env =
-    options.mode === "live" ? readOpenAICompatibleModelEnv() : undefined;
-  const modelName = admitRuntimeBlockTerminalText(
-    env?.AI_MODEL ?? "deterministic-mock",
-    RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH
-  );
+async function main(options: CliOptions): Promise<void> {
   const liveModel =
     options.mode === "live"
-      ? createCodingLanguageModel({ providerName: "runtime-block-time" })
+      ? requireConcreteModel(
+          createCodingLanguageModel({ providerName: "runtime-block-time" })
+        )
       : undefined;
+  const modelName = admitRuntimeBlockTerminalText(
+    liveModel?.modelId ?? "deterministic-mock",
+    RUNTIME_BLOCK_MODEL_LABEL_MAX_LENGTH
+  );
   const observations: RuntimeBlockObservation[] = [];
   const trials: RuntimeBlockTrial[] = [];
 
@@ -159,7 +157,20 @@ function parseOptions(args: readonly string[]): CliOptions {
   return { mode, outputDirectory, repetitions };
 }
 
-await main().then(undefined, () => {
-  process.stderr.write("RUNTIME_BLOCK_TIME_OPTIONS_INVALID\n");
-  process.exitCode = 1;
-});
+async function runCli(): Promise<void> {
+  let options: CliOptions;
+  try {
+    options = parseOptions(process.argv.slice(2));
+  } catch {
+    process.stderr.write("RUNTIME_BLOCK_TIME_OPTIONS_INVALID\n");
+    process.exitCode = 1;
+    return;
+  }
+
+  await main(options).then(undefined, () => {
+    process.stderr.write("RUNTIME_BLOCK_TIME_EXECUTION_FAILED\n");
+    process.exitCode = 1;
+  });
+}
+
+await runCli();

@@ -15,6 +15,10 @@ export interface WilsonInterval {
 }
 
 export function distribution(values: readonly number[]): Distribution {
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError("Distribution values must be finite.");
+  }
+
   let maximum = Number.NEGATIVE_INFINITY;
   let minimum = Number.POSITIVE_INFINITY;
   let sum = 0;
@@ -29,7 +33,7 @@ export function distribution(values: readonly number[]): Distribution {
     squaredDifferenceSum += (value - mean) ** 2;
   }
 
-  return {
+  const result = {
     max: maximum,
     mean,
     min: minimum,
@@ -39,9 +43,33 @@ export function distribution(values: readonly number[]): Distribution {
     },
     standardDeviation: Math.sqrt(squaredDifferenceSum / values.length),
   };
+  if (
+    ![
+      result.max,
+      result.mean,
+      result.min,
+      result.quantiles.p50,
+      result.quantiles.p95,
+      result.standardDeviation,
+    ].every(Number.isFinite)
+  ) {
+    throw new RangeError("Derived distribution metrics must be finite.");
+  }
+  return result;
 }
 
 export function wilson95(correct: number, total: number): WilsonInterval {
+  if (!(Number.isSafeInteger(total) && total > 0)) {
+    throw new RangeError(
+      "Wilson interval total must be a positive safe integer."
+    );
+  }
+  if (!(Number.isSafeInteger(correct) && correct >= 0 && correct <= total)) {
+    throw new RangeError(
+      "Wilson interval correct count must be a safe integer from zero through total."
+    );
+  }
+
   const z = 1.96;
   const probability = correct / total;
   const denominator = 1 + z ** 2 / total;

@@ -61,12 +61,12 @@ export async function runComparisonCli(
   }
   const baseline = await loadReport(baselinePath);
   if (!baseline.loaded) {
-    io.stderr(`${baseline.failure}\n`);
+    io.stderr(`BASELINE_${baseline.failure}\n`);
     return 1;
   }
   const candidate = await loadReport(candidatePath);
   if (!candidate.loaded) {
-    io.stderr(`${candidate.failure}\n`);
+    io.stderr(`CANDIDATE_${candidate.failure}\n`);
     return 1;
   }
 

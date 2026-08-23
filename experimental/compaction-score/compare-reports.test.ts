@@ -205,7 +205,7 @@ describe("compare reports CLI", () => {
     // Then
     expect(result).toEqual({
       exitCode: 1,
-      stderr: "REPORT_JSON_INVALID\n",
+      stderr: "CANDIDATE_REPORT_JSON_INVALID\n",
       stdout: "",
     });
   });
@@ -221,7 +221,7 @@ describe("compare reports CLI", () => {
     // Then
     expect(result).toEqual({
       exitCode: 1,
-      stderr: "REPORT_READ_FAILED\n",
+      stderr: "BASELINE_REPORT_READ_FAILED\n",
       stdout: "",
     });
   });

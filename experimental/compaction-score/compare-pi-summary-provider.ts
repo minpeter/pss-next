@@ -10,7 +10,7 @@ const PI_SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistan
 
 Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
 
-const PI_SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+const PI_SUMMARIZATION_PROMPT = `The input contains a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 
 Use this EXACT format:
 
@@ -43,7 +43,7 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
-const PI_UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+const PI_UPDATE_SUMMARIZATION_PROMPT = `The input contains NEW conversation messages to incorporate into the existing summary provided in the previousSummary field.
 
 Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
@@ -94,27 +94,28 @@ export async function generatePiSummary({
   readonly summarizerInputTokens: number;
   readonly summary: string;
 }> {
-  const conversationText = serializePiConversation(newMessages);
-  let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
-  if (previousSummary !== undefined) {
-    promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
-  }
-  promptText +=
-    previousSummary === undefined
-      ? PI_SUMMARIZATION_PROMPT
-      : PI_UPDATE_SUMMARIZATION_PROMPT;
-  const messages = [{ content: promptText, role: "user" as const }];
+  const conversation = serializePiConversation(newMessages);
+  const isInitial = previousSummary === undefined;
+  const systemPrompt = `${PI_SUMMARIZATION_SYSTEM_PROMPT}\n\n${
+    isInitial ? PI_SUMMARIZATION_PROMPT : PI_UPDATE_SUMMARIZATION_PROMPT
+  }`;
+  const promptData = isInitial
+    ? { conversation, mode: "initial" as const }
+    : { conversation, mode: "update" as const, previousSummary };
+  const messages = [
+    { content: JSON.stringify(promptData), role: "user" as const },
+  ];
   const { text } = await generateText({
     abortSignal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     maxOutputTokens: COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens,
     messages,
     model,
-    system: PI_SUMMARIZATION_SYSTEM_PROMPT,
+    system: systemPrompt,
     temperature: 0,
   });
   return {
     summarizerInputTokens: estimateModelMessagesTokens([
-      { content: PI_SUMMARIZATION_SYSTEM_PROMPT, role: "system" },
+      { content: systemPrompt, role: "system" },
       ...messages,
     ]),
     summary: text.trim(),
