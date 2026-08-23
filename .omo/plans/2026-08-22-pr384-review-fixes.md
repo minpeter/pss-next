@@ -56,8 +56,9 @@ checkout.
 9. Track speculative candidate liveness independently from slot ownership so a
    replacement rollback skips every predecessor whose own episode aborted.
 10. Detach the pending completed-turn cohort at active retry start. Use its
-    latest request options under the original deadline, settle it on a resolved
-    retry, restore it after a failed retry, and leave later schedules pending.
+    latest request options under the earliest cohort deadline, settle it on a
+    resolved retry, restore it after a failed retry, and leave later schedules
+    pending.
 11. Recheck prepared-summary freshness inside the serialized state write after
     every queued predecessor settles and before recording the compaction.
 12. Process valid comparison artifacts with bounded iteration and reduction;
