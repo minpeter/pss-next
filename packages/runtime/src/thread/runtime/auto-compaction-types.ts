@@ -81,9 +81,7 @@ export interface AgentCompaction {
     | Promise<ThreadCompactionInput | undefined>;
 }
 
-/** Episode bound used when a policy omits `deadlineMs`. Live `gpt-5.6-luna`
- * summaries complete in about 8-18s; 5s timed out prepared, late, retry, and
- * overflow-recovery paths, while 15s kept those paths at 100% provider start. */
+/** Episode bound used when a policy omits `deadlineMs`. */
 export const DEFAULT_COMPACTION_DEADLINE_MS = 15_000;
 
 /** Largest delay accepted by JavaScript timer implementations. */
@@ -124,8 +122,7 @@ export type ThreadCompactionFreshnessGuard = (
 ) => boolean;
 
 export interface ThreadCompactionHandlerContext {
-  readonly freshnessGuard: ThreadCompactionFreshnessGuard;
-  readonly markCommitStarted: () => void;
+  readonly commit: (input: ThreadCompactionInput) => Promise<boolean>;
   readonly signal: AbortSignal;
 }
 

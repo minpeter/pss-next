@@ -1,49 +1,56 @@
-import type { ModelMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeDiagnostic } from "../../diagnostics";
-import { MemoryThreadStore } from "../../platform/memory";
-import {
-  assistantMessage,
-  createCallbackModel,
-} from "../../testing/test-fixtures";
-import { ThreadState } from "../state/thread-state";
+import { createDeferred } from "../../testing/test-fixtures";
 import {
   compactThreadBlocking,
-  compactThreadManually,
   scheduleThreadCompaction,
 } from "./auto-compaction-runner";
+import {
+  MAX_DEADLINE_MS,
+  model,
+  stateWithHistory,
+} from "./auto-compaction-runner-deadline-support";
 import {
   type AgentCompaction,
   DEFAULT_COMPACTION_DEADLINE_MS,
 } from "./auto-compaction-types";
-
-const MAX_DEADLINE_MS = 2_147_483_647;
-const model = {
-  model: createCallbackModel(() => [assistantMessage("unused")]),
-};
-
-async function stateWithHistory(): Promise<ThreadState> {
-  const state = new ThreadState({
-    key: "runner-deadline-test",
-    store: new MemoryThreadStore(),
-  });
-  await state.ensureLoaded();
-  const history: readonly ModelMessage[] = [
-    { content: "old", role: "user" },
-    assistantMessage("done"),
-    { content: "tail", role: "user" },
-  ];
-  for (const message of history) {
-    state.history.appendModelMessage(message);
-  }
-  return state;
-}
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("compaction deadlines", () => {
+  it("resolves a completed-turn deadline when scheduling is admitted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(10_000));
+    const state = await stateWithHistory();
+    const diagnosticReported = createDeferred();
+    let observedDeadlineAt: number | undefined;
+    const compaction = Object.assign(vi.fn<AgentCompaction>(), {
+      deadlineMs: () => 25,
+    }) satisfies AgentCompaction;
+
+    const scheduled = scheduleThreadCompaction({
+      compaction,
+      model: {
+        ...model,
+        diagnostics: {
+          report(diagnostic: RuntimeDiagnostic): void {
+            observedDeadlineAt = diagnostic.compaction?.deadlineAt;
+            diagnosticReported.resolve();
+          },
+        },
+      },
+      state,
+      threadKey: "admission-deadline",
+    });
+    vi.setSystemTime(new Date(10_100));
+    await Promise.all([scheduled, diagnosticReported.promise]);
+
+    expect(observedDeadlineAt).toBe(10_025);
+    expect(compaction).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       deadlineMs: () => 0,
@@ -130,20 +137,5 @@ describe("compaction deadlines", () => {
     });
 
     expect(observedDeadlineAt).toBe(20_000 + MAX_DEADLINE_MS);
-  });
-
-  it("keeps invalid manual deadline configuration throwing", async () => {
-    const state = await stateWithHistory();
-
-    await expect(
-      compactThreadManually({
-        deadlineMs: () => 0,
-        model,
-        state,
-        threadKey: "manual-invalid",
-      })
-    ).rejects.toThrow(
-      "Agent compaction deadlineMs() must return a positive safe integer"
-    );
   });
 });

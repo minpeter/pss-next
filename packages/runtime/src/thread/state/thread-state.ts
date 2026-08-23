@@ -1,5 +1,4 @@
 import type { ModelMessage } from "ai";
-import { Fsm } from "../../fsm";
 import { deferred } from "../../internal/deferred";
 import type {
   CommitResult,
@@ -8,23 +7,36 @@ import type {
   ThreadStoreCommit,
 } from "../store/types";
 import type { ThreadContextMessage } from "./context";
-import { ModelMessageHistory } from "./history";
+import { ModelMessageHistory, recordCompactionForCommit } from "./history";
+import type { ThreadStateMigration } from "./migrations";
+import type { ThreadCompactionRecord } from "./snapshot";
 import {
-  type AppliedThreadMigrations,
-  applyThreadStateMigrations,
-  normalizeThreadStateMigrations,
-  type ThreadStateMigration,
-} from "./migrations";
-import {
-  decodeStoredThreadState,
-  encodeThreadSnapshot,
-  type ThreadCompactionRecord,
-} from "./snapshot";
+  createThreadPersistenceMachine,
+  seedAppliedMigrations as seedAppliedMigrationMarkers,
+  type ThreadCommitBoundaryOptions,
+  ThreadStatePersistence,
+  ThreadWriteQueue,
+} from "./thread-state-persistence";
+
+/** @internal exported for unit tests of special-key seeding */
+export const seedAppliedMigrations = seedAppliedMigrationMarkers;
 
 export interface ThreadPersistenceOptions {
   readonly key: string;
   readonly migrations?: readonly ThreadStateMigration[];
   readonly store: ThreadStore;
+}
+
+export interface PreparedThreadCommit {
+  readonly expectedVersion: ExpectedThreadVersion;
+  readonly key: string;
+  readonly next: ThreadStoreCommit;
+}
+
+export class ThreadCommitConflictError extends Error {
+  constructor(key: string) {
+    super(`Thread ${JSON.stringify(key)} commit conflict`);
+  }
 }
 
 export interface ThreadCheckpointReference {
@@ -40,77 +52,21 @@ export interface ThreadCompactionInput {
   readonly summary: string;
 }
 
-export interface PreparedThreadCommit {
-  readonly expectedVersion: ExpectedThreadVersion;
-  readonly key: string;
-  readonly next: ThreadStoreCommit;
-}
-
-interface ThreadCommitBoundaryOptions {
-  readonly markCommitStarted?: () => void;
-  readonly signal?: AbortSignal;
-}
-
-export class ThreadCommitConflictError extends Error {
-  constructor(key: string) {
-    super(`Thread ${JSON.stringify(key)} commit conflict`);
-  }
-}
-
-/**
- * Persistence lifecycle of a thread's stored state.
- *
- * ```
- * unloaded -> loading -> ready
- *     ^          |         |
- *     |     (load fails)   |
- *     +----------+         |
- *     |                    v
- *     +------------- deleting -> deleted
- *          (delete fails: roll back to the pre-delete tag)
- * ```
- */
-type ThreadPersistenceState =
-  | { readonly tag: "unloaded" }
-  | { readonly tag: "loading"; readonly promise: Promise<void> }
-  | { readonly tag: "ready" }
-  | {
-      readonly tag: "deleting";
-      /** Settles when the in-flight store delete finishes. */
-      readonly promise: Promise<void>;
-      /** State to roll back to when the store delete fails. */
-      readonly rollbackTag: "ready" | "unloaded";
-    }
-  | { readonly tag: "deleted" };
-
-function createThreadPersistenceMachine(): Fsm<ThreadPersistenceState> {
-  return new Fsm<ThreadPersistenceState>({
-    initial: { tag: "unloaded" },
-    name: "thread-persistence",
-    transitions: {
-      unloaded: ["loading", "deleting"],
-      loading: ["ready", "unloaded", "deleting"],
-      ready: ["deleting"],
-      deleting: ["deleted", "ready", "unloaded"],
-      deleted: [],
-    },
-  });
-}
+type HistoryUserInput = Parameters<ModelMessageHistory["appendUserInput"]>[0];
 
 export class ThreadState {
   /** Opaque identity for runtime-owned per-thread caches. */
   readonly compactionIdentity: object = Object.freeze({});
-  #appliedMigrations: AppliedThreadMigrations = {};
   readonly #machine = createThreadPersistenceMachine();
-  readonly #migrations: readonly ThreadStateMigration[];
-  readonly #persistence: ThreadPersistenceOptions;
+  readonly #persistence: ThreadStatePersistence;
   #history = new ModelMessageHistory();
-  #storeVersion: string | undefined;
-  #writeQueue: Promise<void> = Promise.resolve();
+  readonly #writes = new ThreadWriteQueue();
 
   constructor(persistence: ThreadPersistenceOptions) {
-    this.#persistence = persistence;
-    this.#migrations = normalizeThreadStateMigrations(persistence.migrations);
+    this.#persistence = new ThreadStatePersistence(
+      persistence,
+      ThreadCommitConflictError
+    );
   }
 
   get history(): ModelMessageHistory {
@@ -135,12 +91,12 @@ export class ThreadState {
     // Transition before wiring the continuation so the machine state never
     // depends on microtask scheduling.
     this.#machine.to({ tag: "loading", promise: load.promise });
-    this.#loadStoredSnapshot().then(
+    this.#persistence.load().then(
       (applySnapshot) => {
         // A delete may have superseded the load; discard the snapshot then
         // so a slow load cannot resurrect deleted state in memory.
         if (this.#machine.toIf("loading", { tag: "ready" })) {
-          applySnapshot();
+          this.#history = applySnapshot() ?? this.#history;
         }
         load.resolve();
       },
@@ -157,9 +113,9 @@ export class ThreadState {
     if (this.#machine.in("deleting", "deleted")) {
       return;
     }
-    const applySnapshot = await this.#loadStoredSnapshot();
+    const applySnapshot = await this.#persistence.load();
     if (!this.#machine.in("deleting", "deleted")) {
-      applySnapshot();
+      this.#history = applySnapshot() ?? this.#history;
     }
   }
 
@@ -180,19 +136,15 @@ export class ThreadState {
       kind: "thread-reference",
       schemaVersion: 1,
       threadKey: this.#persistence.key,
-      threadVersion: this.#storeVersion ?? null,
+      threadVersion: this.#persistence.checkpointVersion,
     };
   }
 
-  appendUserInput(
-    input: Parameters<ModelMessageHistory["appendUserInput"]>[0]
-  ) {
+  appendUserInput(input: HistoryUserInput) {
     this.#history.appendUserInput(input);
   }
 
-  appendTransientUserInput(
-    input: Parameters<ModelMessageHistory["appendTransientUserInput"]>[0]
-  ) {
+  appendTransientUserInput(input: HistoryUserInput) {
     this.#history.appendTransientUserInput(input);
   }
 
@@ -207,17 +159,20 @@ export class ThreadState {
   async compact(
     input: ThreadCompactionInput,
     options: ThreadCommitBoundaryOptions = {}
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this.#machine.in("deleting", "deleted")) {
-      return;
+      return false;
     }
 
-    await this.#enqueueWrite(async () => {
+    return await this.#writes.enqueue(async () => {
       if (this.#machine.in("deleting", "deleted")) {
-        return;
+        return false;
+      }
+      if (options.isFresh && !options.isFresh()) {
+        return false;
       }
 
-      const record = this.#history.recordCompaction({
+      const rollbackCompaction = recordCompactionForCommit(this.#history, {
         endSeqExclusive: input.endSeqExclusive,
         schemaVersion: 1,
         startSeq: input.startSeq,
@@ -225,28 +180,19 @@ export class ThreadState {
       });
       try {
         await this.#commitSnapshotWith(
-          async (commit) =>
-            await this.#persistence.store.commit(commit.key, commit.next, {
-              expectedVersion: commit.expectedVersion,
-            }),
+          (commit) => this.#persistence.commit(commit),
           options
         );
       } catch (error) {
-        if (!(error instanceof ThreadCommitConflictError)) {
-          this.#history.removeCompaction(record);
-        }
+        rollbackCompaction();
         throw error;
       }
-    }, options);
+      return true;
+    }, options.signal);
   }
 
   async commit(): Promise<void> {
-    await this.commitWith(
-      async (commit) =>
-        await this.#persistence.store.commit(commit.key, commit.next, {
-          expectedVersion: commit.expectedVersion,
-        })
-    );
+    await this.commitWith((commit) => this.#persistence.commit(commit));
   }
 
   async commitWith(
@@ -257,13 +203,13 @@ export class ThreadState {
       return;
     }
 
-    await this.#enqueueWrite(async () => {
+    await this.#writes.enqueue(async () => {
       if (this.#machine.in("deleting", "deleted")) {
         return;
       }
 
       await this.#commitSnapshotWith(commit, options);
-    }, options);
+    }, options.signal);
   }
 
   async delete(): Promise<void> {
@@ -278,37 +224,36 @@ export class ThreadState {
     }
 
     const rollbackTag = current.tag === "ready" ? "ready" : "unloaded";
-    const previous = {
-      appliedMigrations: this.#appliedMigrations,
-      compactions: this.#history.compactionSnapshot(),
-      history: this.#history.modelSnapshot(),
-      storeVersion: this.#storeVersion,
-    };
     const del = deferred();
     // Transition before wiring the continuation so the machine state never
     // depends on microtask scheduling.
     this.#machine.to({ tag: "deleting", promise: del.promise, rollbackTag });
-    this.#enqueueWrite(async () => {
-      try {
-        await this.#persistence.store.delete(this.#persistence.key);
-      } catch (error) {
-        if (this.#machine.toIf("deleting", { tag: rollbackTag })) {
-          this.#appliedMigrations = previous.appliedMigrations;
-          this.#storeVersion = previous.storeVersion;
-          this.#history = new ModelMessageHistory(
-            previous.history,
-            undefined,
-            previous.compactions
-          );
+    this.#writes
+      .enqueue(async () => {
+        const previous = {
+          compactions: this.#history.compactionSnapshot(),
+          history: this.#history.modelSnapshot(),
+          persistence: this.#persistence.captureMetadata(),
+        };
+        try {
+          await this.#persistence.delete();
+        } catch (error) {
+          if (this.#machine.toIf("deleting", { tag: rollbackTag })) {
+            this.#persistence.restoreMetadata(previous.persistence);
+            this.#history = new ModelMessageHistory(
+              previous.history,
+              undefined,
+              previous.compactions
+            );
+          }
+          throw error;
         }
-        throw error;
-      }
 
-      this.#machine.toIf("deleting", { tag: "deleted" });
-      this.#storeVersion = undefined;
-      this.#appliedMigrations = {};
-      this.#history = new ModelMessageHistory();
-    }).then(del.resolve, del.reject);
+        this.#machine.toIf("deleting", { tag: "deleted" });
+        this.#persistence.clearMetadata();
+        this.#history = new ModelMessageHistory();
+      })
+      .then(del.resolve, del.reject);
     return await del.promise;
   }
 
@@ -317,144 +262,33 @@ export class ThreadState {
     options: ThreadCommitBoundaryOptions
   ): Promise<void> {
     const snapshot = this.#history.modelSnapshot();
-    const compactions = this.#history.compactionSnapshot();
-    const prepared: PreparedThreadCommit = {
-      expectedVersion: this.#storeVersion ?? null,
-      key: this.#persistence.key,
-      next: {
-        state: encodeThreadSnapshot(
-          snapshot,
-          compactions,
-          this.#appliedMigrations
-        ),
-      },
-    };
-    options.markCommitStarted?.();
+    const prepared = this.#persistence.prepareCommit(
+      snapshot,
+      this.#history.compactionSnapshot()
+    );
+    options.enterCommitBoundary?.();
     const result = await commit(prepared);
 
     if (!result.ok) {
-      await this.#replaceWithStoredThread();
+      await this.#replaceWithStoredThread(snapshot);
       throw new ThreadCommitConflictError(this.#persistence.key);
     }
 
-    this.#storeVersion = result.version;
+    this.#persistence.acceptCommit(result.version);
   }
 
-  #enqueueWrite(
-    operation: () => Promise<void>,
-    options: ThreadCommitBoundaryOptions = {}
+  async #replaceWithStoredThread(
+    attemptedHistory?: readonly ModelMessage[]
   ): Promise<void> {
-    const run = async () => {
-      options.signal?.throwIfAborted();
-      await operation();
-    };
-    const next = this.#writeQueue.then(run, run);
-    this.#writeQueue = next.catch(() => undefined);
-    return next;
+    const apply = await this.#persistence.load();
+    this.#history =
+      apply(
+        attemptedHistory === undefined
+          ? undefined
+          : {
+              attemptedHistory,
+              currentLocalHistory: this.#history.modelSnapshot(),
+            }
+      ) ?? this.#history;
   }
-
-  async #replaceWithStoredThread(): Promise<void> {
-    (await this.#loadStoredSnapshot())();
-  }
-
-  /**
-   * Load (and migrate) the stored snapshot, returning an applier so callers
-   * decide whether the result may replace in-memory state. A load that lost
-   * a race against delete discards its snapshot instead of applying it.
-   */
-  async #loadStoredSnapshot(): Promise<() => void> {
-    const stored = await this.#persistence.store.load(this.#persistence.key);
-    let nextVersion = stored?.version;
-    let state = decodeStoredThreadState(stored);
-    if (stored) {
-      if (this.#migrations.length > 0) {
-        const migrated = await this.#migrateStoredThread(state, stored.version);
-        state = migrated.state;
-        nextVersion = migrated.version;
-      }
-    } else if (this.#migrations.length > 0) {
-      // New threads are post-migration state; mark every configured
-      // migration as already applied so they are not re-applied on restart.
-      state = {
-        ...state,
-        appliedMigrations: seedAppliedMigrations(this.#migrations),
-      };
-    }
-    return () => {
-      this.#appliedMigrations = state.appliedMigrations;
-      this.#storeVersion = nextVersion;
-      this.#history = new ModelMessageHistory(
-        state.history,
-        undefined,
-        state.compactions
-      );
-    };
-  }
-
-  /**
-   * Apply configured migrations, retrying when a concurrent writer wins the
-   * optimistic commit. After each conflict the latest snapshot is reloaded;
-   * pending migrations are re-applied unless the winner already recorded them.
-   */
-  async #migrateStoredThread(
-    initialState: ReturnType<typeof decodeStoredThreadState>,
-    initialVersion: string
-  ): Promise<{
-    readonly state: ReturnType<typeof decodeStoredThreadState>;
-    readonly version: string;
-  }> {
-    let state = initialState;
-    let expectedVersion = initialVersion;
-    for (let attempt = 0; attempt < MAX_MIGRATION_COMMIT_ATTEMPTS; attempt++) {
-      const migrated = await applyThreadStateMigrations({
-        migrations: this.#migrations,
-        state,
-        threadKey: this.#persistence.key,
-      });
-      if (!migrated.changed) {
-        return { state: migrated, version: expectedVersion };
-      }
-      const result = await this.#persistence.store.commit(
-        this.#persistence.key,
-        {
-          state: encodeThreadSnapshot(
-            migrated.history,
-            migrated.compactions,
-            migrated.appliedMigrations
-          ),
-        },
-        { expectedVersion }
-      );
-      if (result.ok) {
-        return { state: migrated, version: result.version };
-      }
-      const reloaded = await this.#persistence.store.load(
-        this.#persistence.key
-      );
-      if (reloaded === null) {
-        throw new ThreadCommitConflictError(this.#persistence.key);
-      }
-      state = decodeStoredThreadState(reloaded);
-      expectedVersion = reloaded.version;
-    }
-    throw new ThreadCommitConflictError(this.#persistence.key);
-  }
-}
-
-const MAX_MIGRATION_COMMIT_ATTEMPTS = 8;
-
-/** @internal exported for unit tests of special-key seeding */
-export function seedAppliedMigrations(
-  migrations: readonly ThreadStateMigration[]
-): AppliedThreadMigrations {
-  const applied: Record<string, number> = Object.create(null);
-  for (const migration of migrations) {
-    Object.defineProperty(applied, migration.id, {
-      configurable: true,
-      enumerable: true,
-      value: migration.version,
-      writable: true,
-    });
-  }
-  return applied;
 }

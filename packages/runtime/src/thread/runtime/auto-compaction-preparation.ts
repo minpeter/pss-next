@@ -4,6 +4,7 @@ import {
   compactionContextForModel,
   type ThreadContextMessage,
 } from "../state/context";
+import { equalSnapshot } from "../state/snapshot-equal";
 import type { ThreadCompactionInput } from "../state/thread-state";
 import type { AutoCompactionEpisodeOptions } from "./auto-compaction-episode";
 import {
@@ -19,7 +20,6 @@ import type {
   ThreadCompactionFreshnessGuard,
 } from "./auto-compaction-types";
 import { threadEstimatorForCompaction } from "./auto-compaction-types";
-import { equalSnapshot } from "./snapshot-equal";
 
 interface PreparedAutoCompaction {
   readonly freshnessGuard: ThreadCompactionFreshnessGuard;
@@ -96,22 +96,25 @@ export async function prepareAutoCompaction(
     observedInput,
     observedOutput,
   });
-  const summarize = async (
+  const summarize = (
     range: AutoCompactionRange,
     summaryOptions: CompactionSummaryOptions = {}
   ): Promise<string> => {
+    const signal = summaryOptions.signal
+      ? AbortSignal.any([options.signal, summaryOptions.signal])
+      : options.signal;
+    if (signal.aborted) {
+      const rejected = Promise.reject<string>(signal.reason);
+      rejected.catch(() => undefined);
+      return rejected;
+    }
     recordSummaryCall();
     assertRange(range, history.length);
-    const summaryHistory = summaryHistoryForRange({
-      compactions,
-      history,
-      range,
-    });
-    return await summarizeCompactionRange({
+    const running = summarizeCompactionRange({
       estimateTokens: accounting.estimate,
-      history: summaryHistory,
+      history: summaryHistoryForRange({ compactions, history, range }),
       model: { ...options.model, temperature: 0 },
-      signal: options.signal,
+      signal,
       summaryInstructions:
         summaryOptions.instructions === undefined
           ? undefined
@@ -122,6 +125,8 @@ ${summaryOptions.instructions}`,
       toolEvidence: summaryOptions.toolEvidence,
       transformModelContext: options.transformModelContext,
     });
+    running.catch(() => undefined);
+    return running;
   };
   const input = await options.compaction(
     Object.freeze({

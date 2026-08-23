@@ -1,43 +1,53 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
-import { assistantMessage } from "../../testing/test-fixtures";
-import type {
-  CommitResult,
-  ThreadStore,
-  ThreadStoreCommit,
-} from "../store/types";
-import { ThreadState } from "./thread-state";
-
-class FailingCompactionStore implements ThreadStore {
-  commitCalls = 0;
-
-  commit(
-    _key: string,
-    _next: ThreadStoreCommit,
-    _options: { expectedVersion: string | null }
-  ): Promise<CommitResult> {
-    this.commitCalls += 1;
-    if (this.commitCalls > 1) {
-      return Promise.reject(new Error("compaction commit failed"));
-    }
-    return Promise.resolve({ ok: true, version: String(this.commitCalls) });
-  }
-
-  delete(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  load(): Promise<null> {
-    return Promise.resolve(null);
-  }
-}
+import { MemoryThreadStore } from "../../platform/memory";
+import { assistantMessage, createDeferred } from "../../testing/test-fixtures";
+import type { ThreadStore } from "../store/types";
+import { decodeStoredThreadState, encodeThreadSnapshot } from "./snapshot";
+import { ThreadCommitConflictError, ThreadState } from "./thread-state";
 
 describe("ThreadState compaction", () => {
-  it("removes only the failed compaction record after a non-conflict store failure", async () => {
-    const store = new FailingCompactionStore();
-    const state = new ThreadState({ key: "exact-compaction-rollback", store });
+  it("does not duplicate an extended remote prefix while preserving a later local tail", async () => {
+    const backing = new MemoryThreadStore();
+    const conflictStarted = createDeferred();
+    const releaseConflict = createDeferred();
+    const remoteAppend = {
+      content: "remote append",
+      role: "user",
+    } as const;
+    let commitCalls = 0;
+    const store: ThreadStore = {
+      commit: async (key, next, options) => {
+        commitCalls += 1;
+        if (commitCalls !== 2) {
+          return await backing.commit(key, next, options);
+        }
+        const stored = await backing.load(key);
+        const decoded = decodeStoredThreadState(stored);
+        const winner = await backing.commit(
+          key,
+          {
+            state: encodeThreadSnapshot(
+              [...decoded.history, remoteAppend],
+              decoded.compactions,
+              decoded.appliedMigrations
+            ),
+          },
+          { expectedVersion: options.expectedVersion }
+        );
+        if (!winner.ok) {
+          throw new TypeError("Expected extended external winner");
+        }
+        conflictStarted.resolve();
+        await releaseConflict.promise;
+        return { ok: false, reason: "conflict" };
+      },
+      delete: (key) => backing.delete(key),
+      load: (key) => backing.load(key),
+    };
+    const state = new ThreadState({ key: "extended-conflict", store });
     const initial: readonly ModelMessage[] = [
-      { content: "old", role: "user" },
+      { content: "shared base", role: "user" },
       assistantMessage("done"),
       { content: "tail", role: "user" },
     ];
@@ -45,27 +55,80 @@ describe("ThreadState compaction", () => {
       state.history.appendModelMessage(message);
     }
     await state.commit();
-    state.history.recordCompaction({
+
+    const compacting = state.compact({
       endSeqExclusive: 2,
-      schemaVersion: 1,
       startSeq: 0,
-      summary: { content: "existing", role: "system" },
+      summary: "losing compaction",
     });
-    const existingCompactions = state.compactionSnapshot();
+    await conflictStarted.promise;
+    const localTail = { content: "local tail", role: "user" } as const;
+    state.history.appendModelMessage(remoteAppend);
+    state.history.appendModelMessage(localTail);
+    releaseConflict.resolve();
+
+    await expect(compacting).rejects.toBeInstanceOf(ThreadCommitConflictError);
+    const expected = [...initial, remoteAppend, localTail];
+    expect(state.modelSnapshot()).toEqual(expected);
+    expect(
+      state
+        .modelSnapshot()
+        .filter((message) => message.content === remoteAppend.content)
+    ).toHaveLength(1);
+
+    await state.commit();
+    expect(
+      decodeStoredThreadState(await backing.load("extended-conflict")).history
+    ).toEqual(expected);
+  });
+
+  it("does not resurrect a local suffix after remote deletion", async () => {
+    const backing = new MemoryThreadStore();
+    const conflictStarted = createDeferred();
+    const releaseConflict = createDeferred();
+    let commitCalls = 0;
+    const store: ThreadStore = {
+      commit: async (key, next, options) => {
+        commitCalls += 1;
+        if (commitCalls !== 2) {
+          return await backing.commit(key, next, options);
+        }
+        await backing.delete(key);
+        conflictStarted.resolve();
+        await releaseConflict.promise;
+        return { ok: false, reason: "conflict" };
+      },
+      delete: (key) => backing.delete(key),
+      load: (key) => backing.load(key),
+    };
+    const state = new ThreadState({ key: "deleted-conflict", store });
+    const base = { content: "base", role: "user" } as const;
+    state.history.appendModelMessage(base);
+    state.history.appendModelMessage(assistantMessage("done"));
+    await state.commit();
+
+    const compacting = state.compact({
+      endSeqExclusive: 2,
+      startSeq: 0,
+      summary: "losing compaction",
+    });
+    await conflictStarted.promise;
     state.history.appendModelMessage({
-      content: "concurrent tail",
+      content: "stale local suffix",
       role: "user",
     });
+    releaseConflict.resolve();
 
-    await expect(
-      state.compact({ endSeqExclusive: 3, startSeq: 1, summary: "failed" })
-    ).rejects.toThrow("compaction commit failed");
+    await expect(compacting).rejects.toBeInstanceOf(ThreadCommitConflictError);
+    expect(state.modelSnapshot()).toEqual([]);
+    expect(state.compactionSnapshot()).toEqual([]);
+    expect(state.threadCheckpointReference().threadVersion).toBeNull();
 
-    expect(state.modelSnapshot()).toEqual([
-      ...initial,
-      { content: "concurrent tail", role: "user" },
-    ]);
-    expect(state.compactionSnapshot()).toEqual(existingCompactions);
-    expect(state.threadCheckpointReference().threadVersion).toBe("1");
+    const laterWrite = { content: "later write", role: "user" } as const;
+    state.history.appendModelMessage(laterWrite);
+    await state.commit();
+    expect(
+      decodeStoredThreadState(await backing.load("deleted-conflict")).history
+    ).toEqual([laterWrite]);
   });
 });

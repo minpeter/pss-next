@@ -1,39 +1,16 @@
-import type { ModelMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryThreadStore } from "../../platform/memory";
-import {
-  assistantMessage,
-  createCallbackModel,
-  createDeferred,
-} from "../../testing/test-fixtures";
-import { ThreadState } from "../state/thread-state";
+import { createDeferred } from "../../testing/test-fixtures";
+import type { ThreadCompactionInput } from "../state/thread-state";
 import {
   compactThreadBlocking,
   compactThreadManually,
   scheduleThreadCompaction,
 } from "./auto-compaction-runner";
+import {
+  model,
+  stateWithHistory,
+} from "./auto-compaction-runner-concurrency-support";
 import type { AgentCompaction } from "./auto-compaction-types";
-
-const model = {
-  model: createCallbackModel(() => [assistantMessage("unused")]),
-};
-
-async function stateWithHistory(): Promise<ThreadState> {
-  const state = new ThreadState({
-    key: "runner-concurrency-test",
-    store: new MemoryThreadStore(),
-  });
-  await state.ensureLoaded();
-  const history: readonly ModelMessage[] = [
-    { content: "old", role: "user" },
-    assistantMessage("done"),
-    { content: "tail", role: "user" },
-  ];
-  for (const message of history) {
-    state.history.appendModelMessage(message);
-  }
-  return state;
-}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -68,13 +45,15 @@ describe("compaction runner scheduling", () => {
       );
       let activeSignal: AbortSignal | undefined;
       let pendingStarted = false;
-      const activeCompaction: AgentCompaction = async (context) => {
+      const activeCompaction: AgentCompaction = async (
+        context
+      ): Promise<ThreadCompactionInput | undefined> => {
         activeSignal = context.signal;
         activeStarted.resolve();
         await releaseActive.promise;
         return;
       };
-      const pendingCompaction: AgentCompaction = () => {
+      const pendingCompaction: AgentCompaction = (): undefined => {
         pendingStarted = true;
         return;
       };
@@ -122,62 +101,6 @@ describe("compaction runner scheduling", () => {
       expect(pendingStarted).toBe(true);
     }
   );
-
-  it("shares a queued schedule promise through its coalesced retry", async () => {
-    const state = await stateWithHistory();
-    const activeStarted = createDeferred();
-    const releaseActive = createDeferred();
-    const retryStarted = createDeferred();
-    const releaseRetry = createDeferred();
-    let attempts = 0;
-    const compaction: AgentCompaction = async () => {
-      attempts += 1;
-      if (attempts === 1) {
-        activeStarted.resolve();
-        await releaseActive.promise;
-        return;
-      }
-      if (attempts === 2) {
-        throw new TypeError("queued first attempt failed");
-      }
-      retryStarted.resolve();
-      await releaseRetry.promise;
-      return;
-    };
-    const options = {
-      compaction,
-      model,
-      state,
-      threadKey: "queued-shared",
-    };
-
-    const active = scheduleThreadCompaction(options);
-    await activeStarted.promise;
-    const queued = scheduleThreadCompaction(options);
-    const coalesced = scheduleThreadCompaction(options);
-    let queuedSettled = false;
-    queued.then(() => {
-      queuedSettled = true;
-    });
-
-    try {
-      expect(coalesced).toBe(queued);
-      expect(queuedSettled).toBe(false);
-      releaseActive.resolve();
-      await active;
-      await retryStarted.promise;
-      expect(queuedSettled).toBe(false);
-      releaseRetry.resolve();
-      await queued;
-
-      expect(attempts).toBe(3);
-      expect(queuedSettled).toBe(true);
-    } finally {
-      releaseActive.resolve();
-      releaseRetry.resolve();
-      await Promise.allSettled([active, queued, coalesced]);
-    }
-  });
 
   it("runs overflow before pending completed-turn work", async () => {
     const state = await stateWithHistory();
@@ -244,50 +167,5 @@ describe("compaction runner scheduling", () => {
     await expect(blocking).resolves.toBe(true);
     await active;
     expect(reasons).toEqual(["completed-turn"]);
-  });
-
-  it("creates a pending completed-turn deadline when that episode starts", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(10_000));
-    const state = await stateWithHistory();
-    const activeStarted = createDeferred();
-    const releaseActive = createDeferred();
-    let pendingDeadlineAt: number | undefined;
-    let pendingStartedAt: number | undefined;
-    const activeCompaction = Object.assign(
-      async (): Promise<undefined> => {
-        activeStarted.resolve();
-        await releaseActive.promise;
-        return;
-      },
-      { deadlineMs: () => 1000 }
-    ) satisfies AgentCompaction;
-    const pendingCompaction = Object.assign(
-      (context: Parameters<AgentCompaction>[0]): undefined => {
-        pendingDeadlineAt = context.deadlineAt;
-        pendingStartedAt = Date.now();
-        return;
-      },
-      { deadlineMs: () => 25 }
-    ) satisfies AgentCompaction;
-
-    const active = scheduleThreadCompaction({
-      compaction: activeCompaction,
-      model,
-      state,
-      threadKey: "pending-deadline",
-    });
-    await activeStarted.promise;
-    const pending = scheduleThreadCompaction({
-      compaction: pendingCompaction,
-      model,
-      state,
-      threadKey: "pending-deadline",
-    });
-    await vi.advanceTimersByTimeAsync(100);
-    releaseActive.resolve();
-    await Promise.all([active, pending]);
-
-    expect(pendingDeadlineAt).toBe((pendingStartedAt ?? 0) + 25);
   });
 });

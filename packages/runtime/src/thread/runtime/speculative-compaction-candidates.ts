@@ -4,23 +4,35 @@ import {
   compactionContextMessage,
 } from "../state/context";
 import type { ThreadCompactionRecord } from "../state/snapshot";
+import { equalSnapshot } from "../state/snapshot-equal";
 import type { ThreadCompactionInput } from "../state/thread-state";
 import {
   latestPrefixCompaction,
   selectAutoCompactionRange,
 } from "./auto-compaction-range";
+import { NORMAL_COMPACTION_SETTLEMENT } from "./auto-compaction-settlement";
 import type {
   AgentCompactionContext,
   AutoCompactionRange,
   ThreadTokenEstimator,
 } from "./auto-compaction-types";
-import { equalSnapshot } from "./snapshot-equal";
 
 interface Candidate {
   readonly compactions: readonly ThreadCompactionRecord[];
+  readonly hydratedPrefix: readonly ModelMessage[];
   readonly input: ThreadCompactionInput;
   readonly prefix: readonly ModelMessage[];
   readonly replacementConsumed: boolean;
+}
+
+type CandidateLifecycle =
+  | { readonly tag: "aborted" }
+  | { readonly tag: "live" };
+
+interface CandidateInstallation {
+  readonly candidate: Candidate;
+  lifecycle: CandidateLifecycle;
+  readonly previous: CandidateInstallation | undefined;
 }
 
 interface CandidateStoreOptions {
@@ -30,7 +42,7 @@ interface CandidateStoreOptions {
 }
 
 export class SpeculativeCompactionCandidates {
-  readonly #candidates = new WeakMap<object, Candidate>();
+  readonly #candidates = new WeakMap<object, CandidateInstallation>();
   readonly #estimate: ThreadTokenEstimator;
   readonly #max: number;
   readonly #retain: number;
@@ -42,15 +54,19 @@ export class SpeculativeCompactionCandidates {
   }
 
   async prepare(context: AgentCompactionContext): Promise<void> {
-    const expectedCandidate = this.#getFresh(context);
-    if (expectedCandidate?.replacementConsumed) {
+    if (context.modelContextProvenance !== "standard") {
+      return;
+    }
+    const expectedCurrent = this.#candidates.get(context.threadIdentity);
+    const expectedInstallation = this.#getFresh(context);
+    if (expectedInstallation?.candidate.replacementConsumed) {
       return;
     }
     const range = this.#selectRange(context);
     if (
       range === undefined ||
-      (expectedCandidate !== undefined &&
-        !isCompatibleExpansion(expectedCandidate, range))
+      (expectedInstallation !== undefined &&
+        !isCompatibleExpansion(expectedInstallation.candidate, range))
     ) {
       return;
     }
@@ -60,28 +76,34 @@ export class SpeculativeCompactionCandidates {
     if (!summary.trim()) {
       return;
     }
-    if (
-      expectedCandidate !== undefined &&
-      this.#candidates.get(context.threadIdentity) !== expectedCandidate
-    ) {
+    if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
       return;
     }
-    this.#candidates.set(context.threadIdentity, {
+    const next = {
       compactions: structuredClone(context.compactions),
+      hydratedPrefix: structuredClone(
+        context.estimatedHistory.slice(0, range.endSeqExclusive)
+      ),
       input: { ...range, summary },
       prefix: structuredClone(context.history.slice(0, range.endSeqExclusive)),
-      replacementConsumed: expectedCandidate !== undefined,
-    });
+      replacementConsumed: expectedInstallation !== undefined,
+    };
+    this.#installCandidate(
+      context,
+      expectedCurrent,
+      expectedInstallation,
+      next
+    );
   }
 
   async promote(
     context: AgentCompactionContext
   ): Promise<ThreadCompactionInput | undefined> {
-    const candidate = this.#getFresh(context);
+    const candidate = this.#getFresh(context)?.candidate;
     const range = this.#selectRange(context);
     if (candidate !== undefined && this.#fits(candidate, context)) {
-      this.#candidates.delete(context.threadIdentity);
-      return candidate.input;
+      context.signal.throwIfAborted();
+      return { ...candidate.input };
     }
     if (range === undefined) {
       return;
@@ -91,10 +113,50 @@ export class SpeculativeCompactionCandidates {
     if (!summary.trim()) {
       return;
     }
-    if (this.#candidates.get(context.threadIdentity) === candidate) {
-      this.#candidates.delete(context.threadIdentity);
-    }
     return { ...range, summary };
+  }
+
+  #installCandidate(
+    context: AgentCompactionContext,
+    expectedCurrent: CandidateInstallation | undefined,
+    previous: CandidateInstallation | undefined,
+    next: Candidate
+  ): void {
+    const installation: CandidateInstallation = {
+      candidate: next,
+      lifecycle: { tag: "live" },
+      previous,
+    };
+    const restore = (): void => {
+      if (context.signal.reason === NORMAL_COMPACTION_SETTLEMENT) {
+        return;
+      }
+      installation.lifecycle = { tag: "aborted" };
+      if (this.#candidates.get(context.threadIdentity) !== installation) {
+        return;
+      }
+      let restored = installation.previous;
+      while (restored?.lifecycle.tag === "aborted") {
+        restored = restored.previous;
+      }
+      if (restored) {
+        this.#candidates.set(context.threadIdentity, restored);
+        return;
+      }
+      this.#candidates.delete(context.threadIdentity);
+    };
+    context.signal.addEventListener("abort", restore, { once: true });
+    try {
+      context.signal.throwIfAborted();
+      if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
+        context.signal.removeEventListener("abort", restore);
+        return;
+      }
+      this.#candidates.set(context.threadIdentity, installation);
+    } catch (error) {
+      context.signal.removeEventListener("abort", restore);
+      throw error;
+    }
   }
 
   #fits(candidate: Candidate, context: AgentCompactionContext): boolean {
@@ -140,19 +202,26 @@ export class SpeculativeCompactionCandidates {
     return context.instructionsTokens + historyTokens <= this.#max;
   }
 
-  #getFresh(context: AgentCompactionContext): Candidate | undefined {
-    const candidate = this.#candidates.get(context.threadIdentity);
+  #getFresh(
+    context: AgentCompactionContext
+  ): CandidateInstallation | undefined {
+    const installation = this.#candidates.get(context.threadIdentity);
+    const candidate = installation?.candidate;
     if (
+      installation?.lifecycle.tag === "live" &&
       candidate !== undefined &&
       equalSnapshot(
         candidate.prefix,
         context.history.slice(0, candidate.input.endSeqExclusive)
       ) &&
+      equalSnapshot(
+        candidate.hydratedPrefix,
+        context.estimatedHistory.slice(0, candidate.input.endSeqExclusive)
+      ) &&
       equalSnapshot(candidate.compactions, context.compactions)
     ) {
-      return candidate;
+      return installation;
     }
-    this.#candidates.delete(context.threadIdentity);
     return;
   }
 

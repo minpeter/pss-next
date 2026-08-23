@@ -3,8 +3,9 @@ import type {
   RuntimeDiagnostic,
 } from "../../diagnostics";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
-import type { ThreadState } from "../state/thread-state";
+import type { ThreadCompactionInput, ThreadState } from "../state/thread-state";
 import { prepareAutoCompaction } from "./auto-compaction-preparation";
+import { NORMAL_COMPACTION_SETTLEMENT } from "./auto-compaction-settlement";
 import type {
   AgentCompaction,
   AgentCompactionReason,
@@ -12,6 +13,7 @@ import type {
   ThreadContextTransformObserver,
   ThreadModelContextTransform,
 } from "./auto-compaction-types";
+import { runCompactionHandler } from "./compaction-handler-capability";
 
 export interface AutoCompactionEpisodeOptions {
   readonly compact?: ThreadCompactionHandler;
@@ -56,6 +58,7 @@ export class CompactionDeadlineExceededError extends Error {
 /** Mutable counters shared by preparation and the commit boundary. */
 interface CompactionCounters {
   commitStarted: boolean;
+  settlingAtBoundary: boolean;
   summaryCalls: number;
 }
 
@@ -64,6 +67,7 @@ export async function runCompactionEpisode(
 ): Promise<boolean> {
   const counters: CompactionCounters = {
     commitStarted: false,
+    settlingAtBoundary: false,
     summaryCalls: 0,
   };
   const startedAt = performance.now();
@@ -115,18 +119,34 @@ async function runBeforeDeadline(
     controller.signal.addEventListener(
       "abort",
       () => {
-        if (!counters.commitStarted) {
+        if (!(counters.commitStarted || counters.settlingAtBoundary)) {
           reject(controller.signal.reason);
         }
       },
       { once: true }
     );
   });
+  const assertBeforeDeadline = (): void => {
+    controller.signal.throwIfAborted();
+    if (Date.now() >= options.deadlineAt) {
+      controller.abort(timeoutError);
+      throw timeoutError;
+    }
+  };
   try {
-    return await Promise.race([
-      prepareAndCommit({ ...options, signal: controller.signal }, counters),
+    const result = await Promise.race([
+      prepareAndCommit(
+        { ...options, signal: controller.signal },
+        counters,
+        assertBeforeDeadline
+      ),
       aborted,
     ]);
+    controller.abort(NORMAL_COMPACTION_SETTLEMENT);
+    return result;
+  } catch (error) {
+    controller.abort(error);
+    throw error;
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abortFromCaller);
@@ -135,34 +155,45 @@ async function runBeforeDeadline(
 
 async function prepareAndCommit(
   options: AutoCompactionEpisodeOptions & { readonly signal: AbortSignal },
-  counters: CompactionCounters
+  counters: CompactionCounters,
+  assertBeforeDeadline: () => void
 ): Promise<boolean> {
   const prepared = await prepareAutoCompaction(options, () => {
     counters.summaryCalls += 1;
   });
-  options.signal.throwIfAborted();
+  assertBeforeDeadline();
   if (!prepared) {
     return false;
   }
-  const markCommitStarted = (): void => {
+  const enterCommitBoundary = (): void => {
+    counters.settlingAtBoundary = true;
+    assertBeforeDeadline();
     counters.commitStarted = true;
+    counters.settlingAtBoundary = false;
   };
-  if (options.compact) {
-    return await options.compact(prepared.input, {
-      freshnessGuard: prepared.freshnessGuard,
-      markCommitStarted,
+  const commit = async (input: ThreadCompactionInput): Promise<boolean> => {
+    if (!prepared.freshnessGuard(input)) {
+      return false;
+    }
+    options.signal.throwIfAborted();
+    return await options.state.compact(input, {
+      enterCommitBoundary,
+      isFresh: () => prepared.freshnessGuard(input),
       signal: options.signal,
     });
+  };
+  const committed = options.compact
+    ? await runCompactionHandler({
+        commit,
+        handler: options.compact,
+        input: prepared.input,
+        signal: options.signal,
+      })
+    : await commit(prepared.input);
+  if (!(committed || counters.commitStarted)) {
+    assertBeforeDeadline();
   }
-  if (!prepared.freshnessGuard(prepared.input)) {
-    return false;
-  }
-  options.signal.throwIfAborted();
-  await options.state.compact(prepared.input, {
-    markCommitStarted,
-    signal: options.signal,
-  });
-  return true;
+  return committed;
 }
 
 function reportCompaction(

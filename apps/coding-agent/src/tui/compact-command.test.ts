@@ -1,3 +1,4 @@
+import { normalizeTurnError } from "@minpeter/pss-runtime";
 import { APICallError } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { createCompactCommand } from "./compact-command";
@@ -65,6 +66,78 @@ describe("/compact", () => {
       message: "Compaction failed: Cannot compact while a turn is active.",
       success: false,
     });
+  });
+
+  it("keeps a throwing prototype trap inside the command boundary", async () => {
+    const error = new Proxy(new Error("PROTOTYPE_SECRET"), {
+      getPrototypeOf() {
+        throw new Error("PROTOTYPE_SECRET");
+      },
+    });
+    const compact = vi.fn(() => Promise.reject(error));
+
+    const result = await createCompactCommand({ compact }).execute({
+      args: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).not.toContain("PROTOTYPE_SECRET");
+  });
+
+  it("keeps a throwing message getter inside the command boundary", async () => {
+    const error = new Error("initial");
+    Object.defineProperty(error, "message", {
+      get() {
+        throw new Error("MESSAGE_SECRET");
+      },
+    });
+    const compact = vi.fn(() => Promise.reject(error));
+
+    const result = await createCompactCommand({ compact }).execute({
+      args: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).not.toContain("MESSAGE_SECRET");
+  });
+
+  it("keeps a throwing Symbol.hasInstance trap inside the command boundary", async () => {
+    const NativeError = Error;
+    const hostileErrorConstructor = new Proxy(NativeError, {
+      get(target, property, receiver) {
+        if (property === Symbol.hasInstance) {
+          throw new NativeError("HAS_INSTANCE_SECRET");
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    vi.stubGlobal("Error", hostileErrorConstructor);
+    const compact = vi.fn(() => Promise.reject(new NativeError("arbitrary")));
+
+    try {
+      const result = await createCompactCommand({ compact }).execute({
+        args: [],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).not.toContain("HAS_INSTANCE_SECRET");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps arbitrary local failures generic and terminal-safe", async () => {
+    const error = new Error("secret-token\u001b[31mhostile");
+    const compact = vi.fn(() => Promise.reject(error));
+
+    const result = await createCompactCommand({ compact }).execute({
+      args: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain(normalizeTurnError(error).message);
+    expect(result.message).not.toContain("secret-token");
+    expect(result.message).not.toContain("\u001b");
   });
 
   it("normalizes provider failures without exposing raw provider details", async () => {

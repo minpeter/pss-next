@@ -183,14 +183,11 @@ export class ThreadEventDispatcher {
     }
     const compactedInput =
       decision?.action === "transform" ? decision.input : input;
-    if (context && !context.freshnessGuard(compactedInput)) {
-      return false;
-    }
     signal.throwIfAborted();
-    await state.compact(compactedInput, {
-      markCommitStarted: context?.markCommitStarted,
-      signal,
-    });
+    if (context) {
+      return await context.commit(compactedInput);
+    }
+    await state.compact(compactedInput, { signal });
     return true;
   }
 

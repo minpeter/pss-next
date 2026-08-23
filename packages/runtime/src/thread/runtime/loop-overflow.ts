@@ -38,12 +38,12 @@ export async function runAgentLoopWithOverflowCompaction({
   try {
     return await runLoop();
   } catch (error) {
-    const gateOverflow = error instanceof ContextBudgetExceededError;
-    if (gateOverflow && error.onOverflow === "error") {
+    const gateOverflow = contextGateOverflowMode(error);
+    if (gateOverflow === READ_FAILED || gateOverflow === "error") {
       throw error;
     }
 
-    if (!(gateOverflow || isContextOverflowError(error))) {
+    if (!(gateOverflow === "compact" || isContextOverflowError(error))) {
       throw error;
     }
 
@@ -91,34 +91,106 @@ function sanitizedOverflowTrigger(error: unknown): NormalizedTurnError {
   });
 }
 
-function isContextOverflowError(error: unknown, depth = 0): boolean {
-  if (depth > 6) {
+const MAX_OVERFLOW_ERROR_NODES = 10_000;
+const READ_FAILED = Symbol("read-failed");
+
+interface OverflowTraversalBudget {
+  remaining: number;
+}
+
+function safeRead<T>(read: () => T): T | typeof READ_FAILED {
+  try {
+    return read();
+  } catch {
+    return READ_FAILED;
+  }
+}
+
+function contextGateOverflowMode(
+  error: unknown
+): "compact" | "error" | false | typeof READ_FAILED {
+  const result = safeRead(() =>
+    error instanceof ContextBudgetExceededError ? error.onOverflow : false
+  );
+  return result === false || result === "compact" || result === "error"
+    ? result
+    : READ_FAILED;
+}
+
+function isContextOverflowError(
+  error: unknown,
+  depth = 0,
+  budget: OverflowTraversalBudget = { remaining: MAX_OVERFLOW_ERROR_NODES }
+): boolean {
+  if (depth > 6 || budget.remaining === 0) {
     return false;
   }
+  budget.remaining -= 1;
 
   if (typeof error === "string") {
     return hasContextOverflowText(error);
   }
 
-  if (!isObjectRecord(error)) {
+  if (typeof error !== "object" || error === null) {
     return false;
   }
 
+  for (const property of ["name", "code", "message"] as const) {
+    const text = errorText(error, property);
+    if (text === READ_FAILED) {
+      return false;
+    }
+    if (hasContextOverflowText(text)) {
+      return true;
+    }
+  }
+
+  return hasContextOverflowChild(error, depth, budget);
+}
+
+function hasContextOverflowChild(
+  error: object,
+  depth: number,
+  budget: OverflowTraversalBudget
+): boolean {
+  const cause = safeRead<unknown>(() => Reflect.get(error, "cause"));
+  if (cause === READ_FAILED) {
+    return false;
+  }
   if (
-    hasContextOverflowText(errorText(error, "name")) ||
-    hasContextOverflowText(errorText(error, "code")) ||
-    hasContextOverflowText(errorText(error, "message"))
+    (typeof cause === "string" ||
+      (typeof cause === "object" && cause !== null)) &&
+    isContextOverflowError(cause, depth + 1, budget)
   ) {
     return true;
   }
 
-  if (isContextOverflowError(error.cause, depth + 1)) {
-    return true;
+  const errors = safeRead<unknown>(() => Reflect.get(error, "errors"));
+  const arrayErrors = safeRead(() =>
+    Array.isArray(errors) ? errors : undefined
+  );
+  if (arrayErrors === READ_FAILED || !arrayErrors) {
+    return false;
   }
-
-  return Array.isArray(error.errors)
-    ? error.errors.some((item) => isContextOverflowError(item, depth + 1))
-    : false;
+  const length = safeRead(() => arrayErrors.length);
+  if (length === READ_FAILED) {
+    return false;
+  }
+  const firstIndex = Math.max(0, length - budget.remaining);
+  for (
+    let index = length - 1;
+    index >= firstIndex && budget.remaining > 0;
+    index -= 1
+  ) {
+    const child = safeRead<unknown>(() => Reflect.get(arrayErrors, index));
+    if (child === READ_FAILED) {
+      return false;
+    }
+    if (isContextOverflowError(child, depth + 1, budget)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function hasContextOverflowText(value: string): boolean {
@@ -136,11 +208,12 @@ function hasContextOverflowText(value: string): boolean {
 }
 
 function errorText(
-  value: Record<string, unknown>,
+  value: object,
   property: "code" | "message" | "name"
-): string {
-  const field = value[property];
-  return typeof field === "string" ? field : "";
+): string | typeof READ_FAILED {
+  const field = safeRead<unknown>(() => Reflect.get(value, property));
+  if (field === READ_FAILED || typeof field === "string") {
+    return field;
+  }
+  return "";
 }
-
-import { isRecord as isObjectRecord } from "../../internal/guards";

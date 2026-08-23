@@ -1,6 +1,5 @@
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
 import type { AgentHost } from "../../execution/host/types";
-import { Fsm } from "../../fsm";
 import { attachInputMeta } from "../input/input-meta";
 import {
   createRuntimeInputState,
@@ -9,7 +8,6 @@ import {
 import { BufferedAgentTurn } from "../protocol/turn";
 import {
   claimDurableThreadInput,
-  recoverDurableThreadInputs,
   releaseDurableThreadInputClaim,
 } from "../runtime/durable-input-claims";
 import {
@@ -21,93 +19,21 @@ import {
   liveThreadInputOwnedByOther,
   unregisterLiveThreadInput,
 } from "../runtime/live-input-ownership";
+import {
+  DurableInputRecoveryState as RecoveryState,
+  recoverThreadDurableInputClaims as recoverClaims,
+} from "./durable-queue-claim-recovery";
 import { inputMetaForQueuedKind } from "./durable-queue-send";
-import { isThreadDrainOwned } from "./thread-drain-coordinator";
 
-const sharedRecoveries = new WeakMap<object, Map<string, Promise<void>>>();
+export class DurableInputRecoveryState extends RecoveryState {}
 
-async function recoverAfterLiveDrain(
-  executionHost: AgentHost,
-  threadKey: string
-): Promise<void> {
-  let byThread = sharedRecoveries.get(executionHost.store);
-  if (!byThread) {
-    byThread = new Map();
-    sharedRecoveries.set(executionHost.store, byThread);
-  }
-  const existing = byThread.get(threadKey);
-  if (existing) {
-    return await existing;
-  }
-  const recovery = (async () => {
-    await recoverDurableThreadInputs({ executionHost, threadKey });
-  })();
-  byThread.set(threadKey, recovery);
-  try {
-    await recovery;
-  } finally {
-    if (byThread.get(threadKey) === recovery) {
-      byThread.delete(threadKey);
-    }
-  }
-}
-
-/**
- * One-shot recovery of orphaned durable input claims:
- * `pending -> recovering -> recovered`, rolling back to `pending` when the
- * recovery fails so the next admission retries it.
- */
-type DurableInputRecoveryPhase =
-  | { readonly tag: "pending" }
-  | { readonly tag: "recovering" }
-  | { readonly tag: "recovered" };
-
-export class DurableInputRecoveryState {
-  readonly machine = new Fsm<DurableInputRecoveryPhase>({
-    initial: { tag: "pending" },
-    name: "durable-input-recovery",
-    transitions: {
-      pending: ["recovering"],
-      recovering: ["recovered", "pending"],
-      recovered: [],
-    },
-  });
-}
-
-export async function recoverThreadDurableInputClaims({
-  allowOwned = false,
-  executionHost,
-  state,
-  threadKey,
-}: {
+export function recoverThreadDurableInputClaims(options: {
   readonly allowOwned?: boolean;
   readonly executionHost: AgentHost | undefined;
   readonly state: DurableInputRecoveryState;
   readonly threadKey: string;
 }): Promise<void> {
-  if (state.machine.state.tag !== "pending") {
-    return;
-  }
-  if (
-    executionHost &&
-    !allowOwned &&
-    isThreadDrainOwned(executionHost, threadKey)
-  ) {
-    return;
-  }
-
-  state.machine.to({ tag: "recovering" });
-  try {
-    if (executionHost) {
-      await recoverAfterLiveDrain(executionHost, threadKey);
-    } else {
-      await recoverDurableThreadInputs({ executionHost, threadKey });
-    }
-    state.machine.to({ tag: "recovered" });
-  } catch (error) {
-    state.machine.to({ tag: "pending" });
-    throw error;
-  }
+  return recoverClaims(options);
 }
 
 export async function claimOrphanDurableThreadInput({

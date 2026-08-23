@@ -1,57 +1,34 @@
-import { type Deferred, deferred } from "../../internal/deferred";
+import { deferred } from "../../internal/deferred";
+import type { ThreadCompactionInput } from "../state/thread-state";
 import {
   automaticCompactionDeadline,
+  type CompactionDeadline,
+  earliestCompactionDeadline,
   strictCompactionDeadline,
 } from "./auto-compaction-deadline";
 import {
-  type AutoCompactionEpisodeOptions,
   CompactionDeadlineExceededError,
   runCompactionEpisode,
 } from "./auto-compaction-episode";
+import {
+  type ActiveCompaction,
+  type CompactionCoordinator,
+  type CompactionRequestOptions,
+  coordinatorFor,
+  enqueuePending,
+  type RunnableCompactionRequest,
+  restorePendingAfterFailedRetry,
+  type ScheduledCompactionRequest,
+  takePendingForActivation,
+  takePendingForRetry,
+  waitForActiveCompaction,
+} from "./auto-compaction-scheduler";
 import type {
   AgentCompaction,
   AgentCompactionReason,
   CompactionSummaryOptions,
 } from "./auto-compaction-types";
-
-type CompactionRequestOptions = Omit<
-  AutoCompactionEpisodeOptions,
-  | "compaction"
-  | "compactionId"
-  | "deadlineAt"
-  | "deadlineMs"
-  | "reason"
-  | "runnerAttempt"
-> & {
-  readonly compaction?: AgentCompaction;
-};
-
-type RunnableCompactionRequest = CompactionRequestOptions & {
-  readonly compaction: AgentCompaction;
-};
-
-interface ActiveCompaction {
-  readonly promise: Promise<boolean>;
-  readonly reason: AgentCompactionReason;
-}
-
-/** Per-thread scheduling state; mutation is its documented purpose. */
-interface CompactionCoordinator {
-  active: ActiveCompaction | undefined;
-  blockingWaiters: number;
-  pending: PendingCompaction | undefined;
-}
-
-/** Coalesced completed-turn request awaiting the blocking lane. */
-interface PendingCompaction {
-  readonly deferred: Deferred;
-  options: RunnableCompactionRequest;
-}
-
-const coordinators = new WeakMap<
-  AutoCompactionEpisodeOptions["state"],
-  CompactionCoordinator
->();
+import { compactionQueueDeadline } from "./compaction-queue-deadline";
 
 export function scheduleThreadCompaction(
   options: CompactionRequestOptions
@@ -59,12 +36,18 @@ export function scheduleThreadCompaction(
   if (!options.compaction) {
     return Promise.resolve();
   }
-  const runnable = { ...options, compaction: options.compaction };
+  const request: ScheduledCompactionRequest = {
+    deadline: automaticCompactionDeadline({
+      compaction: options.compaction,
+      diagnostics: options.model.diagnostics,
+    }),
+    options: { ...options, compaction: options.compaction },
+  };
   const coordinator = coordinatorFor(options.state);
   if (coordinator.active || coordinator.blockingWaiters > 0) {
-    return enqueuePending(coordinator, runnable);
+    return enqueuePending(coordinator, request);
   }
-  return startCompletedTurn(coordinator, runnable);
+  return startCompletedTurn(coordinator, request);
 }
 
 export async function compactThreadBlocking(
@@ -74,7 +57,10 @@ export async function compactThreadBlocking(
     return false;
   }
   return await runBlocking({
-    deadline: { kind: "automatic", compaction: options.compaction },
+    deadline: automaticCompactionDeadline({
+      compaction: options.compaction,
+      diagnostics: options.model.diagnostics,
+    }),
     options: { ...options, compaction: options.compaction },
     reason: "overflow",
   });
@@ -83,22 +69,26 @@ export async function compactThreadBlocking(
 /** Force a compaction through the automatic snapshot and freshness pipeline. */
 export async function compactThreadManually(
   options: Omit<CompactionRequestOptions, "compaction"> & {
+    readonly deadline?: CompactionDeadline;
     readonly deadlineMs?: () => number;
+    readonly explicitInput?: ThreadCompactionInput;
     readonly summaryOptions?: CompactionSummaryOptions;
   }
 ): Promise<boolean> {
-  const compaction: AgentCompaction = async (context) => {
-    if (context.history.length === 0) {
-      return;
-    }
-    const range = { endSeqExclusive: context.history.length, startSeq: 0 };
-    return {
-      ...range,
-      summary: await context.summarize(range, options.summaryOptions),
-    };
-  };
+  const compaction: AgentCompaction = options.explicitInput
+    ? () => options.explicitInput
+    : async (context) => {
+        if (context.history.length === 0) {
+          return;
+        }
+        const range = { endSeqExclusive: context.history.length, startSeq: 0 };
+        return {
+          ...range,
+          summary: await context.summarize(range, options.summaryOptions),
+        };
+      };
   return await runBlocking({
-    deadline: { kind: "manual", deadlineMs: options.deadlineMs },
+    deadline: options.deadline ?? strictCompactionDeadline(options.deadlineMs),
     options: { ...options, compaction },
     reason: "manual",
   });
@@ -106,13 +96,10 @@ export async function compactThreadManually(
 
 function startCompletedTurn(
   coordinator: CompactionCoordinator,
-  options: RunnableCompactionRequest
+  request: ScheduledCompactionRequest
 ): Promise<void> {
+  const { deadline, options } = request;
   const running = activate(coordinator, "completed-turn", async () => {
-    const deadline = automaticCompactionDeadline({
-      compaction: options.compaction,
-      diagnostics: options.model.diagnostics,
-    });
     const episode = {
       ...options,
       ...deadline,
@@ -128,9 +115,23 @@ function startCompletedTurn(
       ) {
         return false;
       }
+      const coveredPending = takePendingForRetry(coordinator);
+      const retryOptions = coveredPending?.options ?? options;
+      const retryDeadline = coveredPending
+        ? earliestCompactionDeadline(deadline, coveredPending.deadline)
+        : deadline;
       try {
-        return await runCompactionEpisode({ ...episode, runnerAttempt: 2 });
+        const result = await runCompactionEpisode({
+          ...retryOptions,
+          ...retryDeadline,
+          compactionId: episode.compactionId,
+          reason: "completed-turn",
+          runnerAttempt: 2,
+        });
+        coveredPending?.deferred.resolve(undefined);
+        return result;
       } catch {
+        restorePendingAfterFailedRetry(coordinator, coveredPending);
         return false;
       }
     }
@@ -138,31 +139,20 @@ function startCompletedTurn(
   return running.then(() => undefined);
 }
 
-function enqueuePending(
-  coordinator: CompactionCoordinator,
-  options: RunnableCompactionRequest
-): Promise<void> {
-  const pending = coordinator.pending;
-  if (pending) {
-    pending.options = options;
-    return pending.deferred.promise;
-  }
-  const queued = { deferred: deferred(), options };
-  coordinator.pending = queued;
-  return queued.deferred.promise;
-}
-
 async function runBlocking({
   deadline,
   options,
   reason,
 }: {
-  readonly deadline:
-    | { readonly compaction: AgentCompaction; readonly kind: "automatic" }
-    | { readonly deadlineMs?: () => number; readonly kind: "manual" };
+  readonly deadline: CompactionDeadline;
   readonly options: RunnableCompactionRequest;
   readonly reason: "manual" | "overflow";
 }): Promise<boolean> {
+  const queueDeadline = compactionQueueDeadline({
+    deadline,
+    reason,
+    signal: options.signal,
+  });
   const coordinator = coordinatorFor(options.state);
   coordinator.blockingWaiters += 1;
   try {
@@ -170,8 +160,13 @@ async function runBlocking({
       const active = coordinator.active;
       const compacted = await waitForActiveCompaction(
         active.promise,
-        options.signal
+        queueDeadline.signal
       );
+      options.signal?.throwIfAborted();
+      if (Date.now() >= deadline.deadlineAt) {
+        throw new CompactionDeadlineExceededError({ ...deadline, reason });
+      }
+      queueDeadline.signal.throwIfAborted();
       if (active.reason !== "completed-turn") {
         return compacted;
       }
@@ -179,50 +174,20 @@ async function runBlocking({
         return true;
       }
     }
-    return await activate(coordinator, reason, async () => {
-      const resolvedDeadline =
-        deadline.kind === "automatic"
-          ? automaticCompactionDeadline({
-              compaction: options.compaction,
-              diagnostics: options.model.diagnostics,
-            })
-          : strictCompactionDeadline(deadline.deadlineMs);
-      return await runCompactionEpisode({
+    queueDeadline.dispose();
+    return await activate(coordinator, reason, () =>
+      runCompactionEpisode({
         ...options,
-        ...resolvedDeadline,
+        ...deadline,
         compactionId: crypto.randomUUID(),
         reason,
         runnerAttempt: 1,
-      });
-    });
+      })
+    );
   } finally {
+    queueDeadline.dispose();
     coordinator.blockingWaiters -= 1;
     startPendingIfReady(coordinator);
-  }
-}
-
-async function waitForActiveCompaction(
-  active: Promise<boolean>,
-  signal: AbortSignal | undefined
-): Promise<boolean> {
-  if (!signal) {
-    return await active;
-  }
-  if (signal.aborted) {
-    throw signal.reason;
-  }
-  let rejectAborted!: (reason: unknown) => void;
-  const aborted = new Promise<never>((_resolve, reject) => {
-    rejectAborted = reject;
-  });
-  const abortFromCaller = (): void => {
-    rejectAborted(signal.reason);
-  };
-  signal.addEventListener("abort", abortFromCaller, { once: true });
-  try {
-    return await Promise.race([active, aborted]);
-  } finally {
-    signal.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -267,26 +232,11 @@ function startPendingIfReady(coordinator: CompactionCoordinator): void {
   ) {
     return;
   }
-  const pending = coordinator.pending;
-  coordinator.pending = undefined;
-  startCompletedTurn(coordinator, pending.options).then(
-    pending.deferred.resolve,
-    pending.deferred.reject
-  );
-}
-
-function coordinatorFor(
-  state: AutoCompactionEpisodeOptions["state"]
-): CompactionCoordinator {
-  const existing = coordinators.get(state);
-  if (existing) {
-    return existing;
+  const pending = takePendingForActivation(coordinator);
+  if (pending) {
+    startCompletedTurn(coordinator, pending).then(
+      pending.deferred.resolve,
+      pending.deferred.reject
+    );
   }
-  const coordinator: CompactionCoordinator = {
-    active: undefined,
-    blockingWaiters: 0,
-    pending: undefined,
-  };
-  coordinators.set(state, coordinator);
-  return coordinator;
 }

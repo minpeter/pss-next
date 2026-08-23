@@ -8,6 +8,8 @@ import {
   validateThreadCompactionRecord,
 } from "./snapshot";
 
+const recordCompactionForCommitSymbol = Symbol("recordCompactionForCommit");
+
 export class ModelMessageHistory {
   readonly #compactions: ThreadCompactionRecord[] = [];
   readonly #modelHistory: ModelMessage[] = [];
@@ -53,7 +55,30 @@ export class ModelMessageHistory {
     return structuredClone(this.#compactions);
   }
 
-  recordCompaction(record: ThreadCompactionRecord): ThreadCompactionRecord {
+  recordCompaction(record: ThreadCompactionRecord): void {
+    this.#storeCompaction(record);
+  }
+
+  [recordCompactionForCommitSymbol](
+    record: ThreadCompactionRecord
+  ): () => void {
+    const stored = this.#storeCompaction(record);
+    let active = true;
+    return () => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      const index = this.#compactions.indexOf(stored);
+      if (index === -1) {
+        return;
+      }
+      this.#compactions.splice(index, 1);
+      this.#triggerChange();
+    };
+  }
+
+  #storeCompaction(record: ThreadCompactionRecord): ThreadCompactionRecord {
     const stored = validateThreadCompactionRecord(
       record,
       this.#modelHistory.length
@@ -61,15 +86,6 @@ export class ModelMessageHistory {
     this.#compactions.push(stored);
     this.#triggerChange();
     return stored;
-  }
-
-  removeCompaction(record: ThreadCompactionRecord): void {
-    const index = this.#compactions.indexOf(record);
-    if (index === -1) {
-      return;
-    }
-    this.#compactions.splice(index, 1);
-    this.#triggerChange();
   }
 
   appendUserInput(input: UserInput): void {
@@ -109,6 +125,13 @@ export class ModelMessageHistory {
   #triggerChange(): void {
     this.#onChange?.(this.modelSnapshot());
   }
+}
+
+export function recordCompactionForCommit(
+  history: ModelMessageHistory,
+  record: ThreadCompactionRecord
+): () => void {
+  return history[recordCompactionForCommitSymbol](record);
 }
 
 function applyCompactions(

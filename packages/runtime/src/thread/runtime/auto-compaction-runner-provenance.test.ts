@@ -42,7 +42,7 @@ describe("compaction model-context provenance", () => {
       { content: "transformed current projection", role: "user" },
     ];
     let observedContext: Parameters<AgentCompaction>[0] | undefined;
-    const compaction: AgentCompaction = (context) => {
+    const compaction: AgentCompaction = (context): undefined => {
       observedContext = context;
       return;
     };
@@ -65,7 +65,7 @@ describe("compaction model-context provenance", () => {
   it("marks an observer without an observation as unknown", async () => {
     const state = await stateWithHistory();
     let provenance: string | undefined;
-    const compaction: AgentCompaction = (context) => {
+    const compaction: AgentCompaction = (context): undefined => {
       provenance = context.modelContextProvenance;
       return;
     };
@@ -85,7 +85,7 @@ describe("compaction model-context provenance", () => {
     const state = await stateWithHistory();
     let provenance: string | undefined;
     let modelContext: readonly ModelMessage[] = [];
-    const compaction: AgentCompaction = (context) => {
+    const compaction: AgentCompaction = (context): undefined => {
       provenance = context.modelContextProvenance;
       modelContext = context.modelContext;
       return;
@@ -109,7 +109,7 @@ describe("compaction model-context provenance", () => {
   it("marks an identity observation over the current projection as standard", async () => {
     const state = await stateWithHistory();
     let provenance: string | undefined;
-    const compaction: AgentCompaction = (context) => {
+    const compaction: AgentCompaction = (context): undefined => {
       provenance = context.modelContextProvenance;
       return;
     };
@@ -126,6 +126,57 @@ describe("compaction model-context provenance", () => {
     });
 
     expect(provenance).toBe("standard");
+  });
+
+  it("reuses a prepared candidate across completed-turn episodes", async () => {
+    // Given
+    const state = new ThreadState({
+      key: "cross-episode-candidate-reuse",
+      store: new MemoryThreadStore(),
+    });
+    await state.ensureLoaded();
+    for (let index = 0; index < 6; index += 1) {
+      state.history.appendModelMessage(
+        index % 2 === 0
+          ? { content: String(index), role: "user" }
+          : assistantMessage(String(index))
+      );
+    }
+    let summaryCalls = 0;
+    const summaryModel = {
+      model: createCallbackModel(() => {
+        summaryCalls += 1;
+        return [assistantMessage(`summary-${summaryCalls}`)];
+      }),
+    };
+    const compaction = speculativeCompaction({
+      estimateTokens: (messages) => messages.length * 10,
+      maxInputTokens: 100,
+      prepareRatio: 0.5,
+      promoteRatio: 0.7,
+      retainRatio: 0.2,
+    });
+
+    // When
+    await scheduleThreadCompaction({
+      compaction,
+      model: summaryModel,
+      state,
+      threadKey: "cross-episode-candidate-reuse",
+    });
+    state.history.appendModelMessage({ content: "tail", role: "user" });
+    await scheduleThreadCompaction({
+      compaction,
+      model: summaryModel,
+      state,
+      threadKey: "cross-episode-candidate-reuse",
+    });
+
+    // Then
+    expect({
+      persistedSummary: state.compactionSnapshot()[0]?.summary.content,
+      summaryCalls,
+    }).toEqual({ persistedSummary: "summary-1", summaryCalls: 1 });
   });
 
   it("re-summarizes instead of reusing when the real provider projection is transformed", async () => {

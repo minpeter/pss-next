@@ -42,10 +42,6 @@ export function compactionTokenAccounting({
           .estimateMessageUnits(measurementProfile.measureMessages(messages))
           .reduce((sum, tokens) => sum + tokens, 0)
     : (legacyEstimate ?? estimateModelMessagesTokens);
-  const instructionsTokens =
-    meterView || !model.instructions
-      ? 0
-      : estimate([{ content: model.instructions, role: "system" }]);
   const transformOverhead = Math.max(
     0,
     estimate(observedOutput) - estimate(observedInput)
@@ -55,18 +51,21 @@ export function compactionTokenAccounting({
       measurementProfile.measureMessages(hydratedModelContext),
     historyMessageUnits: measurementProfile.measureMessages(estimatedHistory),
   });
+  const instructionsTokens =
+    meterProfile?.fixedPrompt || !model.instructions
+      ? 0
+      : estimate([{ content: model.instructions, role: "system" }]);
   const estimatedHistoryMessageTokens =
     meterProfile?.historyMarginal ??
     (legacyEstimate
       ? estimatedHistory.map((message) => estimate([message]))
       : undefined);
-  const fixedTokens = meterProfile
-    ? meterProfile.fixedPrompt + transformOverhead
-    : instructionsTokens + transformOverhead;
+  const fixedTokens =
+    (meterProfile?.fixedPrompt ?? 0) + instructionsTokens + transformOverhead;
   return {
     estimate,
     estimatedContextTokens: meterProfile
-      ? meterProfile.fullInput + transformOverhead
+      ? meterProfile.fullInput + transformOverhead + instructionsTokens
       : estimate(hydratedModelContext) + fixedTokens,
     ...(estimatedHistoryMessageTokens ? { estimatedHistoryMessageTokens } : {}),
     fixedTokens,

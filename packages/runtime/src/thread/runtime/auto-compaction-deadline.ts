@@ -34,6 +34,13 @@ export function strictCompactionDeadline(
   return compactionDeadline(readDeadlineMs);
 }
 
+export function earliestCompactionDeadline(
+  first: CompactionDeadline,
+  second: CompactionDeadline
+): CompactionDeadline {
+  return first.deadlineAt <= second.deadlineAt ? first : second;
+}
+
 function compactionDeadline(readDeadlineMs?: () => number): CompactionDeadline {
   const deadlineMs = readDeadlineMs?.() ?? DEFAULT_COMPACTION_DEADLINE_MS;
   if (
