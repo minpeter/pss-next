@@ -16,6 +16,7 @@ import {
 import { typescriptSubprocessArguments } from "./typescript-subprocess.test-support";
 
 const temporaryDirectories: string[] = [];
+const CLI_SUBPROCESS_TIMEOUT_MS = 30_000;
 const TERMINAL_ACTIVE_CATEGORY = /[\p{Cf}\p{Zl}\p{Zp}]/u;
 const TERMINAL_ACTIVE_UNICODE = Array.from(
   { length: 1_114_112 },
@@ -175,45 +176,53 @@ describe("runtime block-time bounded and terminal-safe boundaries", () => {
     ["C0 in an unknown flag", ["--unknown\u0007secret", "value"]],
     ["C1 in an unknown flag", ["--unknown\u009bsecret", "value"]],
     ["newline in an unknown flag", ["--unknown\nsecret", "value"]],
-  ])("emits only the stable options error for %s", async (_name, args) => {
-    // Given
-    const expectedError = "RUNTIME_BLOCK_TIME_OPTIONS_INVALID\n";
+  ])(
+    "emits only the stable options error for %s",
+    async (_name, args) => {
+      // Given
+      const expectedError = "RUNTIME_BLOCK_TIME_OPTIONS_INVALID\n";
 
-    // When
-    const result = await runCli(args);
+      // When
+      const result = await runCli(args);
 
-    // Then
-    expect(result).toEqual({
-      exitCode: 1,
-      stderr: expectedError,
-      stdout: "",
-    });
-  });
+      // Then
+      expect(result).toEqual({
+        exitCode: 1,
+        stderr: expectedError,
+        stdout: "",
+      });
+    },
+    CLI_SUBPROCESS_TIMEOUT_MS
+  );
 
-  it("rejects a real CLI output path containing terminal controls without echoing it", async () => {
-    // Given
-    const directory = await mkdtemp(join(tmpdir(), "runtime-block-safe-"));
-    temporaryDirectories.push(directory);
-    const outputDirectory = join(
-      directory,
-      "unsafe-\u0007-\u009b-\u001b-new\nline"
-    );
+  it(
+    "rejects a real CLI output path containing terminal controls without echoing it",
+    async () => {
+      // Given
+      const directory = await mkdtemp(join(tmpdir(), "runtime-block-safe-"));
+      temporaryDirectories.push(directory);
+      const outputDirectory = join(
+        directory,
+        "unsafe-\u0007-\u009b-\u001b-new\nline"
+      );
 
-    // When
-    const result = await runCli([
-      "--mode",
-      "deterministic",
-      "--repetitions",
-      "1",
-      "--output",
-      outputDirectory,
-    ]);
+      // When
+      const result = await runCli([
+        "--mode",
+        "deterministic",
+        "--repetitions",
+        "1",
+        "--output",
+        outputDirectory,
+      ]);
 
-    // Then
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stdout).not.toContain(outputDirectory);
-    expect(result.stderr).not.toContain(outputDirectory);
-  });
+      // Then
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).not.toContain(outputDirectory);
+      expect(result.stderr).not.toContain(outputDirectory);
+    },
+    CLI_SUBPROCESS_TIMEOUT_MS
+  );
 
   it("rejects a malformed UTF-16 output path at CLI admission", () => {
     // Given
@@ -226,22 +235,26 @@ describe("runtime block-time bounded and terminal-safe boundaries", () => {
     expect(admit).toThrow(TypeError);
   });
 
-  it("rejects a real live CLI model label containing terminal controls before provider dispatch", async () => {
-    // Given
-    const model = "unsafe-\u0007-\u009b-\u001b-new\nline";
+  it(
+    "rejects a real live CLI model label containing terminal controls before provider dispatch",
+    async () => {
+      // Given
+      const model = "unsafe-\u0007-\u009b-\u001b-new\nline";
 
-    // When
-    const result = await runCli(["--mode", "live", "--repetitions", "1"], {
-      AI_API_KEY: "test-key",
-      AI_BASE_URL: "http://127.0.0.1:9/v1",
-      AI_MODEL: model,
-    });
+      // When
+      const result = await runCli(["--mode", "live", "--repetitions", "1"], {
+        AI_API_KEY: "test-key",
+        AI_BASE_URL: "http://127.0.0.1:9/v1",
+        AI_MODEL: model,
+      });
 
-    // Then
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stdout).not.toContain(model);
-    expect(result.stderr).not.toContain(model);
-  });
+      // Then
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).not.toContain(model);
+      expect(result.stderr).not.toContain(model);
+    },
+    CLI_SUBPROCESS_TIMEOUT_MS
+  );
 
   it("prevents a runtime model label from escaping into raw HTML", () => {
     // Given
