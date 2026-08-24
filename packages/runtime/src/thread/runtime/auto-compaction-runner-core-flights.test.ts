@@ -6,7 +6,10 @@ import {
   compactThreadBlocking,
   scheduleThreadCompaction,
 } from "./auto-compaction-runner";
-import { model, stateWithHistory } from "./auto-compaction-runner-core-support";
+import {
+  model,
+  stateWithHistory,
+} from "./auto-compaction-runner-concurrency-support";
 import type {
   AgentCompaction,
   ThreadCompactionHandler,

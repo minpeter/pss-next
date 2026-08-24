@@ -4,16 +4,23 @@ import {
   assistantMessage,
   createCallbackModel,
 } from "../../testing/test-fixtures";
+import {
+  encodeRuntimeAttachmentData,
+  type RuntimeAttachmentReference,
+} from "../input/attachments";
 import { ThreadState } from "../state/thread-state";
+import type { ThreadStore } from "../store/types";
 
 export const model = {
   model: createCallbackModel(() => [assistantMessage("unused")]),
 };
 
-export async function stateWithHistory(): Promise<ThreadState> {
+export async function stateWithHistory(
+  store: ThreadStore = new MemoryThreadStore()
+): Promise<ThreadState> {
   const state = new ThreadState({
-    key: "runner-concurrency-test",
-    store: new MemoryThreadStore(),
+    key: "runner-test",
+    store,
   });
   await state.ensureLoaded();
   const history: readonly ModelMessage[] = [
@@ -25,4 +32,20 @@ export async function stateWithHistory(): Promise<ThreadState> {
     state.history.appendModelMessage(message);
   }
   return state;
+}
+
+export function attachmentMessage(
+  ref: RuntimeAttachmentReference
+): ModelMessage {
+  return {
+    content: [
+      {
+        data: encodeRuntimeAttachmentData(ref),
+        filename: "payload.bin",
+        mediaType: "application/octet-stream",
+        type: "file",
+      },
+    ],
+    role: "user",
+  };
 }

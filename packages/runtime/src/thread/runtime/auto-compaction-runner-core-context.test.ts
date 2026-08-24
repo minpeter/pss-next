@@ -21,7 +21,7 @@ import {
   attachmentMessage,
   model,
   stateWithHistory,
-} from "./auto-compaction-runner-core-support";
+} from "./auto-compaction-runner-concurrency-support";
 import type { AgentCompaction } from "./auto-compaction-types";
 import { speculativeCompaction } from "./speculative-compaction";
 
