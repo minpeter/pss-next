@@ -21,6 +21,28 @@ import type { CompactionFixture } from "./fixture";
 import { buildHoldoutFixture } from "./holdout-fixtures";
 import { buildScenarioFixture } from "./scenario-fixtures";
 
+const TERMINAL_CONTROL = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+export function formatComparisonReportLocation(reportPath: string): string {
+  const encodedPath = JSON.stringify(reportPath).replace(
+    TERMINAL_CONTROL,
+    (character) => {
+      const codePoint = character.codePointAt(0);
+      if (codePoint === undefined) {
+        return "";
+      }
+      if (codePoint <= 0xff_ff) {
+        return `\\u${codePoint.toString(16).padStart(4, "0")}`;
+      }
+      const scalar = codePoint - 0x1_00_00;
+      const high = 0xd8_00 + Math.floor(scalar / 0x4_00);
+      const low = 0xdc_00 + (scalar % 0x4_00);
+      return `\\u${high.toString(16)}\\u${low.toString(16)}`;
+    }
+  );
+  return `report: ${encodedPath}`;
+}
+
 async function main(): Promise<void> {
   const model = createCodingLanguageModel({ providerName: "compare-pi" });
   const env = readOpenAICompatibleModelEnv();
@@ -54,12 +76,10 @@ async function main(): Promise<void> {
   }
 
   const report = buildComparisonReport(rows, env.AI_MODEL);
-  await writeFile(
-    join(outputDir, "comparison.json"),
-    `${JSON.stringify(report, null, 2)}\n`
-  );
+  const reportPath = join(outputDir, "comparison.json");
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify(report.aggregate, null, 2));
-  console.log("report: comparison.json");
+  console.log(formatComparisonReportLocation(reportPath));
 }
 
 function buildComparisonFixture(

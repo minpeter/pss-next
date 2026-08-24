@@ -8,7 +8,8 @@ import type { ArmResult } from "./compare-pi-types";
  */
 export async function withSemanticScore(
   model: LanguageModel,
-  result: ArmResult
+  result: ArmResult,
+  semanticDeadline: AbortSignal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
 ): Promise<ArmResult> {
   if (result.status !== "valid" || !result.score) {
     return result;
@@ -16,36 +17,59 @@ export async function withSemanticScore(
   const misses = result.score.disagreements.filter(
     (item) => item.arm === "compacted"
   );
+  const listener = new AbortController();
+  const deadlineReached = new Promise<undefined>((resolve) => {
+    if (semanticDeadline.aborted) {
+      resolve(undefined);
+      return;
+    }
+    semanticDeadline.addEventListener("abort", () => resolve(undefined), {
+      once: true,
+      signal: listener.signal,
+    });
+  });
   let recovered = 0;
-  for (const miss of misses) {
-    try {
-      const { text } = await generateText({
-        abortSignal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-        maxOutputTokens: 8,
-        messages: [
-          {
-            content: [
-              "You are grading a short factual answer.",
-              `Question: ${miss.question}`,
-              `Reference answer: ${miss.expected}`,
-              `Candidate answer: ${miss.actual}`,
-              "Does the candidate answer convey the same specific fact as the reference answer? Ignore phrasing, casing, and grammatical differences, but require the same concrete values and identifiers.",
-              "Reply with exactly yes or no.",
-            ].join("\n"),
-            role: "user",
-          },
-        ],
-        model,
-        temperature: 0,
-      });
-      if (text.trim().toLowerCase().startsWith("yes")) {
+  try {
+    for (const miss of misses) {
+      if (semanticDeadline.aborted) {
+        break;
+      }
+      const generatedText = Promise.resolve()
+        .then(() =>
+          generateText({
+            abortSignal: semanticDeadline,
+            maxOutputTokens: 8,
+            messages: [
+              {
+                content: [
+                  "You are grading a short factual answer.",
+                  `Question: ${miss.question}`,
+                  `Reference answer: ${miss.expected}`,
+                  `Candidate answer: ${miss.actual}`,
+                  "Does the candidate answer convey the same specific fact as the reference answer? Ignore phrasing, casing, and grammatical differences, but require the same concrete values and identifiers.",
+                  "Reply with exactly yes or no.",
+                ].join("\n"),
+                role: "user",
+              },
+            ],
+            model,
+            temperature: 0,
+          })
+        )
+        .then(
+          (generated) => generated.text,
+          (): undefined => undefined
+        );
+      const text = await Promise.race([generatedText, deadlineReached]);
+      if (semanticDeadline.aborted) {
+        break;
+      }
+      if (text?.trim().toLowerCase() === "yes") {
         recovered += 1;
       }
-    } catch (cause) {
-      if (!(cause instanceof Error)) {
-        throw cause;
-      }
     }
+  } finally {
+    listener.abort();
   }
   return {
     ...result,
