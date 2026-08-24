@@ -15,12 +15,12 @@ describe("exec CLI option error output", () => {
     const result = spawnSync(
       process.execPath,
       [resolve(codingAgentRoot, "bin/pss.js"), "exec", hostileOption, "value"],
-      { cwd: repositoryRoot, encoding: "utf8" }
+      { cwd: repositoryRoot, encoding: "utf8", timeout: 20_000 }
     );
 
     // Then
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe(INVALID_EXEC_OPTION_OUTPUT);
-  });
+  }, 30_000);
 });

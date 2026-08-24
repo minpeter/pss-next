@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,9 +7,80 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const codingAgentRoot = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(codingAgentRoot, "../..");
+const CLEANUP_TIMEOUT_MS = 5000;
+const SUBPROCESS_TIMEOUT_MS = 20_000;
+const TEST_TIMEOUT_MS = 30_000;
+
+async function forceCloseChild(child: ChildProcess): Promise<void> {
+  let closeListener: (() => void) | undefined;
+  const closed = new Promise<void>((resolveClosed) => {
+    closeListener = () => resolveClosed();
+    child.once("close", closeListener);
+  });
+  try {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+    child.kill("SIGKILL");
+    await Promise.race([
+      closed,
+      once(AbortSignal.timeout(CLEANUP_TIMEOUT_MS), "abort").then(() => {
+        throw new Error("Timed out while closing the child process.");
+      }),
+    ]);
+  } finally {
+    if (closeListener !== undefined) {
+      child.off("close", closeListener);
+    }
+  }
+}
+
+async function runWithCleanup<T>(
+  operation: Promise<T>,
+  cleanup: () => Promise<void>
+): Promise<T> {
+  const [operationResult] = await Promise.allSettled([operation]);
+  const [cleanupResult] = await Promise.allSettled([
+    Promise.resolve().then(cleanup),
+  ]);
+  if (operationResult.status === "rejected") {
+    throw operationResult.reason;
+  }
+  if (cleanupResult.status === "rejected") {
+    throw cleanupResult.reason;
+  }
+  return operationResult.value;
+}
 
 describe("exec CLI extension validation", () => {
   let root: string;
+
+  it("subscribes to close before checking exited state", async () => {
+    const child = new ChildProcess();
+    let closeListenerWasAttached = false;
+    Object.defineProperty(child, "exitCode", {
+      get: () => {
+        closeListenerWasAttached = child.listenerCount("close") > 0;
+        return 0;
+      },
+    });
+
+    await forceCloseChild(child);
+
+    expect(closeListenerWasAttached).toBe(true);
+    expect(child.listenerCount("close")).toBe(0);
+  });
+
+  it("preserves subprocess failure when cleanup also fails", async () => {
+    const subprocessError = new Error("subprocess failed");
+    const cleanupError = new Error("cleanup failed");
+
+    await expect(
+      runWithCleanup(Promise.reject(subprocessError), () =>
+        Promise.reject(cleanupError)
+      )
+    ).rejects.toBe(subprocessError);
+  });
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "pss-exec-extension-security-"));
@@ -19,7 +90,7 @@ describe("exec CLI extension validation", () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it("prints a safe error for a hostile configured extension id", async () => {
+  const rejectHostileExtensionId = async (): Promise<void> => {
     // Given
     const hostileId = "extension-secret\u001b[2J\u0007\nSECOND_LINE\u2028";
     const home = join(root, "home");
@@ -66,7 +137,9 @@ describe("exec CLI extension validation", () => {
         stdio: ["ignore", "pipe", "pipe"],
       }
     );
-    const closed = once(child, "close");
+    const closed = once(child, "close", {
+      signal: AbortSignal.timeout(SUBPROCESS_TIMEOUT_MS),
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => {
@@ -77,7 +150,9 @@ describe("exec CLI extension validation", () => {
     });
 
     // When
-    const [exitCode] = await closed;
+    const [exitCode] = await runWithCleanup(closed, () =>
+      forceCloseChild(child)
+    );
 
     // Then
     const output = `${stdout}${stderr}`;
@@ -89,9 +164,14 @@ describe("exec CLI extension validation", () => {
     expect(output).not.toContain("\u001b");
     expect(output).not.toContain("\u0007");
     expect(output).not.toContain("\u2028");
-  });
+  };
+  it(
+    "prints a safe error for a hostile configured extension id",
+    rejectHostileExtensionId,
+    TEST_TIMEOUT_MS
+  );
 
-  it("prints a path-free error for duplicate enabled extension ids", async () => {
+  const rejectDuplicateExtensionIds = async (): Promise<void> => {
     // Given
     const privateId = "private-api-token";
     const home = join(root, "home");
@@ -138,7 +218,9 @@ describe("exec CLI extension validation", () => {
         stdio: ["ignore", "pipe", "pipe"],
       }
     );
-    const closed = once(child, "close");
+    const closed = once(child, "close", {
+      signal: AbortSignal.timeout(SUBPROCESS_TIMEOUT_MS),
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => {
@@ -149,7 +231,9 @@ describe("exec CLI extension validation", () => {
     });
 
     // When
-    const [exitCode] = await closed;
+    const [exitCode] = await runWithCleanup(closed, () =>
+      forceCloseChild(child)
+    );
 
     // Then
     const output = `${stdout}${stderr}`;
@@ -158,5 +242,10 @@ describe("exec CLI extension validation", () => {
     expect(output).not.toContain(privateId);
     expect(output).not.toContain(firstPath);
     expect(output).not.toContain(secondPath);
-  });
+  };
+  it(
+    "prints a path-free error for duplicate enabled extension ids",
+    rejectDuplicateExtensionIds,
+    TEST_TIMEOUT_MS
+  );
 });
