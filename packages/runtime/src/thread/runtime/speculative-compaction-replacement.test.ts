@@ -65,7 +65,7 @@ describe("speculativeCompaction", () => {
     expect(summarize).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps an old candidate eligible until an expanded replacement installs", async () => {
+  it("keeps a completed replacement after its episode aborts", async () => {
     const controller = new AbortController();
     let resolveAbortedSummary: (summary: string) => void = () => {
       throw new TypeError("aborted summary promise was not initialized");
@@ -76,10 +76,7 @@ describe("speculativeCompaction", () => {
     const summarize = vi
       .fn<AgentCompactionContext["summarize"]>()
       .mockResolvedValueOnce("prepared")
-      .mockReturnValueOnce(abortedSummary)
-      .mockRejectedValueOnce(new TypeError("provider failed"))
-      .mockResolvedValueOnce("   ")
-      .mockResolvedValueOnce("replacement");
+      .mockReturnValueOnce(abortedSummary);
     const compaction = speculativeCompaction({
       estimateTokens: (messages) => messages.length * 10,
       maxInputTokens: 100,
@@ -102,10 +99,6 @@ describe("speculativeCompaction", () => {
     await expect(Promise.resolve(abortedReplacement)).rejects.toMatchObject({
       name: "AbortError",
     });
-    await expect(
-      Promise.resolve(compaction(context(widened, summarize)))
-    ).rejects.toThrow("provider failed");
-    await compaction(context(widened, summarize));
     await compaction(context(widened, summarize));
     const promoted = await compaction(
       context([...widened, message("8")], summarize)
@@ -114,9 +107,9 @@ describe("speculativeCompaction", () => {
     expect(promoted).toEqual({
       endSeqExclusive: 6,
       startSeq: 0,
-      summary: "replacement",
+      summary: "aborted replacement",
     });
-    expect(summarize).toHaveBeenCalledTimes(5);
+    expect(summarize).toHaveBeenCalledTimes(2);
   });
 
   it("promotes one successful bounded replacement without a third summary", async () => {

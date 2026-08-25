@@ -10,29 +10,22 @@ import {
   latestPrefixCompaction,
   selectAutoCompactionRange,
 } from "./auto-compaction-range";
-import { NORMAL_COMPACTION_SETTLEMENT } from "./auto-compaction-settlement";
 import type {
   AgentCompactionContext,
   AutoCompactionRange,
   ThreadTokenEstimator,
 } from "./auto-compaction-types";
+import {
+  type DetachedSummaryJob,
+  DetachedSummaryJobs,
+} from "./speculative-compaction-detached";
 
-interface Candidate {
+export interface SpeculativeCandidate {
   readonly compactions: readonly ThreadCompactionRecord[];
   readonly hydratedPrefix: readonly ModelMessage[];
   readonly input: ThreadCompactionInput;
   readonly prefix: readonly ModelMessage[];
   readonly replacementConsumed: boolean;
-}
-
-type CandidateLifecycle =
-  | { readonly tag: "aborted" }
-  | { readonly tag: "live" };
-
-interface CandidateInstallation {
-  readonly candidate: Candidate;
-  lifecycle: CandidateLifecycle;
-  readonly previous: CandidateInstallation | undefined;
 }
 
 interface CandidateStoreOptions {
@@ -41,9 +34,17 @@ interface CandidateStoreOptions {
   readonly retain: number;
 }
 
+/**
+ * Candidates are installed by detached summary jobs, never synchronously by an
+ * episode, so a deadline that bounds the caller's wait cannot destroy finished
+ * provider work. Freshness is enforced at consumption by #getFresh and #fits;
+ * there is deliberately no abort-rollback listener because detached installs
+ * happen after the originating episode settled.
+ */
 export class SpeculativeCompactionCandidates {
-  readonly #candidates = new WeakMap<object, CandidateInstallation>();
+  readonly #candidates = new WeakMap<object, SpeculativeCandidate>();
   readonly #estimate: ThreadTokenEstimator;
+  readonly #jobs = new DetachedSummaryJobs();
   readonly #max: number;
   readonly #retain: number;
 
@@ -59,47 +60,34 @@ export class SpeculativeCompactionCandidates {
     }
     const expectedCurrent = this.#candidates.get(context.threadIdentity);
     const expectedInstallation = this.#getFresh(context);
-    if (expectedInstallation?.candidate.replacementConsumed) {
+    if (expectedInstallation?.replacementConsumed) {
       return;
     }
     const range = this.#selectRange(context);
     if (
       range === undefined ||
       (expectedInstallation !== undefined &&
-        !isCompatibleExpansion(expectedInstallation.candidate, range))
+        !isCompatibleExpansion(expectedInstallation, range))
     ) {
       return;
     }
-
-    const summary = await context.summarize(range);
-    context.signal.throwIfAborted();
-    if (!summary.trim()) {
-      return;
-    }
-    if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
-      return;
-    }
-    const next = {
-      compactions: structuredClone(context.compactions),
-      hydratedPrefix: structuredClone(
-        context.estimatedHistory.slice(0, range.endSeqExclusive)
-      ),
-      input: { ...range, summary },
-      prefix: structuredClone(context.history.slice(0, range.endSeqExclusive)),
-      replacementConsumed: expectedInstallation !== undefined,
-    };
-    this.#installCandidate(
+    await this.#jobs.startOrJoin(
       context,
-      expectedCurrent,
-      expectedInstallation,
-      next
-    );
+      range,
+      this.#installDetached(
+        context,
+        range,
+        expectedCurrent,
+        expectedInstallation !== undefined
+      )
+    ).promise;
+    context.signal.throwIfAborted();
   }
 
   async promote(
     context: AgentCompactionContext
   ): Promise<ThreadCompactionInput | undefined> {
-    const candidate = this.#getFresh(context)?.candidate;
+    const candidate = this.#getFresh(context);
     const range = this.#selectRange(context);
     if (candidate !== undefined && this.#fits(candidate, context)) {
       context.signal.throwIfAborted();
@@ -108,58 +96,73 @@ export class SpeculativeCompactionCandidates {
     if (range === undefined) {
       return;
     }
-    const summary = await context.summarize(range);
+    const expectedCurrent = this.#candidates.get(context.threadIdentity);
+    const job = this.#jobs.startOrJoin(
+      context,
+      range,
+      this.#installDetached(context, range, expectedCurrent)
+    );
+    const summary = await job.promise;
     context.signal.throwIfAborted();
     if (!summary.trim()) {
       return;
     }
-    return { ...range, summary };
-  }
-
-  #installCandidate(
-    context: AgentCompactionContext,
-    expectedCurrent: CandidateInstallation | undefined,
-    previous: CandidateInstallation | undefined,
-    next: Candidate
-  ): void {
-    const installation: CandidateInstallation = {
-      candidate: next,
-      lifecycle: { tag: "live" },
-      previous,
-    };
-    const restore = (): void => {
-      if (context.signal.reason === NORMAL_COMPACTION_SETTLEMENT) {
-        return;
-      }
-      installation.lifecycle = { tag: "aborted" };
-      if (this.#candidates.get(context.threadIdentity) !== installation) {
-        return;
-      }
-      let restored = installation.previous;
-      while (restored?.lifecycle.tag === "aborted") {
-        restored = restored.previous;
-      }
-      if (restored) {
-        this.#candidates.set(context.threadIdentity, restored);
-        return;
-      }
-      this.#candidates.delete(context.threadIdentity);
-    };
-    context.signal.addEventListener("abort", restore, { once: true });
-    try {
-      context.signal.throwIfAborted();
-      if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
-        context.signal.removeEventListener("abort", restore);
-        return;
-      }
-      this.#candidates.set(context.threadIdentity, installation);
-    } catch (error) {
-      context.signal.removeEventListener("abort", restore);
-      throw error;
+    if (this.#jobMatchesContext(job, range)) {
+      return { ...range, summary };
     }
+    const installed = this.#getFresh(context);
+    if (installed !== undefined && this.#fits(installed, context)) {
+      return { ...installed.input };
+    }
+    return;
   }
 
-  #fits(candidate: Candidate, context: AgentCompactionContext): boolean {
+  /**
+   * A joined job is only returned directly when its range matches; snapshot
+   * freshness was already enforced when the join happened, and installed
+   * results are re-validated fail-closed by #getFresh/#fits at use.
+   */
+  #jobMatchesContext(
+    job: DetachedSummaryJob,
+    range: AutoCompactionRange
+  ): boolean {
+    return (
+      job.range.startSeq === range.startSeq &&
+      job.range.endSeqExclusive === range.endSeqExclusive
+    );
+  }
+
+  #installDetached(
+    context: AgentCompactionContext,
+    range: AutoCompactionRange,
+    expectedCurrent: SpeculativeCandidate | undefined,
+    replacedFresh: boolean = expectedCurrent !== undefined
+  ): (summary: string) => void {
+    const compactions = structuredClone(context.compactions);
+    const hydratedPrefix = structuredClone(
+      context.estimatedHistory.slice(0, range.endSeqExclusive)
+    );
+    const prefix = structuredClone(
+      context.history.slice(0, range.endSeqExclusive)
+    );
+    return (summary) => {
+      if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
+        return;
+      }
+      this.#candidates.set(context.threadIdentity, {
+        compactions,
+        hydratedPrefix,
+        input: { ...range, summary },
+        prefix,
+        replacementConsumed: replacedFresh,
+      });
+    };
+  }
+
+  #fits(
+    candidate: SpeculativeCandidate,
+    context: AgentCompactionContext
+  ): boolean {
     if (context.modelContextProvenance !== "standard") {
       return false;
     }
@@ -202,13 +205,9 @@ export class SpeculativeCompactionCandidates {
     return context.instructionsTokens + historyTokens <= this.#max;
   }
 
-  #getFresh(
-    context: AgentCompactionContext
-  ): CandidateInstallation | undefined {
-    const installation = this.#candidates.get(context.threadIdentity);
-    const candidate = installation?.candidate;
+  #getFresh(context: AgentCompactionContext): SpeculativeCandidate | undefined {
+    const candidate = this.#candidates.get(context.threadIdentity);
     if (
-      installation?.lifecycle.tag === "live" &&
       candidate !== undefined &&
       equalSnapshot(
         candidate.prefix,
@@ -220,11 +219,10 @@ export class SpeculativeCompactionCandidates {
       ) &&
       equalSnapshot(candidate.compactions, context.compactions)
     ) {
-      return installation;
+      return candidate;
     }
     return;
   }
-
   #selectRange(
     context: AgentCompactionContext
   ): AutoCompactionRange | undefined {
@@ -243,7 +241,7 @@ export class SpeculativeCompactionCandidates {
 }
 
 function isCompatibleExpansion(
-  candidate: Candidate,
+  candidate: SpeculativeCandidate,
   range: AutoCompactionRange
 ): boolean {
   return (
