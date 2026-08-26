@@ -1,5 +1,10 @@
 import { HOLDOUT_SCENARIOS, ORIGINAL_SCENARIOS } from "./compare-pi-config";
-import type { ArmResult, ComparisonRow } from "./compare-pi-types";
+import type {
+  ArmResult,
+  ComparePiIdentity,
+  ComparePiReport,
+  ComparisonRow,
+} from "./compare-pi-types";
 
 interface ArmAggregate {
   readonly compressionMean: number | null;
@@ -12,8 +17,8 @@ interface ArmAggregate {
 
 export function buildComparisonReport(
   rows: readonly ComparisonRow[],
-  model: string
-): {
+  identity: ComparePiIdentity
+): ComparePiReport & {
   readonly aggregate: {
     readonly holdouts: {
       readonly pi: ArmAggregate;
@@ -38,8 +43,9 @@ export function buildComparisonReport(
       originals: aggregateRows(originals),
       overall: aggregateRows(rows),
     },
-    model,
+    ...identity,
     rows,
+    schemaVersion: "compare-pi-v3",
   };
 }
 

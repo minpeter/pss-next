@@ -31,7 +31,8 @@ export function createDeterministicRuntimeBlockModel(
       if (summaryCalls === 1) {
         if (
           scenario === "overlap-nonblocking" ||
-          scenario === "candidate-fit-hard-block"
+          scenario === "candidate-fit-hard-block" ||
+          scenario === "candidate-too-broad-fallback"
         ) {
           await firstSummaryRelease.promise;
         }
@@ -58,7 +59,8 @@ export function createDeterministicRuntimeBlockModel(
   return {
     model,
     onTargetStepStart:
-      scenario === "candidate-fit-hard-block"
+      scenario === "candidate-fit-hard-block" ||
+      scenario === "candidate-too-broad-fallback"
         ? () => {
             advance(80);
             firstSummaryRelease.resolve();

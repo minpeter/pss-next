@@ -40,6 +40,10 @@ describe("runtime block-time metrics", () => {
       controlProviderStartedAtMs: 111,
       controlSentAtMs: 100,
       controlStepStartedAtMs: 105,
+      controlTurnEndedAtMs: 180,
+      controlTurnStartedAtMs: 102,
+      pairOrder: "treatment-control",
+      pathValid: true,
       repetition: 1,
       scenario: "overlap-nonblocking",
       summarySpans: [
@@ -54,9 +58,15 @@ describe("runtime block-time metrics", () => {
       targetProviderStartedAtMs: 128,
       targetSentAtMs: 110,
       targetStepStartedAtMs: 120,
+      targetTurnEndedAtMs: 191,
+      targetTurnStartedAtMs: 115,
     };
 
     expect(calculateRuntimeBlockTrial(observation)).toMatchObject({
+      actualTurnDeltaMs: 14,
+      completionDeltaMs: 1,
+      controlRequestMs: 11,
+      dispatchBlockMs: 7,
       avoidedBlockMs: 86,
       blockAvoidanceRatio: 0.86,
       candidateApplied: false,
@@ -65,9 +75,12 @@ describe("runtime block-time metrics", () => {
       controlTtfvMs: 16,
       gateDeltaMs: 2,
       overlapAtProviderStart: true,
+      pairOrder: "treatment-control",
+      pathValid: true,
       preStepDeltaMs: 5,
       summaryCalls: 1,
       summaryServiceMs: 100,
+      targetRequestMs: 18,
       treatmentPreparationMs: 8,
       treatmentProviderDispatchMs: 18,
       treatmentTtfvMs: 30,
@@ -123,7 +136,7 @@ describe("runtime block-time metrics", () => {
       "overlap-nonblocking",
       "prepared-hit",
       "candidate-fit-late-hit",
-      "candidate-fit-hard-block",
+      "candidate-too-broad-fallback",
       "summary-failure-retry-hit",
       "repeated-failure-overflow-recovery",
     ];
@@ -198,7 +211,7 @@ describe("runtime block-time metrics", () => {
       model,
       onTargetStepStart: () => firstSummaryRelease.resolve(),
       repetition: 1,
-      scenario: "candidate-fit-hard-block",
+      scenario: "candidate-too-broad-fallback",
     });
     const trial = calculateRuntimeBlockTrial(observation);
 

@@ -1,3 +1,7 @@
+import {
+  compactionContextForModel,
+  estimateModelMessagesTokens,
+} from "@minpeter/pss-runtime";
 import type { ModelMessage } from "ai";
 import { COMPARISON_SUMMARY_OUTPUT_BUDGET } from "./compare-pi-config";
 
@@ -167,17 +171,65 @@ function recordFileOperation(
 
 export function assemblePiSummary(
   providerSummary: string,
-  fileOperations: PiFileOperations
+  fileOperations: PiFileOperations,
+  options: {
+    readonly endSeqExclusive?: number;
+    readonly maxOutputTokens?: number;
+  } = {}
 ): string {
+  const maxOutputTokens =
+    options.maxOutputTokens ?? COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens;
+  if (!(Number.isSafeInteger(maxOutputTokens) && maxOutputTokens > 0)) {
+    throw new TypeError("Pi summary output budget must be a positive integer.");
+  }
+  const maximumCharacters = maxOutputTokens * 4;
   const appendix = formatFileOperations(fileOperations);
-  const providerCharacters = Math.max(
-    0,
-    COMPARISON_SUMMARY_OUTPUT_BUDGET.maxCharacters - appendix.length
-  );
-  return `${providerSummary.slice(0, providerCharacters)}${appendix}`.slice(
-    0,
-    COMPARISON_SUMMARY_OUTPUT_BUDGET.maxCharacters
-  );
+  const providerCharacters = Math.max(0, maximumCharacters - appendix.length);
+  const boundedProvider = providerSummary.slice(0, providerCharacters);
+  const assemble = (length: number) =>
+    `${boundedProvider.slice(0, length)}${appendix}`.slice(
+      0,
+      maximumCharacters
+    );
+  const fits = (summary: string) =>
+    estimateModelMessagesTokens([
+      compactionContextForModel({
+        endSeqExclusive: options.endSeqExclusive ?? 1,
+        role: "compaction",
+        startSeq: 0,
+        summary,
+      }),
+    ]) <= maxOutputTokens;
+  if (!fits(assemble(0))) {
+    const appendixOnly = assemble(0);
+    return longestFittingPrefix(
+      appendixOnly,
+      (length) => appendixOnly.slice(0, length),
+      fits
+    );
+  }
+  return longestFittingPrefix(boundedProvider, assemble, fits);
+}
+
+function longestFittingPrefix(
+  source: string,
+  assemble: (length: number) => string,
+  fits: (summary: string) => boolean
+): string {
+  let low = 0;
+  let high = source.length;
+  let result = assemble(0);
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = assemble(middle);
+    if (fits(candidate)) {
+      result = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return result;
 }
 
 function formatFileOperations(fileOperations: PiFileOperations): string {

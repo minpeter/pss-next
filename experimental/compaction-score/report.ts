@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type { BenchmarkScenario } from "./fixture";
+import { fingerprintDisagreement } from "./report-disagreement";
 import {
   type Distribution,
   distribution,
@@ -33,11 +33,16 @@ export interface CompactionHopRecord {
   readonly compactionMs?: number;
   readonly endSeqExclusive: number;
   readonly prefixTokens: number;
+  readonly sentOutputTokens: number;
   readonly summarizerInputTokens?: number;
   readonly summaryTokens: number;
 }
 
 export interface ValidTrialRecord extends TrialIdentity {
+  readonly answers?: {
+    readonly compacted: readonly string[];
+    readonly full: readonly string[];
+  };
   readonly hops: readonly CompactionHopRecord[];
   readonly prefixTokens: number;
   readonly score: CompactionScore;
@@ -249,22 +254,4 @@ function addScore<Key>(
     correct: (previous?.correct ?? 0) + score.correct,
     total: (previous?.total ?? 0) + score.total,
   });
-}
-
-function fingerprintDisagreement(
-  scenario: BenchmarkScenario,
-  disagreement: ScoreDisagreement
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        scenario,
-        disagreement.arm,
-        disagreement.category,
-        disagreement.question,
-        disagreement.expected,
-        disagreement.actual,
-      ])
-    )
-    .digest("hex");
 }

@@ -12,8 +12,10 @@ import { type LanguageModel, type ModelMessage, wrapLanguageModel } from "ai";
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./benchmark-options";
 import type { CompactionFixture } from "./fixture";
 import type { CompactionHopRecord, TrialRecord } from "./report";
+import { enforceCompactionSummaryOutputBudget } from "./summary-output-budget";
 
 interface CompactionHopInput {
+  readonly enforceSummaryOutputBudget?: boolean;
   readonly fixture: CompactionFixture;
   readonly model: LanguageModel;
   readonly providerTimeoutMs?: number;
@@ -106,8 +108,15 @@ export async function generateCompactionHops(
         input.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS
       ),
       summaryInstructions,
-      transformSummary: (assembledSummary) =>
-        assembledSummary.slice(0, 4 * input.summaryMaxOutputTokens),
+      transformSummary:
+        input.enforceSummaryOutputBudget === false
+          ? undefined
+          : (assembledSummary) =>
+              enforceCompactionSummaryOutputBudget(
+                assembledSummary,
+                input.summaryMaxOutputTokens,
+                range.endSeqExclusive
+              ).text,
     }).then(
       (text) => ({ status: "success", text }) as const,
       (cause: unknown) => ({ cause, status: "failure" }) as const
@@ -145,6 +154,7 @@ export async function generateCompactionHops(
       prefixTokens: estimateModelMessagesTokens(
         fullContext.slice(0, endSeqExclusive)
       ),
+      sentOutputTokens: input.summaryMaxOutputTokens,
       summarizerInputTokens,
       summaryTokens: estimateModelMessagesTokens([
         compactionContextForModel({

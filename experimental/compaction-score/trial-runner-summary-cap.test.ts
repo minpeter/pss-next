@@ -62,6 +62,13 @@ describe("runCompactionTrial summary budget", () => {
       envelope.indexOf(SUMMARY_START) + SUMMARY_START.length,
       -SUMMARY_SUFFIX.length
     );
-    expect(summary).toHaveLength(SUMMARY_MAX_CHARACTERS);
+    expect(summary.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARACTERS);
+    if (record.status === "valid") {
+      expect(
+        record.hops.every(
+          (hop) => hop.summaryTokens <= SUMMARY_MAX_OUTPUT_TOKENS
+        )
+      ).toBe(true);
+    }
   });
 });

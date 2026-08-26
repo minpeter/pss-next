@@ -185,3 +185,56 @@ pnpm --dir experimental/compaction-score block-time -- \
 pnpm --dir experimental/compaction-score block-time -- \
   --mode live --repetitions 3 --output /tmp/block-time-live
 ```
+
+## Auditable evidence campaigns
+
+The focused runners below turn live or deterministic observations into
+validated, hash-addressed artifacts. Live runners use the configured provider
+and can consume quota; run deterministic mode and the package tests before a
+live campaign.
+
+| Script | Purpose | Primary artifact |
+| --- | --- | --- |
+| `deadline-outcome` | Exercise every runtime path at one explicit deadline | `runtime-deadline-outcome.json` plus command receipt |
+| `deadline-sweep` | Compare validated 5s/10s/15s/20s outcome arms | `deadline-sweep.json` and Markdown report |
+| `production-overlap` | Measure paired treatment/control user-block evidence | `production-overlap.json` plus receipt |
+| `quality-sweep` | Compare compaction quality across output budgets | `quality-sweep.json` plus receipt |
+| `task-utility` | Score downstream task outcomes against exported evidence | `task-utility.json` plus receipt |
+| `human-calibration` | Export blinded review packets and score human labels | calibration CSV/JSON artifacts |
+| `five-track-report` | Join quality, utility, human, overlap, and deadline evidence | one provenance-checked five-track report |
+
+Every live input consumed by a validator carries its source path, SHA-256, and
+command receipt. Validators reject stale hashes, incomplete matrices, duplicate
+scenario/repetition cells, non-finite metrics, and mismatched model or mode
+metadata. Generated artifacts belong outside the repository (normally under
+`/tmp` or `/var/tmp`).
+
+Example deterministic and live deadline arms:
+
+```bash
+pnpm --dir experimental/compaction-score deadline-outcome -- \
+  --mode deterministic --deadline-ms 15000 --repetitions 10 \
+  --output /tmp/deadline-deterministic-15
+
+pnpm --dir experimental/compaction-score deadline-outcome -- \
+  --mode live --deadline-ms 15000 --repetitions 10 \
+  --output /var/tmp/deadline-live-15
+
+pnpm --dir experimental/compaction-score deadline-outcome-validate -- \
+  --input /var/tmp/deadline-live-15/runtime-deadline-outcome.json
+```
+
+Use `deadline-sweep`, `production-overlap-validate`,
+`quality-sweep-validate`, and `task-utility-validate` only with completed
+receipts from their corresponding runners. `five-track-report` additionally
+requires a completed human-calibration artifact; it will not silently combine
+partial or mixed-model evidence.
+
+Task-utility validation executes candidate workspace code inside Linux
+Bubblewrap with an isolated network namespace and Node filesystem permissions.
+The default executable is `/usr/bin/bwrap`; set
+`PSS_TASK_VALIDATOR_SANDBOX` to another absolute Bubblewrap path when needed.
+Validation fails closed when the sandbox is unavailable. Infrastructure that
+creates the network namespace outside Bubblewrap may set
+`PSS_TASK_VALIDATOR_NETWORK_ISOLATED=1`; never set it without an already
+isolated parent namespace.

@@ -16,6 +16,7 @@ type EvaluationArm = "compacted" | "full";
 
 export interface TrialInput {
   readonly attempt: number;
+  readonly enforceSummaryOutputBudget?: boolean;
   readonly fixture: CompactionFixture;
   readonly fixtureSeed: string;
   readonly id: string;
@@ -26,6 +27,7 @@ export interface TrialInput {
   readonly seed?: number;
   readonly summaryInstructions?: string;
   readonly summaryMaxOutputTokens: number;
+  readonly summaryModel?: LanguageModel;
 }
 
 export async function runCompactionTrial(
@@ -41,7 +43,6 @@ export async function runCompactionTrial(
       return assertNever(generated);
   }
   const { compactedContext, finalHop, fullContext, hops } = generated;
-
   const contexts: Record<EvaluationArm, ModelMessage[]> = {
     compacted: compactedContext,
     full: fullContext,
@@ -78,7 +79,6 @@ export async function runCompactionTrial(
       default:
         return assertNever(evaluated);
     }
-
     try {
       answers[arm] = parseBatchedAnswers(
         evaluated.output,
@@ -106,10 +106,20 @@ export async function runCompactionTrial(
     }
     throw cause;
   }
-
   return {
+    answers: {
+      compacted: input.fixture.questions.map(
+        (question) => answers.compacted.get(question) ?? ""
+      ),
+      full: input.fixture.questions.map(
+        (question) => answers.full.get(question) ?? ""
+      ),
+    },
     fixtureSeed: input.fixtureSeed,
-    hops,
+    hops: hops.map((hop) => ({
+      ...hop,
+      sentOutputTokens: hop.sentOutputTokens ?? input.summaryMaxOutputTokens,
+    })),
     id: input.id,
     prefixTokens: estimateModelMessagesTokens(
       fullContext.slice(
@@ -124,6 +134,15 @@ export async function runCompactionTrial(
     status: "valid",
     summaryTokens: finalHop.summaryTokens,
   };
+}
+
+export function trialSummaryOutputTokenLimit(requested: number): number {
+  if (!Number.isSafeInteger(requested) || requested <= 0) {
+    throw new TypeError(
+      "Trial summary output limit must be a positive integer."
+    );
+  }
+  return requested;
 }
 
 function assertNever(_value: never): never {

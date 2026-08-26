@@ -14,6 +14,7 @@ const SUBPROCESS_TIMEOUT_MS = 20_000;
 const TEST_TIMEOUT_MS = 30_000;
 const injectedModel = "CLI_MODEL_SECRET\u001b[31m\n\u2028";
 const injectedPathSegment = "CLI_PATH_SECRET\u001b[2J\n\u2028";
+const STARTED_OUTPUT = /^compare-pi-started\n/;
 
 const cliEnvironment = {
   ...process.env,
@@ -24,6 +25,16 @@ const cliEnvironment = {
 
 const cliArguments = (outputPath: string): string[] =>
   typescriptSubprocessArguments("compare-pi.ts", [outputPath]);
+
+const campaignCliArguments = (outputPath: string): string[] =>
+  typescriptSubprocessArguments("compare-pi.ts", [
+    "--output",
+    outputPath,
+    "--summary-max-output-tokens",
+    "256",
+    "--repetitions",
+    "1",
+  ]);
 
 async function forceCloseChild(child: ChildProcess): Promise<void> {
   let closeListener: (() => void) | undefined;
@@ -180,6 +191,42 @@ describe("compare-pi CLI output boundary", () => {
   it(
     "emits only a stable sentinel when startup fails",
     emitStableStartupFailure,
+    TEST_TIMEOUT_MS
+  );
+  it(
+    "accepts quality-campaign flags before provider dispatch",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "compare-pi-flags-"));
+      temporaryDirectories.push(directory);
+      const child = spawn(
+        process.execPath,
+        campaignCliArguments(join(directory, "output")),
+        {
+          cwd: benchmarkDirectory,
+          env: cliEnvironment,
+          stdio: ["ignore", "pipe", "pipe"],
+        }
+      );
+      const subprocessTimeout = AbortSignal.timeout(SUBPROCESS_TIMEOUT_MS);
+      const closed = once(child, "close", { signal: subprocessTimeout });
+      const firstOutput = await runWithCleanup(
+        once(child.stdout, "data", { signal: subprocessTimeout }),
+        async () => {
+          const [closedResult, cleanupResult] = await Promise.allSettled([
+            closed,
+            forceCloseChild(child),
+          ]);
+          if (closedResult.status === "rejected") {
+            throw closedResult.reason;
+          }
+          if (cleanupResult.status === "rejected") {
+            throw cleanupResult.reason;
+          }
+        }
+      );
+
+      expect(String(firstOutput)).toMatch(STARTED_OUTPUT);
+    },
     TEST_TIMEOUT_MS
   );
 });
