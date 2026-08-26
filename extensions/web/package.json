@@ -2,45 +2,45 @@
   "name": "@minpeter/pss-extension-web",
   "version": "0.0.1-next.4",
   "description": "OpenSearch-backed web tools for the PSS coding agent.",
-  "type": "module",
-  "engines": {
-    "node": ">=24"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "@minpeter/pss-source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/minpeter/pss-runtime.git",
     "directory": "extensions/web"
   },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "@minpeter/pss-source": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "ultracite check .",
     "test": "vitest run",
-    "lint": "ultracite check ."
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@minpeter/opensearch": "0.1.1",
     "ai": "7.0.51",
     "zod": "^4.4.3"
   },
-  "peerDependencies": {
-    "@minpeter/pss-coding-agent": "^0.0.14-next.14"
-  },
   "devDependencies": {
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@minpeter/pss-coding-agent": "^0.0.14-next.14"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

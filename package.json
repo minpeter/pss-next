@@ -3,10 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=24"
-  },
-  "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b",
   "workspaces": [
     "apps/*",
     "packages/*",
@@ -15,34 +11,34 @@
     "extensions/*"
   ],
   "scripts": {
-    "dev": "pnpm --filter @minpeter/pss-example-basic start",
-    "dev:tui": "tsx --conditions=@minpeter/pss-source apps/coding-agent/src/tui/app.ts",
+    "api:check": "node scripts/runtime-public-api.mjs check",
+    "api:update": "pnpm --filter @minpeter/pss-runtime build && node scripts/runtime-public-api.mjs update",
+    "audit": "corepack pnpm audit --audit-level moderate",
+    "boundaries": "node scripts/prepare-boundaries.mjs && turbo boundaries",
     "build": "turbo run build",
     "check:compatibility": "node scripts/validate-pi-compatibility-manifest.mjs",
     "check:tegami-notes": "node scripts/check-tegami-notes.mjs",
-    "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
-    "test": "turbo run test && vitest run scripts/*.test.mjs",
     "coverage": "pnpm --filter @minpeter/pss-coding-agent build && vitest run --config vitest.coverage.config.ts --coverage",
-    "test:cross-platform-smoke": "pnpm turbo run build --filter=@minpeter/pss-coding-agent... && pnpm --filter @minpeter/pss-runtime exec vitest run src/platform/file/storage/file-lock.test.ts src/platform/file/storage/file-execution-store-edge.test.ts && pnpm --filter @minpeter/pss-coding-agent exec vitest run src/cli.test.ts src/cli-exec-home.test.ts src/context/context-resources.test.ts src/extensions/manager/paths.test.ts src/tui/terminal-safety.test.ts && node apps/coding-agent/bin/pss.js --help",
-    "verify:edge": "pnpm --filter @minpeter/pss-worker-agent build",
-    "eval:provider": "pnpm --filter @minpeter/pss-example-evals eval",
+    "dev": "pnpm --filter @minpeter/pss-example-basic start",
+    "dev:tui": "tsx --conditions=@minpeter/pss-source apps/coding-agent/src/tui/app.ts",
     "eval:edge-remote": "pnpm --filter @minpeter/pss-worker-agent eval:remote",
+    "eval:provider": "pnpm --filter @minpeter/pss-example-evals eval",
+    "format": "ultracite fix .",
     "inspect:runtime-storage": "tsx packages/runtime/scripts/inspect-storage.ts",
+    "lint": "ultracite check .",
+    "repo:affected": "turbo query affected",
+    "repo:packages": "turbo query ls --output json",
     "stress:runtime-storage": "pnpm --filter @minpeter/pss-runtime test:storage-stress",
     "stress:runtime-storage:extreme": "pnpm --filter @minpeter/pss-runtime test:storage-stress:extreme",
     "stress:runtime-storage:heavy": "pnpm --filter @minpeter/pss-runtime test:storage-stress:heavy",
     "stress:runtime-storage:torture": "pnpm --filter @minpeter/pss-runtime test:storage-stress:torture",
-    "lint": "ultracite check .",
-    "format": "ultracite fix .",
     "tegami": "node scripts/tegami.mts",
-    "verify:release": "node scripts/verify-release-artifacts.mjs && pnpm verify:package-apis",
-    "api:check": "node scripts/runtime-public-api.mjs check",
-    "api:update": "pnpm --filter @minpeter/pss-runtime build && node scripts/runtime-public-api.mjs update",
-    "boundaries": "node scripts/prepare-boundaries.mjs && turbo boundaries",
-    "repo:packages": "turbo query ls --output json",
-    "repo:affected": "turbo query affected",
-    "audit": "corepack pnpm audit --audit-level moderate",
-    "verify:package-apis": "publint packages/runtime && publint apps/coding-agent && node scripts/packed-consumer-smoke.mjs"
+    "test": "turbo run test && vitest run scripts/*.test.mjs",
+    "test:cross-platform-smoke": "pnpm turbo run build --filter=@minpeter/pss-coding-agent... && pnpm --filter @minpeter/pss-runtime exec vitest run src/platform/file/storage/file-lock.test.ts src/platform/file/storage/file-execution-store-edge.test.ts && pnpm --filter @minpeter/pss-coding-agent exec vitest run src/cli.test.ts src/cli-exec-home.test.ts src/context/context-resources.test.ts src/extensions/manager/paths.test.ts src/tui/terminal-safety.test.ts && node apps/coding-agent/bin/pss.js --help",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
+    "verify:edge": "pnpm --filter @minpeter/pss-worker-agent build",
+    "verify:package-apis": "publint packages/runtime && publint apps/coding-agent && node scripts/packed-consumer-smoke.mjs",
+    "verify:release": "node scripts/verify-release-artifacts.mjs && pnpm verify:package-apis"
   },
   "devDependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
@@ -70,5 +66,9 @@
     "ultracite": "7.10.6",
     "vitest": "^4.1.10",
     "zod": "^4.4.3"
+  },
+  "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b",
+  "engines": {
+    "node": ">=24"
   }
 }
