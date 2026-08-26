@@ -53,6 +53,14 @@ interface RunExecCliOptions {
   readonly stdout: { write(text: string): unknown };
 }
 
+class ExecOptionError extends Error {
+  readonly name = "ExecOptionError";
+
+  constructor() {
+    super("Invalid pss exec option.");
+  }
+}
+
 const VALUE_FLAGS = new Set([
   "--base-url",
   "--extension",
@@ -65,14 +73,10 @@ const VALUE_FLAGS = new Set([
   "--workspace",
 ]);
 
-function requiredValue(
-  argv: readonly string[],
-  index: number,
-  flag: string
-): string {
+function requiredValue(argv: readonly string[], index: number): string {
   const value = argv[index + 1];
   if (value === undefined || value.startsWith("--")) {
-    throw new Error(`${flag} requires a value.`);
+    throw new ExecOptionError();
   }
   return value;
 }
@@ -114,12 +118,12 @@ function setValueOption(
         value !== "optional" &&
         value !== "required"
       ) {
-        throw new Error(`Invalid --web-tools value: ${value}`);
+        throw new ExecOptionError();
       }
       options.webToolsAvailability = value;
       return;
     default:
-      throw new Error(`Unknown pss exec option: ${flag}`);
+      throw new ExecOptionError();
   }
 }
 
@@ -129,16 +133,14 @@ function validateArguments(options: ExecArguments): void {
     options.timeoutSeconds <= 0 ||
     options.timeoutSeconds > 1200
   ) {
-    throw new Error("--timeout-seconds must be an integer from 1 to 1200.");
+    throw new ExecOptionError();
   }
   const promptSources =
     Number(options.prompt !== undefined) +
     Number(options.promptFile !== undefined) +
     Number(options.readStdin);
   if (!options.help && promptSources !== 1) {
-    throw new Error(
-      "Choose exactly one of --prompt, --prompt-file, or --stdin."
-    );
+    throw new ExecOptionError();
   }
 }
 
@@ -166,9 +168,9 @@ export function parseExecArguments(
     }
     const valueFlag = flag === "-e" ? "--extension" : flag;
     if (!VALUE_FLAGS.has(valueFlag)) {
-      throw new Error(`Unknown pss exec option: ${flag}`);
+      throw new ExecOptionError();
     }
-    setValueOption(options, valueFlag, requiredValue(argv, index, flag), cwd);
+    setValueOption(options, valueFlag, requiredValue(argv, index), cwd);
     index += 1;
   }
   validateArguments(options);

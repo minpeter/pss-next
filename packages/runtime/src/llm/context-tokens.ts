@@ -180,9 +180,9 @@ export interface ContextTokenView {
 export class ContextTokenMeter {
   readonly #registry: ContextTokenCalibrationRegistry;
   readonly #calibration: boolean;
-  #attempt?: Attempt;
-  #scope?: string;
-  #maxInputTokens?: number;
+  #attempt: Attempt | undefined;
+  #scope: string | undefined;
+  #maxInputTokens: number | undefined;
 
   constructor(
     registry: ContextTokenCalibrationRegistry,
@@ -225,7 +225,12 @@ export class ContextTokenMeter {
     measurement: ModelPromptMeasurement;
     scope?: string;
   }): ContextUsageSnapshot {
-    this.#attempt = { ...input, outputUnits: 0 };
+    this.#attempt = {
+      attemptId: input.attemptId,
+      fixedFingerprint: input.fixedFingerprint,
+      measurement: input.measurement,
+      outputUnits: 0,
+    };
     this.#scope = input.scope;
     this.#maxInputTokens = input.maxInputTokens;
     return this.snapshot();
@@ -420,7 +425,10 @@ function reportedUsageTokens(usage: ModelUsage): {
   ) {
     output = usage.totalTokens - input;
   }
-  return { input, output };
+  return {
+    ...(input === undefined ? {} : { input }),
+    ...(output === undefined ? {} : { output }),
+  };
 }
 
 function roundedUnitCosts(units: readonly number[], scale: number): number[] {

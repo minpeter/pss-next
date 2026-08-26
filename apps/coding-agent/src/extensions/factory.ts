@@ -1,35 +1,54 @@
 import type { AgentEvent } from "@minpeter/pss-runtime";
+import type { ValidatedCodingAgentExtensionInput } from "./host-validation";
 import type {
   CodingAgentExtension,
   CodingAgentExtensionActivationHandler,
   CodingAgentExtensionApi,
   CodingAgentExtensionCleanup,
   CodingAgentExtensionEventHandler,
-  CodingAgentExtensionInput,
   CodingAgentExtensionModule,
   CodingAgentExtensionRegistry,
 } from "./types";
 
-export function normalizeCodingAgentExtension(
-  input: CodingAgentExtensionInput
-): CodingAgentExtension {
+type CodingAgentExtensionRegistration =
+  | {
+      readonly [Type in AgentEvent["type"]]: readonly [
+        type: Type,
+        handler: CodingAgentExtensionEventHandler<Type>,
+      ];
+    }[AgentEvent["type"]]
+  | readonly [type: "activate", handler: CodingAgentExtensionActivationHandler];
+
+export function normalizeCodingAgentExtension({
+  id,
+  input,
+}: ValidatedCodingAgentExtensionInput): CodingAgentExtension {
   if ("configure" in input) {
-    return input;
+    return {
+      ...(input.activate === undefined ? {} : { activate: input.activate }),
+      ...(input.config === undefined ? {} : { config: input.config }),
+      configure: input.configure,
+      id,
+    };
   }
   if (typeof input.default !== "function") {
     throw new TypeError(
-      `Coding agent extension "${input.id}" default export must be a function`
+      `Coding agent extension "${id}" default export must be a function`
     );
   }
-  return factoryModuleToExtension(input);
+  return factoryModuleToExtension(input, id);
 }
 
 function factoryModuleToExtension(
-  extensionModule: CodingAgentExtensionModule
+  extensionModule: CodingAgentExtensionModule,
+  extensionId: string
 ): CodingAgentExtension {
   const activationHandlers: CodingAgentExtensionActivationHandler[] = [];
   return {
-    id: extensionModule.id,
+    ...(extensionModule.config === undefined
+      ? {}
+      : { config: extensionModule.config }),
+    id: extensionId,
     async configure(registry, { signal }) {
       let open = true;
       try {
@@ -37,7 +56,7 @@ function factoryModuleToExtension(
           createFactoryApi(
             registry,
             activationHandlers,
-            extensionModule.id,
+            extensionId,
             () => open && !signal.aborted
           )
         );
@@ -55,7 +74,7 @@ function factoryModuleToExtension(
           const cleanup = await handler(context);
           if (cleanup !== undefined && typeof cleanup !== "function") {
             throw new TypeError(
-              `Coding agent extension "${extensionModule.id}" activation handler must return a cleanup function`
+              `Coding agent extension "${extensionId}" activation handler must return a cleanup function`
             );
           }
           if (cleanup !== undefined) {
@@ -86,12 +105,15 @@ function createFactoryApi(
       );
     }
   };
-  const on = ((
-    type: AgentEvent["type"] | "activate",
-    handler:
-      | CodingAgentExtensionActivationHandler
-      | CodingAgentExtensionEventHandler<AgentEvent["type"]>
-  ) => {
+  function on<Type extends AgentEvent["type"]>(
+    type: Type,
+    handler: CodingAgentExtensionEventHandler<Type>
+  ): void;
+  function on(
+    type: "activate",
+    handler: CodingAgentExtensionActivationHandler
+  ): void;
+  function on(...[type, handler]: CodingAgentExtensionRegistration): void {
     assertOpen();
     if (type === "activate") {
       if (typeof handler !== "function") {
@@ -99,11 +121,71 @@ function createFactoryApi(
           'Extension event "activate" handler must be a function'
         );
       }
-      activationHandlers.push(handler as CodingAgentExtensionActivationHandler);
+      activationHandlers.push(handler);
       return;
     }
-    registry.on(type, handler as CodingAgentExtensionEventHandler<typeof type>);
-  }) as CodingAgentExtensionApi["on"];
+    switch (type) {
+      case "assistant-output":
+        registry.on(type, handler);
+        return;
+      case "assistant-output-delta":
+        registry.on(type, handler);
+        return;
+      case "assistant-reasoning":
+        registry.on(type, handler);
+        return;
+      case "assistant-reasoning-delta":
+        registry.on(type, handler);
+        return;
+      case "context-usage":
+        registry.on(type, handler);
+        return;
+      case "model-usage":
+        registry.on(type, handler);
+        return;
+      case "runtime-input":
+        registry.on(type, handler);
+        return;
+      case "step-end":
+        registry.on(type, handler);
+        return;
+      case "step-start":
+        registry.on(type, handler);
+        return;
+      case "tool-call":
+        registry.on(type, handler);
+        return;
+      case "tool-call-input-delta":
+        registry.on(type, handler);
+        return;
+      case "tool-call-input-end":
+        registry.on(type, handler);
+        return;
+      case "tool-call-input-start":
+        registry.on(type, handler);
+        return;
+      case "tool-result":
+        registry.on(type, handler);
+        return;
+      case "turn-abort":
+        registry.on(type, handler);
+        return;
+      case "turn-end":
+        registry.on(type, handler);
+        return;
+      case "turn-error":
+        registry.on(type, handler);
+        return;
+      case "turn-start":
+        registry.on(type, handler);
+        return;
+      case "user-input":
+        registry.on(type, handler);
+        return;
+      default:
+        throw new TypeError(`Unknown extension event "${type}"`);
+    }
+  }
   const provide: CodingAgentExtensionApi["provide"] = (capability) => {
     assertOpen();
     registry.provide(capability);
@@ -133,10 +215,14 @@ async function disposeCleanups(
 ): Promise<void> {
   const failures: unknown[] = [];
   for (const cleanup of [...cleanups].reverse()) {
-    try {
-      await cleanup();
-    } catch (error) {
-      failures.push(error);
+    const outcome = await Promise.resolve()
+      .then(cleanup)
+      .then(
+        () => ({ kind: "success" as const }),
+        (error: unknown) => ({ error, kind: "failure" as const })
+      );
+    if (outcome.kind === "failure") {
+      failures.push(outcome.error);
     }
   }
   if (failures.length > 0) {

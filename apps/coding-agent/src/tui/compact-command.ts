@@ -5,6 +5,18 @@ import {
 import type { TuiCommand, TuiCommandResult } from "./command";
 import { createTuiErrorPresentation } from "./error-presentation";
 
+const ACTIVE_TURN_COMPACTION_ERROR = "Cannot compact while a turn is active.";
+
+const isActiveTurnCompactionError = (error: unknown): boolean => {
+  try {
+    return (
+      error instanceof Error && error.message === ACTIVE_TURN_COMPACTION_ERROR
+    );
+  } catch {
+    return false;
+  }
+};
+
 export interface CompactCommandContext {
   /** Run runtime-owned compaction for the current durable thread. */
   compact(instructions?: string): Promise<ManualThreadCompactionResult>;
@@ -35,9 +47,12 @@ export function createCompactCommand(
               success: false,
             };
       } catch (error) {
+        // isActiveTurnCompactionError keeps its instanceof narrowing fail-closed.
         const normalized = normalizeTurnError(error);
         const presentation = createTuiErrorPresentation(
-          normalized.message ?? error,
+          isActiveTurnCompactionError(error)
+            ? ACTIVE_TURN_COMPACTION_ERROR
+            : (normalized.message ?? "The request failed."),
           normalized.error
         );
         return {
