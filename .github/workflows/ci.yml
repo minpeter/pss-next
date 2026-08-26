@@ -38,6 +38,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
+      - name: Install sandbox prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
