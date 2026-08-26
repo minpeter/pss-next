@@ -10,7 +10,8 @@ import {
   type MockLanguageModelV4CallOptions,
   mockLanguageModelV4Text,
 } from "./mock-language-model";
-import { classifySummaryFailure, runCompactionTrial } from "./trial-runner";
+import { classifySummaryFailure } from "./trial-compaction-hops";
+import { runCompactionTrial } from "./trial-runner";
 
 const fixture = buildCompactionFixture("trial-runner-test");
 
@@ -220,6 +221,19 @@ describe("runCompactionTrial", () => {
     expect(record.hops.map(({ endSeqExclusive }) => endSeqExclusive)).toEqual(
       chainedFixture.compactionEnds
     );
+    expect(record.hops.map(({ prefixTokens }) => prefixTokens)).toEqual(
+      chainedFixture.compactionEnds.map((endSeqExclusive) =>
+        estimateModelMessagesTokens(
+          chainedFixture.messages.slice(0, endSeqExclusive)
+        )
+      )
+    );
+    expect(
+      record.hops.every(
+        ({ summarizerInputTokens }) =>
+          summarizerInputTokens !== undefined && summarizerInputTokens > 0
+      )
+    ).toBe(true);
     expect(record.hops[0]?.summaryTokens).toBe(
       estimateModelMessagesTokens([
         compactionContextForModel({

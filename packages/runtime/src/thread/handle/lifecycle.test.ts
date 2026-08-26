@@ -120,16 +120,16 @@ describe("Agent thread lifecycle", () => {
       (event) => event.type !== "context-usage"
     );
 
-    expect(events).toEqual([
+    expect(events).toMatchObject([
       sentUserText("fail"),
       { type: "turn-start" },
       { type: "step-start" },
       {
         error: { category: "unknown", version: 1 },
-        message: "model unavailable",
         type: "turn-error",
       },
     ]);
+    expect(JSON.stringify(events)).not.toContain("model unavailable");
   });
 
   it("restores context usage before exposing a failed turn", async () => {
@@ -186,23 +186,19 @@ describe("Agent thread lifecycle", () => {
       .filter((event) => event.type !== "context-usage")
       .at(-1);
 
-    expect(turnError).toEqual({
+    expect(turnError).toMatchObject({
       error: {
         category: "permission",
-        code: "account_suspended",
-        correlationIds: [
-          { source: "cf-ray", value: "ray-456" },
-          { source: "x-infron-request-id", value: "request-123" },
-        ],
         observedRetryable: false,
-        providerType: "provider_account_error",
         retryAfterMs: 3000,
         status: 403,
         version: 1,
       },
-      message: "The provider refused this request.",
       type: "turn-error",
     });
+    expect(turnError).not.toHaveProperty("error.code");
+    expect(turnError).not.toHaveProperty("error.correlationIds");
+    expect(turnError).not.toHaveProperty("error.providerType");
     const serialized = JSON.stringify(turnError);
     for (const secret of ["request-secret", "response-secret", "url-secret"]) {
       expect(serialized).not.toContain(secret);

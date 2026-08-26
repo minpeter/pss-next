@@ -39,12 +39,7 @@ export function parseRetention(
     const categoryRecord = requiredRecord(entry, entryPath, report);
     return {
       ...parseRecall(categoryRecord, entryPath, report),
-      category: stringField(
-        categoryRecord,
-        "category",
-        `${entryPath}.category`,
-        report
-      ),
+      category: categoryField(categoryRecord, entryPath, report),
     };
   });
   const byScenario = arrayField(

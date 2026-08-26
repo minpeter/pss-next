@@ -10,6 +10,11 @@ export type ThreadTokenEstimator = (
 
 export type AgentCompactionReason = "completed-turn" | "manual" | "overflow";
 
+export type AgentCompactionModelContextProvenance =
+  | "standard"
+  | "transformed"
+  | "unknown";
+
 export type ManualThreadCompactionResult =
   | { readonly status: "compacted" }
   | { readonly status: "empty" }
@@ -18,12 +23,15 @@ export type ManualThreadCompactionResult =
 export interface CompactionSummaryOptions {
   /** Appends an `Additional focus` section to the default handoff contract. */
   readonly instructions?: string;
+  /** Cancels manual compaction and its active provider request. */
+  readonly signal?: AbortSignal;
   /** Controls whether raw tool-result evidence is appended after model output. */
   readonly toolEvidence?: "deterministic" | "omit";
 }
 
 export interface AgentCompactionContext {
   readonly compactions: readonly ThreadCompactionRecord[];
+  readonly deadlineAt?: number;
   readonly estimatedContextTokens: number;
   readonly estimatedHistory: readonly ModelMessage[];
   /** Marginal costs aligned by index with estimatedHistory. */
@@ -33,6 +41,8 @@ export interface AgentCompactionContext {
   readonly history: readonly ModelMessage[];
   readonly instructionsTokens: number;
   readonly modelContext: readonly ModelMessage[];
+  /** Whether modelContext is proven to be the standard persisted projection. */
+  readonly modelContextProvenance: AgentCompactionModelContextProvenance;
   readonly reason: AgentCompactionReason;
   readonly signal: AbortSignal;
   readonly summarize: (
@@ -59,6 +69,7 @@ export interface AgentCompactionContext {
  */
 export interface AgentCompaction {
   readonly bufferTokens?: number;
+  readonly deadlineMs?: () => number;
   readonly estimateTokens?: (input: ModelContextTokenEstimateInput) => number;
   readonly maxInputTokens?: () => number;
   readonly onOverflow?: "compact" | "error";
@@ -69,6 +80,12 @@ export interface AgentCompaction {
     | undefined
     | Promise<ThreadCompactionInput | undefined>;
 }
+
+/** Episode bound used when a policy omits `deadlineMs`. */
+export const DEFAULT_COMPACTION_DEADLINE_MS = 15_000;
+
+/** Largest delay accepted by JavaScript timer implementations. */
+export const MAX_COMPACTION_DEADLINE_MS = 2_147_483_647;
 
 /** The thread-history estimator pinned by a compaction, when it provides one. */
 export function threadEstimatorForCompaction(
@@ -104,7 +121,12 @@ export type ThreadCompactionFreshnessGuard = (
   input: ThreadCompactionInput
 ) => boolean;
 
+export interface ThreadCompactionHandlerContext {
+  readonly commit: (input: ThreadCompactionInput) => Promise<boolean>;
+  readonly signal: AbortSignal;
+}
+
 export type ThreadCompactionHandler = (
   input: ThreadCompactionInput,
-  freshnessGuard?: ThreadCompactionFreshnessGuard
+  context: ThreadCompactionHandlerContext
 ) => Promise<boolean>;

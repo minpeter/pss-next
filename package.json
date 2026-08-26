@@ -22,7 +22,7 @@
     "check:tegami-notes": "node scripts/check-tegami-notes.mjs",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
     "test": "turbo run test && vitest run scripts/*.test.mjs",
-    "coverage": "vitest run --config vitest.coverage.config.ts --coverage",
+    "coverage": "pnpm --filter @minpeter/pss-coding-agent build && vitest run --config vitest.coverage.config.ts --coverage",
     "test:cross-platform-smoke": "pnpm turbo run build --filter=@minpeter/pss-coding-agent... && pnpm --filter @minpeter/pss-runtime exec vitest run src/platform/file/storage/file-lock.test.ts src/platform/file/storage/file-execution-store-edge.test.ts && pnpm --filter @minpeter/pss-coding-agent exec vitest run src/cli.test.ts src/cli-exec-home.test.ts src/context/context-resources.test.ts src/extensions/manager/paths.test.ts src/tui/terminal-safety.test.ts && node apps/coding-agent/bin/pss.js --help",
     "verify:edge": "pnpm --filter @minpeter/pss-worker-agent build",
     "eval:provider": "pnpm --filter @minpeter/pss-example-evals eval",

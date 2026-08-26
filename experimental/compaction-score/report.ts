@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import type { BenchmarkScenario } from "./fixture";
+import {
+  type Distribution,
+  distribution,
+  type WilsonInterval,
+  wilson95,
+} from "./report-statistics";
 import type { CompactionScore, ScoreCount, ScoreDisagreement } from "./scorer";
 
 export type InvalidTrialStatus =
@@ -24,8 +30,10 @@ interface TrialIdentity {
 }
 
 export interface CompactionHopRecord {
+  readonly compactionMs?: number;
   readonly endSeqExclusive: number;
   readonly prefixTokens: number;
+  readonly summarizerInputTokens?: number;
   readonly summaryTokens: number;
 }
 
@@ -44,21 +52,7 @@ export interface InvalidTrialRecord extends TrialIdentity {
 
 export type TrialRecord = InvalidTrialRecord | ValidTrialRecord;
 
-export interface Distribution {
-  readonly max: number;
-  readonly mean: number;
-  readonly min: number;
-  readonly quantiles: {
-    readonly p50: number;
-    readonly p95: number;
-  };
-  readonly standardDeviation: number;
-}
-
-interface WilsonInterval {
-  readonly high: number;
-  readonly low: number;
-}
+export type { Distribution } from "./report-statistics";
 
 export interface DisagreementFingerprint {
   readonly arm: ScoreDisagreement["arm"];
@@ -115,57 +109,66 @@ export interface TrialSummary {
 }
 
 export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
-  const valid = records.filter(
-    (record): record is ValidTrialRecord => record.status === "valid"
-  );
   const invalidByStatus: Partial<Record<InvalidTrialStatus, number>> = {};
-  for (const record of records) {
-    if (record.status !== "valid") {
-      invalidByStatus[record.status] =
-        (invalidByStatus[record.status] ?? 0) + 1;
-    }
-  }
-
-  const trials = {
-    attempted: records.length,
-    invalidByStatus,
-    valid: valid.length,
-  };
-  if (valid.length === 0) {
-    return { compression: null, retention: null, trials };
-  }
-
-  const trialAccuracies = valid.map(
-    (record) => record.score.headline.correct / record.score.headline.total
-  );
-  const aggregate = valid.reduce(
-    (total, record) => ({
-      correct: total.correct + record.score.headline.correct,
-      total: total.total + record.score.headline.total,
-    }),
-    { correct: 0, total: 0 }
-  );
   const categoryCounts = new Map<string, ScoreCount>();
   const disagreementCounts = new Map<
     string,
     Omit<DisagreementFingerprint, "count"> & { count: number }
   >();
+  const hopRatios: number[][] = [];
   const scenarioCounts = new Map<BenchmarkScenario, ScoreCount>();
   const scenarioRatios = new Map<BenchmarkScenario, number[]>();
-  for (const record of valid) {
-    const previousScenario = scenarioCounts.get(record.scenario) ?? {
-      correct: 0,
-      total: 0,
-    };
-    scenarioCounts.set(record.scenario, {
-      correct: previousScenario.correct + record.score.headline.correct,
-      total: previousScenario.total + record.score.headline.total,
-    });
+  const summaryRatios: number[] = [];
+  const trialAccuracies: number[] = [];
+  let aggregateCorrect = 0;
+  let aggregateTotal = 0;
+  let validCount = 0;
+
+  for (const record of records) {
+    switch (record.status) {
+      case "compaction-prompt-failure":
+      case "evaluation-provider-failure":
+      case "invalid-full-control":
+      case "non-compressing-summary":
+      case "protocol-failure":
+      case "summary-provider-failure":
+        invalidByStatus[record.status] =
+          (invalidByStatus[record.status] ?? 0) + 1;
+        continue;
+      case "valid":
+        break;
+      default:
+        assertNever(record);
+    }
+
+    validCount += 1;
+    aggregateCorrect += record.score.headline.correct;
+    aggregateTotal += record.score.headline.total;
+    trialAccuracies.push(
+      record.score.headline.correct / record.score.headline.total
+    );
     const ratio = record.summaryTokens / record.prefixTokens;
-    scenarioRatios.set(record.scenario, [
-      ...(scenarioRatios.get(record.scenario) ?? []),
-      ratio,
-    ]);
+    summaryRatios.push(ratio);
+    const ratiosForScenario = scenarioRatios.get(record.scenario);
+    if (ratiosForScenario === undefined) {
+      scenarioRatios.set(record.scenario, [ratio]);
+    } else {
+      ratiosForScenario.push(ratio);
+    }
+    for (const [index, hop] of record.hops.entries()) {
+      const ratiosForHop = hopRatios[index];
+      const hopRatio = hop.summaryTokens / hop.prefixTokens;
+      if (ratiosForHop === undefined) {
+        hopRatios.push([hopRatio]);
+      } else {
+        ratiosForHop.push(hopRatio);
+      }
+    }
+
+    addScore(scenarioCounts, record.scenario, record.score.headline);
+    for (const category of record.score.arms.compacted.perCategory) {
+      addScore(categoryCounts, category.category, category);
+    }
     for (const disagreement of record.score.disagreements) {
       const fingerprint = fingerprintDisagreement(
         record.scenario,
@@ -180,33 +183,22 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
         scenario: record.scenario,
       });
     }
-    for (const category of record.score.arms.compacted.perCategory) {
-      const previous = categoryCounts.get(category.category) ?? {
-        correct: 0,
-        total: 0,
-      };
-      categoryCounts.set(category.category, {
-        correct: previous.correct + category.correct,
-        total: previous.total + category.total,
-      });
-    }
   }
 
-  const summaryRatios = valid.map(
-    (record) => record.summaryTokens / record.prefixTokens
-  );
-  const maxHops = Math.max(...valid.map((record) => record.hops.length));
+  const trials = {
+    attempted: records.length,
+    invalidByStatus,
+    valid: validCount,
+  };
+  if (validCount === 0) {
+    return { compression: null, retention: null, trials };
+  }
 
   return {
     compression: {
-      byHop: Array.from({ length: maxHops }, (_, index) => ({
+      byHop: hopRatios.map((ratios, index) => ({
         hop: index + 1,
-        ratio: distribution(
-          valid.flatMap((record) => {
-            const hop = record.hops[index];
-            return hop ? [hop.summaryTokens / hop.prefixTokens] : [];
-          })
-        ),
+        ratio: distribution(ratios),
       })),
       byScenario: [...scenarioRatios.entries()].map(([scenario, ratios]) => ({
         ratio: distribution(ratios),
@@ -217,9 +209,10 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
     },
     retention: {
       aggregate: {
-        ...aggregate,
-        accuracy: aggregate.correct / aggregate.total,
-        wilson95: wilson95(aggregate.correct, aggregate.total),
+        accuracy: aggregateCorrect / aggregateTotal,
+        correct: aggregateCorrect,
+        total: aggregateTotal,
+        wilson95: wilson95(aggregateCorrect, aggregateTotal),
       },
       byCategory: [...categoryCounts.entries()].map(([category, score]) => ({
         accuracy: score.correct / score.total,
@@ -242,21 +235,20 @@ export function summarizeTrials(records: readonly TrialRecord[]): TrialSummary {
   };
 }
 
-function distribution(values: readonly number[]): Distribution {
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance =
-    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+function assertNever(value: never): never {
+  throw new TypeError(`Unexpected trial record: ${String(value)}`);
+}
 
-  return {
-    max: Math.max(...values),
-    mean,
-    min: Math.min(...values),
-    quantiles: {
-      p50: quantile(values, 0.5),
-      p95: quantile(values, 0.95),
-    },
-    standardDeviation: Math.sqrt(variance),
-  };
+function addScore<Key>(
+  counts: Map<Key, ScoreCount>,
+  key: Key,
+  score: ScoreCount
+): void {
+  const previous = counts.get(key);
+  counts.set(key, {
+    correct: (previous?.correct ?? 0) + score.correct,
+    total: (previous?.total ?? 0) + score.total,
+  });
 }
 
 function fingerprintDisagreement(
@@ -275,35 +267,4 @@ function fingerprintDisagreement(
       ])
     )
     .digest("hex");
-}
-
-function quantile(values: readonly number[], probability: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = (sorted.length - 1) * probability;
-  const lowerIndex = Math.floor(index);
-  const upperIndex = Math.ceil(index);
-  const lower = sorted[lowerIndex];
-  const upper = sorted[upperIndex];
-  if (lower === undefined || upper === undefined) {
-    throw new TypeError("Cannot compute a quantile for an empty distribution.");
-  }
-  return lower + (upper - lower) * (index - lowerIndex);
-}
-
-function wilson95(correct: number, total: number): WilsonInterval {
-  const z = 1.96;
-  const probability = correct / total;
-  const denominator = 1 + z ** 2 / total;
-  const center = (probability + z ** 2 / (2 * total)) / denominator;
-  const margin =
-    (z *
-      Math.sqrt(
-        (probability * (1 - probability) + z ** 2 / (4 * total)) / total
-      )) /
-    denominator;
-
-  return {
-    high: Math.min(1, center + margin),
-    low: Math.max(0, center - margin),
-  };
 }

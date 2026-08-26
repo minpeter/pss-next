@@ -189,7 +189,10 @@ export async function* agentEventStreamParts(
       case "turn-error":
         yield {
           type: "error",
-          error: createTuiErrorPresentation(event.message, event.error),
+          error: createTuiErrorPresentation(
+            event.message,
+            event.error ?? { category: "unknown", version: 1 }
+          ),
         };
         break;
       default:

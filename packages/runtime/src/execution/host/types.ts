@@ -3,6 +3,22 @@ import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentEvent, UserInput } from "../../thread/protocol/events";
 import type { ThreadStore } from "../../thread/store/types";
 import type { ResumeThreadOptions } from "./scheduler-options";
+import type { ThreadInputInbox } from "./thread-input-types";
+
+export type {
+  AdmitReceipt,
+  AdmitThreadInput,
+  ClaimedThreadInput,
+  ClaimThreadInputOptions,
+  RecoverThreadInputClaimsOptions,
+  RecoverThreadInputClaimsResult,
+  ThreadInputBoundary,
+  ThreadInputInbox,
+  ThreadInputKind,
+  ThreadInputPlacement,
+  ThreadInputRecord,
+  ThreadInputStatus,
+} from "./thread-input-types";
 
 /** Single host contract: persistence, scheduling, and optional attachments. */
 export interface AgentHost {
@@ -221,68 +237,6 @@ export interface NotificationInbox {
     idempotencyKey: string
   ): Promise<NotificationRecord | null>;
   releaseByIdempotencyKey(idempotencyKey: string): Promise<void>;
-}
-
-export type ThreadInputKind = "follow-up" | "send" | "steer";
-export type ThreadInputStatus = "acked" | "claiming" | "pending" | "promoted";
-export type ThreadInputBoundary =
-  | "step-end"
-  | "step-start"
-  | "turn-idle"
-  | "turn-start";
-export type ThreadInputPlacement = "step-end" | "step-start" | "turn-start";
-
-export interface ThreadInputRecord {
-  readonly admittedAtMs: number;
-  readonly admittedSeq: number;
-  readonly claimId?: string;
-  readonly input: UserInput;
-  readonly kind: ThreadInputKind;
-  readonly messageId: string;
-  readonly placement?: ThreadInputPlacement;
-  readonly status: ThreadInputStatus;
-  readonly threadKey: string;
-}
-
-export interface AdmitThreadInput {
-  readonly admittedAtMs?: number;
-  readonly input: UserInput;
-  readonly kind: ThreadInputKind;
-  readonly messageId: string;
-  readonly placement?: ThreadInputPlacement;
-  readonly threadKey: string;
-}
-
-export interface AdmitReceipt {
-  readonly duplicate: boolean;
-  readonly record: ThreadInputRecord;
-}
-
-export interface ClaimedThreadInput extends ThreadInputRecord {
-  readonly claimId: string;
-  readonly status: "claiming";
-}
-
-export interface RecoverThreadInputClaimsResult {
-  readonly acked: readonly ThreadInputRecord[];
-  readonly released: readonly ThreadInputRecord[];
-}
-
-export interface ClaimThreadInputOptions {
-  readonly messageId?: string;
-}
-
-export interface ThreadInputInbox {
-  ack(record: ThreadInputRecord): Promise<ThreadInputRecord | null>;
-  admit(input: AdmitThreadInput): Promise<AdmitReceipt>;
-  claimNext(
-    threadKey: string,
-    boundary: ThreadInputBoundary,
-    options?: ClaimThreadInputOptions
-  ): Promise<ClaimedThreadInput | null>;
-  markPromoted(record: ClaimedThreadInput): Promise<ThreadInputRecord | null>;
-  recoverClaims(threadKey: string): Promise<RecoverThreadInputClaimsResult>;
-  releaseClaim(record: ClaimedThreadInput): Promise<ThreadInputRecord | null>;
 }
 
 export interface HostStorePorts {
