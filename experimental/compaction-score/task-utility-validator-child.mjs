@@ -152,5 +152,5 @@ function asRecord(value) {
 }
 
 function writeProtocol(value) {
-  protocolWrite(3, `${protocolStringify(value)}\n`);
+  protocolWrite(1, `${protocolStringify(value)}\n`);
 }

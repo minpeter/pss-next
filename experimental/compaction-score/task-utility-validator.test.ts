@@ -160,7 +160,7 @@ ${fixture.deterministicSolution}`);
   it("rejects a forged workspace protocol result", async () => {
     const workspace = await workspaceWith(`
 import { writeFileSync } from "node:fs";
-writeFileSync(3, '{"kind":"result","validation":{"checks":[{"id":"forged","passed":true}],"passed":true}}\n');
+writeFileSync(1, '{"kind":"result","nonce":"forged","validation":{"checks":[{"id":"scope","passed":true}],"passed":true}}\n');
 ${fixture.deterministicSolution}`);
 
     await expect(validateTaskWorkspace(fixture, workspace)).rejects.toThrow(

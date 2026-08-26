@@ -31,12 +31,11 @@ export async function validateTaskWorkspace(
     detached: true,
     env: sanitizedEnvironment(),
     shell: false,
-    stdio: ["ignore", "pipe", "pipe", "pipe"] as const,
+    stdio: ["ignore", "pipe", "pipe"] as const,
   });
   const stdoutStream = child.stdout;
   const stderrStream = child.stderr;
-  const protocolStream = child.stdio[3];
-  if (!(stdoutStream && stderrStream && protocolStream)) {
+  if (!(stdoutStream && stderrStream)) {
     await new Promise<void>((resolveClose) => {
       child.once("close", () => resolveClose());
       killProcessGroup(child);
@@ -49,7 +48,6 @@ export async function validateTaskWorkspace(
 
   const stdout = new BoundedOutput();
   const stderr = new BoundedOutput();
-  const protocol = new BoundedOutput();
   let failure: TaskValidatorErrorKind | undefined;
   const terminate = (kind: TaskValidatorErrorKind): void => {
     if (failure !== undefined) {
@@ -70,13 +68,6 @@ export async function validateTaskWorkspace(
       terminate("output-limit");
     }
   });
-  protocolStream.on("data", (chunk: Buffer) => {
-    protocol.append(chunk);
-    if (protocol.exceeded) {
-      terminate("output-limit");
-    }
-  });
-
   return await new Promise<TaskValidation>((resolve, reject) => {
     let spawnError: Error | undefined;
     const timeout = setTimeout(
@@ -90,10 +81,10 @@ export async function validateTaskWorkspace(
       clearTimeout(timeout);
       Promise.resolve({
         code,
-        details: { stderr: stderr.text, stdout: stdout.text },
+        details: { stderr: "", stdout: "" },
         expectedCheckIds: taskValidatorCheckIds(fixture.id),
         failure,
-        protocol: protocol.text,
+        protocol: stdout.text,
         signal,
         spawnError,
       })
