@@ -234,4 +234,7 @@ Task-utility validation executes candidate workspace code inside Linux
 Bubblewrap with an isolated network namespace and Node filesystem permissions.
 The default executable is `/usr/bin/bwrap`; set
 `PSS_TASK_VALIDATOR_SANDBOX` to another absolute Bubblewrap path when needed.
-Validation fails closed when the sandbox is unavailable.
+Validation fails closed when the sandbox is unavailable. Infrastructure that
+creates the network namespace outside Bubblewrap may set
+`PSS_TASK_VALIDATOR_NETWORK_ISOLATED=1`; never set it without an already
+isolated parent namespace.

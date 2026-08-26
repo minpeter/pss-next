@@ -79,6 +79,8 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
+        env:
+          PSS_TASK_VALIDATOR_NETWORK_ISOLATED: "1"
         run: pnpm test
 
       - name: Check core package coverage

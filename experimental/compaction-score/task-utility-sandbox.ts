@@ -3,6 +3,8 @@ import { access, constants } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { taskValidatorProcessError } from "./task-utility-validator-protocol";
 
+export const TASK_VALIDATOR_NETWORK_ISOLATED_ENV =
+  "PSS_TASK_VALIDATOR_NETWORK_ISOLATED";
 export const TASK_VALIDATOR_SANDBOX_ENV = "PSS_TASK_VALIDATOR_SANDBOX";
 const DEFAULT_TASK_VALIDATOR_SANDBOX = "/usr/bin/bwrap";
 
@@ -40,7 +42,9 @@ export async function taskValidatorSandboxCommand({
   const validatorDirectory = dirname(validatorEntrypoint);
   return {
     args: [
-      "--unshare-net",
+      ...(process.env[TASK_VALIDATOR_NETWORK_ISOLATED_ENV] === "1"
+        ? []
+        : ["--unshare-net"]),
       "--unshare-pid",
       "--unshare-ipc",
       "--unshare-uts",
