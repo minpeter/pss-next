@@ -44,7 +44,7 @@ jobs:
           sudo apt-get install --yes --no-install-recommends bubblewrap
           sudo tee /usr/local/bin/pss-bwrap >/dev/null <<'EOF'
           #!/bin/sh
-          exec sudo /usr/bin/bwrap "$@"
+          exec sudo /usr/bin/bwrap --cap-add CAP_NET_ADMIN "$@"
           EOF
           sudo chmod 0755 /usr/local/bin/pss-bwrap
           echo "PSS_TASK_VALIDATOR_SANDBOX=/usr/local/bin/pss-bwrap" >> "$GITHUB_ENV"
