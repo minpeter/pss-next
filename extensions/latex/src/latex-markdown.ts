@@ -789,7 +789,11 @@ export class LatexMarkdown implements Component {
         lines.push(...new LatexImage(state.image, this.paddingX).render(width));
         lines.push("");
       } else if (part.raw.length > 0) {
-        appendMarkdownLines(lines, this.renderMarkdown(part.raw, 0, width));
+        const fallback =
+          part.type === "math" && state?.status === "failed"
+            ? inlineCodeSpan(part.raw)
+            : part.raw;
+        appendMarkdownLines(lines, this.renderMarkdown(fallback, 0, width));
       }
     }
     lines.push(...Array.from({ length: this.paddingY }, () => emptyLine));
