@@ -14,7 +14,7 @@
     "@ai-sdk/openai-compatible": "3.0.20",
     "@minpeter/pss-coding-agent": "workspace:*",
     "@minpeter/pss-runtime": "workspace:*",
-    "@oh-my-pi/hashline": "17.2.4",
+    "@oh-my-pi/hashline": "17.2.11",
     "ai": "7.0.51",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"
