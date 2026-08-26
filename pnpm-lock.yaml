@@ -191,11 +191,11 @@ importers:
         specifier: 3.0.20
         version: 3.0.20(zod@4.4.3)
       '@chat-adapter/state-memory':
-        specifier: 4.36.0
-        version: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+        specifier: 4.37.0
+        version: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       '@chat-adapter/telegram':
-        specifier: 4.36.0
-        version: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+        specifier: 4.37.0
+        version: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       '@minpeter/pss-runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -210,10 +210,10 @@ importers:
         version: 11.18.0(typescript@7.0.2)
       agents:
         specifier: 0.20.1
-        version: 0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3)
+        version: 0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3)
       chat:
-        specifier: 4.36.0
-        version: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+        specifier: 4.37.0
+        version: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       evlog:
         specifier: ^2.22.4
         version: 2.22.4(ai@7.0.51(zod@4.4.3))(express@5.2.1)(hono@4.13.3)(react@19.2.8)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -628,7 +628,7 @@ importers:
     devDependencies:
       agents:
         specifier: 0.20.1
-        version: 0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3)
+        version: 0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3)
       tsdown:
         specifier: ^0.22.14
         version: 0.22.14(publint@0.3.23)(tsx@4.23.12)(typescript@7.0.2)
@@ -947,16 +947,16 @@ packages:
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
 
-  '@chat-adapter/shared@4.36.0':
-    resolution: {integrity: sha512-6w3GhiJiu6cEnO7c/j5Pu17x37mAKhcVosSo05k5z1CaaB6SoYps/rwbd02qqqxbzrS8usJ3/yhK+N4tazJjSA==}
+  '@chat-adapter/shared@4.37.0':
+    resolution: {integrity: sha512-q/uSBRfcHcHBdweDyx3tRy5teUYUTFR5jyaLzT5hVPwVJR59lTRv2AHxhpixBOL6UQloS3uGexWJUsBXxi/ifg==}
     engines: {node: '>=20'}
 
-  '@chat-adapter/state-memory@4.36.0':
-    resolution: {integrity: sha512-zutvNwKopdg05dcLSdy8KuDZhJt40nwlAMXKqCyMt2GzM2FOqCJnFOixA8SNN8WMKZgYefeAnFovzVxySHYqUw==}
+  '@chat-adapter/state-memory@4.37.0':
+    resolution: {integrity: sha512-dI3dk+PUxkL1q5FZ7fn7T9nq9SIBnoovw3moTIl8xwuB4kWRNsvFa5CM7H0fGeaDPeyJPR+PQ+rUKPGKumMKTg==}
     engines: {node: '>=20'}
 
-  '@chat-adapter/telegram@4.36.0':
-    resolution: {integrity: sha512-DmL1lNu7O0GH8fZC/osN9yDAKactwPc2Z+M2iyhl6ohFOzhL+5zSz4EwsZhJclau4ABw9U+Jv5fNLWa7NWJo/Q==}
+  '@chat-adapter/telegram@4.37.0':
+    resolution: {integrity: sha512-A/lBDH7QUdGzxn+aBUyfg0Dp3uO9AW04Q2iXd4SwAz1t14wVb/gQ+KeI1QB287thgx+uLfr13f0/5Ss58ET11w==}
     engines: {node: '>=20'}
 
   '@clack/core@1.4.3':
@@ -2769,8 +2769,8 @@ packages:
   character-entities@2.0.2:
     resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
 
-  chat@4.36.0:
-    resolution: {integrity: sha512-3A5HjnjilStMazAgY2PESloyT8g+GsoEf5uvqzPtvpGJrNh9oGWQ7IRZzw4+pFFTbUnCEtsclEAc2KMloRRZRQ==}
+  chat@4.37.0:
+    resolution: {integrity: sha512-rXWcVSPY0YiVXLpApYxuS2EbWzXBy3mI1kSAcnF9iPzw98FbDIDq73+Ri0JpUhS1bdVZPhWZgn8bum+Gy8jF3Q==}
     engines: {node: '>=20'}
     peerDependencies:
       ai: ^6.0.182 || ^7.0.0
@@ -5572,28 +5572,28 @@ snapshots:
 
   '@cfworker/json-schema@4.1.1': {}
 
-  '@chat-adapter/shared@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/shared@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
       - workflow
       - zod
 
-  '@chat-adapter/state-memory@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/state-memory@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
       - workflow
       - zod
 
-  '@chat-adapter/telegram@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
+  '@chat-adapter/telegram@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)':
     dependencies:
-      '@chat-adapter/shared': 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
-      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@chat-adapter/shared': 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -6696,7 +6696,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  agents@0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3):
+  agents@0.20.1(@babel/core@8.0.1)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260804.1)(@modelcontextprotocol/client@2.0.0-beta.5)(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.51(zod@4.4.3))(chat@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3))(react@19.2.8)(rolldown@1.2.0)(vite@8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))(zod@4.4.3):
     dependencies:
       '@babel/plugin-proposal-decorators': 8.0.2(@babel/core@8.0.1)
       '@cfworker/json-schema': 4.1.1
@@ -6716,7 +6716,7 @@ snapshots:
       zod: 4.4.3
     optionalDependencies:
       ai: 7.0.51(zod@4.4.3)
-      chat: 4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      chat: 4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
       vite: 8.1.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@babel/core'
@@ -6959,7 +6959,7 @@ snapshots:
 
   character-entities@2.0.2: {}
 
-  chat@4.36.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3):
+  chat@4.37.0(ai@7.0.51(zod@4.4.3))(zod@4.4.3):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0

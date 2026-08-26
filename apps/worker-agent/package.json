@@ -30,14 +30,14 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.20",
-    "@chat-adapter/state-memory": "4.36.0",
-    "@chat-adapter/telegram": "4.36.0",
+    "@chat-adapter/state-memory": "4.37.0",
+    "@chat-adapter/telegram": "4.37.0",
     "@minpeter/pss-runtime": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "@trpc/client": "11.18.0",
     "@trpc/server": "11.18.0",
     "agents": "0.20.1",
-    "chat": "4.36.0",
+    "chat": "4.37.0",
     "evlog": "^2.22.4",
     "zod": "^4.4.3"
   },
