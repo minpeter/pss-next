@@ -4,7 +4,7 @@ import { speculativeCompaction } from "./speculative-compaction";
 import { context, message } from "./speculative-compaction-test-support";
 
 describe("speculativeCompaction", () => {
-  it("removes an initial candidate when its preparation episode later aborts", async () => {
+  it("keeps a completed preparation candidate when its episode later aborts", async () => {
     const controller = new AbortController();
     const summarize = vi
       .fn<AgentCompactionContext["summarize"]>()
@@ -31,11 +31,11 @@ describe("speculativeCompaction", () => {
       })
     );
 
-    expect(retried?.summary).toBe("fresh retry");
-    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(retried?.summary).toBe("aborted prepared");
+    expect(summarize).toHaveBeenCalledTimes(1);
   });
 
-  it("restores the prior candidate when an installed replacement episode aborts", async () => {
+  it("keeps a completed replacement candidate when its episode aborts", async () => {
     const replacementController = new AbortController();
     const summarize = vi
       .fn<AgentCompactionContext["summarize"]>()
@@ -64,11 +64,11 @@ describe("speculativeCompaction", () => {
       context([...widened, message("8")], summarize, { reason: "overflow" })
     );
 
-    expect(promoted?.summary).toBe("prepared");
+    expect(promoted?.summary).toBe("aborted replacement");
     expect(summarize).toHaveBeenCalledTimes(2);
   });
 
-  it("does not restore an aborted predecessor when its replacement aborts", async () => {
+  it("promotes a completed replacement candidate after both episodes abort", async () => {
     const preparedController = new AbortController();
     const replacementController = new AbortController();
     const summarize = vi
@@ -102,11 +102,11 @@ describe("speculativeCompaction", () => {
       context([...widened, message("8")], summarize, { reason: "overflow" })
     );
 
-    expect(promoted?.summary).toBe("fresh overflow");
-    expect(summarize).toHaveBeenCalledTimes(3);
+    expect(promoted?.summary).toBe("candidate B");
+    expect(summarize).toHaveBeenCalledTimes(2);
   });
 
-  it("preserves an existing candidate when promotion fallback is aborted", async () => {
+  it("installs a completed promotion fallback after its episode aborts", async () => {
     const controller = new AbortController();
     let resolveFallback: (summary: string) => void = () => {
       throw new TypeError("fallback promise was not initialized");
@@ -146,7 +146,7 @@ describe("speculativeCompaction", () => {
       context(promotedHistory, summarize, { reason: "overflow" })
     );
 
-    expect(promoted?.summary).toBe("prepared");
+    expect(promoted?.summary).toBe("late fallback");
     expect(summarize).toHaveBeenCalledTimes(2);
   });
 });

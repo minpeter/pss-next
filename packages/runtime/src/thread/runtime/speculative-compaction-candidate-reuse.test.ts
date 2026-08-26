@@ -32,7 +32,7 @@ describe("speculativeCompaction", () => {
     expect(summarizeB).toHaveBeenCalledTimes(1);
   });
 
-  it("re-summarizes a broader range when an old candidate reaches overflow", async () => {
+  it("reuses a promote-installed candidate when its tail still fits the budget", async () => {
     const summarize = vi
       .fn<AgentCompactionContext["summarize"]>()
       .mockResolvedValueOnce("prepared")
@@ -62,9 +62,8 @@ describe("speculativeCompaction", () => {
       context(overflowHistory, summarize, { reason: "overflow" })
     );
 
-    expect(promoted?.summary).toBe("overflow");
-    expect(promoted?.endSeqExclusive).toBeGreaterThan(2);
-    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(promoted?.summary).toBe("prepared");
+    expect(summarize).toHaveBeenCalledTimes(1);
   });
 
   it("reuses a widened candidate when its full uncovered tail still fits", async () => {
