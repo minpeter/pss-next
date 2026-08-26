@@ -12,6 +12,7 @@ import type {
   AdmitThreadInput,
   ClaimedThreadInput,
   ClaimThreadInputOptions,
+  RecoverThreadInputClaimsOptions,
   RecoverThreadInputClaimsResult,
   ThreadInputBoundary,
   ThreadInputInbox,
@@ -104,7 +105,11 @@ export class InMemoryThreadInputInbox implements ThreadInputInbox {
     );
   }
 
-  recoverClaims(threadKey: string): Promise<RecoverThreadInputClaimsResult> {
+  recoverClaims(
+    threadKey: string,
+    options: RecoverThreadInputClaimsOptions = {}
+  ): Promise<RecoverThreadInputClaimsResult> {
+    options.signal?.throwIfAborted();
     const state = this.#state();
     const current = state.inputsByThread.get(threadKey) ?? [];
     const transition = recoverThreadInputClaims(current, threadKey);

@@ -82,7 +82,9 @@ function resolveOptions(
   options: TraceAgentTurnOptions
 ): ResolvedTraceAgentTurnOptions {
   return {
-    eventAttributes: options.eventAttributes,
+    ...(options.eventAttributes === undefined
+      ? {}
+      : { eventAttributes: options.eventAttributes }),
     eventName: options.eventName ?? DEFAULT_EVENT_NAME,
     spanAttributes: {
       "pss.runtime.component": RUNTIME_COMPONENT,

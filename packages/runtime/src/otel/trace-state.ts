@@ -210,11 +210,14 @@ function startSpan(
   name: string,
   attributes: TraceAgentTurnEventAttributes
 ): TraceAgentTurnSpan {
+  const cleanedAttributes = cleanAttributes({
+    ...state.options.spanAttributes,
+    ...attributes,
+  });
   return state.options.tracer.startSpan(name, {
-    attributes: cleanAttributes({
-      ...state.options.spanAttributes,
-      ...attributes,
-    }),
+    ...(cleanedAttributes === undefined
+      ? {}
+      : { attributes: cleanedAttributes }),
   });
 }
 

@@ -149,11 +149,7 @@ versioned, provider-neutral metadata:
     version: 1,
     category: "permission",
     status: 403,
-    providerType: "provider_error",
     observedRetryable: false,
-    correlationIds: [
-      { source: "x-request-id", value: "request-123" },
-    ],
   },
 }
 ```
@@ -169,9 +165,11 @@ is visible to stream consumers and instrumentation. Older stored events
 without `error` remain valid.
 `message` is an application-owned safe summary for structured provider
 failures, not raw provider prose. The metadata whitelist can include status,
-bounded code/type values, retry-after, and labeled correlation IDs; it excludes
-request/response bodies, raw headers, URLs, stacks, credentials, and arbitrary
-causes.
+recognized transport codes, retry-after, and `observedRetryable`. Newly
+normalized failures omit provider-origin codes, types, and correlation
+identifiers. The compatibility types remain exported for older persisted
+events. Metadata excludes request/response bodies, raw headers, URLs, stacks,
+credentials, and arbitrary causes.
 
 `observedRetryable` reports what the SDK or transport observed. It does not
 promise that PSS will retry. A future retry policy must communicate its actual
@@ -1193,7 +1191,13 @@ There is a single host contract: `AgentHost` (`HostStore` + `HostScheduler` + op
 `createCloudflareHost` is the Cloudflare Agents SDK path (fibers + schedule).
 For store/alarm-only DO tooling use `createCloudflareStorageHost`.
 
-Speculative compaction prepares a summary in the background before promoting it:
+Speculative compaction prepares a summary in the background before promoting it.
+Each episode has one absolute pre-commit deadline:
+`DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds), unless the policy supplies
+`deadlineMs`. The deadline covers preparation, summaries, retries, transforms,
+hooks, freshness checks, queue waiting, and serialized snapshot encoding. The
+runtime checks the absolute deadline at that boundary; once the store call
+begins, it awaits the atomic commit or rollback instead of abandoning it:
 
 ```ts
 const agent = await createAgent({
@@ -1251,9 +1255,10 @@ await thread.compact({ instructions: "Prioritize unresolved decisions." });
 
 Manual compaction returns a `compacted`, `empty`, or `skipped` status and rejects
 while a turn is active. `skipped` distinguishes a hook cancellation or freshness
-race from empty history. Passing an explicit `ThreadCompactionInput` remains
-available for hosts that already produced a validated summary and returns the
-hook dispatcher's boolean commit decision.
+race from empty history. It inherits the configured compaction policy's
+`deadlineMs`, with the same 15-second fallback. Passing an explicit
+`ThreadCompactionInput` remains available for hosts that already produced a
+validated summary and returns the hook dispatcher's boolean commit decision.
 
 The context gate estimates the prompt immediately before `generateText`, calling
 the compaction's `maxInputTokens` property on every request. With `onOverflow: "error"`,

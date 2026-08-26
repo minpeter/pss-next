@@ -5,8 +5,7 @@ import type {
 import { deferred } from "../../internal/deferred";
 import type { ModelGenerationOptions } from "../../llm/model-step-types";
 import type { AgentInput, UserInput } from "../input/input";
-import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
-import { compactThreadManually } from "../runtime/auto-compaction-runner";
+import type { AgentTurn } from "../protocol/turn";
 import type {
   CompactionSummaryOptions,
   ManualThreadCompactionResult,
@@ -15,16 +14,15 @@ import type { ThreadExecutionOptions } from "../runtime/execution";
 import type { NotifyOptions } from "../runtime/notification";
 import { queueThreadNotification } from "../runtime/notification";
 import { readThreadEvents } from "../runtime/thread-event-replay";
-import {
-  reserveThreadInputAdmission,
-  type ThreadInputAdmissionReservation,
-} from "../runtime/thread-input-admission-coordinator";
-import { createTurnModelTransforms } from "../runtime/turn-model-transforms";
-import { threadKilledError } from "../state/thread-errors";
 import type {
   ThreadCompactionInput,
   ThreadPersistenceOptions,
 } from "../state/thread-state";
+import {
+  queueAgentThreadInput,
+  recoverAgentThreadDurableInputClaims,
+} from "./agent-thread-admission";
+import { compactAgentThread } from "./agent-thread-compaction";
 import {
   type AgentThreadContext,
   createAgentThreadContext,
@@ -32,15 +30,16 @@ import {
 import { drainAgentThreadInputQueue } from "./agent-thread-drain";
 import { killAgentThread } from "./agent-thread-kill";
 import {
+  assertAgentThreadOpen,
+  ensureAgentThreadStarted,
+} from "./agent-thread-lifecycle";
+import {
   activeTurnRun,
   activeTurnRuntimeInput,
   assertThreadMachineInvariants,
   turnAbort,
 } from "./agent-thread-machines";
-import { recoverThreadDurableInputClaims } from "./durable-queue-claims";
-import { admitThreadSendInput } from "./durable-queue-send";
 import { addDurableSteeringInput } from "./durable-steering";
-import { withThreadDrainOwnership } from "./thread-drain-coordinator";
 import { createOverlayRuntimeInput } from "./thread-overlay";
 
 export class AgentThread {
@@ -55,16 +54,16 @@ export class AgentThread {
   }
 
   async send(input: AgentInput): Promise<AgentTurn> {
-    return await this.#queueTurnInput(input, "send");
+    return await queueAgentThreadInput(this.#context, input, "send");
   }
 
   /** Queue a durable user turn that starts only after the active turn ends. */
   async followUp(input: AgentInput): Promise<AgentTurn> {
-    return await this.#queueTurnInput(input, "follow-up");
+    return await queueAgentThreadInput(this.#context, input, "follow-up");
   }
 
   overlay(input: AgentInput): this {
-    this.#assertOpen();
+    assertAgentThreadOpen(this.#context);
 
     this.#context.pendingOverlays.push(createOverlayRuntimeInput(input));
     return this;
@@ -74,30 +73,30 @@ export class AgentThread {
     input: AgentInput | UserInput,
     options: NotifyOptions = {}
   ): Promise<AgentTurn> {
-    this.#assertOpen();
+    assertAgentThreadOpen(this.#context);
 
-    await this.#ensureStarted();
-    await this.#recoverDurableInputClaims();
+    await ensureAgentThreadStarted(this.#context);
+    await recoverAgentThreadDurableInputClaims(this.#context);
 
-    this.#assertOpen();
+    assertAgentThreadOpen(this.#context);
 
     return queueThreadNotification(input, options, {
       activeRun: activeTurnRun(this.#context.turn),
       activeRuntimeInput: activeTurnRuntimeInput(this.#context.turn),
       attachmentStore: this.#context.model.attachmentStore,
-      drain: () => this.#drainInputQueue(),
+      drain: () => drainAgentThreadInputQueue(this.#context),
       emitObserverEvent: (run, event) =>
         this.#context.events.emitObserverEvent(run, event),
       executionHost: this.#context.execution.executionHost,
       inputQueue: this.#context.inputQueue,
       pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
       threadKey: this.#context.threadKey,
-      throwIfTerminal: () => this.#assertOpen(),
+      throwIfTerminal: () => assertAgentThreadOpen(this.#context),
     });
   }
 
   async steer(input: AgentInput): Promise<AgentTurn> {
-    this.#assertOpen();
+    assertAgentThreadOpen(this.#context);
 
     const runtimeInput = activeTurnRuntimeInput(this.#context.turn);
     const run = activeTurnRun(this.#context.turn);
@@ -122,73 +121,7 @@ export class AgentThread {
   async compact(
     input?: CompactionSummaryOptions | ThreadCompactionInput
   ): Promise<boolean | ManualThreadCompactionResult> {
-    this.#assertOpen();
-
-    if (input !== undefined && "summary" in input) {
-      return await this.#compactExplicitSummary(input);
-    }
-    if (this.#context.turn.state.tag !== "none") {
-      throw new Error("Cannot compact while a turn is active.");
-    }
-
-    const executionHost = this.#context.execution.executionHost;
-    const reservation = executionHost
-      ? reserveThreadInputAdmission(executionHost, this.#context.threadKey)
-      : undefined;
-    return this.#enqueueInputAdmission(async () => {
-      const compact = async (): Promise<ManualThreadCompactionResult> => {
-        await this.#ensureStarted();
-        return await withThreadDrainOwnership(
-          executionHost,
-          this.#context.threadKey,
-          this.#context,
-          async ({ refreshRequired }) => {
-            await this.#recoverDurableInputClaims();
-            if (refreshRequired) {
-              await this.#context.state.refresh();
-            }
-            this.#assertOpen();
-            if (this.#context.turn.state.tag !== "none") {
-              throw new Error("Cannot compact while a turn is active.");
-            }
-            if (this.#context.state.modelSnapshot().length === 0) {
-              return { status: "empty" };
-            }
-            const transforms = createTurnModelTransforms({
-              hookRuntime: this.#context.execution.hookRuntime,
-              state: this.#context.state,
-              threadKey: this.#context.threadKey,
-            });
-            const compacted = await compactThreadManually({
-              compact: (compactionInput, guard) =>
-                this.#context.events.compact(
-                  this.#context.state,
-                  compactionInput,
-                  guard
-                ),
-              latestContextTransform: transforms.latestContextTransform,
-              model: this.#context.model,
-              signal: new AbortController().signal,
-              state: this.#context.state,
-              summaryOptions: input,
-              threadKey: this.#context.threadKey,
-              transformModelContext: transforms.transformModelContext,
-            });
-            return { status: compacted ? "compacted" : "skipped" };
-          }
-        );
-      };
-      return await (reservation ? reservation(compact) : compact());
-    });
-  }
-
-  async #compactExplicitSummary(
-    input: ThreadCompactionInput
-  ): Promise<boolean> {
-    await this.#ensureStarted();
-    await this.#recoverDurableInputClaims();
-    this.#assertOpen();
-    return await this.#context.events.compact(this.#context.state, input);
+    return await compactAgentThread(this.#context, input);
   }
 
   events(options?: ThreadEventReadOptions): AsyncIterable<StoredThreadEvent> {
@@ -257,122 +190,6 @@ export class AgentThread {
 
   kill(): Promise<void> {
     return killAgentThread(this.#context);
-  }
-
-  async #queueTurnInput(
-    input: AgentInput,
-    kind: "follow-up" | "send"
-  ): Promise<AgentTurn> {
-    this.#assertOpen();
-
-    const run = new BufferedAgentTurn();
-    const executionHost = this.#context.execution.executionHost;
-    const reservation = executionHost
-      ? reserveThreadInputAdmission(executionHost, this.#context.threadKey)
-      : undefined;
-    const loaded = this.#ensureStarted();
-    await this.#enqueueInputAdmission(async () => {
-      const admit = async (): Promise<void> => {
-        await loaded;
-        await this.#admitSend(
-          input,
-          run,
-          kind,
-          async (operation) => await operation()
-        );
-      };
-      await (reservation ? reservation(admit) : admit());
-    });
-    return run;
-  }
-
-  async #admitSend(
-    input: AgentInput,
-    run: BufferedAgentTurn,
-    kind: "follow-up" | "send",
-    reservation?: ThreadInputAdmissionReservation
-  ): Promise<void> {
-    this.#assertOpen();
-
-    await this.#recoverDurableInputClaims();
-
-    this.#assertOpen();
-
-    // Skip awaiting turn boundaries when the drain loop is running without an
-    // active turn: the boundary events would never be acknowledged.
-    const idleDrainLoop =
-      this.#context.drain.state.tag === "draining" &&
-      this.#context.turn.state.tag !== "active";
-    await admitThreadSendInput({
-      awaitBoundaries: !idleDrainLoop,
-      drain: () => this.#drainInputQueue(),
-      events: this.#context.events,
-      executionHost: this.#context.execution.executionHost,
-      attachmentStore: this.#context.model.attachmentStore,
-      input,
-      inputQueue: this.#context.inputQueue,
-      kind,
-      pendingOverlays: this.#context.pendingOverlays,
-      pendingRuntimeInputs: this.#context.pendingRuntimeInputs,
-      reservation,
-      run,
-      threadKey: this.#context.threadKey,
-    });
-    this.#assertOpen();
-  }
-
-  async #enqueueInputAdmission<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.#context.inputAdmissionQueue.then(operation, operation);
-    this.#context.inputAdmissionQueue = next.then(
-      () => undefined,
-      () => undefined
-    );
-    return await next;
-  }
-
-  async #recoverDurableInputClaims(): Promise<void> {
-    await recoverThreadDurableInputClaims({
-      executionHost: this.#context.execution.executionHost,
-      state: this.#context.durableInputRecovery,
-      threadKey: this.#context.threadKey,
-    });
-  }
-
-  async #drainInputQueue(): Promise<void> {
-    await drainAgentThreadInputQueue(this.#context);
-  }
-
-  #assertOpen(): void {
-    if (this.#context.terminal.state.tag !== "open") {
-      throw threadKilledError();
-    }
-  }
-
-  #ensureStarted(): Promise<void> {
-    const lifecycle = this.#context.lifecycle;
-    const current = lifecycle.state;
-    if (current.tag === "starting" || current.tag === "stopping") {
-      return current.promise;
-    }
-    if (current.tag !== "created") {
-      return Promise.resolve();
-    }
-
-    const start = deferred();
-    lifecycle.to({ tag: "starting", promise: start.promise });
-    this.#context.state.ensureLoaded().then(
-      () => {
-        lifecycle.toIf("starting", { tag: "started" });
-        start.resolve();
-      },
-      (error: unknown) => {
-        // A failed load is retryable: return to `created` so the next call
-        // reloads instead of replaying the first failure forever.
-        lifecycle.toIf("starting", { tag: "created" });
-        start.reject(error);
-      }
-    );
-    return start.promise;
   }
 
   async #deleteThread(): Promise<void> {

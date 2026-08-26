@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "globalDependencies": ["tsconfig.base.json"],
+  "globalPassThroughEnv": ["PSS_TASK_VALIDATOR_NETWORK_ISOLATED"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

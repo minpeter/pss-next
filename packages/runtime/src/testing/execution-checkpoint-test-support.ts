@@ -52,6 +52,7 @@ export function createCheckpointSpyHost(): {
 } {
   const baseHost = createInMemoryHost();
   const checkpoints: Checkpoint[] = [];
+  const deleteThread = baseHost.store.deleteThread?.bind(baseHost.store);
   return {
     checkpoints,
     host: {
@@ -65,6 +66,7 @@ export function createCheckpointSpyHost(): {
           },
           latest: (runId) => baseHost.store.checkpoints.latest(runId),
         },
+        ...(deleteThread === undefined ? {} : { deleteThread }),
         events: baseHost.store.events,
         inputs: baseHost.store.inputs,
         notifications: baseHost.store.notifications,
