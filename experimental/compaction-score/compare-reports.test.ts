@@ -27,7 +27,14 @@ const report = () => {
   const answers = new Map([[question, "alpha"]]);
   const record: TrialRecord = {
     fixtureSeed: "compare-cli-test",
-    hops: [{ endSeqExclusive: 10, prefixTokens: 100, summaryTokens: 30 }],
+    hops: [
+      {
+        endSeqExclusive: 10,
+        prefixTokens: 100,
+        sentOutputTokens: 30,
+        summaryTokens: 30,
+      },
+    ],
     id: "valid-1",
     prefixTokens: 100,
     repetition: 1,

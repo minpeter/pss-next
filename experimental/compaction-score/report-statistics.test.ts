@@ -16,9 +16,55 @@ describe("distribution", () => {
     }
   );
 
-  it("rejects finite inputs when a derived metric overflows", () => {
+  it("keeps a 150k-row finite distribution bounded without argument spread", () => {
     // Given
-    const values = [Number.MAX_VALUE, Number.MAX_VALUE];
+    const values = Array.from({ length: 150_000 }, () => Number.MAX_VALUE);
+
+    // When
+    const result = distribution(values);
+
+    // Then
+    expect(result).toEqual({
+      max: Number.MAX_VALUE,
+      mean: Number.MAX_VALUE,
+      min: Number.MAX_VALUE,
+      quantiles: { p50: Number.MAX_VALUE, p95: Number.MAX_VALUE },
+      standardDeviation: 0,
+    });
+  });
+
+  it("summarizes a singleton maximum finite value", () => {
+    // Given
+    const values = [Number.MAX_VALUE];
+
+    // When
+    const result = distribution(values);
+
+    // Then
+    expect(result.mean).toBe(Number.MAX_VALUE);
+    expect(result.quantiles).toEqual({
+      p50: Number.MAX_VALUE,
+      p95: Number.MAX_VALUE,
+    });
+  });
+
+  it("keeps opposite maximum finite values bounded", () => {
+    // Given
+    const values = [-Number.MAX_VALUE, Number.MAX_VALUE];
+
+    // When
+    const result = distribution(values);
+
+    // Then
+    expect(result.mean).toBe(0);
+    expect(result.quantiles.p50).toBe(0);
+    expect(result.standardDeviation).toBe(Number.MAX_VALUE);
+    expect(JSON.stringify(result)).not.toContain("null");
+  });
+
+  it("rejects an empty distribution explicitly", () => {
+    // Given
+    const values: readonly number[] = [];
 
     // When
     const result = () => distribution(values);

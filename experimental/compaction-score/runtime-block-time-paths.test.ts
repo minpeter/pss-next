@@ -64,7 +64,7 @@ describe("runtime block-time path validity", () => {
         "overlap-nonblocking",
         "prepared-hit",
         "candidate-fit-late-hit",
-        "candidate-fit-hard-block",
+        "candidate-too-broad-fallback",
         "summary-failure-retry-hit",
         "repeated-failure-overflow-recovery",
       ] as const
@@ -100,7 +100,7 @@ describe("runtime block-time path validity", () => {
       );
       expect(observation.summarySpans.map((span) => span.status)).toEqual(
         {
-          "candidate-fit-hard-block": ["completed"],
+          "candidate-too-broad-fallback": ["completed"],
           "candidate-fit-late-hit": ["completed"],
           "overlap-nonblocking": ["completed"],
           "prepared-hit": ["completed"],
@@ -114,14 +114,14 @@ describe("runtime block-time path validity", () => {
   it("keeps the in-flight candidate hard block causal at a tied timestamp", async () => {
     let logicalNow = 0;
     const deterministic = createDeterministicRuntimeBlockModel(
-      "candidate-fit-hard-block",
+      "candidate-too-broad-fallback",
       (milliseconds) => {
         logicalNow += milliseconds;
       }
     );
     const scenarioModel = createRuntimeBlockScenarioModel(
       deterministic.model,
-      "candidate-fit-hard-block"
+      "candidate-too-broad-fallback"
     );
 
     const observation = await runRuntimeBlockTrial({
@@ -129,7 +129,7 @@ describe("runtime block-time path validity", () => {
       now: () => logicalNow,
       onTargetStepStart: deterministic.onTargetStepStart,
       repetition: 1,
-      scenario: "candidate-fit-hard-block",
+      scenario: "candidate-too-broad-fallback",
       summaryTimeOffsetMs: deterministic.summaryTimeOffsetMs,
     });
 

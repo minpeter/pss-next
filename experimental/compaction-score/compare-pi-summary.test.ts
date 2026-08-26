@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runPiArm } from "./compare-pi-arms";
+import { runPiArm, runPssArm } from "./compare-pi-arms";
 import { COMPARISON_SUMMARY_OUTPUT_BUDGET } from "./compare-pi-config";
 import { assemblePiSummary } from "./compare-pi-conversation";
 import { generatePiSummary } from "./compare-pi-summary-provider";
@@ -81,6 +81,71 @@ describe("pi summary provider boundary", () => {
 });
 
 describe("pi summary assembly", () => {
+  it("passes a quality-campaign budget to the pi provider", async () => {
+    const fixture = buildCompactionFixture("compare-pi-budget-override");
+    const calls: MockLanguageModelV4CallOptions[] = [];
+    const answers = JSON.stringify({
+      answers: fixture.questions.map((question, index) => ({
+        answer: question.answer,
+        id: `q${index}`,
+      })),
+    });
+    const outputs = [
+      mockLanguageModelV4Text("x".repeat(2000)),
+      mockLanguageModelV4Text(answers),
+      mockLanguageModelV4Text(answers),
+    ];
+    const model = createMockLanguageModelV4((options) => {
+      calls.push(options);
+      return Promise.resolve(outputs[calls.length - 1] ?? outputs[0]);
+    });
+
+    const result = await runPiArm(fixture, 1, model, 256);
+
+    expect(calls[0]?.maxOutputTokens).toBe(256);
+    expect(result.hops?.map((hop) => hop.sentOutputTokens)).toEqual([256]);
+    expect(result.hops?.every((hop) => hop.summaryTokens <= 256)).toBe(true);
+    expect(result.answers).toEqual({
+      compacted: fixture.questions.map((question) => question.answer),
+      full: fixture.questions.map((question) => question.answer),
+    });
+  });
+
+  it("passes a quality-campaign budget to the pss provider", async () => {
+    const fixture = buildCompactionFixture("compare-pss-budget-override");
+    const calls: MockLanguageModelV4CallOptions[] = [];
+    const answers = JSON.stringify({
+      answers: fixture.questions.map((question, index) => ({
+        answer: question.answer,
+        id: `q${index}`,
+      })),
+    });
+    const outputs = [
+      mockLanguageModelV4Text("summary"),
+      mockLanguageModelV4Text(answers),
+      mockLanguageModelV4Text(answers),
+    ];
+    const model = createMockLanguageModelV4((options) => {
+      calls.push(options);
+      return Promise.resolve(outputs[calls.length - 1] ?? outputs[0]);
+    });
+
+    const result = await runPssArm({
+      fixture,
+      fixtureSeed: "compare-pss-budget-override",
+      model,
+      repetition: 1,
+      summaryMaxOutputTokens: 256,
+    });
+
+    expect(calls[0]?.maxOutputTokens).toBe(256);
+    expect(result.hops?.map((hop) => hop.sentOutputTokens)).toEqual([256]);
+    expect(result.answers).toEqual({
+      compacted: fixture.questions.map((question) => question.answer),
+      full: fixture.questions.map((question) => question.answer),
+    });
+  });
+
   it("preserves assembled file evidence when an overlong provider output ignores its limit", () => {
     // Given
     const providerSummary = "x".repeat(
@@ -95,7 +160,7 @@ describe("pi summary assembly", () => {
     const summary = assemblePiSummary(providerSummary, fileOperations);
 
     // Then
-    expect(summary).toHaveLength(
+    expect(summary.length).toBeLessThanOrEqual(
       COMPARISON_SUMMARY_OUTPUT_BUDGET.maxCharacters
     );
     expect(summary).toContain("<read-files>\nsrc/read.ts\n</read-files>");
@@ -145,8 +210,14 @@ describe("pi summary assembly", () => {
     }
     const summaryStart = envelope.indexOf("<summary>\n") + "<summary>\n".length;
     const summaryEnd = envelope.indexOf("\n</summary>", summaryStart);
-    expect(envelope.slice(summaryStart, summaryEnd)).toHaveLength(
+    expect(envelope.slice(summaryStart, summaryEnd).length).toBeLessThanOrEqual(
       COMPARISON_SUMMARY_OUTPUT_BUDGET.maxCharacters
     );
+    expect(
+      result.hops?.every(
+        (hop) =>
+          hop.summaryTokens <= COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens
+      )
+    ).toBe(true);
   });
 });

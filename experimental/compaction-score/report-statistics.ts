@@ -1,3 +1,11 @@
+import {
+  finiteMean,
+  finiteQuantile,
+  finiteWilson95,
+  requireFinite,
+  sortedFiniteValues,
+} from "./finite-statistics";
+
 export interface Distribution {
   readonly max: number;
   readonly mean: number;
@@ -15,87 +23,64 @@ export interface WilsonInterval {
 }
 
 export function distribution(values: readonly number[]): Distribution {
-  if (!values.every(Number.isFinite)) {
-    throw new RangeError("Distribution values must be finite.");
+  if (values.length === 0) {
+    throw new RangeError("Cannot summarize an empty distribution.");
   }
-
-  let maximum = Number.NEGATIVE_INFINITY;
-  let minimum = Number.POSITIVE_INFINITY;
-  let sum = 0;
-  for (const value of values) {
-    maximum = Math.max(maximum, value);
-    minimum = Math.min(minimum, value);
-    sum += value;
+  const sorted = sortedFiniteValues(values);
+  const minimum = sorted[0];
+  const maximum = sorted.at(-1);
+  if (minimum === undefined || maximum === undefined) {
+    throw new RangeError("Distribution indexes must refer to defined values.");
   }
-  const mean = sum / values.length;
-  let squaredDifferenceSum = 0;
-  for (const value of values) {
-    squaredDifferenceSum += (value - mean) ** 2;
-  }
-
-  const result = {
+  const mean = finiteMean(values);
+  return {
     max: maximum,
     mean,
     min: minimum,
     quantiles: {
-      p50: quantile(values, 0.5),
-      p95: quantile(values, 0.95),
+      p50: finiteQuantile(sorted, 0.5),
+      p95: finiteQuantile(sorted, 0.95),
     },
-    standardDeviation: Math.sqrt(squaredDifferenceSum / values.length),
+    standardDeviation: standardDeviation(values, mean),
   };
-  if (
-    ![
-      result.max,
-      result.mean,
-      result.min,
-      result.quantiles.p50,
-      result.quantiles.p95,
-      result.standardDeviation,
-    ].every(Number.isFinite)
-  ) {
-    throw new RangeError("Derived distribution metrics must be finite.");
-  }
-  return result;
 }
 
 export function wilson95(correct: number, total: number): WilsonInterval {
-  if (!(Number.isSafeInteger(total) && total > 0)) {
-    throw new RangeError(
-      "Wilson interval total must be a positive safe integer."
-    );
-  }
-  if (!(Number.isSafeInteger(correct) && correct >= 0 && correct <= total)) {
-    throw new RangeError(
-      "Wilson interval correct count must be a safe integer from zero through total."
-    );
-  }
-
-  const z = 1.96;
-  const probability = correct / total;
-  const denominator = 1 + z ** 2 / total;
-  const center = (probability + z ** 2 / (2 * total)) / denominator;
-  const margin =
-    (z *
-      Math.sqrt(
-        (probability * (1 - probability) + z ** 2 / (4 * total)) / total
-      )) /
-    denominator;
-
-  return {
-    high: Math.min(1, center + margin),
-    low: Math.max(0, center - margin),
-  };
+  const [low, high] = finiteWilson95(correct, total);
+  return { high, low };
 }
 
-function quantile(values: readonly number[], probability: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = (sorted.length - 1) * probability;
-  const lowerIndex = Math.floor(index);
-  const upperIndex = Math.ceil(index);
-  const lower = sorted[lowerIndex];
-  const upper = sorted[upperIndex];
-  if (lower === undefined || upper === undefined) {
-    throw new TypeError("Cannot compute a quantile for an empty distribution.");
+function standardDeviation(values: readonly number[], mean: number): number {
+  let squaredDifferenceSum = 0;
+  for (const value of values) {
+    squaredDifferenceSum += (value - mean) ** 2;
   }
-  return lower + (upper - lower) * (index - lowerIndex);
+  if (Number.isFinite(squaredDifferenceSum)) {
+    return requireFinite(
+      Math.sqrt(squaredDifferenceSum / values.length),
+      "Distribution standard deviation"
+    );
+  }
+
+  let scale = 0;
+  for (const value of values) {
+    scale = Math.max(scale, Math.abs(value));
+  }
+  if (scale === 0) {
+    return 0;
+  }
+  const scaledMean = mean / scale;
+  let scaledSquaredDifferenceSum = 0;
+  for (const value of values) {
+    const difference = value / scale - scaledMean;
+    scaledSquaredDifferenceSum += difference ** 2;
+  }
+  const scaledDeviation = Math.min(
+    1,
+    Math.sqrt(scaledSquaredDifferenceSum / values.length)
+  );
+  return requireFinite(
+    scaledDeviation * scale,
+    "Distribution standard deviation"
+  );
 }

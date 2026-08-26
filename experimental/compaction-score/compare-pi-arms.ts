@@ -25,31 +25,36 @@ export async function runPssArm({
   fixtureSeed,
   model,
   repetition,
+  summaryMaxOutputTokens = COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens,
 }: {
   readonly fixture: CompactionFixture;
   readonly fixtureSeed: string;
   readonly model: LanguageModel;
   readonly repetition: number;
+  readonly summaryMaxOutputTokens?: number;
 }): Promise<ArmResult> {
   const record = await runCompactionTrial({
     attempt: 1,
+    enforceSummaryOutputBudget: true,
     fixture,
     fixtureSeed,
     id: `pss-${fixture.scenario}-r${repetition}`,
     model,
     providerTimeoutMs: PROVIDER_TIMEOUT_MS,
     repetition,
-    summaryMaxOutputTokens: COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens,
+    summaryMaxOutputTokens,
   });
   if (record.status !== "valid") {
     return { error: record.error, status: record.status };
   }
   return {
+    ...(record.answers === undefined ? {} : { answers: record.answers }),
     hops: record.hops.map((hop) => ({
       ...(hop.compactionMs === undefined
         ? {}
         : { compactionMs: hop.compactionMs }),
       prefixTokens: hop.prefixTokens,
+      sentOutputTokens: hop.sentOutputTokens,
       ...(hop.summarizerInputTokens === undefined
         ? {}
         : { summarizerInputTokens: hop.summarizerInputTokens }),
@@ -63,13 +68,15 @@ export async function runPssArm({
 export async function runPiArm(
   fixture: CompactionFixture,
   repetition: number,
-  model: LanguageModel
+  model: LanguageModel,
+  summaryMaxOutputTokens: number = COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens
 ): Promise<ArmResult> {
   const history = new ModelMessageHistory(fixture.messages);
   const fullContext = history.modelSnapshot();
   const hops: {
     compactionMs: number;
     prefixTokens: number;
+    sentOutputTokens: number;
     summarizerInputTokens: number;
     summaryTokens: number;
   }[] = [];
@@ -90,6 +97,7 @@ export async function runPiArm(
         model,
         newMessages,
         previousSummary,
+        summaryMaxOutputTokens,
       });
     } catch (cause) {
       const providerCause =
@@ -105,7 +113,10 @@ export async function runPiArm(
         status: "protocol-failure",
       };
     }
-    const summary = assemblePiSummary(generated.summary, fileOperations);
+    const summary = assemblePiSummary(generated.summary, fileOperations, {
+      endSeqExclusive,
+      maxOutputTokens: summaryMaxOutputTokens,
+    });
     history.recordCompaction({
       endSeqExclusive,
       schemaVersion: 1,
@@ -117,6 +128,7 @@ export async function runPiArm(
       prefixTokens: estimateModelMessagesTokens(
         fullContext.slice(0, endSeqExclusive)
       ),
+      sentOutputTokens: summaryMaxOutputTokens,
       summarizerInputTokens: generated.summarizerInputTokens,
       summaryTokens: estimateModelMessagesTokens([
         compactionContextForModel({
@@ -191,6 +203,12 @@ async function evaluateBothArms({
   }
   try {
     return {
+      answers: {
+        compacted: questions.map(
+          (question) => compactedAnswers.get(question) ?? ""
+        ),
+        full: questions.map((question) => fullAnswers.get(question) ?? ""),
+      },
       hops,
       score: scoreAnswers(questions, fullAnswers, compactedAnswers),
       status: "valid",
