@@ -52,24 +52,24 @@ export class CodingAgentExtensionHost {
     extensions: readonly CodingAgentExtensionInput[],
     options: CodingAgentExtensionHostOptions = {}
   ): Promise<CodingAgentExtensionHost> {
-    validateExtensionHostOptions(extensions, options);
+    const normalizedExtensions = validateExtensionHostOptions(
+      extensions,
+      options
+    ).map(normalizeCodingAgentExtension);
     const configuredExtensions = Object.fromEntries(
-      extensions.flatMap((extension) =>
+      normalizedExtensions.flatMap((extension) =>
         extension.config === undefined
           ? []
           : [[extension.id, extension.config] as const]
       )
     );
-    const host = new CodingAgentExtensionHost(
-      extensions.map(normalizeCodingAgentExtension),
-      {
-        ...options,
-        config: {
-          ...configuredExtensions,
-          ...options.config,
-        },
-      }
-    );
+    const host = new CodingAgentExtensionHost(normalizedExtensions, {
+      ...options,
+      config: {
+        ...configuredExtensions,
+        ...options.config,
+      },
+    });
     try {
       await host.#lifecycle.configure();
       return host;

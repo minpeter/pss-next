@@ -3,7 +3,7 @@ import type { AgentEvent } from "./events";
 
 export interface AgentTurn {
   events(): AsyncIterable<AgentEvent>;
-  readonly runId?: string;
+  readonly runId?: string | undefined;
 }
 
 interface QueuedEvent {
@@ -206,11 +206,17 @@ export class BufferedAgentTurn implements AgentTurn {
     resolve: (value: IteratorResult<AgentEvent>) => void,
     { ack, event }: QueuedEvent
   ): void {
-    this.#consumer.to({ tag: "delivering", ack });
+    this.#consumer.to({
+      ...(ack === undefined ? {} : { ack }),
+      tag: "delivering",
+    });
     queueMicrotask(() => {
       const current = this.#consumer.state;
       if (current.tag === "delivering") {
-        this.#consumer.to({ tag: "delivered", ack: current.ack });
+        this.#consumer.to({
+          ...(current.ack === undefined ? {} : { ack: current.ack }),
+          tag: "delivered",
+        });
       }
     });
     resolve({ done: false, value: event });

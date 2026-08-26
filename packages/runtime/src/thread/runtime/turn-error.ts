@@ -7,7 +7,6 @@ import {
 } from "../input/runtime-input";
 import type { AgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
-import { errorMessage } from "../state/thread-errors";
 import {
   ThreadCommitConflictError,
   type ThreadState,
@@ -41,8 +40,11 @@ export async function emitTurnErrorAfterRecovery({
   readonly runtimeInput: RuntimeInputState;
   readonly state: ThreadState;
 }): Promise<void> {
-  if (error instanceof ThreadCommitConflictError) {
-    let event: TurnErrorEvent = { type: "turn-error", message: error.message };
+  if (isErrorInstance(error, ThreadCommitConflictError)) {
+    let event: TurnErrorEvent = {
+      type: "turn-error",
+      message: "Thread state changed before the turn could be saved.",
+    };
     event = await observeTurnError(event, observeEvent);
     try {
       await persistEvent?.(event);
@@ -60,7 +62,7 @@ export async function emitTurnErrorAfterRecovery({
       ? {}
       : { error: normalizedError.error }),
     type: "turn-error",
-    message: normalizedError.message ?? errorMessage(error),
+    message: normalizedError.message ?? "The request failed.",
   };
   event = await observeTurnError(event, observeEvent);
   try {
@@ -106,10 +108,9 @@ export async function recoverTurnProcessingError({
   readonly state: ThreadState;
   readonly threadKey: string;
 }): Promise<void> {
-  const turnError = error instanceof Error ? error : new Error(String(error));
-  await executionRun?.complete(executionStatusForError(turnError));
+  await executionRun?.complete(executionStatusForError(error));
   await emitTurnErrorAfterRecovery({
-    error: turnError,
+    error,
     historySnapshot,
     observeEvent: undefined,
     persistEvent: async (event) => {
@@ -137,16 +138,29 @@ async function observeTurnError(
   try {
     await observeEvent(event);
     return event;
-  } catch (hookError) {
+  } catch {
     return {
-      message: `${"message" in event ? event.message : "Turn failed"}; turn.error plugin failed: ${errorMessage(hookError)}`,
+      message: `${"message" in event ? event.message : "Turn failed"}; turn.error plugin failed.`,
       type: "turn-error",
     };
   }
 }
 
-function executionStatusForError(error: Error): ThreadExecutionTerminalStatus {
-  return error instanceof ToolExecutionNeedsRecoveryError
+function executionStatusForError(
+  error: unknown
+): ThreadExecutionTerminalStatus {
+  return isErrorInstance(error, ToolExecutionNeedsRecoveryError)
     ? "needs-recovery"
     : "error";
+}
+
+function isErrorInstance(
+  error: unknown,
+  errorType: { readonly [Symbol.hasInstance]: (value: unknown) => boolean }
+): boolean {
+  try {
+    return errorType[Symbol.hasInstance](error);
+  } catch {
+    return false;
+  }
 }

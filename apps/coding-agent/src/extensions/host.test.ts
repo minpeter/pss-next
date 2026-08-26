@@ -205,7 +205,7 @@ describe("CodingAgentExtensionHost", () => {
 
     await expect(
       createCodingAgentExtensionHost([extension, extension])
-    ).rejects.toThrow('Duplicate coding agent extension "duplicate"');
+    ).rejects.toThrow("Duplicate coding agent extension id.");
   });
 
   it("rejects registrations after configure completes", async () => {

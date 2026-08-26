@@ -1,6 +1,8 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
 import { createCodingAgent } from "../coding-agent";
+import { assistantRenderer, instructions, tools } from "./capabilities";
 import { createCodingAgentExtensionHost } from "./host";
 import type { CodingAgentExtensionModule } from "./types";
 
@@ -8,29 +10,42 @@ const validTool = tool({
   description: "Valid fixture tool",
   inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
 });
+const validModel = createOpenAICompatible({
+  apiKey: "test-key",
+  baseURL: "https://example.invalid/v1",
+  name: "capability-security-test",
+})("test-model");
+const validRenderer = () => ({
+  invalidate() {
+    return;
+  },
+  render() {
+    return [];
+  },
+  setText() {
+    return;
+  },
+});
 
 describe("coding-agent extension capability security", () => {
   it("rejects malformed assistant renderer capabilities", async () => {
+    const malformedRenderer = { ...assistantRenderer(validRenderer) };
+    Object.defineProperty(malformedRenderer, "renderer", {
+      value: "not-a-function",
+    });
     const invalidRenderer: CodingAgentExtensionModule = {
       default(pss) {
-        pss.provide({
-          fallback: false,
-          kind: "assistant-renderer",
-          override: false,
-          renderer: "not-a-function",
-        } as never);
+        pss.provide(malformedRenderer);
       },
       id: "invalid-assistant-renderer",
     };
+    const unexpectedProperty = {
+      ...assistantRenderer(validRenderer),
+      extra: true,
+    };
     const extraProperty: CodingAgentExtensionModule = {
       default(pss) {
-        pss.provide({
-          extra: true,
-          fallback: false,
-          kind: "assistant-renderer",
-          override: false,
-          renderer: () => undefined,
-        } as never);
+        pss.provide(unexpectedProperty);
       },
       id: "extra-assistant-renderer-property",
     };
@@ -50,14 +65,14 @@ describe("coding-agent extension capability security", () => {
   });
 
   it("rejects contradictory assistant renderer registration intent", async () => {
+    const contradictoryCapability = { ...assistantRenderer(validRenderer) };
+    Object.defineProperties(contradictoryCapability, {
+      fallback: { value: true },
+      override: { value: true },
+    });
     const contradictory: CodingAgentExtensionModule = {
       default(pss) {
-        pss.provide({
-          fallback: true,
-          kind: "assistant-renderer",
-          override: true,
-          renderer: () => undefined,
-        } as never);
+        pss.provide(contradictoryCapability);
       },
       id: "contradictory-assistant-renderer",
     };
@@ -72,14 +87,14 @@ describe("coding-agent extension capability security", () => {
   });
 
   it("rejects accessor capability envelopes", async () => {
-    const capability = {};
+    const capability = { ...instructions("instruction") };
     Object.defineProperty(capability, "kind", {
       enumerable: true,
       get: () => "tools",
     });
     const extension: CodingAgentExtensionModule = {
       default(pss) {
-        pss.provide(capability as never);
+        pss.provide(capability);
       },
       id: "accessor-provider",
     };
@@ -95,14 +110,13 @@ describe("coding-agent extension capability security", () => {
 
   it("rejects symbol properties on capability envelopes", async () => {
     const capability = {
-      fragments: ["instruction"],
-      kind: "instructions",
+      ...instructions("instruction"),
       [Symbol("forged")]: true,
     };
     const creation = createCodingAgentExtensionHost([
       {
         default(pss) {
-          pss.provide(capability as never);
+          pss.provide(capability);
         },
         id: "symbol-provider",
       },
@@ -128,15 +142,14 @@ describe("coding-agent extension capability security", () => {
       await host.dispose();
       return host;
     });
-    await expect(invalidId).rejects.toThrow('Invalid extension id "bad id"');
+    await expect(invalidId).rejects.toThrow("Invalid extension id.");
 
+    const malformedTools = { valid_tool: validTool };
+    Object.defineProperty(malformedTools, "bad name", { value: {} });
     const invalidTool = createCodingAgentExtensionHost([
       {
         default(pss) {
-          pss.provide({
-            kind: "tools",
-            tools: { "bad name": {} },
-          } as never);
+          pss.provide(tools(malformedTools));
         },
         id: "bad-tool-provider",
       },
@@ -173,19 +186,13 @@ describe("coding-agent extension capability security", () => {
     const duplicate = createCodingAgentExtensionHost([
       {
         default(pss) {
-          pss.provide({
-            kind: "tools",
-            tools: { shared_tool: validTool },
-          } as never);
+          pss.provide(tools({ shared_tool: validTool }));
         },
         id: "first-provider",
       },
       {
         default(pss) {
-          pss.provide({
-            kind: "tools",
-            tools: { shared_tool: validTool },
-          } as never);
+          pss.provide(tools({ shared_tool: validTool }));
         },
         id: "second-provider",
       },
@@ -200,10 +207,7 @@ describe("coding-agent extension capability security", () => {
     const host = await createCodingAgentExtensionHost([
       {
         default(pss) {
-          pss.provide({
-            kind: "tools",
-            tools: { shell_execute: validTool },
-          } as never);
+          pss.provide(tools({ shell_execute: validTool }));
         },
         id: "builtin-tool-provider",
       },
@@ -212,7 +216,7 @@ describe("coding-agent extension capability security", () => {
       expect(() =>
         createCodingAgent({
           extensionHost: host,
-          model: {} as never,
+          model: validModel,
           webTools: { webToolsAvailability: "disabled" },
           workspace: "/workspace",
         })

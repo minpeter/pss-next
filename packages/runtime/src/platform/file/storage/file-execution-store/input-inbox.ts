@@ -13,6 +13,7 @@ import type {
   AdmitThreadInput,
   ClaimedThreadInput,
   ClaimThreadInputOptions,
+  RecoverThreadInputClaimsOptions,
   RecoverThreadInputClaimsResult,
   ThreadInputBoundary,
   ThreadInputInbox,
@@ -103,10 +104,13 @@ export class FileThreadInputInbox implements ThreadInputInbox {
   }
 
   async recoverClaims(
-    threadKey: string
+    threadKey: string,
+    options: RecoverThreadInputClaimsOptions = {}
   ): Promise<RecoverThreadInputClaimsResult> {
     return await this.#lock(async () => {
+      options.signal?.throwIfAborted();
       const current = await this.#getUnlocked(threadKey);
+      options.signal?.throwIfAborted();
       const transition = recoverThreadInputClaims(current, threadKey);
       if (transition.acked.length > 0 || transition.released.length > 0) {
         await this.#writeUnlocked(threadKey, transition.records);
