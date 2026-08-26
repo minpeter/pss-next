@@ -42,7 +42,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends bubblewrap util-linux
-          sudo tee /usr/local/bin/pss-bwrap >/dev/null <<'EOF'
+          sudo mv /usr/bin/bwrap /usr/bin/bwrap.real
+          sudo tee /usr/bin/bwrap >/dev/null <<'EOF'
           #!/bin/bash
           args=()
           for argument in "$@"; do
@@ -50,10 +51,10 @@ jobs:
               args+=("$argument")
             fi
           done
-          exec sudo /usr/bin/unshare --net --fork /usr/bin/bwrap "${args[@]}"
+          exec sudo /usr/bin/unshare --net --fork /usr/bin/bwrap.real "${args[@]}"
           EOF
-          sudo chmod 0755 /usr/local/bin/pss-bwrap
-          echo "PSS_TASK_VALIDATOR_SANDBOX=/usr/local/bin/pss-bwrap" >> "$GITHUB_ENV"
+          sudo chmod 0755 /usr/bin/bwrap
+          /usr/bin/bwrap --unshare-net --ro-bind / / --dev /dev --proc /proc -- /usr/bin/env true
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
