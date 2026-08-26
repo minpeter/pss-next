@@ -13,6 +13,7 @@ import {
   summarizeCompactionRange,
   summaryHistoryForRange,
 } from "./auto-compaction-summary";
+import { resolveSummaryLifetimeSignal } from "./auto-compaction-summary-lifetime";
 import { compactionTokenAccounting } from "./auto-compaction-token-accounting";
 import type {
   AgentCompactionModelContextProvenance,
@@ -102,10 +103,13 @@ export async function prepareAutoCompaction(
     range: AutoCompactionRange,
     summaryOptions: CompactionSummaryOptions = {}
   ): Promise<string> => {
-    const signal = summaryOptions.signal
-      ? AbortSignal.any([options.signal, summaryOptions.signal])
-      : options.signal;
+    const lifetime = resolveSummaryLifetimeSignal({
+      episodeSignal: options.signal,
+      options: summaryOptions,
+    });
+    const { signal } = lifetime;
     if (signal.aborted) {
+      lifetime.release();
       const rejected = Promise.reject<string>(signal.reason);
       rejected.catch(() => undefined);
       return rejected;
@@ -129,6 +133,7 @@ ${summaryOptions.instructions}`,
         transformModelContext: options.transformModelContext,
       });
     });
+    running.then(lifetime.release, lifetime.release);
     running.catch(() => undefined);
     return running;
   };

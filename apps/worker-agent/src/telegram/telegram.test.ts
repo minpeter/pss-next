@@ -80,7 +80,13 @@ class TestSpan {
   }
 
   setAttribute(_key: string, _value?: boolean | number | string) {
-    return;
+    return this;
+  }
+
+  setAttributes(
+    _attributes: Record<string, boolean | number | string | undefined>
+  ) {
+    return this;
   }
 }
 
@@ -91,6 +97,9 @@ const testTracing: Tracing = {
   Span: TestSpan,
   startActiveSpan(_name, callback, ...args) {
     return callback(new TestSpan(), ...args);
+  },
+  startSpan(_name) {
+    return new TestSpan();
   },
 };
 
@@ -504,6 +513,9 @@ function createExecutionContext(): ExecutionContext {
     props: undefined,
     tracing: testTracing,
     waitUntil(_promise: Promise<unknown>) {
+      return;
+    },
+    abort(_reason?: unknown) {
       return;
     },
   };

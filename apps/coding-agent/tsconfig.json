@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "customConditions": ["@minpeter/pss-source"],
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@minpeter/pss-extension-latex": ["../../extensions/latex/src/index.ts"],
+      "@minpeter/pss-extension-mermaid": [
+        "../../extensions/mermaid/src/index.ts"
+      ],
+      "@minpeter/pss-extension-web": ["../../extensions/web/src/index.ts"],
+      "@minpeter/pss-coding-agent/extension": ["./src/extensions/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

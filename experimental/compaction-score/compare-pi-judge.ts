@@ -1,5 +1,6 @@
 import { generateText, type LanguageModel } from "ai";
 import { MAX_ATTEMPTS, PROVIDER_TIMEOUT_MS } from "./compare-pi-config";
+import { isRetryableCompareStatus } from "./compare-pi-retry";
 import type { ArmResult } from "./compare-pi-types";
 
 /**
@@ -80,12 +81,12 @@ export async function withSemanticScore(
 export async function runArmWithRetry(
   run: () => Promise<ArmResult>
 ): Promise<ArmResult> {
-  let last: ArmResult = { error: "not-run", status: "invalid" };
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    last = await run();
-    if (last.status === "valid") {
+  let last = await run();
+  for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt += 1) {
+    if (!isRetryableCompareStatus(last.status)) {
       return last;
     }
+    last = await run();
   }
   return last;
 }

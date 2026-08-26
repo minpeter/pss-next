@@ -20,7 +20,6 @@ export async function evaluateArm({
 }: EvaluationInput): Promise<string> {
   const { text } = await generateText({
     abortSignal: signal,
-    maxOutputTokens: 4096,
     messages: [
       ...context,
       {

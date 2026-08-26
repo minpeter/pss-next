@@ -25,7 +25,7 @@ const SCENARIOS = [
   "overlap-nonblocking",
   "prepared-hit",
   "candidate-fit-late-hit",
-  "candidate-fit-hard-block",
+  "candidate-too-broad-fallback",
   "summary-failure-retry-hit",
   "repeated-failure-overflow-recovery",
 ] as const satisfies readonly RuntimeBlockScenario[];
@@ -53,26 +53,38 @@ async function main(options: CliOptions): Promise<void> {
   for (let repetition = 1; repetition <= options.repetitions; repetition += 1) {
     for (const scenario of SCENARIOS) {
       let logicalNow = 0;
-      const deterministic =
+      const treatmentDeterministic =
         options.mode === "deterministic"
           ? createDeterministicRuntimeBlockModel(scenario, (milliseconds) => {
               logicalNow += milliseconds;
             })
           : undefined;
-      const scenarioModel = createRuntimeBlockScenarioModel(
-        requireConcreteModel(liveModel ?? deterministic?.model),
+      const controlDeterministic =
+        options.mode === "deterministic"
+          ? createDeterministicRuntimeBlockModel(scenario, (milliseconds) => {
+              logicalNow += milliseconds;
+            })
+          : undefined;
+      const treatmentModel = createRuntimeBlockScenarioModel(
+        requireConcreteModel(liveModel ?? treatmentDeterministic?.model),
+        scenario
+      );
+      const controlModel = createRuntimeBlockScenarioModel(
+        requireConcreteModel(liveModel ?? controlDeterministic?.model),
         scenario
       );
       const observation = await runRuntimeBlockTrial({
-        model: scenarioModel.model,
+        controlModel: controlModel.model,
+        model: treatmentModel.model,
         now:
           options.mode === "deterministic"
             ? () => logicalNow
             : performance.now.bind(performance),
-        onTargetStepStart: deterministic?.onTargetStepStart,
+        onTargetStepStart: treatmentDeterministic?.onTargetStepStart,
         repetition,
         scenario,
-        summaryTimeOffsetMs: deterministic?.summaryTimeOffsetMs,
+        summaryTimeOffsetMs: treatmentDeterministic?.summaryTimeOffsetMs,
+        treatmentModel: treatmentModel.model,
       });
       const trial = calculateRuntimeBlockTrial(observation);
       observations.push(observation);
@@ -128,7 +140,7 @@ function parseOptions(args: readonly string[]): CliOptions {
         "  overlap-nonblocking       summary active; target uses original context",
         "  prepared-hit              ready candidate auto-promoted before provider",
         "  candidate-fit-late-hit    widened candidate reused without fallback",
-        "  candidate-fit-hard-block    in-flight fitting candidate blocks target",
+        "  candidate-too-broad-fallback  in-flight fitting candidate blocks target",
         "  summary-failure-retry-hit one background failure recovered before target",
         "  repeated-failure-overflow-recovery  two failures then overflow recovery",
       ].join("\n")

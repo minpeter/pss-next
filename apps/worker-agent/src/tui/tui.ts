@@ -1,6 +1,5 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import type { AgentHost } from "@minpeter/pss-runtime";
 import { createFileHost } from "@minpeter/pss-runtime/platform/file";
@@ -41,12 +40,12 @@ async function startWorkerAgentTui(
   const output =
     options.output ??
     ({
-      writeLine: (line) => stdout.write(`${line}\n`),
+      writeLine: (line) => process.stdout.write(`${line}\n`),
     } satisfies TuiOutput);
 
   const input = createInterface({
-    input: stdin,
-    output: stdout,
+    input: process.stdin,
+    output: process.stdout,
     terminal: true,
   });
   let inputClosed = false;

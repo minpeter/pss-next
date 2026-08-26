@@ -15,14 +15,15 @@ const METHODS = [
 
 export function renderComparisonMarkdown(value: unknown): string {
   const artifact = parseComparisonArtifact(value);
-  const backtickRuns = artifact.model.match(/`+/g) ?? [];
+  const normalizedModel = artifact.model.replace(/[\r\n]+/g, " ");
+  const backtickRuns = normalizedModel.match(/`+/g) ?? [];
   const modelFence = "`".repeat(
     backtickRuns.reduce((longest, run) => Math.max(longest, run.length + 1), 1)
   );
   const renderedModel =
     backtickRuns.length === 0
-      ? `${modelFence}${artifact.model}${modelFence}`
-      : `${modelFence} ${artifact.model} ${modelFence}`;
+      ? `${modelFence}${normalizedModel}${modelFence}`
+      : `${modelFence} ${normalizedModel} ${modelFence}`;
   const lines = [
     "# Compaction comparison",
     "",
@@ -53,24 +54,20 @@ export function renderComparisonMarkdown(value: unknown): string {
       }))
     ),
   ];
-  if (
-    METHODS.some(({ artifactKey }) => artifact.failures[artifactKey].size > 0)
-  ) {
+  const failures = METHODS.flatMap(({ artifactKey, label }) =>
+    [...artifact.failures[artifactKey].entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([status, count]) => `| ${label} | ${status} | ${count} |`)
+  );
+  if (failures.length > 0) {
     lines.push(
       "",
       "## Invalid attempts",
       "",
       "| Method | Status | Count |",
-      "| --- | --- | ---: |"
+      "| --- | --- | ---: |",
+      ...failures
     );
-    for (const { artifactKey, label } of METHODS) {
-      const failures = [...artifact.failures[artifactKey].entries()].sort(
-        ([left], [right]) => left.localeCompare(right)
-      );
-      for (const [status, count] of failures) {
-        lines.push(`| ${label} | ${escapeTableCell(status)} | ${count} |`);
-      }
-    }
   }
   return `${lines.join("\n")}\n`;
 }
@@ -96,23 +93,8 @@ function renderArm(
     score(arm.semanticRetained, arm.total),
     ratio,
     savings,
-    `${
-      details?.latency
-        ? formatMilliseconds(details.latency.meanMs)
-        : "unavailable"
-    } |`,
+    `${details?.latency ? formatMilliseconds(details.latency.meanMs) : "unavailable"} |`,
   ].join(" | ");
-}
-
-function escapeTableCell(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll("\\", "\\\\")
-    .replaceAll("|", "\\|");
 }
 
 function score(correct: number, total: number): string {

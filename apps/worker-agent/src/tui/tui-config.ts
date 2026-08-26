@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { argv, env } from "node:process";
 import { z } from "zod";
 
 import type { WorkerAgentModelEnv } from "../agent/agent";
@@ -36,8 +35,8 @@ interface WorkerAgentRemoteTuiConfig {
 }
 
 export function resolveWorkerAgentTuiConfig(
-  environment: NodeJS.ProcessEnv = env,
-  args: readonly string[] = argv.slice(2)
+  environment: NodeJS.ProcessEnv = process.env,
+  args: readonly string[] = process.argv.slice(2)
 ): WorkerAgentTuiConfig {
   const parsed = TuiEnvironmentSchema.parse(environment);
   const remoteEndpoint = readRemoteEndpoint(

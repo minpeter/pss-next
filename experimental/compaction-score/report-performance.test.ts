@@ -12,6 +12,7 @@ const validRecord: TrialRecord = {
     {
       endSeqExclusive: 80,
       prefixTokens: 1000,
+      sentOutputTokens: 256,
       summaryTokens: 250,
     },
   ],

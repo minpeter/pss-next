@@ -86,10 +86,12 @@ export async function generatePiSummary({
   model,
   newMessages,
   previousSummary,
+  summaryMaxOutputTokens = COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens,
 }: {
   readonly model: LanguageModel;
   readonly newMessages: readonly ModelMessage[];
   readonly previousSummary: string | undefined;
+  readonly summaryMaxOutputTokens?: number;
 }): Promise<{
   readonly summarizerInputTokens: number;
   readonly summary: string;
@@ -107,7 +109,7 @@ export async function generatePiSummary({
   ];
   const { text } = await generateText({
     abortSignal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-    maxOutputTokens: COMPARISON_SUMMARY_OUTPUT_BUDGET.maxOutputTokens,
+    maxOutputTokens: summaryMaxOutputTokens,
     messages,
     model,
     system: systemPrompt,

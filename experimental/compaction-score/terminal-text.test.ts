@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderComparisonMarkdown } from "./comparison-report";
-import { isBoundedTerminalText } from "./terminal-text";
+import {
+  formatTerminalReportLocation,
+  isBoundedTerminalText,
+} from "./terminal-text";
 
 const arm = {
   compressionMean: null,
@@ -18,6 +21,21 @@ function artifact(model: string, status = "valid") {
     rows: [{ pi: { status: "valid" }, pss: { status } }],
   };
 }
+
+describe("terminal report location formatting", () => {
+  it("JSON-encodes every terminal-active Unicode class including astral controls", () => {
+    // Given
+    const path = "safe\u001b\u0007\u0085\n\u200e\u2028\u2029\u{e0001}🙂";
+
+    // When
+    const output = formatTerminalReportLocation(path);
+
+    // Then
+    expect(output).toBe(
+      'report: "safe\\u001b\\u0007\\u0085\\n\\u200e\\u2028\\u2029\\udb40\\udc01🙂"'
+    );
+  });
+});
 
 describe("bounded terminal text UTF-16 admission", () => {
   it.each([

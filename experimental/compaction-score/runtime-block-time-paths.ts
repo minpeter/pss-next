@@ -23,6 +23,11 @@ const EXPECTED_PATHS: Readonly<Record<RuntimeBlockScenario, ExpectedPath>> = {
     overlaps: false,
     statuses: ["completed"],
   },
+  "candidate-too-broad-fallback": {
+    candidateApplied: true,
+    overlaps: false,
+    statuses: ["completed"],
+  },
   "overlap-nonblocking": {
     candidateApplied: false,
     overlaps: true,

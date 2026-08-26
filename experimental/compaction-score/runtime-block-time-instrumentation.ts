@@ -4,46 +4,24 @@ import {
   speculativeCompaction,
 } from "@minpeter/pss-runtime";
 import {
-  type LanguageModel,
   type LanguageModelMiddleware,
   simulateStreamingMiddleware,
   wrapLanguageModel,
 } from "ai";
+import type {
+  ObservedRuntimeCompactionOptions,
+  RuntimeBlockLanguageModel,
+  RuntimeBlockModelTrace,
+  RuntimeBlockProviderCall,
+  RuntimeSummaryTraceSpan,
+} from "./runtime-block-time-types";
 
-export type RuntimeBlockLanguageModel = Exclude<LanguageModel, string>;
-
-interface ProviderCall {
-  readonly kind: "foreground" | "summary";
-  readonly prompt: unknown;
-  readonly startedAtMs: number;
-  readonly startedSequence: number;
-}
-
-export interface RuntimeBlockModelTrace {
-  readonly calls: readonly ProviderCall[];
-  readonly model: RuntimeBlockLanguageModel;
-  waitForCall(
-    kind: ProviderCall["kind"],
-    afterIndex: number
-  ): Promise<ProviderCall>;
-}
-
-export interface RuntimeSummaryTraceSpan {
-  endedAtMs: number;
-  endedSequence: number;
-  readonly kind: "summary";
-  readonly startedAtMs: number;
-  readonly startedSequence: number;
-  status: "completed" | "error" | "running";
-}
-
-interface ObservedRuntimeCompactionOptions {
-  readonly active: Set<Promise<void>>;
-  readonly nextSequence: () => number;
-  readonly now: () => number;
-  readonly onSummarySettled?: (span: RuntimeSummaryTraceSpan) => void;
-  readonly spans: RuntimeSummaryTraceSpan[];
-}
+export type {
+  ObservedRuntimeCompactionOptions,
+  RuntimeBlockLanguageModel,
+  RuntimeBlockModelTrace,
+  RuntimeSummaryTraceSpan,
+} from "./runtime-block-time-types";
 
 const MAX_INPUT_UNITS = 1000;
 const UNIT_MARKER =
@@ -101,9 +79,16 @@ export function wrapRuntimeBlockModel(
 export function createRuntimeBlockModelTrace(
   model: RuntimeBlockLanguageModel,
   now: () => number,
-  nextSequence: () => number
+  sequenceSource?: () => number
 ): RuntimeBlockModelTrace {
-  const calls: ProviderCall[] = [];
+  let sequence = 0;
+  const nextSequence =
+    sequenceSource ??
+    (() => {
+      sequence += 1;
+      return sequence;
+    });
+  const calls: RuntimeBlockProviderCall[] = [];
   const listeners = new Set<() => void>();
   const record = (prompt: unknown): void => {
     const kind = isCompactionProviderPrompt(prompt) ? "summary" : "foreground";
@@ -138,7 +123,7 @@ export function createRuntimeBlockModelTrace(
       if (existing) {
         return existing;
       }
-      return await new Promise<ProviderCall>((resolve) => {
+      return await new Promise<RuntimeBlockProviderCall>((resolve) => {
         const listener = () => {
           const call = find();
           if (call) {
@@ -152,14 +137,13 @@ export function createRuntimeBlockModelTrace(
   };
 }
 
-export function createObservedRuntimeCompaction({
-  active,
-  nextSequence,
-  now,
-  onSummarySettled,
-  spans,
-}: ObservedRuntimeCompactionOptions): AgentCompaction {
+export function createObservedRuntimeCompaction(
+  options: ObservedRuntimeCompactionOptions
+): AgentCompaction {
+  const { active, deadlineMs, nextSequence, now, onSummarySettled, spans } =
+    options;
   const base = speculativeCompaction({
+    ...(deadlineMs === undefined ? {} : { deadlineMs }),
     estimateTokens: (messages) => runtimeBlockEstimator({ messages }),
     maxInputTokens: MAX_INPUT_UNITS,
     prepareRatio: 0.65,
@@ -207,6 +191,7 @@ export function createObservedRuntimeCompaction({
       },
     });
   return Object.assign(observed, {
+    deadlineMs: base.deadlineMs,
     estimateTokens: base.estimateTokens,
     maxInputTokens: base.maxInputTokens,
     onOverflow: base.onOverflow,

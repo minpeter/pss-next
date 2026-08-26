@@ -5,7 +5,7 @@ import { speculativeCompaction } from "./speculative-compaction";
 import { context, message } from "./speculative-compaction-test-support";
 
 describe("speculativeCompaction", () => {
-  it("throws after an aborted summary resolves without installing its candidate", async () => {
+  it("throws after an aborted summary resolves while its candidate still installs", async () => {
     const controller = new AbortController();
     let resolveSummary: (summary: string) => void = () => {
       throw new TypeError("summary promise was not initialized");
@@ -43,8 +43,8 @@ describe("speculativeCompaction", () => {
       context([...preparedHistory, message("tail")], summarize)
     );
 
-    expect(promoted?.summary).toBe("fresh summary");
-    expect(summarize).toHaveBeenCalledTimes(2);
+    expect(promoted?.summary).toBe("late summary");
+    expect(summarize).toHaveBeenCalledTimes(1);
   });
 
   it.each(["transformed", "unknown"] as const)(

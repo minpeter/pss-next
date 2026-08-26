@@ -12,7 +12,10 @@ export const RUNTIME_BLOCK_OUTPUT_PATH_MAX_LENGTH = 4096;
 
 export interface RuntimeBlockTimeReport {
   readonly aggregates: Readonly<
-    Record<RuntimeBlockScenario, RuntimeBlockAggregate>
+    Record<
+      Exclude<RuntimeBlockScenario, "candidate-fit-hard-block">,
+      RuntimeBlockAggregate
+    >
   >;
   readonly createdAt: string;
   readonly methodology: {
@@ -46,8 +49,12 @@ export function createRuntimeBlockTimeReport({
         "candidate-fit-late-hit",
         trials
       ),
-      "candidate-fit-hard-block": aggregateRuntimeBlockTrials(
-        "candidate-fit-hard-block",
+      "candidate-too-broad-fallback": aggregateRuntimeBlockTrials(
+        trials.some(
+          ({ scenario }) => scenario === "candidate-too-broad-fallback"
+        )
+          ? "candidate-too-broad-fallback"
+          : "candidate-fit-hard-block",
         trials
       ),
       "overlap-nonblocking": aggregateRuntimeBlockTrials(
@@ -87,7 +94,7 @@ export function renderRuntimeBlockTimeMarkdown(
     report.aggregates["overlap-nonblocking"],
     report.aggregates["prepared-hit"],
     report.aggregates["candidate-fit-late-hit"],
-    report.aggregates["candidate-fit-hard-block"],
+    report.aggregates["candidate-too-broad-fallback"],
     report.aggregates["summary-failure-retry-hit"],
     report.aggregates["repeated-failure-overflow-recovery"],
   ];
@@ -118,8 +125,8 @@ export function renderRuntimeBlockTimeMarkdown(
     "",
     "## Trial details",
     "",
-    "| Scenario | Run | Control TTFV | Treatment TTFV | TTFV delta | Control provider dispatch | Treatment provider dispatch | Pre-step delta | Gate delta | Summary calls | Summary service | User block | Avoided block | Block avoidance | Summary active at provider start |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Scenario | Run | Control TTFV | Treatment TTFV | TTFV delta | Control provider dispatch | Treatment provider dispatch | Request delta | Completion delta | Pre-step delta | Gate delta | Summary calls | Summary service | User block | Avoided block | Block avoidance | Summary active at provider start | Pair order | Path valid |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
     ...report.trials.map(renderTrial),
     "",
     "_TTFV is measured from send until the first non-empty `assistant-output-delta` or `assistant-output` event. User delta is treatment TTFV minus a fresh compaction-disabled control with the same three-turn inputs; user block clips that matched delta at zero. Provider dispatch remains reported separately and is not treated as visible output._",
@@ -167,6 +174,13 @@ function renderTrial(trial: RuntimeBlockTrial): string {
     signedMilliseconds(trial.userDeltaMs),
     milliseconds(trial.controlProviderDispatchMs),
     milliseconds(trial.treatmentProviderDispatchMs),
+    optionalSignedMilliseconds(
+      trial.targetRequestMs === undefined ||
+        trial.controlRequestMs === undefined
+        ? undefined
+        : trial.targetRequestMs - trial.controlRequestMs
+    ),
+    optionalSignedMilliseconds(trial.completionDeltaMs),
     signedMilliseconds(trial.preStepDeltaMs),
     signedMilliseconds(trial.gateDeltaMs),
     trial.summaryCalls,
@@ -174,7 +188,9 @@ function renderTrial(trial: RuntimeBlockTrial): string {
     milliseconds(trial.userBlockMs),
     milliseconds(trial.avoidedBlockMs),
     percentage(trial.blockAvoidanceRatio),
-    `${trial.overlapAtProviderStart ? "yes" : "no"} |`,
+    trial.overlapAtProviderStart ? "yes" : "no",
+    trial.pairOrder ?? "n/a",
+    `${trial.pathValid === true ? "yes" : "n/a"} |`,
   ].join(" | ");
 }
 
@@ -188,6 +204,10 @@ function milliseconds(value: number): string {
 
 function signedMilliseconds(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)} ms`;
+}
+
+function optionalSignedMilliseconds(value: number | undefined): string {
+  return value === undefined ? "n/a" : signedMilliseconds(value);
 }
 
 function percentage(value: number): string {

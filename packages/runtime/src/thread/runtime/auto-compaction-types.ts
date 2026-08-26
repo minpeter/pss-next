@@ -23,6 +23,13 @@ export type ManualThreadCompactionResult =
 export interface CompactionSummaryOptions {
   /** Appends an `Additional focus` section to the default handoff contract. */
   readonly instructions?: string;
+  /**
+   * "episode" (default) binds the provider call to the episode deadline.
+   * "detached" keeps the provider call running past the episode deadline;
+   * the caller owns landing its result. The episode wait stays bounded either
+   * way.
+   */
+  readonly lifetime?: "detached" | "episode";
   /** Cancels manual compaction and its active provider request. */
   readonly signal?: AbortSignal;
   /** Controls whether raw tool-result evidence is appended after model output. */
@@ -83,6 +90,12 @@ export interface AgentCompaction {
 
 /** Episode bound used when a policy omits `deadlineMs`. */
 export const DEFAULT_COMPACTION_DEADLINE_MS = 15_000;
+
+/**
+ * Leak containment for detached summary calls: a runaway provider stream is
+ * aborted after this long. This is a backstop, not a behavioral timeout.
+ */
+export const DETACHED_SUMMARY_BACKSTOP_MS = 120_000;
 
 /** Largest delay accepted by JavaScript timer implementations. */
 export const MAX_COMPACTION_DEADLINE_MS = 2_147_483_647;
