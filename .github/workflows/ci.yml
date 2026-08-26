@@ -51,7 +51,10 @@ jobs:
               args+=("$argument")
             fi
           done
-          exec sudo /usr/bin/unshare --net --fork /usr/bin/bwrap.real "${args[@]}"
+          sudo /usr/bin/unshare --net --fork /usr/bin/bwrap.real "${args[@]}" &
+          child=$!
+          trap 'sudo kill -KILL "$child" 2>/dev/null || true' TERM INT HUP
+          wait "$child"
           EOF
           sudo chmod 0755 /usr/bin/bwrap
           /usr/bin/bwrap --unshare-net --ro-bind / / --dev /dev --proc /proc -- /usr/bin/env true

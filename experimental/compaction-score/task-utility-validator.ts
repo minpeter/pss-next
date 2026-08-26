@@ -101,7 +101,7 @@ function killProcessGroup(child: ReturnType<typeof spawn>): void {
     return;
   }
   try {
-    process.kill(-pid, "SIGKILL");
+    process.kill(-pid, "SIGTERM");
   } catch (error) {
     if (!(isObject(error) && Reflect.get(error, "code") === "ESRCH")) {
       throw error;
