@@ -37,10 +37,9 @@ describe("Agent thread persistence", () => {
     }
 
     await expect(runtimeAdd).resolves.toBeUndefined();
-    expect(events).toContainEqual({
-      type: "turn-error",
-      message: 'Thread "runtime-conflict" commit conflict',
-    });
+    const turnError = events.find((event) => event.type === "turn-error");
+    expect(turnError).toMatchObject({ type: "turn-error" });
+    expect(JSON.stringify(turnError)).not.toContain("runtime-conflict");
     expect(seenHistory).toEqual([]);
   });
 

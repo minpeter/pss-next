@@ -18,12 +18,23 @@ export interface ModelToolCacheFingerprintMetadata {
   readonly toolLoadingStrategy: "eager-active-tools";
 }
 
+export interface AutoCompactionDiagnosticMetadata {
+  readonly compactionId: string;
+  readonly deadlineAt?: number;
+  readonly durationMs: number;
+  readonly outcome: "committed" | "failed" | "skipped" | "timed-out";
+  readonly reason: "completed-turn" | "manual" | "overflow";
+  readonly runnerAttempt: number;
+  readonly summaryCalls: number;
+}
+
 export interface RuntimeDiagnostic {
   readonly cause?: unknown;
   readonly code: string;
+  readonly compaction?: AutoCompactionDiagnosticMetadata;
   readonly level: RuntimeDiagnosticLevel;
   readonly metadata?: ModelToolCacheFingerprintMetadata;
-  readonly phase: "model-step";
+  readonly phase: "auto-compaction" | "model-step";
   readonly threadKey?: string;
 }
 

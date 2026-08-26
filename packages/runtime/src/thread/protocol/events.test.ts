@@ -95,6 +95,20 @@ describe("thread event protocol boundary", () => {
     expect(events.filter(isControlAgentEvent)).toEqual(events);
   });
 
+  it("rejects inherited keys in every event classifier", () => {
+    const inheritedType = { type: "toString" };
+    for (const classify of [
+      isVisibleAgentEvent,
+      isLifecycleAgentEvent,
+      isToolAgentEvent,
+      isTelemetryAgentEvent,
+      isStreamAgentEvent,
+      isControlAgentEvent,
+    ]) {
+      expect(Reflect.apply(classify, undefined, [inheritedType])).toBe(false);
+    }
+  });
+
   it("keeps the exported stream classifier table immutable", () => {
     expect(Object.isFrozen(streamAgentEventTypes)).toBe(true);
     expect(Reflect.set(streamAgentEventTypes, "assistant-output", true)).toBe(

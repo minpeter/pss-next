@@ -11,7 +11,6 @@ import { collect, SpyStore } from "./test-support";
 
 const oversizedUserText = "x".repeat(400);
 const beyondLegacyDefaultUserText = "y".repeat(600_000);
-const gateRejectedPattern = /context gate rejected prompt/;
 
 describe("Agent compaction budget policy", () => {
   it("rejects an over-budget prompt through the policy methods and recovers by invoking compact with reason overflow", async () => {
@@ -54,7 +53,9 @@ describe("Agent compaction budget policy", () => {
     let calls = 0;
     const histories: ModelMessage[][] = [];
     const agent = agentWithCompaction({
-      compaction: (context: { readonly reason: AgentCompactionReason }) => {
+      compaction: (context: {
+        readonly reason: AgentCompactionReason;
+      }): undefined => {
         seenReasons.push(context.reason);
         return;
       },
@@ -98,12 +99,12 @@ describe("Agent compaction budget policy", () => {
 
     const events = await collect(await thread.send(oversizedUserText));
 
-    expect(
-      events.some(
-        (event) =>
-          event.type === "turn-error" && gateRejectedPattern.test(event.message)
-      )
-    ).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        error: { category: "unknown", version: 1 },
+        type: "turn-error",
+      })
+    );
     expect(calls).toBe(0);
   });
 });

@@ -30,13 +30,43 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
+
+      - name: Install sandbox prerequisite
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap procps util-linux
+          sudo mv /usr/bin/bwrap /usr/bin/bwrap.real
+          sudo tee /usr/bin/bwrap >/dev/null <<'EOF'
+          #!/bin/bash
+          args=()
+          for argument in "$@"; do
+            if [[ "$argument" != "--unshare-net" ]]; then
+              args+=("$argument")
+            fi
+          done
+          kill_tree() {
+            local parent=$1 child
+            while read -r child; do
+              if [[ -n "$child" ]]; then
+                kill_tree "$child"
+              fi
+            done < <(pgrep -P "$parent" 2>/dev/null || true)
+            sudo kill -KILL "$parent" 2>/dev/null || true
+          }
+          sudo /usr/bin/unshare --net --fork /usr/bin/bwrap.real "${args[@]}" &
+          child=$!
+          trap 'kill_tree "$child"; exit 143' TERM INT HUP
+          wait "$child"
+          EOF
+          sudo chmod 0755 /usr/bin/bwrap
+          /usr/bin/bwrap --unshare-net --ro-bind / / --dev /dev --proc /proc -- /usr/bin/env true
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -61,6 +91,8 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
+        env:
+          PSS_TASK_VALIDATOR_NETWORK_ISOLATED: "1"
         run: pnpm test
 
       - name: Check core package coverage
