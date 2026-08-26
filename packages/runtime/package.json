@@ -2,90 +2,92 @@
   "name": "@minpeter/pss-runtime",
   "version": "0.3.0-next.12",
   "description": "Generic agent runtime for threads, model loops, and synchronized run events.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minpeter/pss-runtime.git",
+    "directory": "packages/runtime"
+  },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
-  "engines": {
-    "node": ">=24"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "@minpeter/pss-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
+      "@minpeter/pss-source": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./otel": {
-      "@minpeter/pss-source": "./src/otel/index.ts",
       "types": "./dist/otel/index.d.ts",
+      "@minpeter/pss-source": "./src/otel/index.ts",
       "import": "./dist/otel/index.js"
     },
     "./platform/memory": {
-      "@minpeter/pss-source": "./src/platform/memory/index.ts",
       "types": "./dist/platform/memory/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/memory/index.ts",
       "import": "./dist/platform/memory/index.js"
     },
     "./platform/cloudflare": {
-      "@minpeter/pss-source": "./src/platform/cloudflare/index.ts",
       "types": "./dist/platform/cloudflare/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/cloudflare/index.ts",
       "import": "./dist/platform/cloudflare/index.js"
     },
     "./platform/cloudflare/image-codecs": {
-      "@minpeter/pss-source": "./src/platform/cloudflare/image-codecs-edge.ts",
       "types": "./dist/platform/cloudflare/image-codecs-edge.d.ts",
+      "@minpeter/pss-source": "./src/platform/cloudflare/image-codecs-edge.ts",
       "import": "./dist/platform/cloudflare/image-codecs-edge.js"
     },
     "./platform/file": {
-      "@minpeter/pss-source": "./src/platform/file/index.ts",
       "types": "./dist/platform/file/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/file/index.ts",
       "import": "./dist/platform/file/index.js"
     },
     "./execution": {
-      "@minpeter/pss-source": "./src/execution/index.ts",
       "types": "./dist/execution/index.d.ts",
+      "@minpeter/pss-source": "./src/execution/index.ts",
       "import": "./dist/execution/index.js"
     },
     "./namespace": {
-      "@minpeter/pss-source": "./src/namespace.ts",
       "types": "./dist/namespace.d.ts",
+      "@minpeter/pss-source": "./src/namespace.ts",
       "import": "./dist/namespace.js"
     },
     "./evals": {
-      "@minpeter/pss-source": "./src/evals/index.ts",
       "types": "./dist/evals/index.d.ts",
+      "@minpeter/pss-source": "./src/evals/index.ts",
       "import": "./dist/evals/index.js"
     },
     "./fsm": {
-      "@minpeter/pss-source": "./src/fsm/index.ts",
       "types": "./dist/fsm/index.d.ts",
+      "@minpeter/pss-source": "./src/fsm/index.ts",
       "import": "./dist/fsm/index.js"
     },
     "./channel": {
-      "@minpeter/pss-source": "./src/channel/index.ts",
       "types": "./dist/channel/index.d.ts",
+      "@minpeter/pss-source": "./src/channel/index.ts",
       "import": "./dist/channel/index.js"
     },
     "./testing": {
-      "@minpeter/pss-source": "./src/testing/index.ts",
       "types": "./dist/testing/index.d.ts",
+      "@minpeter/pss-source": "./src/testing/index.ts",
       "import": "./dist/testing/index.js"
     },
     "./platform/sql-queue": {
-      "@minpeter/pss-source": "./src/platform/sql-queue/index.ts",
       "types": "./dist/platform/sql-queue/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/sql-queue/index.ts",
       "import": "./dist/platform/sql-queue/index.js"
     },
     "./protocol": {
-      "@minpeter/pss-source": "./src/protocol/index.ts",
       "types": "./dist/protocol/index.d.ts",
+      "@minpeter/pss-source": "./src/protocol/index.ts",
       "import": "./dist/protocol/index.js"
     },
     "./protocol/node": {
-      "@minpeter/pss-source": "./src/protocol/node/index.ts",
       "types": "./dist/protocol/node/index.d.ts",
+      "@minpeter/pss-source": "./src/protocol/node/index.ts",
       "import": "./dist/protocol/node/index.js"
     }
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "pss-eval": "./bin/pss-eval.js"
   },
@@ -95,24 +97,15 @@
     "README.md",
     "LICENSE.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/minpeter/pss-runtime.git",
-    "directory": "packages/runtime"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.production.json --noEmit",
+    "lint": "ultracite check .",
     "test": "vitest run",
     "test:storage-stress": "vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
     "test:storage-stress:extreme": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=extreme vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts",
     "test:storage-stress:heavy": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=heavy vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
     "test:storage-stress:torture": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=torture vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
-    "lint": "ultracite check ."
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.production.json --noEmit && tsc -p tsconfig.exact-optional.json --noEmit"
   },
   "dependencies": {
     "@jsquash/avif": "^2.1.1",
@@ -129,5 +122,12 @@
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

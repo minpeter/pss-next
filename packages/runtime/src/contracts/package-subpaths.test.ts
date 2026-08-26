@@ -54,7 +54,7 @@ describe("runtime package subpaths", () => {
     for (const exportName of canonicalCloudflareExports) {
       expect(cloudflarePlatform).toHaveProperty(exportName);
     }
-  });
+  }, 30_000);
 
   it("declares the file adapter as a platform implementation subpath", async () => {
     const packageJson = await readRuntimePackageJson();

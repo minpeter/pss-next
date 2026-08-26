@@ -10,7 +10,7 @@ import { ThreadInputInboxUnavailableError } from "../../execution/host/unsupport
 import type { UserInput } from "../input/input";
 import { precreateThreadExecutionRun } from "./execution";
 import {
-  type ThreadInputAdmissionReservation,
+  type ThreadInputAdmissionOperation,
   withThreadInputAdmission,
 } from "./thread-input-admission-coordinator";
 
@@ -38,7 +38,7 @@ export async function admitDurableThreadInput({
   readonly messageId?: string;
   readonly placement?: ThreadInputPlacement;
   readonly precreateExecutionRun?: boolean;
-  readonly reservation?: ThreadInputAdmissionReservation;
+  readonly reservation?: ThreadInputAdmissionOperation;
   readonly threadKey: string;
 }): Promise<DurableInputAdmission> {
   if (!executionHost) {

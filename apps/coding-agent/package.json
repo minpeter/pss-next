@@ -2,75 +2,77 @@
   "name": "@minpeter/pss-coding-agent",
   "version": "0.0.14-next.16",
   "description": "Code at the speed of thought",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minpeter/pss-runtime.git",
+    "directory": "apps/coding-agent"
+  },
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
-  "engines": {
-    "node": ">=24"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "@minpeter/pss-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
+      "@minpeter/pss-source": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./env": {
-      "@minpeter/pss-source": "./src/env.ts",
       "types": "./dist/env.d.ts",
+      "@minpeter/pss-source": "./src/env.ts",
       "import": "./dist/env.js"
     },
     "./model": {
-      "@minpeter/pss-source": "./src/model.ts",
       "types": "./dist/model.d.ts",
+      "@minpeter/pss-source": "./src/model.ts",
       "import": "./dist/model.js"
     },
     "./thread-config": {
-      "@minpeter/pss-source": "./src/thread-config.ts",
       "types": "./dist/thread-config.d.ts",
+      "@minpeter/pss-source": "./src/thread-config.ts",
       "import": "./dist/thread-config.js"
     },
     "./thread-inspect": {
-      "@minpeter/pss-source": "./src/thread-inspect.ts",
       "types": "./dist/thread-inspect.d.ts",
+      "@minpeter/pss-source": "./src/thread-inspect.ts",
       "import": "./dist/thread-inspect.js"
     },
     "./tools": {
-      "@minpeter/pss-source": "./src/tools.ts",
       "types": "./dist/tools.d.ts",
+      "@minpeter/pss-source": "./src/tools.ts",
       "import": "./dist/tools.js"
     },
     "./instructions": {
-      "@minpeter/pss-source": "./src/instructions.ts",
       "types": "./dist/instructions.d.ts",
+      "@minpeter/pss-source": "./src/instructions.ts",
       "import": "./dist/instructions.js"
     },
     "./workspace-tools": {
-      "@minpeter/pss-source": "./src/workspace-tools/index.ts",
       "types": "./dist/workspace-tools/index.d.ts",
+      "@minpeter/pss-source": "./src/workspace-tools/index.ts",
       "import": "./dist/workspace-tools/index.js"
     },
     "./tui": {
-      "@minpeter/pss-source": "./src/tui/app.ts",
       "types": "./dist/tui/app.d.ts",
+      "@minpeter/pss-source": "./src/tui/app.ts",
       "import": "./dist/tui/app.js"
     },
     "./extension": {
-      "@minpeter/pss-source": "./src/extensions/index.ts",
       "types": "./dist/extensions/index.d.ts",
+      "@minpeter/pss-source": "./src/extensions/index.ts",
       "import": "./dist/extensions/index.js"
     },
     "./providers": {
-      "@minpeter/pss-source": "./src/provider-registry.ts",
       "types": "./dist/provider-registry.d.ts",
+      "@minpeter/pss-source": "./src/provider-registry.ts",
       "import": "./dist/provider-registry.js"
     },
     "./extension/legacy": {
-      "@minpeter/pss-source": "./src/extensions/legacy.ts",
       "types": "./dist/extensions/legacy.d.ts",
+      "@minpeter/pss-source": "./src/extensions/legacy.ts",
       "import": "./dist/extensions/legacy.js"
     }
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "pss": "./bin/pss.js",
     "pss-coding-agent": "./bin/pss.js"
@@ -81,26 +83,17 @@
     "README.md",
     "LICENSE.md"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/minpeter/pss-runtime.git",
-    "directory": "apps/coding-agent"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "scripts": {
-    "start": "tsx --conditions=@minpeter/pss-source src/tui/app.ts",
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
     "lint": "ultracite check .",
+    "preview:assistant": "tsx --conditions=@minpeter/pss-source scripts/preview-assistant-render.ts",
     "preview:edit": "tsx --conditions=@minpeter/pss-source scripts/preview-edit-render.ts",
-    "preview:assistant": "tsx --conditions=@minpeter/pss-source scripts/preview-assistant-render.ts"
+    "start": "tsx --conditions=@minpeter/pss-source src/tui/app.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.32",
+    "@ai-sdk/anthropic": "4.0.36",
     "@ai-sdk/openai": "4.0.31",
     "@ai-sdk/openai-compatible": "3.0.20",
     "@earendil-works/pi-tui": "^0.84.1",
@@ -131,5 +124,12 @@
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

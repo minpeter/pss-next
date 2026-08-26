@@ -1,5 +1,4 @@
 import { resolve } from "node:path";
-import { loadEnvFile } from "node:process";
 
 import { isMainModule } from "../src/shared/is-main-module";
 import { logError } from "../src/worker-log";
@@ -35,7 +34,7 @@ export async function main(command = process.argv[2]): Promise<void> {
 }
 
 function loadDevVars(): void {
-  loadEnvFile(resolve(import.meta.dirname, "../.dev.vars"));
+  process.loadEnvFile(resolve(import.meta.dirname, "../.dev.vars"));
 }
 
 if (isMainModule(import.meta.url)) {

@@ -103,7 +103,7 @@ export function selectAutoCompactionRange({
   return { endSeqExclusive, startSeq: 0 };
 }
 
-function latestPrefixCompaction(
+export function latestPrefixCompaction(
   compactions: readonly ThreadCompactionRecord[]
 ): ThreadCompactionRecord | undefined {
   // Newest-first matches ModelMessageHistory nonOverlappedCompactions: a later

@@ -39,15 +39,41 @@ export function equalSnapshot(left: unknown, right: unknown): boolean {
     isPlainObject(right)
   ) {
     const keys = Object.keys(left);
-    const record = right as Record<string, unknown>;
     return (
-      keys.length === Object.keys(record).length &&
+      keys.length === Object.keys(right).length &&
       keys.every(
         (key) =>
-          Object.hasOwn(record, key) &&
-          equalSnapshot((left as Record<string, unknown>)[key], record[key])
+          Object.hasOwn(right, key) &&
+          equalSnapshot(Reflect.get(left, key), Reflect.get(right, key))
       )
     );
   }
   return false;
+}
+
+export function snapshotSuffix<T>(
+  prefix: readonly T[],
+  current: readonly T[]
+): readonly T[] | undefined {
+  if (
+    current.length < prefix.length ||
+    !equalSnapshot(prefix, current.slice(0, prefix.length))
+  ) {
+    return;
+  }
+  return current.slice(prefix.length);
+}
+
+export function conflictAppendSuffix<T>(
+  attempted: readonly T[],
+  currentLocal: readonly T[],
+  remote: readonly T[]
+): readonly T[] {
+  if (
+    snapshotSuffix(attempted, currentLocal) === undefined ||
+    snapshotSuffix(attempted, remote) === undefined
+  ) {
+    return [];
+  }
+  return snapshotSuffix(remote, currentLocal) ?? [];
 }

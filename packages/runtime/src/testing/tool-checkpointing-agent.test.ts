@@ -52,6 +52,7 @@ function createCheckpointSpyCloudflareHost(maxPayloadBytes: number): {
           },
           latest: (runId) => store.checkpoints.latest(runId),
         },
+        deleteThread: store.deleteThread.bind(store),
         events: store.events,
         inputs: store.inputs,
         notifications: store.notifications,
@@ -71,6 +72,33 @@ describe("tool checkpointing through Agent", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("preserves aggregate deletion in the Cloudflare checkpoint host", async () => {
+    const { host } = createCheckpointSpyCloudflareHost(900);
+    const threadKey = "cloudflare-wrapper-delete";
+    await host.store.threads.commit(
+      threadKey,
+      { state: { messages: ["delete me"] } },
+      { expectedVersion: null }
+    );
+    await host.store.inputs.admit({
+      input: { text: "delete", type: "user-input" },
+      kind: "send",
+      messageId: "delete-input",
+      threadKey,
+    });
+    const deleteThread = host.store.deleteThread;
+    if (deleteThread === undefined) {
+      throw new TypeError("Cloudflare host must preserve aggregate deletion");
+    }
+
+    await deleteThread(threadKey);
+
+    await expect(host.store.threads.load(threadKey)).resolves.toBeNull();
+    await expect(
+      host.store.inputs.claimNext(threadKey, "turn-idle")
+    ).resolves.toBeNull();
   });
 
   it("threads execution-host tool checkpoints through high-level Agent", async () => {

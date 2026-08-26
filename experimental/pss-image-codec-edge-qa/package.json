@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
     "deploy": "CLOUDFLARE_ACCOUNT_ID=795b98fae2d3efac0afc7a41494cc697 wrangler deploy",
+    "dev": "wrangler dev",
     "test:edge": "tsx qa-client.ts",
     "test:edge:live": "EDGE_QA_URL=https://pss-image-codec-edge-qa.minpeter.workers.dev tsx qa-client.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.qa.json --noEmit"
@@ -18,10 +18,10 @@
     "jpeg-js": "^0.4.4"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260808.1",
     "@types/node": "^26.1.2",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.120.0"
   }
 }

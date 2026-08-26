@@ -12,6 +12,7 @@ import type {
   AdmitThreadInput,
   ClaimedThreadInput,
   ClaimThreadInputOptions,
+  RecoverThreadInputClaimsOptions,
   RecoverThreadInputClaimsResult,
   ThreadInputBoundary,
   ThreadInputInbox,
@@ -140,14 +141,17 @@ export class DurableObjectThreadInputInbox implements ThreadInputInbox {
   }
 
   async recoverClaims(
-    threadKey: string
+    threadKey: string,
+    options: RecoverThreadInputClaimsOptions = {}
   ): Promise<RecoverThreadInputClaimsResult> {
     return await withTransaction(this.#storage, async (storage) => {
+      options.signal?.throwIfAborted();
       const current = await listThreadInputRecords(
         storage,
         this.#prefix,
         threadKey
       );
+      options.signal?.throwIfAborted();
       const transition = recoverThreadInputClaims(current, threadKey);
       if (transition.acked.length > 0 || transition.released.length > 0) {
         await putThreadInputRecords(storage, this.#prefix, transition.records, {

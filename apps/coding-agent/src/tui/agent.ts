@@ -14,7 +14,8 @@ import {
   ProcessTerminal,
   Spacer,
   Text,
-  TUI,
+  type TUI,
+  TuiMainScreen,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentTurn, ModelUsage } from "@minpeter/pss-runtime";
@@ -78,7 +79,7 @@ const ANSI_BG_SOFT_LIGHT = "\x1b[48;5;249m";
 const ANSI_BG_GRAY = "\x1b[100m";
 const ANSI_CYAN = "\x1b[36m";
 const ANSI_BRIGHT_CYAN = "\x1b[96m";
-const ANSI_GRAY = "\x1b[90m";
+const ANSI_GRAY = "\x1b[38;5;245m";
 const ANSI_ORANGE = "\x1b[38;5;208m";
 const ANSI_YELLOW = "\x1b[33m";
 const ANSI_RED = "\x1b[31m";
@@ -680,7 +681,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let commandSet = buildTuiCommandSet(config.commands);
 
   const terminal = new ProcessTerminal();
-  const tui = new TUI(terminal);
+  const tui: TUI = new TuiMainScreen(terminal);
   tui.setClearOnShrink(false);
 
   const headerContainer = new Container();

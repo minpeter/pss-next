@@ -1,6 +1,14 @@
 import type { ContextUsageSnapshot } from "../../llm/context-tokens";
 import type { UserInput, UserMessage, UserText } from "../input/input";
 import type { InputEventMeta } from "../input/input-meta-types";
+import {
+  controlAgentEventTypes,
+  lifecycleAgentEventTypes,
+  streamAgentEventTypes as streamAgentEventTypeTable,
+  telemetryAgentEventTypes,
+  toolAgentEventTypes,
+  visibleAgentEventTypes,
+} from "./event-classifiers";
 
 export type {
   UserInput,
@@ -198,39 +206,7 @@ export type AgentEvent =
 
 export type AgentEventListener = (event: AgentEvent) => void;
 
-const visibleAgentEventTypes = {
-  "assistant-output": true,
-  "user-input": true,
-} satisfies Partial<Record<AgentEvent["type"], true>>;
-
-const lifecycleAgentEventTypes = {
-  "step-end": true,
-  "step-start": true,
-  "turn-abort": true,
-  "turn-end": true,
-  "turn-error": true,
-  "turn-start": true,
-} satisfies Partial<Record<AgentEvent["type"], true>>;
-
-const toolAgentEventTypes = {
-  "tool-call": true,
-  "tool-result": true,
-} satisfies Partial<Record<AgentEvent["type"], true>>;
-
-const telemetryAgentEventTypes = {
-  "assistant-reasoning": true,
-  "model-usage": true,
-  "runtime-input": true,
-} satisfies Partial<Record<AgentEvent["type"], true>>;
-
-export const streamAgentEventTypes = Object.freeze({
-  "context-usage": true,
-  "assistant-output-delta": true,
-  "assistant-reasoning-delta": true,
-  "tool-call-input-delta": true,
-  "tool-call-input-end": true,
-  "tool-call-input-start": true,
-} satisfies Partial<Record<AgentEvent["type"], true>>);
+export const streamAgentEventTypes = streamAgentEventTypeTable;
 
 export type VisibleAgentEvent = Extract<
   AgentEvent,
@@ -257,33 +233,33 @@ export type ControlAgentEvent = Exclude<AgentEvent, VisibleAgentEvent>;
 export function isVisibleAgentEvent(
   event: AgentEvent
 ): event is VisibleAgentEvent {
-  return event.type in visibleAgentEventTypes;
+  return Object.hasOwn(visibleAgentEventTypes, event.type);
 }
 
 export function isLifecycleAgentEvent(
   event: AgentEvent
 ): event is LifecycleAgentEvent {
-  return event.type in lifecycleAgentEventTypes;
+  return Object.hasOwn(lifecycleAgentEventTypes, event.type);
 }
 
 export function isToolAgentEvent(event: AgentEvent): event is ToolAgentEvent {
-  return event.type in toolAgentEventTypes;
+  return Object.hasOwn(toolAgentEventTypes, event.type);
 }
 
 export function isTelemetryAgentEvent(
   event: AgentEvent
 ): event is TelemetryAgentEvent {
-  return event.type in telemetryAgentEventTypes;
+  return Object.hasOwn(telemetryAgentEventTypes, event.type);
 }
 
 export function isStreamAgentEvent(
   event: AgentEvent
 ): event is StreamAgentEvent {
-  return event.type in streamAgentEventTypes;
+  return Object.hasOwn(streamAgentEventTypes, event.type);
 }
 
 export function isControlAgentEvent(
   event: AgentEvent
 ): event is ControlAgentEvent {
-  return !isVisibleAgentEvent(event);
+  return Object.hasOwn(controlAgentEventTypes, event.type);
 }
