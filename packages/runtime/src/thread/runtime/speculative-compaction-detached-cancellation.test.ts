@@ -100,9 +100,12 @@ describe("detached summary cancellation", () => {
     const gate = new Promise<never>((_resolve, reject) => {
       rejectSummary = reject;
     });
-    const provider = {
+    const provider: {
+      called: number;
+      signal: AbortSignal | undefined;
+    } = {
       called: 0,
-      signal: undefined as AbortSignal | undefined,
+      signal: undefined,
     };
     const model = {
       model: createCallbackModel(async ({ signal }) => {
