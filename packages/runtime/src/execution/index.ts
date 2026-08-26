@@ -41,6 +41,7 @@ export type {
   NotificationRecord,
   NotificationStatus,
   NotificationWriteResult,
+  RecoverThreadInputClaimsOptions,
   RecoverThreadInputClaimsResult,
   StoredAgentEvent,
   StoredThreadEvent,

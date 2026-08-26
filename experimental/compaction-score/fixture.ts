@@ -48,6 +48,10 @@ export interface CompactionFixture {
 export function validateCompactionFixture(
   fixture: CompactionFixture
 ): CompactionFixture {
+  if (fixture.questions.length === 0) {
+    throw new TypeError("Compaction fixture requires at least one question.");
+  }
+
   let previousEnd = 0;
   if (fixture.compactionEnds.length === 0) {
     throw new TypeError("Compaction fixture requires at least one boundary.");

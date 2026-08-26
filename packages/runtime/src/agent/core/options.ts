@@ -5,7 +5,10 @@ import type { ContextBudgetSource } from "../../llm/context-gate";
 import type { ContextTokenOptions } from "../../llm/context-tokens";
 import type { PrepareModelStep } from "../../llm/model-step-preparation";
 import type { AgentToolChoice } from "../../llm/model-step-types";
-import { assertNoUnsupportedToolApproval } from "../../llm/tool-approval";
+import {
+  assertNoUnsupportedToolApproval,
+  snapshotToolsWithoutUnsupportedApproval,
+} from "../../llm/tool-approval";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentInput, UserInput } from "../../thread/input/input";
 import type { AgentCompaction } from "../../thread/runtime/auto-compaction-types";
@@ -18,6 +21,7 @@ import {
   type AgentInstrumentation,
   normalizeAgentInstrumentations,
 } from "./instrumentation";
+import { assertThreadStateMigrationList } from "./options-thread-migration-validation";
 
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
@@ -39,6 +43,8 @@ export interface AgentOptions {
 }
 
 export type CreateAgentOptions = AgentOptions;
+
+const validatedAgentOptionSnapshots = new WeakSet<object>();
 
 export type AgentModelOptions = Pick<
   AgentOptions,
@@ -74,64 +80,121 @@ export function assertAgentOptions(
     throw new TypeError("Agent: invalid options.model.");
   }
 
-  const candidate = options as {
-    readonly alwaysActiveTools?: AgentOptions["alwaysActiveTools"];
-    readonly compaction?: AgentOptions["compaction"];
-    readonly instrumentations?: AgentOptions["instrumentations"];
-    readonly prepareModelStep?: AgentOptions["prepareModelStep"];
-    readonly threadMigrations?: AgentOptions["threadMigrations"];
-    readonly toolOrder?: AgentOptions["toolOrder"];
-    readonly tools?: AgentOptions["tools"];
-  };
-  assertNoUnsupportedToolApproval(candidate.tools);
-  assertToolNameList(candidate.alwaysActiveTools, "alwaysActiveTools");
-  assertToolNameList(candidate.toolOrder, "toolOrder");
+  const tools: unknown = Reflect.get(options, "tools");
+  const alwaysActiveTools: unknown = Reflect.get(options, "alwaysActiveTools");
+  const toolOrder: unknown = Reflect.get(options, "toolOrder");
+  const prepareModelStep: unknown = Reflect.get(options, "prepareModelStep");
+  const compaction: unknown = Reflect.get(options, "compaction");
+  const instrumentations: unknown = Reflect.get(options, "instrumentations");
+  const threadMigrations: unknown = Reflect.get(options, "threadMigrations");
+
+  assertNoUnsupportedToolApproval(tools);
+  assertToolNameList(alwaysActiveTools, "alwaysActiveTools");
+  assertToolNameList(toolOrder, "toolOrder");
   if (
-    candidate.prepareModelStep !== undefined &&
-    typeof candidate.prepareModelStep !== "function"
+    prepareModelStep !== undefined &&
+    typeof prepareModelStep !== "function"
   ) {
     throw new TypeError("Agent: options.prepareModelStep must be a function.");
   }
-  if (candidate.compaction !== undefined) {
-    assertCompactionObject(candidate.compaction);
+  if (compaction !== undefined) {
+    snapshotAgentCompaction(compaction);
   }
-  normalizeAgentInstrumentations(candidate.instrumentations);
-  normalizeThreadStateMigrations(candidate.threadMigrations);
+  normalizeAgentInstrumentations(instrumentations);
+  assertThreadStateMigrationList(threadMigrations);
+  normalizeThreadStateMigrations(threadMigrations);
 }
 
-function assertCompactionObject(compaction: AgentOptions["compaction"]): void {
+export function snapshotAgentOptions(options: AgentOptions): AgentOptions {
+  if (options === undefined) {
+    throw new TypeError("Agent options are required.");
+  }
+  if (options === null || typeof options !== "object") {
+    throw new TypeError("Agent options must be a non-null object.");
+  }
+  const compaction: unknown = options.compaction;
+  const tools: unknown = options.tools;
+  const snapshot: AgentOptions = {
+    alwaysActiveTools: options.alwaysActiveTools,
+    attachmentStore: options.attachmentStore,
+    compaction:
+      compaction === undefined
+        ? undefined
+        : snapshotAgentCompaction(compaction),
+    contextTokens: options.contextTokens,
+    hooks: options.hooks,
+    host: options.host,
+    instructions: options.instructions,
+    instrumentations: options.instrumentations,
+    model: options.model,
+    namespace: options.namespace,
+    notificationOverlays: options.notificationOverlays,
+    prepareModelStep: options.prepareModelStep,
+    threadMigrations: options.threadMigrations,
+    toolChoice: options.toolChoice,
+    toolOrder: options.toolOrder,
+    tools: undefined,
+  };
+  const toolsSnapshot = snapshotToolsWithoutUnsupportedApproval(tools);
+  assertAgentOptions(snapshot);
+  Object.assign(snapshot, { tools: toolsSnapshot });
+  validatedAgentOptionSnapshots.add(snapshot);
+  return snapshot;
+}
+
+export function consumeAgentOptions(options: AgentOptions): AgentOptions {
+  if (validatedAgentOptionSnapshots.delete(options)) {
+    return options;
+  }
+  return snapshotAgentOptions(options);
+}
+
+function snapshotAgentCompaction(compaction: unknown): AgentCompaction {
   if (typeof compaction !== "function") {
     throw new TypeError("Agent: options.compaction must be a function.");
   }
-  if (
-    compaction.maxInputTokens !== undefined &&
-    typeof compaction.maxInputTokens !== "function"
-  ) {
+  const bufferTokens: unknown = Reflect.get(compaction, "bufferTokens");
+  const deadlineMs: unknown = Reflect.get(compaction, "deadlineMs");
+  const maxInputTokens: unknown = Reflect.get(compaction, "maxInputTokens");
+  const estimateTokens: unknown = Reflect.get(compaction, "estimateTokens");
+  const onOverflow: unknown = Reflect.get(compaction, "onOverflow");
+  if (deadlineMs !== undefined && typeof deadlineMs !== "function") {
+    throw new TypeError(
+      "Agent: options.compaction.deadlineMs must be a function."
+    );
+  }
+  if (maxInputTokens !== undefined && typeof maxInputTokens !== "function") {
     throw new TypeError(
       "Agent: options.compaction.maxInputTokens must be a function."
     );
   }
-  if (
-    compaction.estimateTokens !== undefined &&
-    typeof compaction.estimateTokens !== "function"
-  ) {
+  if (estimateTokens !== undefined && typeof estimateTokens !== "function") {
     throw new TypeError(
       "Agent: options.compaction.estimateTokens must be a function."
     );
   }
   if (
-    compaction.onOverflow !== undefined &&
-    compaction.onOverflow !== "compact" &&
-    compaction.onOverflow !== "error"
+    onOverflow !== undefined &&
+    onOverflow !== "compact" &&
+    onOverflow !== "error"
   ) {
     throw new TypeError(
       'Agent: options.compaction.onOverflow must be "compact" or "error".'
     );
   }
+  const snapshot: AgentCompaction = (context) => compaction(context);
+  Object.assign(snapshot, {
+    bufferTokens,
+    deadlineMs,
+    estimateTokens,
+    maxInputTokens,
+    onOverflow,
+  });
+  return snapshot;
 }
 
 function assertToolNameList(
-  value: readonly string[] | undefined,
+  value: unknown,
   field: "alwaysActiveTools" | "toolOrder"
 ): void {
   if (value === undefined) {

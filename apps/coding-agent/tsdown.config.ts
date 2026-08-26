@@ -21,6 +21,7 @@ const version =
     : undefined;
 
 export default defineConfig({
+  tsconfig: "tsconfig.build.json",
   entry: [
     "src/index.ts",
     "src/cli.ts",

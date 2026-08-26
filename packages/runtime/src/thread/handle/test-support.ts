@@ -65,6 +65,7 @@ export class SpyStore implements ThreadStore {
 export class ConflictOnCommitStore extends SpyStore {
   commitCount = 0;
   conflictOnCommit = 1;
+  onConflict?: () => void;
 
   override commit(
     key: string,
@@ -73,6 +74,7 @@ export class ConflictOnCommitStore extends SpyStore {
   ): Promise<CommitResult> {
     this.commitCount += 1;
     if (this.commitCount === this.conflictOnCommit) {
+      this.onConflict?.();
       return Promise.resolve({ ok: false, reason: "conflict" });
     }
 

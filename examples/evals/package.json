@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "evidence:assemble-cache-confirmation": "node src/assemble-cache-confirmation.mjs",
     "eval": "tsx --conditions=@minpeter/pss-source src/run.ts",
     "eval:cache-broad": "node src/broad-context-cache-benchmark.mjs",
-    "test:cache-broad-helpers": "node --test src/broad-context-cache-benchmark.test.mjs src/broad-context-cache-response.test.mjs src/freerouter-url.test.mjs",
     "eval:cache-live": "tsx --conditions=@minpeter/pss-source src/live-cache-telemetry.ts",
     "eval:json": "tsx --conditions=@minpeter/pss-source src/run.ts --json",
+    "evidence:assemble-cache-confirmation": "node src/assemble-cache-confirmation.mjs",
     "evidence:verify-cache": "node src/verify-cache-evidence.mjs",
     "test": "node --test src/broad-context-cache-benchmark.test.mjs src/broad-context-cache-response.test.mjs src/cache-confirmation-evidence.test.mjs src/cache-confirmation-independent-verifier.test.mjs src/freerouter-url.test.mjs && node src/verify-cache-evidence.mjs",
+    "test:cache-broad-helpers": "node --test src/broad-context-cache-benchmark.test.mjs src/broad-context-cache-response.test.mjs src/freerouter-url.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -22,7 +22,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }
 }

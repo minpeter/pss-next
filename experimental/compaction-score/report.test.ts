@@ -40,6 +40,7 @@ const validTrial = (
     {
       endSeqExclusive: 80,
       prefixTokens: 1000,
+      sentOutputTokens: summaryTokens,
       summaryTokens,
     },
   ],

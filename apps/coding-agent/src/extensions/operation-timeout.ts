@@ -16,21 +16,23 @@ export function raceWithExtensionTimeout<Result>(
   }
 ): Promise<Result> {
   const { signal, timeoutMs } = options;
-  if (signal?.aborted) {
-    return Promise.reject(
-      new CodingAgentExtensionError(extensionId, phase, new Error("aborted"))
-    );
-  }
-  if (
-    timeoutMs === undefined ||
-    !Number.isFinite(timeoutMs) ||
-    timeoutMs <= 0
-  ) {
-    return task;
-  }
+  const timerEnabled =
+    timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0;
 
   return new Promise<Result>((resolve, reject) => {
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (action: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      signal?.removeEventListener("abort", abort);
+      action();
+    };
     const abort = () => {
       finish(() =>
         reject(
@@ -42,39 +44,44 @@ export function raceWithExtensionTimeout<Result>(
         )
       );
     };
-    const timer = setTimeout(() => {
-      finish(() =>
-        reject(
-          new CodingAgentExtensionError(
-            extensionId,
-            phase,
-            new Error(`${phase} timed out after ${timeoutMs}ms`)
-          )
-        )
-      );
-    }, timeoutMs);
-
-    const finish = (action: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      action();
-    };
 
     signal?.addEventListener("abort", abort, { once: true });
     task.then(
       (value) => finish(() => resolve(value)),
       (error) =>
         finish(() => {
-          if (error instanceof CodingAgentExtensionError) {
-            reject(error);
+          try {
+            if (error instanceof CodingAgentExtensionError) {
+              reject(error);
+              return;
+            }
+          } catch {
+            reject(
+              new CodingAgentExtensionError(
+                extensionId,
+                phase,
+                new Error("Extension operation rejected with an unsafe value")
+              )
+            );
             return;
           }
           reject(new CodingAgentExtensionError(extensionId, phase, error));
         })
     );
+    if (signal?.aborted) {
+      abort();
+    } else if (timerEnabled) {
+      timer = setTimeout(() => {
+        finish(() =>
+          reject(
+            new CodingAgentExtensionError(
+              extensionId,
+              phase,
+              new Error(`${phase} timed out after ${timeoutMs}ms`)
+            )
+          )
+        );
+      }, timeoutMs);
+    }
   });
 }

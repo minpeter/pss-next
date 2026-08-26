@@ -102,10 +102,10 @@ export function enforceContextGate({
   const maxInputTokens = contextGate.maxInputTokens();
   const estimatedTokens = estimatePromptTokens(
     {
-      instructions,
+      ...(instructions === undefined ? {} : { instructions }),
       messages,
-      toolChoice,
-      tools: promptTools,
+      ...(toolChoice === undefined ? {} : { toolChoice }),
+      ...(promptTools === undefined ? {} : { tools: promptTools }),
     },
     contextGate.estimateTokens
   );
@@ -207,7 +207,6 @@ export async function materializeModelPromptTools(
         typeof tool.description === "function"
           ? tool.description({
               context: undefined,
-              experimental_sandbox: undefined,
             })
           : tool.description;
       const schema = asSchema(tool.inputSchema);
