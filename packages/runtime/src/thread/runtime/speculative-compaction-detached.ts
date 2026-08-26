@@ -12,6 +12,7 @@ export interface DetachedSummaryJob {
   readonly prefix: readonly ModelMessage[];
   readonly promise: Promise<string>;
   readonly range: AutoCompactionRange;
+  readonly token: Readonly<object>;
 }
 
 /**
@@ -32,10 +33,12 @@ export class DetachedSummaryJobs {
     if (existing !== undefined && matchesContext(existing, context)) {
       return existing;
     }
+    const token = Object.freeze({});
     const promise = context
       .summarize(range, { lifetime: "detached" })
       .then((summary) => {
-        if (summary.trim()) {
+        const current = this.#jobs.get(context.threadIdentity);
+        if (summary.trim() && current?.token === token) {
           install(summary);
         }
         return summary;
@@ -46,6 +49,7 @@ export class DetachedSummaryJobs {
       prefix: context.history.slice(0, range.endSeqExclusive),
       promise,
       range,
+      token,
     };
     this.#jobs.set(context.threadIdentity, job);
     const release = (): void => {

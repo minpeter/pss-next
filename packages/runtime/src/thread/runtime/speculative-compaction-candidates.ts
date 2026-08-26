@@ -107,7 +107,7 @@ export class SpeculativeCompactionCandidates {
     if (!summary.trim()) {
       return;
     }
-    if (this.#jobMatchesContext(job, range)) {
+    if (this.#jobMatchesContext(job, context, range)) {
       return { ...range, summary };
     }
     const installed = this.#getFresh(context);
@@ -124,11 +124,21 @@ export class SpeculativeCompactionCandidates {
    */
   #jobMatchesContext(
     job: DetachedSummaryJob,
+    context: AgentCompactionContext,
     range: AutoCompactionRange
   ): boolean {
     return (
       job.range.startSeq === range.startSeq &&
-      job.range.endSeqExclusive === range.endSeqExclusive
+      job.range.endSeqExclusive === range.endSeqExclusive &&
+      equalSnapshot(job.compactions, context.compactions) &&
+      equalSnapshot(
+        job.prefix,
+        context.history.slice(0, range.endSeqExclusive)
+      ) &&
+      equalSnapshot(
+        job.hydratedPrefix,
+        context.estimatedHistory.slice(0, range.endSeqExclusive)
+      )
     );
   }
 

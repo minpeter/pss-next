@@ -3,12 +3,14 @@ import {
   compactThreadBlocking,
   compactThreadManually,
 } from "./auto-compaction-runner";
+import type { AgentCompactionContext } from "./auto-compaction-types";
 import {
   DEADLINE_MS,
   hangingSummaryProvider,
   policy,
   stateWithHistory,
 } from "./speculative-compaction-detached-test-support";
+import { context, message } from "./speculative-compaction-test-support";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -118,5 +120,73 @@ describe("speculativeCompaction detached summaries", () => {
     expect(records).toHaveLength(2);
     expect(JSON.stringify(records[0])).toContain("manual");
     expect(JSON.stringify(records[1])).toContain("detached summary 2");
+  });
+  it("lets only the current detached job install after a drifted job replaces it", async () => {
+    const firstHistory = Array.from({ length: 6 }, (_, index) =>
+      message(`A-${index}`, index % 2 === 0 ? "user" : "assistant")
+    );
+    const secondHistory = Array.from({ length: 6 }, (_, index) =>
+      message(`B-${index}`, index % 2 === 0 ? "user" : "assistant")
+    );
+    let resolveFirst: (summary: string) => void = () => {
+      throw new TypeError("first summary promise was not initialized");
+    };
+    let resolveSecond: (summary: string) => void = () => {
+      throw new TypeError("second summary promise was not initialized");
+    };
+    const first = new Promise<string>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<string>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second)
+      .mockResolvedValueOnce("unexpected fresh summary");
+    const compaction = policy();
+
+    const pendingFirst = compaction(context(firstHistory, summarize));
+    const pendingSecond = compaction(context(secondHistory, summarize));
+    expect(summarize).toHaveBeenCalledTimes(2);
+
+    resolveFirst("candidate A");
+    await pendingFirst;
+    resolveSecond("candidate B");
+    await pendingSecond;
+    const promoted = await compaction(
+      context([...secondHistory, message("tail")], summarize, {
+        reason: "overflow",
+      })
+    );
+
+    expect(promoted?.summary).toBe("candidate B");
+    expect(summarize).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a direct detached result when its source snapshot drifts", async () => {
+    const history = Array.from({ length: 6 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+    let resolveSummary: (summary: string) => void = () => {
+      throw new TypeError("summary promise was not initialized");
+    };
+    const summary = new Promise<string>((resolve) => {
+      resolveSummary = resolve;
+    });
+    const summarize = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockReturnValue(summary);
+    const compaction = policy();
+    const pending = compaction(
+      context(history, summarize, { reason: "overflow" })
+    );
+    expect(summarize).toHaveBeenCalledTimes(1);
+
+    history[0] = message("changed");
+    resolveSummary("stale summary");
+
+    await expect(Promise.resolve(pending)).resolves.toBeUndefined();
   });
 });
