@@ -2,30 +2,23 @@ import {
   estimateModelMessagesTokens,
   type ModelContextTokenEstimateInput,
 } from "../../llm/context-gate";
-import { selectAutoCompactionRange } from "./auto-compaction-range";
-import type {
-  AgentCompaction,
-  AgentCompactionContext,
-  ThreadTokenEstimator,
+import type { ThreadCompactionInput } from "../state/thread-state";
+import {
+  type AgentCompaction,
+  type AgentCompactionContext,
+  DEFAULT_COMPACTION_DEADLINE_MS,
+  MAX_COMPACTION_DEADLINE_MS,
+  type ThreadTokenEstimator,
 } from "./auto-compaction-types";
-import { equalSnapshot } from "./snapshot-equal";
+import { SpeculativeCompactionCandidates } from "./speculative-compaction-candidates";
 
 export interface SpeculativeCompactionOptions {
+  readonly deadlineMs?: number;
   readonly estimateTokens?: ThreadTokenEstimator;
   readonly maxInputTokens?: number;
   readonly prepareRatio?: number;
   readonly promoteRatio?: number;
   readonly retainRatio?: number;
-}
-
-interface Candidate {
-  readonly compactions: readonly unknown[];
-  readonly input: {
-    readonly startSeq: number;
-    readonly endSeqExclusive: number;
-    readonly summary: string;
-  };
-  readonly prefix: readonly unknown[];
 }
 
 /**
@@ -36,6 +29,7 @@ export function speculativeCompaction(
   options: SpeculativeCompactionOptions = {}
 ): AgentCompaction {
   const max = options.maxInputTokens ?? 128_000;
+  const deadlineMs = options.deadlineMs ?? DEFAULT_COMPACTION_DEADLINE_MS;
   const prepare = options.prepareRatio ?? 0.65;
   const promote = options.promoteRatio ?? 0.8;
   const retain = options.retainRatio ?? 0.4;
@@ -55,6 +49,17 @@ export function speculativeCompaction(
       "speculativeCompaction: maxInputTokens must be a positive integer."
     );
   }
+  if (
+    !(
+      Number.isSafeInteger(deadlineMs) &&
+      deadlineMs > 0 &&
+      deadlineMs <= MAX_COMPACTION_DEADLINE_MS
+    )
+  ) {
+    throw new TypeError(
+      `speculativeCompaction: deadlineMs must be a positive integer no greater than ${MAX_COMPACTION_DEADLINE_MS}.`
+    );
+  }
   if (prepare >= promote) {
     throw new TypeError(
       "speculativeCompaction: prepareRatio must be smaller than promoteRatio."
@@ -62,27 +67,26 @@ export function speculativeCompaction(
   }
   const customEstimate = options.estimateTokens;
   const estimate = customEstimate ?? estimateModelMessagesTokens;
-  const candidates = new WeakMap<object, Candidate>();
-  const compact = async (context: AgentCompactionContext) => {
+  const candidates = new SpeculativeCompactionCandidates({
+    estimate,
+    max,
+    retain,
+  });
+  const compact = async (
+    context: AgentCompactionContext
+  ): Promise<ThreadCompactionInput | undefined> => {
     const tokens = context.estimatedContextTokens;
-    const candidate = getFreshCandidate(candidates, context);
     if (tokens >= Math.floor(max * promote) || context.reason === "overflow") {
-      return await promoteCandidate({
-        candidate,
-        candidates,
-        context,
-        estimate,
-        max,
-        retain,
-      });
+      return await candidates.promote(context);
     }
-    if (tokens < Math.floor(max * prepare) || candidate) {
+    if (tokens < Math.floor(max * prepare)) {
       return;
     }
-    await prepareCandidate({ candidates, context, estimate, max, retain });
+    await candidates.prepare(context);
     return;
   };
   return Object.assign(compact, {
+    deadlineMs: () => deadlineMs,
     ...(customEstimate
       ? {
           estimateTokens: ({
@@ -98,104 +102,5 @@ export function speculativeCompaction(
       : {}),
     maxInputTokens: () => max,
     onOverflow: "compact" as const,
-  });
-}
-
-async function prepareCandidate({
-  candidates,
-  context,
-  estimate,
-  max,
-  retain,
-}: {
-  readonly candidates: WeakMap<object, Candidate>;
-  readonly context: AgentCompactionContext;
-  readonly estimate: ThreadTokenEstimator;
-  readonly max: number;
-  readonly retain: number;
-}): Promise<void> {
-  const range = selectRange(context, estimate, max, retain);
-  if (!range) {
-    return;
-  }
-  const input = { ...range, summary: await context.summarize(range) };
-  if (!input.summary.trim()) {
-    return;
-  }
-  candidates.set(context.threadIdentity, {
-    compactions: structuredClone(context.compactions),
-    input,
-    prefix: structuredClone(context.history.slice(0, range.endSeqExclusive)),
-  });
-}
-
-async function promoteCandidate({
-  candidate,
-  candidates,
-  context,
-  estimate,
-  max,
-  retain,
-}: {
-  readonly candidate: Candidate | undefined;
-  readonly candidates: WeakMap<object, Candidate>;
-  readonly context: AgentCompactionContext;
-  readonly estimate: ThreadTokenEstimator;
-  readonly max: number;
-  readonly retain: number;
-}) {
-  candidates.delete(context.threadIdentity);
-  const currentRange = selectRange(context, estimate, max, retain);
-  const needsBroaderOverflowSummary =
-    context.reason === "overflow" &&
-    candidate !== undefined &&
-    currentRange !== undefined &&
-    currentRange.endSeqExclusive > candidate.input.endSeqExclusive;
-  if (candidate && !needsBroaderOverflowSummary) {
-    return candidate.input;
-  }
-  const range = currentRange;
-  if (!range) {
-    return candidate?.input;
-  }
-  const summary = await context.summarize(range);
-  return summary.trim() ? { ...range, summary } : undefined;
-}
-
-function getFreshCandidate(
-  candidates: WeakMap<object, Candidate>,
-  context: AgentCompactionContext
-): Candidate | undefined {
-  const candidate = candidates.get(context.threadIdentity);
-  if (
-    candidate &&
-    equalSnapshot(
-      candidate.prefix,
-      context.history.slice(0, candidate.input.endSeqExclusive)
-    ) &&
-    equalSnapshot(candidate.compactions, context.compactions)
-  ) {
-    return candidate;
-  }
-  candidates.delete(context.threadIdentity);
-  return;
-}
-
-function selectRange(
-  context: AgentCompactionContext,
-  estimate: ThreadTokenEstimator,
-  max: number,
-  retain: number
-) {
-  return selectAutoCompactionRange({
-    compactions: context.compactions,
-    history: context.estimatedHistory,
-    instructionsTokens: context.instructionsTokens,
-    messageTokenCosts: context.estimatedHistoryMessageTokens,
-    policy: {
-      estimateTokens: context.estimateTokens ?? estimate,
-      retainTokens: Math.floor(max * retain),
-      triggerTokens: 1,
-    },
   });
 }

@@ -45,17 +45,23 @@ export async function claimDurableThreadInput({
 
 export async function recoverDurableThreadInputs({
   executionHost,
+  signal,
   threadKey,
 }: {
   readonly executionHost: AgentHost | undefined;
+  readonly signal?: AbortSignal;
   readonly threadKey: string;
 }): Promise<RecoverThreadInputClaimsResult> {
+  signal?.throwIfAborted();
   if (!executionHost) {
     return emptyRecoveredThreadInputClaims();
   }
 
   try {
-    return await executionHost.store.inputs.recoverClaims(threadKey);
+    return await executionHost.store.inputs.recoverClaims(
+      threadKey,
+      signal ? { signal } : undefined
+    );
   } catch (error) {
     if (error instanceof ThreadInputInboxUnavailableError) {
       return emptyRecoveredThreadInputClaims();

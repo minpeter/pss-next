@@ -1,33 +1,22 @@
-import {
-  CompactionSummaryNotSmallerError,
-  compactionContextForModel,
-  estimateModelMessagesTokens,
-  ModelMessageHistory,
-  selectSummaryOutputTokenLimit,
-  summarizeCompactionRange,
-  summaryHistoryForRange,
-  type ThreadContextMessage,
-} from "@minpeter/pss-runtime";
+import { estimateModelMessagesTokens } from "@minpeter/pss-runtime";
 import type { LanguageModel, ModelMessage } from "ai";
 import { DEFAULT_PROVIDER_TIMEOUT_MS } from "./benchmark-options";
 import type { CompactionFixture, FixtureQuestion } from "./fixture";
 import { BatchedAnswerProtocolError, parseBatchedAnswers } from "./protocol";
-import type {
-  CompactionHopRecord,
-  PromptProfileIdentity,
-  TrialRecord,
-} from "./report";
+import type { PromptProfileIdentity, TrialRecord } from "./report";
 import {
   type CompactionScore,
   FullContextControlError,
   scoreAnswers,
 } from "./scorer";
+import { generateCompactionHops } from "./trial-compaction-hops";
 import { evaluateArm, stableTrialError } from "./trial-provider-boundary";
 
 type EvaluationArm = "compacted" | "full";
 
 export interface TrialInput {
   readonly attempt: number;
+  readonly enforceSummaryOutputBudget?: boolean;
   readonly fixture: CompactionFixture;
   readonly fixtureSeed: string;
   readonly id: string;
@@ -38,44 +27,63 @@ export interface TrialInput {
   readonly seed?: number;
   readonly summaryInstructions?: string;
   readonly summaryMaxOutputTokens: number;
+  readonly summaryModel?: LanguageModel;
 }
 
 export async function runCompactionTrial(
   input: TrialInput
 ): Promise<TrialRecord> {
-  const history = new ModelMessageHistory(input.fixture.messages);
-  const fullContext = history.modelSnapshot();
-  const generated = await generateCompactionHops(input, history, fullContext);
-  if ("status" in generated) {
-    return generated;
+  const generated = await generateCompactionHops(input);
+  switch (generated.status) {
+    case "failure":
+      return invalidRecord(input, generated.failureStatus, generated.cause);
+    case "success":
+      break;
+    default:
+      return assertNever(generated);
   }
-  const { finalHop, hops } = generated;
-
-  const compactedContext = toModelMessages(history.modelContextSnapshot());
+  const { compactedContext, finalHop, fullContext, hops } = generated;
   const contexts: Record<EvaluationArm, ModelMessage[]> = {
     compacted: compactedContext,
     full: fullContext,
   };
   const armOrder: readonly EvaluationArm[] =
     input.repetition % 2 === 0 ? ["compacted", "full"] : ["full", "compacted"];
-  const answers = new Map<EvaluationArm, Map<FixtureQuestion, string>>();
+  const answers: Record<EvaluationArm, Map<FixtureQuestion, string>> = {
+    compacted: new Map(),
+    full: new Map(),
+  };
 
   for (const arm of armOrder) {
-    let output: string;
-    try {
-      output = await evaluateArm({
-        context: contexts[arm],
-        model: input.model,
-        questions: input.fixture.questions,
-        ...(input.seed === undefined ? {} : { seed: input.seed }),
-        signal: providerCallSignal(input),
-      });
-    } catch (cause) {
-      return invalidRecord(input, "evaluation-provider-failure", cause);
+    const evaluated = await evaluateArm({
+      context: contexts[arm],
+      model: input.model,
+      questions: input.fixture.questions,
+      ...(input.seed === undefined ? {} : { seed: input.seed }),
+      signal: AbortSignal.timeout(
+        input.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS
+      ),
+    }).then(
+      (output) => ({ output, status: "success" }) as const,
+      (cause: unknown) => ({ cause, status: "failure" }) as const
+    );
+    switch (evaluated.status) {
+      case "failure":
+        return invalidRecord(
+          input,
+          "evaluation-provider-failure",
+          evaluated.cause
+        );
+      case "success":
+        break;
+      default:
+        return assertNever(evaluated);
     }
-
     try {
-      answers.set(arm, parseBatchedAnswers(output, input.fixture.questions));
+      answers[arm] = parseBatchedAnswers(
+        evaluated.output,
+        input.fixture.questions
+      );
     } catch (cause) {
       const status =
         cause instanceof BatchedAnswerProtocolError
@@ -89,8 +97,8 @@ export async function runCompactionTrial(
   try {
     score = scoreAnswers(
       input.fixture.questions,
-      answers.get("full") as Map<FixtureQuestion, string>,
-      answers.get("compacted") as Map<FixtureQuestion, string>
+      answers.full,
+      answers.compacted
     );
   } catch (cause) {
     if (cause instanceof FullContextControlError) {
@@ -98,10 +106,20 @@ export async function runCompactionTrial(
     }
     throw cause;
   }
-
   return {
+    answers: {
+      compacted: input.fixture.questions.map(
+        (question) => answers.compacted.get(question) ?? ""
+      ),
+      full: input.fixture.questions.map(
+        (question) => answers.full.get(question) ?? ""
+      ),
+    },
     fixtureSeed: input.fixtureSeed,
-    hops,
+    hops: hops.map((hop) => ({
+      ...hop,
+      sentOutputTokens: hop.sentOutputTokens ?? input.summaryMaxOutputTokens,
+    })),
     id: input.id,
     prefixTokens: estimateModelMessagesTokens(
       fullContext.slice(
@@ -118,98 +136,17 @@ export async function runCompactionTrial(
   };
 }
 
-async function generateCompactionHops(
-  input: TrialInput,
-  history: ModelMessageHistory,
-  fullContext: ModelMessage[]
-): Promise<
-  | {
-      readonly finalHop: CompactionHopRecord;
-      readonly hops: readonly CompactionHopRecord[];
-    }
-  | TrialRecord
-> {
-  const hops: CompactionHopRecord[] = [];
-  let summary = "";
-  for (
-    let hopIndex = 0;
-    hopIndex < input.fixture.compactionEnds.length;
-    hopIndex += 1
-  ) {
-    const endSeqExclusive = input.fixture.compactionEnds[hopIndex] ?? 0;
-    const range = { endSeqExclusive, startSeq: 0 };
-    const summaryHistory = summaryHistoryForRange({
-      compactions: history.compactionSnapshot(),
-      history: fullContext,
-      range,
-    });
-    const summaryInputTokens = estimateModelMessagesTokens(
-      toModelMessages(summaryHistory)
-    );
-    try {
-      summary = await summarizeCompactionRange({
-        history: summaryHistory,
-        model: {
-          maxOutputTokens: selectSummaryOutputTokenLimit({
-            inputTokens: summaryInputTokens,
-            retainTokens: input.summaryMaxOutputTokens * 2,
-          }),
-          model: input.model,
-          ...(input.seed === undefined
-            ? {}
-            : { seed: (input.seed + hopIndex) % 4_294_967_296 }),
-          temperature: 0,
-        },
-        signal: providerCallSignal(input),
-        ...(input.summaryInstructions === undefined
-          ? {}
-          : { summaryInstructions: input.summaryInstructions }),
-      });
-    } catch (cause) {
-      return invalidRecord(input, classifySummaryFailure(cause), cause);
-    }
-    if (summary.length === 0) {
-      return invalidRecord(
-        input,
-        "protocol-failure",
-        `Summary model returned empty text at hop ${hopIndex + 1}.`
-      );
-    }
-
-    history.recordCompaction({
-      endSeqExclusive: range.endSeqExclusive,
-      schemaVersion: 1,
-      startSeq: range.startSeq,
-      summary: { content: summary, role: "system" },
-    });
-    hops.push({
-      endSeqExclusive,
-      prefixTokens: summaryInputTokens,
-      summaryTokens: estimateModelMessagesTokens([
-        compactionContextForModel({
-          endSeqExclusive,
-          role: "compaction",
-          startSeq: 0,
-          summary,
-        }),
-      ]),
-    });
-  }
-  const finalHop = hops.at(-1);
-  if (!finalHop) {
-    return invalidRecord(
-      input,
-      "protocol-failure",
-      "Fixture has no compaction hops."
+export function trialSummaryOutputTokenLimit(requested: number): number {
+  if (!Number.isSafeInteger(requested) || requested <= 0) {
+    throw new TypeError(
+      "Trial summary output limit must be a positive integer."
     );
   }
-  return { finalHop, hops };
+  return requested;
 }
 
-function providerCallSignal(input: TrialInput): AbortSignal {
-  return AbortSignal.timeout(
-    input.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS
-  );
+function assertNever(_value: never): never {
+  throw new TypeError("Unexpected trial execution status.");
 }
 
 function invalidRecord(
@@ -226,20 +163,4 @@ function invalidRecord(
     scenario: input.fixture.scenario,
     status,
   };
-}
-
-export function classifySummaryFailure(
-  cause: unknown
-): Exclude<TrialRecord["status"], "valid"> {
-  return cause instanceof CompactionSummaryNotSmallerError
-    ? "non-compressing-summary"
-    : "summary-provider-failure";
-}
-
-function toModelMessages(
-  context: readonly ThreadContextMessage[]
-): ModelMessage[] {
-  return context.map((message) =>
-    message.role === "compaction" ? compactionContextForModel(message) : message
-  );
 }

@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import type { ReportRole } from "./stability-comparison";
+import { runComparisonReportCli } from "./comparison-report-cli";
 import {
   evaluateStabilityComparison,
-  reportJsonInvalidFailure,
-  reportReadFailure,
   type StabilityGateDecision,
 } from "./stability-gates";
 
-const HELP = `Usage: pnpm compare -- BASELINE_SUMMARY CANDIDATE_SUMMARY
+const HELP = `Usage:
+  pnpm compare -- BASELINE_SUMMARY CANDIDATE_SUMMARY
+  pnpm compare -- --table COMPARISON_JSON
 
 Compare frozen baseline and candidate compaction TrialSummary JSON files.
-Exits 0 only when every stability gate passes.`;
+With --table, render a PSS vs pi-coding-agent Markdown report.`;
 
 interface ComparisonCliIo {
   readonly stderr: (text: string) => void;
@@ -23,8 +23,10 @@ interface LoadedReport {
   readonly value: unknown;
 }
 
+type ReportLoadFailure = "REPORT_JSON_INVALID" | "REPORT_READ_FAILED";
+
 interface UnloadedReport {
-  readonly decision: StabilityGateDecision;
+  readonly failure: ReportLoadFailure;
   readonly loaded: false;
 }
 
@@ -44,6 +46,9 @@ export async function runComparisonCli(
     io.stdout(`${HELP}\n`);
     return 0;
   }
+  if (positional[0] === "--table") {
+    return runComparisonReportCli(positional.slice(1), io);
+  }
   const baselinePath = positional[0];
   const candidatePath = positional[1];
   if (
@@ -54,14 +59,14 @@ export async function runComparisonCli(
     io.stderr(`${HELP}\n`);
     return 2;
   }
-  const baseline = await loadReport(baselinePath, "baseline");
+  const baseline = await loadReport(baselinePath);
   if (!baseline.loaded) {
-    writeDecision(io, baseline.decision);
+    io.stderr(`BASELINE_${baseline.failure}\n`);
     return 1;
   }
-  const candidate = await loadReport(candidatePath, "candidate");
+  const candidate = await loadReport(candidatePath);
   if (!candidate.loaded) {
-    writeDecision(io, candidate.decision);
+    io.stderr(`CANDIDATE_${candidate.failure}\n`);
     return 1;
   }
 
@@ -70,31 +75,24 @@ export async function runComparisonCli(
   return decision.passed ? 0 : 1;
 }
 
-async function loadReport(
-  path: string,
-  report: ReportRole
-): Promise<ReportLoad> {
+async function loadReport(path: string): Promise<ReportLoad> {
   let source: string;
   try {
     source = await readFile(path, "utf8");
   } catch {
-    return failedLoad(reportReadFailure(report, path));
+    return failedLoad("REPORT_READ_FAILED");
   }
 
   try {
-    return { loaded: true, value: JSON.parse(source) as unknown };
+    const value: unknown = JSON.parse(source);
+    return { loaded: true, value };
   } catch {
-    return failedLoad(reportJsonInvalidFailure(report, path));
+    return failedLoad("REPORT_JSON_INVALID");
   }
 }
 
-function failedLoad(
-  failure: StabilityGateDecision["failures"][number]
-): UnloadedReport {
-  return {
-    decision: { failures: [failure], passed: false },
-    loaded: false,
-  };
+function failedLoad(failure: ReportLoadFailure): UnloadedReport {
+  return { failure, loaded: false };
 }
 
 function writeDecision(io: ComparisonCliIo, decision: StabilityGateDecision) {

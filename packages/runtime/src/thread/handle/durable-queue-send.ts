@@ -24,7 +24,7 @@ import {
 } from "../runtime/live-input-ownership";
 import { startThreadQueueDrain } from "../runtime/notification";
 import type { ThreadEventDispatcher } from "../runtime/thread-event-dispatcher";
-import type { ThreadInputAdmissionReservation } from "../runtime/thread-input-admission-coordinator";
+import type { ThreadInputAdmissionOperation } from "../runtime/thread-input-admission-coordinator";
 
 export async function admitThreadSendInput({
   awaitBoundaries,
@@ -51,7 +51,7 @@ export async function admitThreadSendInput({
   readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
-  readonly reservation?: ThreadInputAdmissionReservation;
+  readonly reservation?: ThreadInputAdmissionOperation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<void> {
@@ -106,7 +106,7 @@ export async function createQueuedSendInput({
   readonly kind?: Exclude<ThreadInputKind, "steer">;
   readonly pendingOverlays: QueuedRuntimeInput[];
   readonly pendingRuntimeInputs: QueuedRuntimeInput[];
-  readonly reservation?: ThreadInputAdmissionReservation;
+  readonly reservation?: ThreadInputAdmissionOperation;
   readonly run: BufferedAgentTurn;
   readonly threadKey: string;
 }): Promise<QueuedSendInputResult> {

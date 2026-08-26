@@ -26,8 +26,9 @@ import {
 import {
   type AgentModelOptions,
   type AgentOptions,
-  assertAgentOptions,
   type CreateAgentOptions,
+  consumeAgentOptions,
+  snapshotAgentOptions,
 } from "./options";
 import {
   type AgentThreadEntry,
@@ -73,45 +74,45 @@ export class Agent {
   readonly host: AgentHost;
   readonly namespace?: string;
   constructor(options: AgentConstructorOptions) {
-    assertAgentOptions(options);
+    const validatedOptions = consumeAgentOptions(options);
 
-    const providedHost = options.host;
-    this.namespace = options.namespace;
+    const providedHost = validatedOptions.host;
+    this.namespace = validatedOptions.namespace;
     this.#ownerNamespace = stableAgentNamespace({
-      namespace: options.namespace,
+      namespace: validatedOptions.namespace,
     });
     this.#host = providedHost ?? createInMemoryHost();
     this.host = this.#host;
     this.#store = threadStoreForHost(this.#host);
     this.#instrumentations = normalizeAgentInstrumentations(
-      options.instrumentations
+      validatedOptions.instrumentations
     );
     this.#threadMigrations = normalizeThreadStateMigrations(
-      options.threadMigrations
+      validatedOptions.threadMigrations
     );
-    this.#hookRuntime = new AgentHookRuntime(options.hooks);
-    this.#notificationOverlays = options.notificationOverlays;
-    this.#compaction = options.compaction;
-    this.#contextTokens = options.contextTokens;
+    this.#hookRuntime = new AgentHookRuntime(validatedOptions.hooks);
+    this.#notificationOverlays = validatedOptions.notificationOverlays;
+    this.#compaction = validatedOptions.compaction;
+    this.#contextTokens = validatedOptions.contextTokens;
     this.#modelOptions = {
-      alwaysActiveTools: options.alwaysActiveTools,
+      alwaysActiveTools: validatedOptions.alwaysActiveTools,
       attachmentStore:
         providedHost?.attachmentStore ??
-        options.attachmentStore ??
+        validatedOptions.attachmentStore ??
         this.#host.attachmentStore,
-      contextGate: options.compaction?.maxInputTokens
+      contextGate: validatedOptions.compaction?.maxInputTokens
         ? {
-            ...options.compaction,
-            maxInputTokens: options.compaction.maxInputTokens,
+            ...validatedOptions.compaction,
+            maxInputTokens: validatedOptions.compaction.maxInputTokens,
           }
         : false,
       diagnostics: this.#host.diagnostics,
-      instructions: options.instructions,
-      model: options.model,
-      prepareModelStep: options.prepareModelStep,
-      toolChoice: options.toolChoice,
-      toolOrder: options.toolOrder,
-      tools: options.tools,
+      instructions: validatedOptions.instructions,
+      model: validatedOptions.model,
+      prepareModelStep: validatedOptions.prepareModelStep,
+      toolChoice: validatedOptions.toolChoice,
+      toolOrder: validatedOptions.toolOrder,
+      tools: validatedOptions.tools,
     };
   }
 
@@ -158,16 +159,20 @@ export class Agent {
   }
 
   async dispose(): Promise<void> {
+    let failed = false;
     let failure: unknown;
     for (const entry of [...this.#threads.values()]) {
-      try {
-        await entry.publicHandle.dispose();
-      } catch (error) {
-        failure ??= error;
+      const outcome = await entry.publicHandle.dispose().then(
+        () => ({ ok: true }) as const,
+        (error: unknown) => ({ error, ok: false }) as const
+      );
+      if (!(outcome.ok || failed)) {
+        failed = true;
+        failure = outcome.error;
       }
     }
     this.#threads.clear();
-    if (failure !== undefined) {
+    if (failed) {
       throw failure;
     }
   }
@@ -246,6 +251,6 @@ export class Agent {
 }
 
 export async function createAgent(options: CreateAgentOptions): Promise<Agent> {
-  assertAgentOptions(options);
-  return await new Agent(options);
+  const validatedOptions = snapshotAgentOptions(options);
+  return await new Agent(validatedOptions);
 }

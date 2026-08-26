@@ -30,7 +30,12 @@ export function categoryField(
   const knownCategory = QUESTION_CATEGORIES.find((known) => known === category);
   return (
     knownCategory ??
-    invalid(`${path}.category`, "known question category", category, report)
+    invalid(
+      `${path}.category`,
+      "known question category",
+      "unknown question category",
+      report
+    )
   );
 }
 
