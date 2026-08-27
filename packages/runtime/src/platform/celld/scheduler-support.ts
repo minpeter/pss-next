@@ -4,7 +4,10 @@ import {
   type ScheduledThreadPrompt,
 } from "../../execution/scheduled-work";
 import type { CloudflareDurableObjectStorage } from "../cloudflare/host/durable-object-host";
-import { withTransaction } from "../cloudflare/storage/durable-object/sql-access";
+import {
+  requiredSqlStorage,
+  withTransaction,
+} from "../cloudflare/storage/durable-object/sql-access";
 import {
   insertScheduledWorkInTransaction,
   selectNextScheduledWork,
@@ -82,8 +85,23 @@ export async function insertDueWorkAndArm<T>(
     if (transaction.setAlarm === undefined) {
       throw new Error("Celld storage transaction setAlarm() is required.");
     }
+    const sql = requiredSqlStorage(transaction, "Celld scheduled work alarm");
+    const persistedDueAt = ([RUN_KIND, THREAD_PROMPT_KIND] as const)
+      .flatMap((scheduledKind) => {
+        const row = sql
+          .exec<{ readonly due_at: number | null }>(
+            "SELECT due_at FROM pss_scheduled_work WHERE prefix = ? AND kind = ? AND due_at IS NOT NULL ORDER BY due_at, rowid LIMIT 1",
+            prefix,
+            scheduledKind
+          )
+          .toArray()[0];
+        return typeof row?.due_at === "number" ? [row.due_at] : [];
+      })
+      .reduce((earliest, value) => Math.min(earliest, value), dueAtMs);
     await transaction.setAlarm(
-      currentAlarm === null ? dueAtMs : Math.min(currentAlarm, dueAtMs)
+      currentAlarm === null
+        ? persistedDueAt
+        : Math.min(currentAlarm, persistedDueAt)
     );
   });
 }

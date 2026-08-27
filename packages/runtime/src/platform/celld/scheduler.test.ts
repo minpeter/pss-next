@@ -124,6 +124,17 @@ describe("Celld due-aware alarm HostScheduler", () => {
     expect(await storage.getAlarm()).toBe(0);
   });
 
+  it("restores an earlier persisted alarm on duplicate enqueue", async () => {
+    const storage = createAlarmCapableStorage();
+    const scheduler = createCelldScheduler({ clock: () => 0, storage });
+
+    await scheduler.enqueueRun("run-1", { runAfterMs: 1000 });
+    await storage.deleteAlarm();
+    await scheduler.enqueueRun("run-1", { runAfterMs: 4000 });
+
+    expect(await storage.getAlarm()).toBe(1000);
+  });
+
   it("rearms the next due item after ack", async () => {
     const storage = createAlarmCapableStorage();
     const scheduler = createCelldScheduler({ clock: () => 0, storage });
