@@ -1,3 +1,16 @@
+## @minpeter/pss-coding-agent@0.0.14-next.17 (next)
+
+### Bound automatic compaction blocking
+
+Enforce one deadline at the serialized store boundary, preserve compatible
+conflict tails, coalesce retries, and reuse only source-stable candidates.
+Bound diagnostics and add causal benchmark evidence.
+
+### Adopt the Pi TUI main-screen renderer
+
+Move the coding-agent TUI to Pi TUI's explicit main-screen renderer and use a
+stable muted color that stays readable in both light and dark terminals.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.16 (next)
 
 ### Harden built-in web, extension, and shell tool handling

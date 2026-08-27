@@ -1,3 +1,26 @@
+## @minpeter/pss-runtime@0.3.0-next.13 (next)
+
+### Bound automatic compaction blocking
+
+Enforce one deadline at the serialized store boundary, preserve compatible
+conflict tails, coalesce retries, and reuse only source-stable candidates.
+Bound diagnostics and add causal benchmark evidence.
+
+### TypeScript strictness
+
+Enforce `exactOptionalPropertyTypes` for the runtime OpenTelemetry subsystem and preserve absent optional OpenTelemetry fields instead of materializing `undefined`.
+
+### Detached compaction summaries outlive episode deadlines
+
+A compaction episode deadline now bounds only the caller's wait, not the
+provider work: an in-flight summary continues detached after
+`CompactionDeadlineExceededError`, installs as a fail-closed validated
+speculative candidate, and the next episode joins or promotes it without a
+second summary call. Detached calls are single-flight per thread, honour
+explicit summary signals, and carry a fixed 120s leak backstop
+(`DETACHED_SUMMARY_BACKSTOP_MS`). Slow models converge across episodes
+instead of restarting aborted summaries every episode.
+
 ## @minpeter/pss-runtime@0.3.0-next.12 (next)
 
 ### Carry the compaction budget as function properties
