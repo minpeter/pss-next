@@ -22,6 +22,7 @@ export interface MatrixResult {
   readonly duplicateCommits: 1;
   readonly malformedStatus: 400;
   readonly restartPreserved: boolean;
+  readonly retainedResponseSlots: number;
 }
 
 export async function runMatrix({
@@ -59,19 +60,19 @@ export async function runMatrix({
   }
 
   const objects = Array.from({ length: objectCount }, (_, index) => index);
-  const responses: { readonly reply: string }[] = [];
+  let completedObjects = 0;
   for (let offset = 0; offset < objects.length; offset += concurrency) {
     const batch = objects.slice(offset, offset + concurrency);
-    responses.push(
-      ...(await Promise.all(
-        batch.map((index) => call(fetchImpl, baseUrl, `object-${index}`))
-      ))
+    await Promise.all(
+      batch.map((index) => call(fetchImpl, baseUrl, `object-${index}`))
     );
+    completedObjects += batch.length;
   }
   return {
-    concurrentObjects: responses.length,
+    concurrentObjects: completedObjects,
     duplicateCommits: 1,
     malformedStatus: 400,
+    retainedResponseSlots: 0,
     restartPreserved,
   };
 }

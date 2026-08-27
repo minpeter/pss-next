@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 interface Report {
   readonly elapsedMs: number;
   readonly errors: number;
+  readonly retainedResponseSlots?: number;
 }
 
 interface CompareOptions {
@@ -22,12 +23,15 @@ export async function compareReports({
   const base = parseReport(await readFile(baseline, "utf8"));
   const next = parseReport(await readFile(candidate, "utf8"));
   const ratio = next.elapsedMs / base.elapsedMs - 1;
+  const baseSlots = base.retainedResponseSlots ?? 100;
+  const nextSlots = next.retainedResponseSlots ?? 100;
   return {
     passed:
       base.errors === 0 &&
       next.errors === 0 &&
       Number.isFinite(ratio) &&
-      ratio <= maxElapsedRegression,
+      ratio <= maxElapsedRegression &&
+      nextSlots < baseSlots,
     ratio,
   };
 }
@@ -44,11 +48,20 @@ function parseReport(text: string): Report {
   ) {
     throw new Error("invalid load report");
   }
-  return { elapsedMs: value.elapsedMs, errors: value.errors };
+  return {
+    elapsedMs: value.elapsedMs,
+    errors: value.errors,
+    ...("retainedResponseSlots" in value &&
+    typeof value.retainedResponseSlots === "number"
+      ? { retainedResponseSlots: value.retainedResponseSlots }
+      : {}),
+  };
 }
 
 if (import.meta.main) {
-  const [baseline, candidate, maxRegression] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const [baseline, candidate, maxRegression] =
+    args[0] === "--" ? args.slice(1) : args;
   if (baseline === undefined || candidate === undefined) {
     throw new Error("Usage: qa:compare <baseline.json> <candidate.json>");
   }

@@ -30,6 +30,7 @@ interface LoadReport {
   readonly errors: number;
   readonly openFiles: number;
   readonly result: Awaited<ReturnType<typeof runMatrix>>;
+  readonly retainedResponseSlots: number;
   readonly runnerCpuUserUs: number;
   readonly surface: "native";
 }
@@ -58,6 +59,7 @@ export async function runLoad({
     elapsedMs: performance.now() - started,
     errors: 0,
     openFiles: 0,
+    retainedResponseSlots: result.retainedResponseSlots,
     result,
     runnerCpuUserUs: process.resourceUsage().userCPUTime,
     surface: "native",
