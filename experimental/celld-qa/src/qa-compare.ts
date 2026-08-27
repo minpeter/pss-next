@@ -1,9 +1,14 @@
 import { readFile } from "node:fs/promises";
 
 interface Report {
+  readonly celldCpuSystemTicks: number;
+  readonly celldCpuUserTicks: number;
+  readonly cpuSystemUs: number;
   readonly elapsedMs: number;
   readonly errors: number;
-  readonly retainedResponseSlots?: number;
+  readonly maxRssBytes: number;
+  readonly retainedResponseSlots: number;
+  readonly runnerCpuUserUs: number;
 }
 
 interface CompareOptions {
@@ -23,15 +28,17 @@ export async function compareReports({
   const base = parseReport(await readFile(baseline, "utf8"));
   const next = parseReport(await readFile(candidate, "utf8"));
   const ratio = next.elapsedMs / base.elapsedMs - 1;
-  const baseSlots = base.retainedResponseSlots ?? 100;
-  const nextSlots = next.retainedResponseSlots ?? 100;
+  const baseSlots = base.retainedResponseSlots;
+  const nextSlots = next.retainedResponseSlots;
   return {
     passed:
       base.errors === 0 &&
       next.errors === 0 &&
       Number.isFinite(ratio) &&
       ratio <= maxElapsedRegression &&
-      nextSlots < baseSlots,
+      nextSlots < baseSlots &&
+      next.maxRssBytes <= base.maxRssBytes * 1.05 &&
+      next.celldCpuUserTicks <= base.celldCpuUserTicks * 1.05,
     ratio,
   };
 }
@@ -44,17 +51,32 @@ function parseReport(text: string): Report {
     !("elapsedMs" in value) ||
     typeof value.elapsedMs !== "number" ||
     !("errors" in value) ||
-    typeof value.errors !== "number"
+    typeof value.errors !== "number" ||
+    !("celldCpuSystemTicks" in value) ||
+    typeof value.celldCpuSystemTicks !== "number" ||
+    !("celldCpuUserTicks" in value) ||
+    typeof value.celldCpuUserTicks !== "number" ||
+    !("cpuSystemUs" in value) ||
+    typeof value.cpuSystemUs !== "number" ||
+    !("maxRssBytes" in value) ||
+    typeof value.maxRssBytes !== "number" ||
+    !("runnerCpuUserUs" in value) ||
+    typeof value.runnerCpuUserUs !== "number"
   ) {
     throw new Error("invalid load report");
   }
   return {
+    cpuSystemUs: value.cpuSystemUs,
     elapsedMs: value.elapsedMs,
     errors: value.errors,
+    celldCpuSystemTicks: value.celldCpuSystemTicks,
+    celldCpuUserTicks: value.celldCpuUserTicks,
+    maxRssBytes: value.maxRssBytes,
     ...("retainedResponseSlots" in value &&
     typeof value.retainedResponseSlots === "number"
       ? { retainedResponseSlots: value.retainedResponseSlots }
-      : {}),
+      : { retainedResponseSlots: 0 }),
+    runnerCpuUserUs: value.runnerCpuUserUs,
   };
 }
 

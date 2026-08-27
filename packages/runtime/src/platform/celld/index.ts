@@ -16,11 +16,18 @@ export {
 export {
   ackCelldScheduledRun,
   ackCelldScheduledThreadPrompt,
-  type CelldDurableObjectStorage,
-  type CelldScheduledWorkListOptions,
-  type CelldScheduler,
-  type CelldSchedulerOptions,
+  claimCelldScheduledRun,
+  claimCelldScheduledThreadPrompt,
   createCelldScheduler,
   listCelldScheduledRuns,
   listCelldScheduledThreadPrompts,
+  rearmCelldScheduledWork,
+  retryCelldScheduledRun,
+  retryCelldScheduledThreadPrompt,
 } from "./scheduler";
+export type {
+  CelldDurableObjectStorage,
+  CelldScheduledWorkListOptions,
+  CelldScheduler,
+  CelldSchedulerOptions,
+} from "./scheduler-support";

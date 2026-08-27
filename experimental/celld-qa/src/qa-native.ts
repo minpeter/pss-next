@@ -1,20 +1,13 @@
-import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { promisify } from "node:util";
-
-const execFile = promisify(execFileCallback);
-const CELLD = process.env.CELLD_BIN ?? `${process.env.HOME}/.local/bin/celld`;
-const ENDPOINT = process.env.S3_ENDPOINT ?? "http://127.0.0.1:14566";
-const BUCKET = process.env.CELLD_QA_BUCKET ?? "pss-celld-qa";
-const ESBUILD =
-  process.env.CELLD_ESBUILD ??
-  resolve(
-    import.meta.dirname,
-    "../../../node_modules/.pnpm/@esbuild+linux-x64@0.28.2/node_modules/@esbuild/linux-x64/bin/esbuild"
-  );
+import { join } from "node:path";
+import {
+  createBucket,
+  deploy,
+  startCelld,
+  stopCelld,
+  waitForListening,
+} from "./celld-process";
 
 interface QaOptions {
   readonly baseUrl: string;
@@ -83,39 +76,40 @@ async function callEcho(
   };
 }
 
+interface CliOptions {
+  readonly objectName: string;
+  readonly port: number;
+  readonly text: string;
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const port = options.port;
   const runId = randomUUID().slice(0, 8);
   const prefix = `qa-${runId}`;
   const watch = await mkdtemp(join("/var/tmp", "pss-celld-qa-"));
-  let child: ReturnType<typeof spawn> | undefined;
+  let child: ReturnType<typeof startCelld> | undefined;
   try {
     await createBucket();
     await deploy(prefix);
-    child = spawnCelld(prefix, port, watch);
+    child = startCelld("native", prefix, options.port, watch);
     await waitForListening(child);
     const result = await runNativeQa({
-      baseUrl: `http://127.0.0.1:${port}`,
+      baseUrl: `http://127.0.0.1:${options.port}`,
       objectName: options.objectName,
       text: options.text,
     });
     console.log(JSON.stringify({ ...result, ok: true, surface: "native" }));
   } finally {
     if (child !== undefined) {
-      await stop(child);
+      await stopCelld(child);
     }
     await rm(watch, { force: true, recursive: true });
   }
 }
 
-function parseArgs(argv: readonly string[]): {
-  readonly objectName: string;
-  readonly port: number;
-  readonly text: string;
-} {
-  const values = new Map<string, string>();
+function parseArgs(argv: readonly string[]): CliOptions {
   const args = argv[0] === "--" ? argv.slice(1) : argv;
+  const values = new Map<string, string>();
   for (let index = 0; index < args.length; index += 2) {
     const key = args[index];
     const value = args[index + 1];
@@ -135,88 +129,6 @@ function parseArgs(argv: readonly string[]): {
     throw new Error("Invalid native QA arguments.");
   }
   return { objectName, port, text };
-}
-
-async function createBucket(): Promise<void> {
-  const response = await fetch(`${ENDPOINT}/${BUCKET}`, { method: "PUT" });
-  if (!(response.ok || response.status === 409)) {
-    throw new Error(`bucket creation failed: ${response.status}`);
-  }
-}
-
-async function deploy(prefix: string): Promise<void> {
-  if (!existsSync(ESBUILD)) {
-    throw new Error(`esbuild not found: ${ESBUILD}`);
-  }
-  await execFile(
-    CELLD,
-    [
-      "deploy",
-      resolve(import.meta.dirname, "../worker"),
-      "--bucket",
-      `s3://${BUCKET}/${prefix}`,
-      "--endpoint",
-      ENDPOINT,
-      "--region",
-      "us-east-1",
-    ],
-    {
-      env: { ...process.env, CELLD_ESBUILD: ESBUILD, TMPDIR: "/var/tmp" },
-    }
-  );
-}
-
-function spawnCelld(
-  prefix: string,
-  port: number,
-  watch: string
-): ReturnType<typeof spawn> {
-  return spawn(
-    CELLD,
-    [
-      "--bucket",
-      `s3://${BUCKET}/${prefix}`,
-      "--endpoint",
-      ENDPOINT,
-      "--region",
-      "us-east-1",
-      "--listen",
-      `127.0.0.1:${port}`,
-      "--internal-listen",
-      "127.0.0.1:0",
-    ],
-    {
-      env: { ...process.env, CELLD_WATCH: watch },
-      stdio: ["ignore", "pipe", "pipe"],
-    }
-  );
-}
-
-function waitForListening(child: ReturnType<typeof spawn>): Promise<void> {
-  return new Promise((resolveReady, reject) => {
-    const onData = (chunk: Buffer): void => {
-      if (chunk.toString("utf8").includes("celld listening on")) {
-        child.stdout?.off("data", onData);
-        resolveReady();
-      }
-    };
-    child.stdout?.on("data", onData);
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      reject(new Error(`Celld exited before readiness: ${code}`));
-    });
-  });
-}
-
-async function stop(child: ReturnType<typeof spawn>): Promise<void> {
-  if (child.exitCode !== null) {
-    return;
-  }
-  const exited = new Promise<void>((resolveExit) =>
-    child.once("exit", () => resolveExit())
-  );
-  child.kill("SIGTERM");
-  await exited;
 }
 
 if (import.meta.main) {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   createBucket,
   deploy,
@@ -14,14 +15,12 @@ interface MatrixOptions {
   readonly concurrency: number;
   readonly fetchImpl?: typeof fetch;
   readonly objectCount: number;
-  readonly restartPreserved?: boolean;
 }
 
 export interface MatrixResult {
   readonly concurrentObjects: number;
-  readonly duplicateCommits: 1;
-  readonly malformedStatus: 400;
-  readonly restartPreserved: boolean;
+  readonly duplicateCommits: number;
+  readonly malformedStatus: number;
   readonly retainedResponseSlots: number;
 }
 
@@ -30,7 +29,6 @@ export async function runMatrix({
   concurrency,
   fetchImpl = fetch,
   objectCount,
-  restartPreserved = false,
 }: MatrixOptions): Promise<MatrixResult> {
   if (!(Number.isInteger(objectCount) && objectCount > 0)) {
     throw new Error("objectCount must be positive.");
@@ -54,26 +52,32 @@ export async function runMatrix({
   ]);
   if (
     duplicate[0]?.historyCount !== duplicate[1]?.historyCount ||
-    duplicate[0]?.reply !== duplicate[1]?.reply
+    duplicate[0]?.reply !== duplicate[1]?.reply ||
+    duplicate[0]?.commitCount !== 1 ||
+    duplicate[1]?.commitCount !== 1
   ) {
     throw new Error("duplicate idempotency did not converge");
   }
 
   const objects = Array.from({ length: objectCount }, (_, index) => index);
   let completedObjects = 0;
+  const retainedResponses: { readonly reply: string }[] = [];
+  const retainResponses = process.env.CELLD_QA_RETENTION_MODE === "legacy";
   for (let offset = 0; offset < objects.length; offset += concurrency) {
     const batch = objects.slice(offset, offset + concurrency);
-    await Promise.all(
+    const responses = await Promise.all(
       batch.map((index) => call(fetchImpl, baseUrl, `object-${index}`))
     );
+    if (retainResponses) {
+      retainedResponses.push(...responses);
+    }
     completedObjects += batch.length;
   }
   return {
     concurrentObjects: completedObjects,
-    duplicateCommits: 1,
-    malformedStatus: 400,
-    retainedResponseSlots: 0,
-    restartPreserved,
+    duplicateCommits: duplicate[0]?.commitCount ?? 0,
+    malformedStatus: malformed.status,
+    retainedResponseSlots: retainedResponses.length,
   };
 }
 
@@ -87,6 +91,7 @@ interface CliOptions {
 
 interface SurfaceReport extends MatrixResult {
   readonly port: number;
+  readonly restartPreserved: boolean;
   readonly surface: "container" | "native";
 }
 
@@ -98,11 +103,12 @@ async function main(): Promise<void> {
     { kind: "container" as const, port: options.containerPort },
   ]) {
     const prefix = `matrix-${surface.kind}-${randomUUID().slice(0, 8)}`;
-    const watch = `/var/tmp/pss-celld-${surface.kind}-${randomUUID()}`;
-    await createBucket();
-    await deploy(prefix);
-    let child = startCelld(surface.kind, prefix, surface.port, watch);
+    const watch = await mkdtemp(join("/var/tmp", `pss-celld-${surface.kind}-`));
+    let child: ReturnType<typeof startCelld> | undefined;
     try {
+      await createBucket();
+      await deploy(prefix);
+      child = startCelld(surface.kind, prefix, surface.port, watch);
       await waitForListening(child);
       const beforeRestart = await call(
         fetch,
@@ -131,11 +137,18 @@ async function main(): Promise<void> {
         baseUrl: `http://127.0.0.1:${surface.port}`,
         concurrency: options.concurrency,
         objectCount: options.objectCount,
-        restartPreserved: true,
       });
-      reports.push({ ...report, port: surface.port, surface: surface.kind });
+      reports.push({
+        ...report,
+        port: surface.port,
+        restartPreserved: afterRestart.historyCount === 2,
+        surface: surface.kind,
+      });
     } finally {
-      await stopCelld(child);
+      if (child !== undefined) {
+        await stopCelld(child);
+      }
+      await rm(watch, { force: true, recursive: true });
     }
   }
   const output = { ok: true, reports, surface: "matrix" };
@@ -178,7 +191,11 @@ async function call(
   baseUrl: string,
   objectName: string,
   idempotencyKey?: string
-): Promise<{ readonly historyCount: number; readonly reply: string }> {
+): Promise<{
+  readonly commitCount: number;
+  readonly historyCount: number;
+  readonly reply: string;
+}> {
   const response = await fetchImpl(
     `${baseUrl}/?object=${encodeURIComponent(objectName)}`,
     {
@@ -197,12 +214,18 @@ async function call(
     payload === null ||
     !("historyCount" in payload) ||
     typeof payload.historyCount !== "number" ||
+    !("commitCount" in payload) ||
+    typeof payload.commitCount !== "number" ||
     !("reply" in payload) ||
     typeof payload.reply !== "string"
   ) {
     throw new Error(`matrix call failed: ${response.status}`);
   }
-  return { historyCount: payload.historyCount, reply: payload.reply };
+  return {
+    commitCount: payload.commitCount,
+    historyCount: payload.historyCount,
+    reply: payload.reply,
+  };
 }
 
 if (import.meta.main) {

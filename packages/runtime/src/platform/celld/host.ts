@@ -1,11 +1,11 @@
 import type { AgentHost } from "../../execution";
 import type { ThreadStore } from "../../thread/store/types";
-import { createCloudflareStorageHost } from "../cloudflare";
-import {
-  type CelldDurableObjectStorage,
-  type CelldScheduler,
-  createCelldScheduler,
-} from "./scheduler";
+import { createCloudflareStorageHost } from "../cloudflare/host/durable-object-host";
+import { createCelldScheduler } from "./scheduler";
+import type {
+  CelldDurableObjectStorage,
+  CelldScheduler,
+} from "./scheduler-support";
 
 export interface CelldDurableObjectState {
   readonly storage: CelldDurableObjectStorage;

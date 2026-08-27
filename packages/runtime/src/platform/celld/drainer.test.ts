@@ -44,8 +44,38 @@ describe("drainCelldScheduledWork", () => {
 
     expect(result.skippedRuns).toEqual(["run-1"]);
     await expect(
-      listCelldScheduledRuns(storage, { nowMs: 0 })
+      listCelldScheduledRuns(storage, { nowMs: Date.now() + 1000 })
     ).resolves.toEqual(["run-1"]);
+    await expect(storage.getAlarm()).resolves.toBeGreaterThan(Date.now());
+  });
+
+  it("claims a scheduled run before only one concurrent drain resumes it", async () => {
+    const storage = createStorage();
+    const scheduler = createCelldScheduler({ clock: () => 0, storage });
+    await scheduler.enqueueRun("run-1");
+    let resumes = 0;
+    const agent = createAgent({
+      run: turn([{ type: "turn-end" }]),
+      resume: () => {
+        resumes += 1;
+        return Promise.resolve(turn([{ type: "turn-end" }]));
+      },
+    });
+
+    await Promise.all([
+      drainCelldScheduledWork({
+        agentForRun: () => agent,
+        nowMs: 0,
+        storage,
+      }),
+      drainCelldScheduledWork({
+        agentForRun: () => agent,
+        nowMs: 0,
+        storage,
+      }),
+    ]);
+
+    expect(resumes).toBe(1);
   });
 
   it("acknowledges terminal and missing null resumes", async () => {
@@ -71,9 +101,11 @@ describe("drainCelldScheduledWork", () => {
 function createAgent({
   record = null,
   run,
+  resume,
 }: {
   readonly record?: TurnRecord | null;
   readonly run: AgentTurn | null;
+  readonly resume?: () => Promise<AgentTurn | null>;
 }): CelldScheduledWorkAgent {
   return {
     host: {
@@ -83,7 +115,7 @@ function createAgent({
         },
       },
     },
-    resume: () => Promise.resolve(run),
+    resume: resume ?? (() => Promise.resolve(run)),
   };
 }
 
