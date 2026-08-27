@@ -40,6 +40,11 @@
       "@minpeter/pss-source": "./src/platform/file/index.ts",
       "import": "./dist/platform/file/index.js"
     },
+    "./platform/celld": {
+      "types": "./dist/platform/celld/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/celld/index.ts",
+      "import": "./dist/platform/celld/index.js"
+    },
     "./execution": {
       "types": "./dist/execution/index.d.ts",
       "@minpeter/pss-source": "./src/execution/index.ts",

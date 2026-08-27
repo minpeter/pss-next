@@ -16,6 +16,8 @@ import { hasScheduledWorkColumn } from "./scheduled-work-table-schema";
 export type ScheduledWorkKind =
   | "agents-run"
   | "agents-thread-prompt"
+  | "celld-run"
+  | "celld-thread-prompt"
   | SharedScheduledWorkKind;
 
 export interface ScheduledWorkRow {
