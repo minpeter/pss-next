@@ -243,8 +243,6 @@ function selectScheduledWorkRows(
       return { work_id: row.work_id };
     }
     return {
-      claimed_until: row.claimed_until,
-      claim_token: row.claim_token,
       payload: row.payload,
       run_id: row.run_id,
       thread_key: row.thread_key,

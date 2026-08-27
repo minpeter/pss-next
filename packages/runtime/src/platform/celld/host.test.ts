@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeAgentHostFaultContract } from "../../contracts/agent-host-fault-contract";
-import { InMemoryCloudflareDurableObjectStorage } from "../cloudflare/host/durable-object-host";
+import { createCelldTestStorage } from "./celld-test-storage";
 import { createCelldHost } from "./host";
 
 let hostPrefix = 0;
@@ -35,33 +35,36 @@ describe("createCelldHost", () => {
 
     expect(host.scheduler).toBeDefined();
   });
+
+  it("reconciles persisted scheduled work during activation", async () => {
+    const state = createState();
+    state.storage.sql.exec(
+      "INSERT INTO pss_scheduled_work (prefix, kind, work_id, payload, thread_key, run_id, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "pss-runtime",
+      "celld-run",
+      "orphaned",
+      JSON.stringify({ dueAtMs: 42, value: "orphaned" }),
+      null,
+      "orphaned",
+      42,
+      42
+    );
+
+    createCelldHost({ clock: () => 42, state });
+    await Promise.all(state.waits);
+
+    await expect(state.storage.getAlarm()).resolves.toBe(42);
+  });
 });
 
 function createState() {
-  const inner = new InMemoryCloudflareDurableObjectStorage();
-  let alarmTime: number | null = null;
-  const storage = {
-    delete: (key: string) => inner.delete(key),
-    deleteAlarm: () => {
-      alarmTime = null;
-      return Promise.resolve();
-    },
-    get: <T>(key: string) => inner.get<T>(key),
-    getAlarm: () => Promise.resolve(alarmTime),
-    put: <T>(key: string, value: T) => inner.put(key, value),
-    setAlarm: async (scheduledTime: Date | number) => {
-      alarmTime =
-        typeof scheduledTime === "number"
-          ? scheduledTime
-          : scheduledTime.getTime();
-      await inner.setAlarm(scheduledTime);
-    },
-    sql: inner.sql,
-    transaction: inner.transaction.bind(inner),
-    transactionSync: inner.transactionSync.bind(inner),
-  };
+  const storage = createCelldTestStorage();
+  const waits: Promise<unknown>[] = [];
   return {
     storage,
-    waitUntil: (_promise: Promise<unknown>): void => undefined,
+    waits,
+    waitUntil: (promise: Promise<unknown>): void => {
+      waits.push(promise);
+    },
   };
 }

@@ -10,7 +10,7 @@ import type { CelldDurableObjectStorage } from "./scheduler-support";
 import {
   armNextAlarm,
   DEFAULT_PREFIX,
-  insertDueWork,
+  insertDueWorkAndArm,
   RUN_KIND,
   serialize,
   THREAD_PROMPT_KIND,
@@ -86,7 +86,7 @@ export function retryCelldScheduledRun(
   const nowMs = options.nowMs ?? Date.now();
   return serialize(storage, async () => {
     if (options.claimToken === undefined) {
-      await insertDueWork(
+      await insertDueWorkAndArm(
         storage,
         prefix,
         RUN_KIND,
@@ -118,7 +118,7 @@ export function retryCelldScheduledThreadPrompt(
   const nowMs = options.nowMs ?? Date.now();
   return serialize(storage, async () => {
     if (options.claimToken === undefined) {
-      await insertDueWork(
+      await insertDueWorkAndArm(
         storage,
         prefix,
         THREAD_PROMPT_KIND,

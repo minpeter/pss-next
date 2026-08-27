@@ -4,30 +4,45 @@ import {
   drainCelldScheduledWork,
 } from "@minpeter/pss-runtime/platform/celld";
 
+/** @typedef {Parameters<typeof createCelldHost>[0]["state"]} CelldState */
+/** @typedef {{ text: string, idempotencyKey?: string }} EchoPayload */
+/** @typedef {{ commitCount: number, historyCount: number, ok: true, reply: string }} EchoResult */
+/** @typedef {{ status: "committed", result: EchoResult } | { status: "pending" } | { status: "reserved" }} Reservation */
+
+/** @type {Parameters<typeof createAgent>[0]["model"]} */
 const model = {
   doGenerate: async ({ prompt }) => ({
     content: [{ text: `echo:${lastUserText(prompt)}`, type: "text" }],
     finishReason: { raw: "stop", unified: "stop" },
     usage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      reasoningTokens: 0,
-      totalTokens: 0,
+      inputTokens: {
+        cacheRead: 0,
+        cacheWrite: 0,
+        noCache: 0,
+        total: 0,
+      },
+      outputTokens: { reasoning: 0, text: 0, total: 0 },
     },
     warnings: [],
   }),
   modelId: "celld-echo",
   provider: "pss-celld-qa",
   specificationVersion: "v4",
+  supportedUrls: {},
+  doStream: async ({ prompt }) => ({
+    stream: echoStream(lastUserText(prompt)),
+  }),
 };
 
 export class Echo {
+  /** @param {CelldState} state */
   constructor(state) {
     this.state = state;
     this.agentPromise = undefined;
     this.idempotency = new Map();
   }
 
+  /** @param {Request} request */
   async fetch(request) {
     let payload;
     try {
@@ -70,6 +85,10 @@ export class Echo {
     }
   }
 
+  /**
+   * @param {EchoPayload} payload
+   * @param {string | undefined} key
+   */
   async process(payload, key) {
     if (key !== undefined) {
       const reservation = await reserve(this.state.storage, key);
@@ -116,6 +135,10 @@ export class Echo {
 }
 
 export default {
+  /**
+   * @param {Request} request
+   * @param {{ ECHO: { idFromName(name: string): unknown, get(id: unknown): { fetch(request: Request): Promise<Response> } } }} env
+   */
   fetch(request, env) {
     const url = new URL(request.url);
     const objectName = url.searchParams.get("object") || "pss-smoke";
@@ -123,20 +146,39 @@ export default {
   },
 };
 
+/** @param {readonly unknown[]} prompt */
 function lastUserText(prompt) {
   const message = prompt.at(-1);
-  if (message === undefined || message.role !== "user") {
+  if (
+    typeof message !== "object" ||
+    message === null ||
+    !("role" in message) ||
+    message.role !== "user" ||
+    !("content" in message)
+  ) {
     return "";
   }
   if (typeof message.content === "string") {
     return message.content;
   }
+  if (!Array.isArray(message.content)) {
+    return "";
+  }
   const part = message.content.find((item) => item.type === "text");
-  return part?.text ?? "";
+  return typeof part?.text === "string" ? part.text : "";
 }
 
+/**
+ * @param {CelldState["storage"]} storage
+ * @param {string} key
+ * @returns {Promise<Reservation>}
+ */
 async function reserve(storage, key) {
+  if (storage.transaction === undefined) {
+    throw new Error("Celld storage transaction() is required.");
+  }
   return await storage.transaction(async (transaction) => {
+    /** @type {Reservation | undefined} */
     const existing = await transaction.get(key);
     if (existing !== undefined) {
       return existing;
@@ -147,10 +189,22 @@ async function reserve(storage, key) {
   });
 }
 
+/**
+ * @param {CelldState["storage"]} storage
+ * @param {string | undefined} key
+ * @param {string} reply
+ * @returns {Promise<EchoResult>}
+ */
 async function commit(storage, key, reply) {
+  if (storage.transaction === undefined) {
+    throw new Error("Celld storage transaction() is required.");
+  }
   return await storage.transaction(async (transaction) => {
-    const historyCount = ((await transaction.get("historyCount")) ?? 0) + 1;
-    const commitCount = ((await transaction.get("commitCount")) ?? 0) + 1;
+    const historyCount =
+      numericStorageValue(await transaction.get("historyCount")) + 1;
+    const commitCount =
+      numericStorageValue(await transaction.get("commitCount")) + 1;
+    /** @type {EchoResult} */
     const result = { commitCount, historyCount, ok: true, reply };
     await transaction.put("commitCount", commitCount);
     await transaction.put("historyCount", historyCount);
@@ -158,5 +212,37 @@ async function commit(storage, key, reply) {
       await transaction.put(key, { result, status: "committed" });
     }
     return result;
+  });
+}
+
+/** @param {unknown} value */
+function numericStorageValue(value) {
+  return typeof value === "number" ? value : 0;
+}
+
+/** @param {string} text */
+function echoStream(text) {
+  return new ReadableStream({
+    start(controller) {
+      const id = "echo";
+      controller.enqueue({ type: "stream-start", warnings: [] });
+      controller.enqueue({ id, type: "text-start" });
+      controller.enqueue({ delta: `echo:${text}`, id, type: "text-delta" });
+      controller.enqueue({ id, type: "text-end" });
+      controller.enqueue({
+        finishReason: { raw: "stop", unified: "stop" },
+        type: "finish",
+        usage: {
+          inputTokens: {
+            cacheRead: 0,
+            cacheWrite: 0,
+            noCache: 0,
+            total: 0,
+          },
+          outputTokens: { reasoning: 0, text: 0, total: 0 },
+        },
+      });
+      controller.close();
+    },
   });
 }

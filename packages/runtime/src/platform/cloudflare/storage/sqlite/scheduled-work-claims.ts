@@ -24,13 +24,14 @@ export async function claimScheduledWorkLease(
   leaseMs = SCHEDULED_WORK_LEASE_MS
 ): Promise<string | undefined> {
   const token = crypto.randomUUID();
-  return await withTransaction(storage, (tx) => {
+  return await withTransaction(storage, async (tx) => {
     const sql = requiredClaimSql(tx);
     ensureScheduledWorkSchema(sql);
     const leaseUntil = nowMs + Math.max(1, Math.floor(leaseMs));
     sql.exec(
-      "UPDATE pss_scheduled_work SET claim_token = ?, claimed_until = ? WHERE prefix = ? AND kind = ? AND work_id = ? AND (claimed_until IS NULL OR claimed_until <= ?)",
+      "UPDATE pss_scheduled_work SET claim_token = ?, claimed_until = ?, due_at = ? WHERE prefix = ? AND kind = ? AND work_id = ? AND (claimed_until IS NULL OR claimed_until <= ?)",
       token,
+      leaseUntil,
       leaseUntil,
       prefix,
       kind,
@@ -45,7 +46,11 @@ export async function claimScheduledWorkLease(
         workId
       )
       .toArray()[0]?.claim_token;
-    return Promise.resolve(claimed === token ? token : undefined);
+    if (claimed !== token) {
+      return;
+    }
+    await armScheduledWorkTransaction(tx, sql, prefix);
+    return token;
   });
 }
 
@@ -57,7 +62,7 @@ export async function releaseScheduledWorkLease(
   claimToken: string,
   dueAtMs: number
 ): Promise<boolean> {
-  return await withTransaction(storage, (tx) => {
+  return await withTransaction(storage, async (tx) => {
     const sql = requiredClaimSql(tx);
     ensureScheduledWorkSchema(sql);
     const payload = sql
@@ -70,20 +75,20 @@ export async function releaseScheduledWorkLease(
       )
       .toArray()[0]?.payload;
     if (payload === undefined) {
-      return Promise.resolve(false);
+      return false;
     }
     sql.exec(
-      "UPDATE pss_scheduled_work SET claim_token = NULL, claimed_until = NULL, payload = ?, created_at = ? WHERE prefix = ? AND kind = ? AND work_id = ? AND claim_token = ?",
+      "UPDATE pss_scheduled_work SET claim_token = NULL, claimed_until = NULL, payload = ?, due_at = ?, created_at = ? WHERE prefix = ? AND kind = ? AND work_id = ? AND claim_token = ?",
       withDueAt(payload, dueAtMs),
+      dueAtMs,
       dueAtMs,
       prefix,
       kind,
       workId,
       claimToken
     );
-    return Promise.resolve(
-      hasClaim(sql, prefix, kind, workId, claimToken) === false
-    );
+    await armScheduledWorkTransaction(tx, sql, prefix);
+    return true;
   });
 }
 
@@ -105,9 +110,12 @@ export async function ackScheduledWorkLease(
   workId: string,
   claimToken: string
 ): Promise<boolean> {
-  return await withTransaction(storage, (tx) => {
+  return await withTransaction(storage, async (tx) => {
     const sql = requiredClaimSql(tx);
     ensureScheduledWorkSchema(sql);
+    if (!hasClaim(sql, prefix, kind, workId, claimToken)) {
+      return false;
+    }
     sql.exec(
       "DELETE FROM pss_scheduled_work WHERE prefix = ? AND kind = ? AND work_id = ? AND claim_token = ?",
       prefix,
@@ -115,10 +123,43 @@ export async function ackScheduledWorkLease(
       workId,
       claimToken
     );
-    return Promise.resolve(
-      hasClaim(sql, prefix, kind, workId, claimToken) === false
-    );
+    await armScheduledWorkTransaction(tx, sql, prefix);
+    return true;
   });
+}
+
+async function armScheduledWorkTransaction(
+  storage: CloudflareDurableObjectTransactionStorage,
+  sql: SqlStorage,
+  prefix: string
+): Promise<void> {
+  const next = earliestScheduledAt(sql, prefix);
+  if (next === undefined) {
+    return;
+  }
+  if (storage.setAlarm === undefined) {
+    throw new Error("Celld storage transaction setAlarm() is required.");
+  }
+  await storage.setAlarm(next);
+}
+
+function earliestScheduledAt(
+  sql: SqlStorage,
+  prefix: string
+): number | undefined {
+  const times = (["celld-run", "celld-thread-prompt"] as const).flatMap(
+    (kind) => {
+      const row = sql
+        .exec<ScheduledWorkRow>(
+          "SELECT due_at FROM pss_scheduled_work WHERE prefix = ? AND kind = ? AND due_at IS NOT NULL ORDER BY due_at, rowid LIMIT 1",
+          prefix,
+          kind
+        )
+        .toArray()[0];
+      return typeof row?.due_at === "number" ? [row.due_at] : [];
+    }
+  );
+  return times.length === 0 ? undefined : Math.min(...times);
 }
 
 function hasClaim(

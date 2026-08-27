@@ -111,6 +111,7 @@ export interface ScheduledWorkRow {
   claim_token: string | null;
   claimed_until: number | null;
   created_at: number;
+  due_at: number | null;
   readonly kind: string;
   payload: string;
   readonly prefix: string;

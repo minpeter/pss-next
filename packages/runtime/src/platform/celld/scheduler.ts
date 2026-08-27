@@ -7,9 +7,8 @@ import type {
   CelldSchedulerOptions,
 } from "./scheduler-support";
 import {
-  armNextAlarm,
   DEFAULT_PREFIX,
-  insertDueWork,
+  insertDueWorkAndArm,
   listDueWork,
   parseThreadPrompt,
   RUN_KIND,
@@ -27,10 +26,15 @@ export function createCelldScheduler({
       serialize(storage, async () => {
         const dueAtMs =
           clock() + Math.max(0, Math.floor(options.runAfterMs ?? 0));
-        await insertDueWork(storage, prefix, RUN_KIND, runId, runId, dueAtMs, {
+        await insertDueWorkAndArm(
+          storage,
+          prefix,
+          RUN_KIND,
           runId,
-        });
-        await armNextAlarm(storage, prefix, clock());
+          runId,
+          dueAtMs,
+          { runId }
+        );
       }),
     resumeThread: (threadKey, options) =>
       serialize(storage, async () => {
@@ -40,7 +44,7 @@ export function createCelldScheduler({
           runId: options.runId,
           threadKey,
         };
-        await insertDueWork(
+        await insertDueWorkAndArm(
           storage,
           prefix,
           THREAD_PROMPT_KIND,
@@ -49,7 +53,6 @@ export function createCelldScheduler({
           clock(),
           { runId: options.runId, threadKey }
         );
-        await armNextAlarm(storage, prefix, clock());
       }),
     storage,
   };
@@ -59,7 +62,7 @@ export function listCelldScheduledRuns(
   storage: CelldDurableObjectStorage,
   options: CelldScheduledWorkListOptions = {}
 ): Promise<readonly string[]> {
-  return Promise.resolve(
+  return Promise.resolve().then(() =>
     listDueWork(storage, RUN_KIND, options, (value) =>
       typeof value === "string" ? value : undefined
     )
@@ -70,7 +73,7 @@ export function listCelldScheduledThreadPrompts(
   storage: CelldDurableObjectStorage,
   options: CelldScheduledWorkListOptions = {}
 ): Promise<readonly ScheduledThreadPrompt[]> {
-  return Promise.resolve(
+  return Promise.resolve().then(() =>
     listDueWork(storage, THREAD_PROMPT_KIND, options, parseThreadPrompt)
   );
 }

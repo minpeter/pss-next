@@ -10,6 +10,7 @@ import {
   stopCelld,
   waitForListening,
 } from "./celld-process";
+import { callEcho } from "./qa-http";
 
 interface MatrixOptions {
   readonly baseUrl: string;
@@ -57,8 +58,8 @@ export async function runMatrix({
 
   const duplicateKey = `duplicate-${Date.now()}`;
   const duplicate = await Promise.all([
-    call(fetchImpl, baseUrl, "duplicate-object", duplicateKey),
-    call(fetchImpl, baseUrl, "duplicate-object", duplicateKey),
+    callEcho(fetchImpl, baseUrl, "duplicate-object", duplicateKey),
+    callEcho(fetchImpl, baseUrl, "duplicate-object", duplicateKey),
   ]);
   if (
     duplicate[0]?.historyCount !== duplicate[1]?.historyCount ||
@@ -77,8 +78,15 @@ export async function runMatrix({
   for (let offset = 0; offset < objects.length; offset += concurrency) {
     const batch = objects.slice(offset, offset + concurrency);
     const responses = await Promise.all(
-      batch.map((index) => call(fetchImpl, baseUrl, `object-${index}`))
+      batch.map((index) => callEcho(fetchImpl, baseUrl, `object-${index}`))
     );
+    if (
+      responses.some(
+        (response) => response.historyCount !== 1 || response.commitCount !== 1
+      )
+    ) {
+      throw new Error("concurrent objects did not preserve isolation");
+    }
     if (retainResponses) {
       retainedResponses.push(...responses);
       retainedResponseBytes += Buffer.byteLength(JSON.stringify(responses));
@@ -123,13 +131,13 @@ async function main(): Promise<void> {
       await deploy(prefix);
       child = startCelld(surface.kind, prefix, surface.port, watch);
       await waitForListening(child);
-      const idempotentBeforeRestart = await call(
+      const idempotentBeforeRestart = await callEcho(
         fetch,
         `http://127.0.0.1:${surface.port}`,
         "restart-idempotency",
         "restart-key"
       );
-      const beforeRestart = await call(
+      const beforeRestart = await callEcho(
         fetch,
         `http://127.0.0.1:${surface.port}`,
         "restart-object"
@@ -144,7 +152,7 @@ async function main(): Promise<void> {
         watch,
         child
       );
-      const afterRestart = await call(
+      const afterRestart = await callEcho(
         fetch,
         `http://127.0.0.1:${surface.port}`,
         "restart-object"
@@ -152,7 +160,7 @@ async function main(): Promise<void> {
       if (afterRestart.historyCount !== 2) {
         throw new Error("restart probe did not preserve state");
       }
-      const idempotentAfterRestart = await call(
+      const idempotentAfterRestart = await callEcho(
         fetch,
         `http://127.0.0.1:${surface.port}`,
         "restart-idempotency",
@@ -220,48 +228,6 @@ function parseArgs(argv: readonly string[]): CliOptions {
     throw new Error("Invalid matrix arguments.");
   }
   return { concurrency, containerPort, nativePort, objectCount, report };
-}
-
-async function call(
-  fetchImpl: typeof fetch,
-  baseUrl: string,
-  objectName: string,
-  idempotencyKey?: string
-): Promise<{
-  readonly commitCount: number;
-  readonly historyCount: number;
-  readonly reply: string;
-}> {
-  const response = await fetchImpl(
-    `${baseUrl}/?object=${encodeURIComponent(objectName)}`,
-    {
-      body: JSON.stringify({
-        ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
-        text: "hello",
-      }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    }
-  );
-  const payload: unknown = await response.json();
-  if (
-    !response.ok ||
-    typeof payload !== "object" ||
-    payload === null ||
-    !("historyCount" in payload) ||
-    typeof payload.historyCount !== "number" ||
-    !("commitCount" in payload) ||
-    typeof payload.commitCount !== "number" ||
-    !("reply" in payload) ||
-    typeof payload.reply !== "string"
-  ) {
-    throw new Error(`matrix call failed: ${response.status}`);
-  }
-  return {
-    commitCount: payload.commitCount,
-    historyCount: payload.historyCount,
-    reply: payload.reply,
-  };
 }
 
 if (import.meta.main) {

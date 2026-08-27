@@ -1,10 +1,7 @@
-import {
-  nullableStringBinding,
-  numberBinding,
-  stringBinding,
-} from "./bindings";
+import { numberBinding, stringBinding } from "./bindings";
 import { writeNotificationStatement } from "./notification-write";
 import { writeRunStatement } from "./run-write";
+import { writeScheduledWorkStatement } from "./scheduled-work-write";
 import type { InMemoryDurableObjectSqlState, PayloadChunkRow } from "./state";
 import { writeThreadStatement } from "./thread-write";
 
@@ -76,20 +73,7 @@ export function writeSqlStatement(
     writeCheckpoint(state, bindings);
     return;
   }
-  if (query.startsWith("insert into pss_scheduled_work")) {
-    writeScheduledWork(state, bindings);
-    return;
-  }
-  if (query.startsWith("update pss_scheduled_work set claim_token = null")) {
-    releaseScheduledWork(state, bindings);
-    return;
-  }
-  if (query.startsWith("update pss_scheduled_work set claim_token")) {
-    claimScheduledWork(state, bindings);
-    return;
-  }
-  if (query.startsWith("delete from pss_scheduled_work")) {
-    deleteScheduledWork(state, query, bindings);
+  if (writeScheduledWorkStatement(state, query, bindings)) {
     return;
   }
   throw new Error(
@@ -196,154 +180,4 @@ function writeCheckpoint(
     run_key: runKey,
     version,
   });
-}
-
-function writeScheduledWork(
-  state: InMemoryDurableObjectSqlState,
-  bindings: readonly unknown[]
-): void {
-  const prefix = stringBinding(bindings[0]);
-  const kind = stringBinding(bindings[1]);
-  const workId = stringBinding(bindings[2]);
-  state.scheduledWork = state.scheduledWork.filter(
-    (row) =>
-      !(row.prefix === prefix && row.kind === kind && row.work_id === workId)
-  );
-  state.scheduledWork.push({
-    claimed_until: null,
-    claim_token: null,
-    created_at: numberBinding(bindings[6]),
-    kind,
-    payload: stringBinding(bindings[3]),
-    prefix,
-    run_id: nullableStringBinding(bindings[5]),
-    thread_key: nullableStringBinding(bindings[4]),
-    work_id: workId,
-  });
-}
-
-function claimScheduledWork(
-  state: InMemoryDurableObjectSqlState,
-  bindings: readonly unknown[]
-): void {
-  const token = stringBinding(bindings[0]);
-  const claimedUntil = numberBinding(bindings[1]);
-  const prefix = stringBinding(bindings[2]);
-  const kind = stringBinding(bindings[3]);
-  const workId = stringBinding(bindings[4]);
-  const nowMs = numberBinding(bindings[5]);
-  const row = state.scheduledWork.find(
-    (candidate) =>
-      candidate.prefix === prefix &&
-      candidate.kind === kind &&
-      candidate.work_id === workId &&
-      (candidate.claimed_until === null || candidate.claimed_until <= nowMs)
-  );
-  if (row !== undefined) {
-    row.claim_token = token;
-    row.claimed_until = claimedUntil;
-  }
-}
-
-function releaseScheduledWork(
-  state: InMemoryDurableObjectSqlState,
-  bindings: readonly unknown[]
-): void {
-  const payload = stringBinding(bindings[0]);
-  const createdAt = numberBinding(bindings[1]);
-  const prefix = stringBinding(bindings[2]);
-  const kind = stringBinding(bindings[3]);
-  const workId = stringBinding(bindings[4]);
-  const token = stringBinding(bindings[5]);
-  const row = state.scheduledWork.find(
-    (candidate) =>
-      candidate.prefix === prefix &&
-      candidate.kind === kind &&
-      candidate.work_id === workId &&
-      candidate.claim_token === token
-  );
-  if (row !== undefined) {
-    row.claim_token = null;
-    row.claimed_until = null;
-    row.created_at = createdAt;
-    row.payload = payload;
-  }
-}
-
-function deleteScheduledWork(
-  state: InMemoryDurableObjectSqlState,
-  query: string,
-  bindings: readonly unknown[]
-): void {
-  const prefix = stringBinding(bindings[0]);
-  if (query.includes("payload like ?")) {
-    const pattern = stringBinding(bindings[1]);
-    state.scheduledWork = state.scheduledWork.filter(
-      (row) =>
-        !(row.prefix === prefix && sqliteLikeMatches(row.payload, pattern))
-    );
-    return;
-  }
-  if (query.includes("thread_key = ?")) {
-    const threadKey = stringBinding(bindings[1]);
-    state.scheduledWork = state.scheduledWork.filter(
-      (row) => !(row.prefix === prefix && row.thread_key === threadKey)
-    );
-    return;
-  }
-  if (query.includes("run_id = ?")) {
-    const runId = stringBinding(bindings[1]);
-    state.scheduledWork = state.scheduledWork.filter(
-      (row) => !(row.prefix === prefix && row.run_id === runId)
-    );
-    return;
-  }
-  const kind = stringBinding(bindings[1]);
-  const workId = stringBinding(bindings[2]);
-  const token =
-    query.includes("claim_token = ?") && bindings.length > 3
-      ? stringBinding(bindings[3])
-      : undefined;
-  state.scheduledWork = state.scheduledWork.filter(
-    (row) =>
-      !(
-        row.prefix === prefix &&
-        row.kind === kind &&
-        row.work_id === workId &&
-        (token === undefined || row.claim_token === token)
-      )
-  );
-}
-
-function sqliteLikeMatches(value: string, pattern: string): boolean {
-  let source = "^";
-  let escaping = false;
-  for (const char of pattern) {
-    if (escaping) {
-      source += escapeRegExp(char);
-      escaping = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaping = true;
-      continue;
-    }
-    if (char === "%") {
-      source += ".*";
-      continue;
-    }
-    if (char === "_") {
-      source += ".";
-      continue;
-    }
-    source += escapeRegExp(char);
-  }
-  if (escaping) {
-    source += "\\\\";
-  }
-  return new RegExp(`${source}$`, "s").test(value);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

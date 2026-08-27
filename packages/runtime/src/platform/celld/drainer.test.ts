@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TurnRecord, TurnStatus } from "../../execution/host/types";
 import type { AgentEvent } from "../../thread/protocol/events";
 import type { AgentTurn } from "../../thread/protocol/turn";
-import { InMemoryCloudflareDurableObjectStorage } from "../cloudflare";
+import { createCelldTestStorage } from "./celld-test-storage";
 import {
   type CelldScheduledWorkAgent,
   drainCelldScheduledWork,
@@ -11,7 +11,7 @@ import { createCelldScheduler, listCelldScheduledRuns } from "./scheduler";
 
 describe("drainCelldScheduledWork", () => {
   it("consumes run events and acknowledges completed work", async () => {
-    const storage = createStorage();
+    const storage = createCelldTestStorage();
     const scheduler = createCelldScheduler({ clock: () => 0, storage });
     await scheduler.enqueueRun("run-1");
     const events: AgentEvent[] = [{ type: "turn-start" }, { type: "turn-end" }];
@@ -31,7 +31,7 @@ describe("drainCelldScheduledWork", () => {
   });
 
   it("leaves a nonterminal null resume pending", async () => {
-    const storage = createStorage();
+    const storage = createCelldTestStorage();
     const scheduler = createCelldScheduler({ clock: () => 0, storage });
     await scheduler.enqueueRun("run-1");
     const agent = createAgent({ record: runRecord("queued"), run: null });
@@ -53,7 +53,7 @@ describe("drainCelldScheduledWork", () => {
   });
 
   it("claims a scheduled run before only one concurrent drain resumes it", async () => {
-    const storage = createStorage();
+    const storage = createCelldTestStorage();
     const scheduler = createCelldScheduler({ clock: () => 0, storage });
     await scheduler.enqueueRun("run-1");
     let resumes = 0;
@@ -83,7 +83,7 @@ describe("drainCelldScheduledWork", () => {
 
   it("acknowledges terminal and missing null resumes", async () => {
     for (const record of [runRecord("completed"), null]) {
-      const storage = createStorage();
+      const storage = createCelldTestStorage();
       const scheduler = createCelldScheduler({ clock: () => 0, storage });
       await scheduler.enqueueRun("run-1");
 
@@ -140,27 +140,5 @@ function runRecord(status: TurnStatus): TurnRecord {
     runId: "run-1",
     status,
     threadKey: "thread-1",
-  };
-}
-
-function createStorage() {
-  const inner = new InMemoryCloudflareDurableObjectStorage();
-  let alarm: number | null = null;
-  return {
-    delete: (key: string) => inner.delete(key),
-    deleteAlarm: () => {
-      alarm = null;
-      return Promise.resolve();
-    },
-    get: <T>(key: string) => inner.get<T>(key),
-    getAlarm: () => Promise.resolve(alarm),
-    put: <T>(key: string, value: T) => inner.put(key, value),
-    setAlarm: async (time: Date | number) => {
-      alarm = typeof time === "number" ? time : time.getTime();
-      await inner.setAlarm(time);
-    },
-    sql: inner.sql,
-    transaction: inner.transaction.bind(inner),
-    transactionSync: inner.transactionSync.bind(inner),
   };
 }

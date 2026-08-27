@@ -1,7 +1,19 @@
 const ENDPOINT = process.env.S3_ENDPOINT ?? "http://127.0.0.1:14566";
 const BUCKET = process.env.CELLD_QA_BUCKET ?? "pss-celld-qa";
+const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
-export async function cleanupPrefix(prefix: string): Promise<void> {
+interface CleanupOptions {
+  readonly endpoint?: string;
+  readonly fetchImpl?: typeof fetch;
+}
+
+export async function cleanupPrefix(
+  prefix: string,
+  options: CleanupOptions = {}
+): Promise<void> {
+  const endpoint = options.endpoint ?? ENDPOINT;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  assertLoopbackEndpoint(endpoint);
   let continuation: string | undefined;
   do {
     const query = new URLSearchParams({
@@ -11,7 +23,7 @@ export async function cleanupPrefix(prefix: string): Promise<void> {
         ? {}
         : { "continuation-token": continuation }),
     });
-    const response = await fetch(`${ENDPOINT}/${BUCKET}?${query}`);
+    const response = await fetchImpl(`${endpoint}/${BUCKET}?${query}`);
     if (!response.ok) {
       throw new Error(`bucket listing failed: ${response.status}`);
     }
@@ -21,9 +33,10 @@ export async function cleanupPrefix(prefix: string): Promise<void> {
     );
     await Promise.all(
       keys.map(async (key) => {
-        const deleted = await fetch(`${ENDPOINT}/${BUCKET}/${encodeKey(key)}`, {
-          method: "DELETE",
-        });
+        const deleted = await fetchImpl(
+          `${endpoint}/${BUCKET}/${encodeKey(key)}`,
+          { method: "DELETE" }
+        );
         if (!deleted.ok && deleted.status !== 404) {
           throw new Error(`bucket object cleanup failed: ${deleted.status}`);
         }
@@ -31,6 +44,13 @@ export async function cleanupPrefix(prefix: string): Promise<void> {
     );
     continuation = decodeTag(xml, "NextContinuationToken");
   } while (continuation !== undefined);
+}
+
+export function assertLoopbackEndpoint(endpoint: string): void {
+  const hostname = new URL(endpoint).hostname;
+  if (!LOCAL_HOSTS.has(hostname)) {
+    throw new Error(`Celld QA endpoint must be loopback: ${hostname}`);
+  }
 }
 
 function decodeTag(xml: string, tag: string): string | undefined {

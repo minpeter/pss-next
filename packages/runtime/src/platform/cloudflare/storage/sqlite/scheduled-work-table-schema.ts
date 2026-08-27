@@ -2,17 +2,21 @@ import type { SqlStorage } from "../../sql/ports/storage-port";
 
 export function ensureScheduledWorkSchema(sql: SqlStorage): void {
   sql.exec(
-    "CREATE TABLE IF NOT EXISTS pss_scheduled_work (prefix TEXT NOT NULL, kind TEXT NOT NULL, work_id TEXT NOT NULL, payload TEXT NOT NULL, thread_key TEXT, run_id TEXT, created_at INTEGER NOT NULL)"
+    "CREATE TABLE IF NOT EXISTS pss_scheduled_work (prefix TEXT NOT NULL, kind TEXT NOT NULL, work_id TEXT NOT NULL, payload TEXT NOT NULL, thread_key TEXT, run_id TEXT, due_at INTEGER, created_at INTEGER NOT NULL)"
   );
   ensureScheduledWorkColumn(sql, "thread_key");
   ensureScheduledWorkColumn(sql, "run_id");
   ensureScheduledWorkColumn(sql, "claim_token");
   ensureScheduledWorkColumn(sql, "claimed_until");
+  ensureScheduledWorkColumn(sql, "due_at");
   sql.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS pss_scheduled_work_key ON pss_scheduled_work (prefix, kind, work_id)"
   );
   sql.exec(
     "CREATE INDEX IF NOT EXISTS pss_scheduled_work_due ON pss_scheduled_work (prefix, kind, created_at, work_id)"
+  );
+  sql.exec(
+    "CREATE INDEX IF NOT EXISTS pss_scheduled_work_celld_due ON pss_scheduled_work (prefix, kind, due_at, work_id)"
   );
   sql.exec(
     "CREATE INDEX IF NOT EXISTS pss_scheduled_work_thread ON pss_scheduled_work (prefix, thread_key)"
@@ -38,7 +42,7 @@ function ensureScheduledWorkColumn(sql: SqlStorage, column: string): void {
   }
   sql.exec(
     `ALTER TABLE pss_scheduled_work ADD COLUMN ${column} ${
-      column === "claimed_until" ? "INTEGER" : "TEXT"
+      column === "claimed_until" || column === "due_at" ? "INTEGER" : "TEXT"
     }`
   );
 }

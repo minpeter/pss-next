@@ -4,9 +4,11 @@ import {
   type ScheduledThreadPrompt,
 } from "../../execution/scheduled-work";
 import type { CloudflareDurableObjectStorage } from "../cloudflare/host/durable-object-host";
+import { withTransaction } from "../cloudflare/storage/durable-object/sql-access";
 import {
-  insertScheduledWork,
-  selectScheduledWork,
+  insertScheduledWorkInTransaction,
+  selectNextScheduledWork,
+  selectScheduledWorkDue,
 } from "../cloudflare/storage/sqlite/scheduled-work-table";
 
 export const DEFAULT_PREFIX = "pss-runtime";
@@ -58,7 +60,7 @@ export function serialize<T>(
   return current;
 }
 
-export async function insertDueWork<T>(
+export async function insertDueWorkAndArm<T>(
   storage: CelldDurableObjectStorage,
   prefix: string,
   kind: typeof RUN_KIND | typeof THREAD_PROMPT_KIND,
@@ -67,14 +69,23 @@ export async function insertDueWork<T>(
   dueAtMs: number,
   indexes: { readonly runId?: string; readonly threadKey?: string }
 ): Promise<void> {
-  await insertScheduledWork(
-    storage,
-    prefix,
-    kind,
-    workId,
-    { dueAtMs, value } satisfies DuePayload<T>,
-    indexes
-  );
+  const currentAlarm = await storage.getAlarm();
+  await withTransaction(storage, async (transaction) => {
+    insertScheduledWorkInTransaction(
+      transaction,
+      prefix,
+      kind,
+      workId,
+      { dueAtMs, value } satisfies DuePayload<T>,
+      { ...indexes, dueAtMs }
+    );
+    if (transaction.setAlarm === undefined) {
+      throw new Error("Celld storage transaction setAlarm() is required.");
+    }
+    await transaction.setAlarm(
+      currentAlarm === null ? dueAtMs : Math.min(currentAlarm, dueAtMs)
+    );
+  });
 }
 
 export function listDueWork<T>(
@@ -89,35 +100,23 @@ export function listDueWork<T>(
   if (limit === 0) {
     return [];
   }
-  return selectScheduledWork(storage, prefix, kind)
-    .filter(
-      (row) =>
-        row.claimed_until === undefined ||
-        row.claimed_until === null ||
-        row.claimed_until <= nowMs
-    )
+  return selectScheduledWorkDue(storage, prefix, kind, nowMs, limit)
     .map((row) => requiredDuePayload(row.payload))
     .flatMap((value) => {
-      if (value === undefined) {
-        return [];
-      }
       const parsed = parseValue(value.value);
-      return parsed === undefined
-        ? []
-        : [{ dueAtMs: value.dueAtMs, value: parsed }];
-    })
-    .filter((value) => value.dueAtMs <= nowMs)
-    .sort((left, right) => left.dueAtMs - right.dueAtMs)
-    .slice(0, limit)
-    .map((value) => value.value);
+      if (parsed === undefined) {
+        throw new Error("Invalid Celld scheduled work value.");
+      }
+      return [parsed];
+    });
 }
 
 export async function armNextAlarm(
   storage: CelldDurableObjectStorage,
   prefix: string,
-  nowMs = Date.now()
+  _nowMs = Date.now()
 ): Promise<void> {
-  const dueAtMs = earliestDueAt(storage, prefix, nowMs);
+  const dueAtMs = earliestDueAt(storage, prefix);
   if (dueAtMs === undefined) {
     await storage.deleteAlarm();
     return;
@@ -129,22 +128,12 @@ export async function armNextAlarm(
 
 function earliestDueAt(
   storage: CelldDurableObjectStorage,
-  prefix: string,
-  nowMs: number
+  prefix: string
 ): number | undefined {
-  const values = ([RUN_KIND, THREAD_PROMPT_KIND] as const).flatMap((kind) =>
-    selectScheduledWork(storage, prefix, kind)
-      .map((row) => {
-        if (
-          typeof row.claimed_until === "number" &&
-          row.claimed_until > nowMs
-        ) {
-          return row.claimed_until;
-        }
-        return requiredDuePayload(row.payload).dueAtMs;
-      })
-      .filter((value): value is number => value !== undefined)
-  );
+  const values = ([RUN_KIND, THREAD_PROMPT_KIND] as const).flatMap((kind) => {
+    const row = selectNextScheduledWork(storage, prefix, kind);
+    return typeof row?.due_at === "number" ? [row.due_at] : [];
+  });
   return values.length === 0 ? undefined : Math.min(...values);
 }
 

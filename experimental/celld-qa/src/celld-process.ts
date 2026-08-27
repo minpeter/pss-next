@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import { assertLoopbackEndpoint } from "./celld-bucket";
 
 const execFile = promisify(execFileCallback);
 const RSS_PATTERN = /^VmHWM:\s+(\d+)\s+kB$/m;
@@ -10,7 +11,6 @@ const CELLD = process.env.CELLD_BIN ?? `${process.env.HOME}/.local/bin/celld`;
 const ENDPOINT = process.env.S3_ENDPOINT ?? "http://127.0.0.1:14566";
 const BUCKET = process.env.CELLD_QA_BUCKET ?? "pss-celld-qa";
 const LIFECYCLE_TIMEOUT_MS = 30_000;
-const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 const ESBUILD =
   process.env.CELLD_ESBUILD ??
   resolve(
@@ -49,10 +49,7 @@ export async function readProcessMetrics(
 }
 
 export async function createBucket(): Promise<void> {
-  const endpoint = new URL(ENDPOINT);
-  if (!LOCAL_HOSTS.has(endpoint.hostname)) {
-    throw new Error(`Celld QA endpoint must be loopback: ${endpoint.hostname}`);
-  }
+  assertLoopbackEndpoint(ENDPOINT);
   const response = await fetch(`${ENDPOINT}/${BUCKET}`, { method: "PUT" });
   if (!(response.ok || response.status === 409)) {
     throw new Error(`bucket creation failed: ${response.status}`);

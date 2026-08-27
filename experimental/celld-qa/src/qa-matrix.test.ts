@@ -16,11 +16,22 @@ describe("Celld QA matrix", () => {
       concurrentObjects: 25,
     });
   });
+
+  it("rejects concurrent objects sharing one state history", async () => {
+    await expect(
+      runMatrix({
+        baseUrl: "http://127.0.0.1:16421",
+        concurrency: 2,
+        fetchImpl: createFakeFetch(false),
+        objectCount: 2,
+      })
+    ).rejects.toThrow("concurrent objects did not preserve isolation");
+  });
 });
 
-function createFakeFetch(): typeof fetch {
-  const committed = new Map<string, number>();
-  let nextKey = 0;
+function createFakeFetch(isolated = true): typeof fetch {
+  const committed = new Map<string, { historyCount: number; reply: string }>();
+  const histories = new Map<string, number>();
   return (input, init) => {
     if (init?.body === "{") {
       return Promise.resolve(
@@ -34,25 +45,34 @@ function createFakeFetch(): typeof fetch {
       );
     }
     const objectName = new URL(String(input)).searchParams.get("object");
-    const key = `${objectName}:${payload.idempotencyKey ?? `object-${nextKey++}`}`;
-    const count = committed.get(key);
-    if (count !== undefined) {
+    const routedName = isolated ? objectName : "shared";
+    const key =
+      payload.idempotencyKey === undefined
+        ? undefined
+        : `${routedName}:${payload.idempotencyKey}`;
+    const prior = key === undefined ? undefined : committed.get(key);
+    if (prior !== undefined) {
       return Promise.resolve(
         Response.json({
           commitCount: 1,
-          historyCount: count,
+          historyCount: prior.historyCount,
           ok: true,
-          reply: `echo:${payload.text}`,
+          reply: prior.reply,
         })
       );
     }
-    committed.set(key, 1);
+    const historyCount = (histories.get(routedName ?? "") ?? 0) + 1;
+    histories.set(routedName ?? "", historyCount);
+    const reply = `echo:${payload.text}`;
+    if (key !== undefined) {
+      committed.set(key, { historyCount, reply });
+    }
     return Promise.resolve(
       Response.json({
         commitCount: 1,
-        historyCount: 1,
+        historyCount,
         ok: true,
-        reply: `echo:${payload.text}`,
+        reply,
       })
     );
   };

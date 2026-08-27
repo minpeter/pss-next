@@ -2,6 +2,7 @@ import type { AgentHost } from "../../execution";
 import type { ThreadStore } from "../../thread/store/types";
 import { createCloudflareStorageHost } from "../cloudflare/host/durable-object-host";
 import { createCelldScheduler } from "./scheduler";
+import { rearmCelldScheduledWork } from "./scheduler-claims";
 import type {
   CelldDurableObjectStorage,
   CelldScheduler,
@@ -36,6 +37,12 @@ export function createCelldHost({
     ...(prefix === undefined ? {} : { prefix }),
     storage: state.storage,
   });
+  state.waitUntil(
+    rearmCelldScheduledWork(state.storage, {
+      ...(clock === undefined ? {} : { nowMs: clock() }),
+      ...(prefix === undefined ? {} : { prefix }),
+    })
+  );
   return {
     ...createCloudflareStorageHost({
       ...(maxPayloadBytes === undefined ? {} : { maxPayloadBytes }),

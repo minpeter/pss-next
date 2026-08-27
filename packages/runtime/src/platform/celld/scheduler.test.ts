@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeExecutionSchedulerContract } from "../../contracts/execution-scheduler/contract";
-import { InMemoryCloudflareDurableObjectStorage } from "../cloudflare/host/durable-object-host";
+import { createCelldTestStorage } from "./celld-test-storage";
 import {
   createCelldScheduler,
   listCelldScheduledRuns,
@@ -48,7 +48,7 @@ describe("Celld due-aware alarm HostScheduler", () => {
     expect(queuedBeforeAlarm).toEqual([["run-1"]]);
   });
 
-  it("leaves work queued when setAlarm rejects", async () => {
+  it("rolls back queued work when setAlarm rejects", async () => {
     const storage = createAlarmCapableStorage({
       setAlarm: () => Promise.reject(new Error("alarm unavailable")),
     });
@@ -58,9 +58,7 @@ describe("Celld due-aware alarm HostScheduler", () => {
       "alarm unavailable"
     );
 
-    expect(await listCelldScheduledRuns(storage, { nowMs: 0 })).toEqual([
-      "run-1",
-    ]);
+    expect(await listCelldScheduledRuns(storage, { nowMs: 0 })).toEqual([]);
     expect(await storage.getAlarm()).toBeNull();
   });
 
@@ -150,6 +148,7 @@ describe("Celld due-aware alarm HostScheduler", () => {
     const scheduler = createCelldScheduler({ clock: () => 1000, storage });
 
     await scheduler.enqueueRun("recoverable");
+    await storage.deleteAlarm();
     const claim = await claimCelldScheduledRun(storage, "recoverable", {
       leaseMs: 100,
       nowMs: 1000,
@@ -157,6 +156,7 @@ describe("Celld due-aware alarm HostScheduler", () => {
 
     expect(claim).toEqual(expect.any(String));
     expect(await listCelldScheduledRuns(storage, { nowMs: 1000 })).toEqual([]);
+    expect(await storage.getAlarm()).toBe(1100);
 
     await rearmCelldScheduledWork(storage, { nowMs: 1000 });
     expect(await storage.getAlarm()).toBe(1100);
@@ -165,22 +165,42 @@ describe("Celld due-aware alarm HostScheduler", () => {
     ]);
   });
 
-  it("rejects malformed durable work instead of dropping its alarm", async () => {
+  it("rejects malformed durable work before draining it", async () => {
     const storage = createAlarmCapableStorage();
     storage.sql.exec(
-      "INSERT INTO pss_scheduled_work (prefix, kind, work_id, payload, thread_key, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO pss_scheduled_work (prefix, kind, work_id, payload, thread_key, run_id, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       "pss-runtime",
       "celld-run",
       "broken",
       "{",
       null,
       "broken",
+      0,
       0
     );
 
-    await expect(
-      rearmCelldScheduledWork(storage, { nowMs: 0 })
-    ).rejects.toThrow("Invalid Celld scheduled work payload.");
+    await expect(listCelldScheduledRuns(storage, { nowMs: 0 })).rejects.toThrow(
+      "Invalid Celld scheduled work payload."
+    );
+  });
+
+  it("rejects kind-invalid durable work instead of hot-looping", async () => {
+    const storage = createAlarmCapableStorage();
+    storage.sql.exec(
+      "INSERT INTO pss_scheduled_work (prefix, kind, work_id, payload, thread_key, run_id, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "pss-runtime",
+      "celld-run",
+      "wrong-kind",
+      JSON.stringify({ dueAtMs: 0, value: 42 }),
+      null,
+      "wrong-kind",
+      0,
+      0
+    );
+
+    await expect(listCelldScheduledRuns(storage, { nowMs: 0 })).rejects.toThrow(
+      "Invalid Celld scheduled work value."
+    );
   });
 });
 
@@ -191,27 +211,5 @@ function createAlarmCapableStorage(
     readonly setAlarm?: (scheduledTime: Date | number) => Promise<void>;
   } = {}
 ) {
-  const inner = new InMemoryCloudflareDurableObjectStorage();
-  let alarmTime: number | null = null;
-  return {
-    delete: (key: string) => inner.delete(key),
-    deleteAlarm: () => {
-      alarmTime = null;
-      return Promise.resolve();
-    },
-    get: <T>(key: string) => inner.get<T>(key),
-    getAlarm: () => Promise.resolve(alarmTime),
-    put: <T>(key: string, value: T) => inner.put(key, value),
-    setAlarm: async (scheduledTime: Date | number) => {
-      await options.setAlarm?.(scheduledTime);
-      alarmTime =
-        typeof scheduledTime === "number"
-          ? scheduledTime
-          : scheduledTime.getTime();
-      await inner.setAlarm(scheduledTime);
-    },
-    sql: inner.sql,
-    transaction: inner.transaction.bind(inner),
-    transactionSync: inner.transactionSync.bind(inner),
-  };
+  return createCelldTestStorage(options);
 }
