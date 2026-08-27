@@ -1,10 +1,22 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Carry the compaction budget as function properties\n\nThe `compaction` option is a single callable type again: `AgentCompaction` gains optional budget properties (`maxInputTokens`, `estimateTokens`, `bufferTokens`, `onOverflow`), and when `maxInputTokens` is present the runtime hands the function itself to the model-step context gate, which calls it before every model request. `speculativeCompaction` returns the callable with its budget attached; `AgentCompactionPolicy` and the interim policy-object form from 0.3.0-next.11 are removed. Bare functions without budget properties keep the local gate off.\n"
-    filename: 2026-08-08-compaction-budget-props.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Bound automatic compaction blocking\n\nEnforce one deadline at the serialized store boundary, preserve compatible\nconflict tails, coalesce retries, and reuse only source-stable candidates.\nBound diagnostics and add causal benchmark evidence.\n"
+    filename: 2026-08-13-bound-compaction-blocking.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Adopt the Pi TUI main-screen renderer\n\nMove the coding-agent TUI to Pi TUI's explicit main-screen renderer and use a\nstable muted color that stays readable in both light and dark terminals.\n"
+    filename: 2026-08-26-pi-tui-084.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## TypeScript strictness\n\nEnforce `exactOptionalPropertyTypes` for the runtime OpenTelemetry subsystem and preserve absent optional OpenTelemetry fields instead of materializing `undefined`.\n"
+    filename: 2026-08-13-runtime-strictness.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Detached compaction summaries outlive episode deadlines\n\nA compaction episode deadline now bounds only the caller's wait, not the\nprovider work: an in-flight summary continues detached after\n`CompactionDeadlineExceededError`, installs as a fail-closed validated\nspeculative candidate, and the next episode joins or promotes it without a\nsecond summary call. Detached calls are single-flight per thread, honour\nexplicit summary signals, and carry a fixed 120s leak backstop\n(`DETACHED_SUMMARY_BACKSTOP_MS`). Slow models converge across episodes\ninstead of restarting aborted summaries every episode.\n"
+    filename: 2026-08-26-detached-compaction-summaries.md
     v: 0.0.0
 core:packages:
-  - id: npm:@minpeter/pss-coding-agent
-    updated: false
+  - changelogIds:
+      - 2026-08-13-bound-compaction-blocking.md
+      - 2026-08-26-pi-tui-084.md
+    id: npm:@minpeter/pss-coding-agent
+    updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
   - id: npm:@minpeter/pss-extension-mermaid
@@ -12,7 +24,9 @@ core:packages:
   - id: npm:@minpeter/pss-extension-web
     updated: false
   - changelogIds:
-      - 2026-08-08-compaction-budget-props.md
+      - 2026-08-13-bound-compaction-blocking.md
+      - 2026-08-13-runtime-strictness.md
+      - 2026-08-26-detached-compaction-summaries.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
