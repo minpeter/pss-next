@@ -336,11 +336,16 @@
       "type CelldSchedulerOptions",
       "value ackCelldScheduledRun",
       "value ackCelldScheduledThreadPrompt",
+      "value claimCelldScheduledRun",
+      "value claimCelldScheduledThreadPrompt",
       "value createCelldHost",
       "value createCelldScheduler",
       "value drainCelldScheduledWork",
       "value listCelldScheduledRuns",
-      "value listCelldScheduledThreadPrompts"
+      "value listCelldScheduledThreadPrompts",
+      "value rearmCelldScheduledWork",
+      "value retryCelldScheduledRun",
+      "value retryCelldScheduledThreadPrompt"
     ],
     "./platform/cloudflare": [
       "type AgentTurnDrainResult",
@@ -559,7 +564,10 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
+    "./protocol/node": [
+      "type SpawnPssClientOptions",
+      "value spawnPssClient"
+    ],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",
