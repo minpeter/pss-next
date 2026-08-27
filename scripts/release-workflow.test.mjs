@@ -25,6 +25,11 @@ describe("release workflow", () => {
     expect(ciWorkflow).toContain("node-version: ${{ matrix.node }}");
     expect(ciWorkflow).toContain('node: ["24", "26"]');
     expect(ciWorkflow).toContain("cancel-in-progress: true");
+    expect(workflow).toContain("- name: Install sandbox prerequisite");
+    expect(workflow).toContain(
+      "sudo apt-get install --yes --no-install-recommends bubblewrap procps util-linux"
+    );
+    expect(workflow).toContain('PSS_TASK_VALIDATOR_NETWORK_ISOLATED: "1"');
     expect(workflow).toContain("pnpm tegami ci");
     expect(workflow).toContain("pnpm verify:release");
     expect(packageJson.scripts["verify:release"]).toContain(
