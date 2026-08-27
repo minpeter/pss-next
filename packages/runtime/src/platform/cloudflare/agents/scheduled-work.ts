@@ -3,12 +3,12 @@ import {
   parseScheduledThreadPromptPayload,
 } from "../host/scheduled-work-codec";
 import type { CloudflareDurableObjectStorage } from "../storage/durable-object/durable-object-storage";
+import { insertScheduledWork } from "../storage/sqlite/scheduled-work-table";
 import {
   deleteScheduledWorkGroup,
   hasScheduledWorkGroup,
-  insertScheduledWork,
   type ScheduledWorkTarget,
-} from "../storage/sqlite/scheduled-work-table";
+} from "../storage/sqlite/scheduled-work-table-groups";
 import {
   assertNeverPayload,
   type CloudflareAgentsFiberPayload,

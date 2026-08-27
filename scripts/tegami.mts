@@ -26,6 +26,7 @@ const releaseIgnore = [
   "@minpeter/pss-benchmark-nextjs",
   "@minpeter/pss-edit-format-bench",
   "@minpeter/pss-runtime-edge-image-qa",
+  "@minpeter/pss-celld-qa",
   "@minpeter/pss-example-background-subagent",
   "@minpeter/pss-example-basic",
   "@minpeter/pss-example-evals",

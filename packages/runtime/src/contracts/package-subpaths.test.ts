@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import type { CelldHost, CelldScheduler } from "../platform/celld";
 
 interface RuntimeExport {
   readonly "@minpeter/pss-source": string;
@@ -55,6 +56,30 @@ describe("runtime package subpaths", () => {
       expect(cloudflarePlatform).toHaveProperty(exportName);
     }
   }, 30_000);
+
+  it("declares the Celld adapter as a platform implementation subpath", async () => {
+    const packageJson = await readRuntimePackageJson();
+    const root = await import("../index");
+    const celld = await import("../platform/celld");
+
+    expect(packageJson.exports["./platform/celld"]).toMatchObject({
+      "@minpeter/pss-source": "./src/platform/celld/index.ts",
+      import: "./dist/platform/celld/index.js",
+      types: "./dist/platform/celld/index.d.ts",
+    });
+    expect(celld).toHaveProperty("createCelldHost");
+    expect(celld).toHaveProperty("createCelldScheduler");
+    expect(celld).toHaveProperty("drainCelldScheduledWork");
+    expect(root).not.toHaveProperty("createCelldHost");
+    expect(root).not.toHaveProperty("createCelldScheduler");
+    expect(root).not.toHaveProperty("drainCelldScheduledWork");
+
+    const acceptsCelldTypes = (
+      host: CelldHost,
+      scheduler: CelldScheduler
+    ): readonly [CelldHost, CelldScheduler] => [host, scheduler];
+    expect(acceptsCelldTypes).toBeTypeOf("function");
+  });
 
   it("declares the file adapter as a platform implementation subpath", async () => {
     const packageJson = await readRuntimePackageJson();
