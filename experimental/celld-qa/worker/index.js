@@ -29,7 +29,11 @@ export class Echo {
       }
     }
     const count = ((await this.state.storage.get("historyCount")) ?? 0) + 1;
-    const result = { historyCount: count, ok: true, reply: `echo:${payload.text}` };
+    const result = {
+      historyCount: count,
+      ok: true,
+      reply: `echo:${payload.text}`,
+    };
     await this.state.storage.put("historyCount", count);
     if (key !== undefined) {
       await this.state.storage.put(key, result);
@@ -39,7 +43,7 @@ export class Echo {
 }
 
 export default {
-  async fetch(request, env) {
+  fetch(request, env) {
     const url = new URL(request.url);
     const objectName = url.searchParams.get("object") || "pss-smoke";
     return env.ECHO.get(env.ECHO.idFromName(objectName)).fetch(request);
