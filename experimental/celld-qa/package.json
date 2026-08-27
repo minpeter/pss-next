@@ -1,0 +1,21 @@
+{
+  "name": "@minpeter/pss-celld-qa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "qa:native": "tsx src/qa-native.ts",
+    "qa:matrix": "tsx src/qa-matrix.ts",
+    "qa:load": "tsx src/qa-load.ts",
+    "qa:compare": "tsx src/qa-compare.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@minpeter/pss-runtime": "workspace:^"
+  }
+}
