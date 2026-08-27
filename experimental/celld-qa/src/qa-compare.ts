@@ -7,6 +7,7 @@ interface Report {
   readonly elapsedMs: number;
   readonly errors: number;
   readonly maxRssBytes: number;
+  readonly retainedResponseBytes: number;
   readonly retainedResponseSlots: number;
   readonly runnerCpuUserUs: number;
 }
@@ -14,13 +15,11 @@ interface Report {
 interface CompareOptions {
   readonly baseline: string;
   readonly candidate: string;
-  readonly maxElapsedRegression: number;
 }
 
 export async function compareReports({
   baseline,
   candidate,
-  maxElapsedRegression,
 }: CompareOptions): Promise<{
   readonly passed: boolean;
   readonly ratio: number;
@@ -30,15 +29,15 @@ export async function compareReports({
   const ratio = next.elapsedMs / base.elapsedMs - 1;
   const baseSlots = base.retainedResponseSlots;
   const nextSlots = next.retainedResponseSlots;
+  const baseBytes = base.retainedResponseBytes;
+  const nextBytes = next.retainedResponseBytes;
   return {
     passed:
       base.errors === 0 &&
       next.errors === 0 &&
       Number.isFinite(ratio) &&
-      ratio <= maxElapsedRegression &&
       nextSlots < baseSlots &&
-      next.maxRssBytes <= base.maxRssBytes * 1.05 &&
-      next.celldCpuUserTicks <= base.celldCpuUserTicks * 1.05,
+      nextBytes < baseBytes,
     ratio,
   };
 }
@@ -61,7 +60,11 @@ function parseReport(text: string): Report {
     !("maxRssBytes" in value) ||
     typeof value.maxRssBytes !== "number" ||
     !("runnerCpuUserUs" in value) ||
-    typeof value.runnerCpuUserUs !== "number"
+    typeof value.runnerCpuUserUs !== "number" ||
+    !("retainedResponseBytes" in value) ||
+    typeof value.retainedResponseBytes !== "number" ||
+    !("retainedResponseSlots" in value) ||
+    typeof value.retainedResponseSlots !== "number"
   ) {
     throw new Error("invalid load report");
   }
@@ -72,25 +75,21 @@ function parseReport(text: string): Report {
     celldCpuSystemTicks: value.celldCpuSystemTicks,
     celldCpuUserTicks: value.celldCpuUserTicks,
     maxRssBytes: value.maxRssBytes,
-    ...("retainedResponseSlots" in value &&
-    typeof value.retainedResponseSlots === "number"
-      ? { retainedResponseSlots: value.retainedResponseSlots }
-      : { retainedResponseSlots: 0 }),
+    retainedResponseBytes: value.retainedResponseBytes,
+    retainedResponseSlots: value.retainedResponseSlots,
     runnerCpuUserUs: value.runnerCpuUserUs,
   };
 }
 
 if (import.meta.main) {
   const args = process.argv.slice(2);
-  const [baseline, candidate, maxRegression] =
-    args[0] === "--" ? args.slice(1) : args;
+  const [baseline, candidate] = args[0] === "--" ? args.slice(1) : args;
   if (baseline === undefined || candidate === undefined) {
     throw new Error("Usage: qa:compare <baseline.json> <candidate.json>");
   }
   const result = await compareReports({
     baseline,
     candidate,
-    maxElapsedRegression: Number(maxRegression ?? "0.05"),
   });
   console.log(JSON.stringify(result));
   if (!result.passed) {

@@ -28,6 +28,11 @@ function createFakeFetch(): typeof fetch {
       );
     }
     const payload = parsePayload(init?.body);
+    if (payload.idempotencyKey === null) {
+      return Promise.resolve(
+        Response.json({ error: "invalid_input" }, { status: 400 })
+      );
+    }
     const objectName = new URL(String(input)).searchParams.get("object");
     const key = `${objectName}:${payload.idempotencyKey ?? `object-${nextKey++}`}`;
     const count = committed.get(key);
@@ -54,7 +59,7 @@ function createFakeFetch(): typeof fetch {
 }
 
 function parsePayload(value: BodyInit | null | undefined): {
-  readonly idempotencyKey?: string;
+  readonly idempotencyKey?: string | null;
   readonly text: string;
 } {
   const parsed: unknown = JSON.parse(String(value));
@@ -67,8 +72,13 @@ function parsePayload(value: BodyInit | null | undefined): {
     throw new Error("invalid fake payload");
   }
   return {
-    ...("idempotencyKey" in parsed && typeof parsed.idempotencyKey === "string"
-      ? { idempotencyKey: parsed.idempotencyKey }
+    ...("idempotencyKey" in parsed
+      ? {
+          idempotencyKey:
+            typeof parsed.idempotencyKey === "string"
+              ? parsed.idempotencyKey
+              : null,
+        }
       : {}),
     text: parsed.text,
   };

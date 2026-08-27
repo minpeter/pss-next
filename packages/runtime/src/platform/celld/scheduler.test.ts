@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { describeExecutionSchedulerContract } from "../../contracts/execution-scheduler/contract";
 import { InMemoryCloudflareDurableObjectStorage } from "../cloudflare/host/durable-object-host";
 import {
-  ackCelldScheduledRun,
-  ackCelldScheduledThreadPrompt,
   createCelldScheduler,
   listCelldScheduledRuns,
   listCelldScheduledThreadPrompts,
 } from "./scheduler";
+import {
+  ackCelldScheduledRun,
+  ackCelldScheduledThreadPrompt,
+  claimCelldScheduledRun,
+  rearmCelldScheduledWork,
+} from "./scheduler-claims";
 
 describeExecutionSchedulerContract({
   createHarness: () => {
@@ -139,6 +143,44 @@ describe("Celld due-aware alarm HostScheduler", () => {
     await ackCelldScheduledRun(storage, "late");
     expect(await listCelldScheduledRuns(storage, { nowMs: 500 })).toEqual([]);
     expect(await storage.getAlarm()).toBeNull();
+  });
+
+  it("keeps a claimed run recoverable after its lease expires", async () => {
+    const storage = createAlarmCapableStorage();
+    const scheduler = createCelldScheduler({ clock: () => 1000, storage });
+
+    await scheduler.enqueueRun("recoverable");
+    const claim = await claimCelldScheduledRun(storage, "recoverable", {
+      leaseMs: 100,
+      nowMs: 1000,
+    });
+
+    expect(claim).toEqual(expect.any(String));
+    expect(await listCelldScheduledRuns(storage, { nowMs: 1000 })).toEqual([]);
+
+    await rearmCelldScheduledWork(storage, { nowMs: 1000 });
+    expect(await storage.getAlarm()).toBe(1100);
+    expect(await listCelldScheduledRuns(storage, { nowMs: 1100 })).toEqual([
+      "recoverable",
+    ]);
+  });
+
+  it("rejects malformed durable work instead of dropping its alarm", async () => {
+    const storage = createAlarmCapableStorage();
+    storage.sql.exec(
+      "INSERT INTO pss_scheduled_work (prefix, kind, work_id, payload, thread_key, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "pss-runtime",
+      "celld-run",
+      "broken",
+      "{",
+      null,
+      "broken",
+      0
+    );
+
+    await expect(
+      rearmCelldScheduledWork(storage, { nowMs: 0 })
+    ).rejects.toThrow("Invalid Celld scheduled work payload.");
   });
 });
 

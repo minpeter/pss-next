@@ -44,9 +44,12 @@ describe("drainCelldScheduledWork", () => {
 
     expect(result.skippedRuns).toEqual(["run-1"]);
     await expect(
-      listCelldScheduledRuns(storage, { nowMs: Date.now() + 1000 })
+      listCelldScheduledRuns(storage, { nowMs: 999 })
+    ).resolves.toEqual([]);
+    await expect(
+      listCelldScheduledRuns(storage, { nowMs: 1000 })
     ).resolves.toEqual(["run-1"]);
-    await expect(storage.getAlarm()).resolves.toBeGreaterThan(Date.now());
+    await expect(storage.getAlarm()).resolves.toBe(1000);
   });
 
   it("claims a scheduled run before only one concurrent drain resumes it", async () => {

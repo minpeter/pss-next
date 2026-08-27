@@ -1,9 +1,5 @@
 import type { ScheduledThreadPrompt } from "../../execution/scheduled-work";
 import { threadPromptScheduledWorkId } from "../../execution/scheduled-work";
-import {
-  claimScheduledWork,
-  deleteScheduledWork,
-} from "../cloudflare/storage/sqlite/scheduled-work-table";
 import type {
   CelldDurableObjectStorage,
   CelldScheduledWorkListOptions,
@@ -34,7 +30,7 @@ export function createCelldScheduler({
         await insertDueWork(storage, prefix, RUN_KIND, runId, runId, dueAtMs, {
           runId,
         });
-        await armNextAlarm(storage, prefix);
+        await armNextAlarm(storage, prefix, clock());
       }),
     resumeThread: (threadKey, options) =>
       serialize(storage, async () => {
@@ -53,7 +49,7 @@ export function createCelldScheduler({
           clock(),
           { runId: options.runId, threadKey }
         );
-        await armNextAlarm(storage, prefix);
+        await armNextAlarm(storage, prefix, clock());
       }),
     storage,
   };
@@ -77,120 +73,4 @@ export function listCelldScheduledThreadPrompts(
   return Promise.resolve(
     listDueWork(storage, THREAD_PROMPT_KIND, options, parseThreadPrompt)
   );
-}
-
-export function claimCelldScheduledRun(
-  storage: CelldDurableObjectStorage,
-  runId: string,
-  options: { readonly prefix?: string } = {}
-): Promise<boolean> {
-  return serialize(storage, () =>
-    claimScheduledWork(
-      storage,
-      options.prefix ?? DEFAULT_PREFIX,
-      RUN_KIND,
-      runId
-    )
-  );
-}
-
-export function claimCelldScheduledThreadPrompt(
-  storage: CelldDurableObjectStorage,
-  prompt: ScheduledThreadPrompt,
-  options: { readonly prefix?: string } = {}
-): Promise<boolean> {
-  return serialize(storage, () =>
-    claimScheduledWork(
-      storage,
-      options.prefix ?? DEFAULT_PREFIX,
-      THREAD_PROMPT_KIND,
-      threadPromptScheduledWorkId(prompt)
-    )
-  );
-}
-
-export function rearmCelldScheduledWork(
-  storage: CelldDurableObjectStorage,
-  options: { readonly prefix?: string } = {}
-): Promise<void> {
-  return serialize(storage, () =>
-    armNextAlarm(storage, options.prefix ?? DEFAULT_PREFIX)
-  );
-}
-
-export function retryCelldScheduledRun(
-  storage: CelldDurableObjectStorage,
-  runId: string,
-  delayMs: number,
-  options: { readonly prefix?: string } = {}
-): Promise<void> {
-  const prefix = options.prefix ?? DEFAULT_PREFIX;
-  return serialize(storage, async () => {
-    await insertDueWork(
-      storage,
-      prefix,
-      RUN_KIND,
-      runId,
-      runId,
-      Date.now() + Math.max(0, Math.floor(delayMs)),
-      { runId }
-    );
-    await armNextAlarm(storage, prefix);
-  });
-}
-
-export function retryCelldScheduledThreadPrompt(
-  storage: CelldDurableObjectStorage,
-  prompt: ScheduledThreadPrompt,
-  options: { readonly prefix?: string } = {}
-): Promise<void> {
-  const prefix = options.prefix ?? DEFAULT_PREFIX;
-  return serialize(storage, async () => {
-    await insertDueWork(
-      storage,
-      prefix,
-      THREAD_PROMPT_KIND,
-      threadPromptScheduledWorkId(prompt),
-      prompt,
-      Date.now(),
-      { runId: prompt.runId, threadKey: prompt.threadKey }
-    );
-    await armNextAlarm(storage, prefix);
-  });
-}
-
-export async function ackCelldScheduledRun(
-  storage: CelldDurableObjectStorage,
-  runId: string,
-  options: { readonly prefix?: string; readonly rearm?: boolean } = {}
-): Promise<void> {
-  await serialize(storage, async () => {
-    await deleteScheduledWork(
-      storage,
-      options.prefix ?? DEFAULT_PREFIX,
-      RUN_KIND,
-      runId
-    );
-    if (options.rearm !== false) {
-      await armNextAlarm(storage, options.prefix ?? DEFAULT_PREFIX);
-    }
-  });
-}
-
-export async function ackCelldScheduledThreadPrompt(
-  storage: CelldDurableObjectStorage,
-  prompt: ScheduledThreadPrompt,
-  options: { readonly prefix?: string; readonly rearm?: boolean } = {}
-): Promise<void> {
-  await serialize(storage, async () => {
-    await deleteScheduledWork(
-      storage,
-      options.prefix ?? DEFAULT_PREFIX,
-      THREAD_PROMPT_KIND,
-      threadPromptScheduledWorkId(prompt)
-    );
-    if (options.rearm !== false) {
-      await armNextAlarm(storage, options.prefix ?? DEFAULT_PREFIX);
-    }
-  });
 }

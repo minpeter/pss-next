@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanupPrefix } from "./celld-bucket";
 import {
   createBucket,
   deploy,
@@ -21,6 +22,7 @@ export interface MatrixResult {
   readonly concurrentObjects: number;
   readonly duplicateCommits: number;
   readonly malformedStatus: number;
+  readonly retainedResponseBytes: number;
   readonly retainedResponseSlots: number;
 }
 
@@ -44,6 +46,14 @@ export async function runMatrix({
   if (malformed.status !== 400) {
     throw new Error(`malformed input returned ${malformed.status}`);
   }
+  const invalidKey = await fetchImpl(baseUrl, {
+    body: JSON.stringify({ idempotencyKey: 42, text: "hello" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  if (invalidKey.status !== 400) {
+    throw new Error(`invalid idempotency key returned ${invalidKey.status}`);
+  }
 
   const duplicateKey = `duplicate-${Date.now()}`;
   const duplicate = await Promise.all([
@@ -62,6 +72,7 @@ export async function runMatrix({
   const objects = Array.from({ length: objectCount }, (_, index) => index);
   let completedObjects = 0;
   const retainedResponses: { readonly reply: string }[] = [];
+  let retainedResponseBytes = 0;
   const retainResponses = process.env.CELLD_QA_RETENTION_MODE === "legacy";
   for (let offset = 0; offset < objects.length; offset += concurrency) {
     const batch = objects.slice(offset, offset + concurrency);
@@ -70,6 +81,7 @@ export async function runMatrix({
     );
     if (retainResponses) {
       retainedResponses.push(...responses);
+      retainedResponseBytes += Buffer.byteLength(JSON.stringify(responses));
     }
     completedObjects += batch.length;
   }
@@ -77,6 +89,7 @@ export async function runMatrix({
     concurrentObjects: completedObjects,
     duplicateCommits: duplicate[0]?.commitCount ?? 0,
     malformedStatus: malformed.status,
+    retainedResponseBytes,
     retainedResponseSlots: retainedResponses.length,
   };
 }
@@ -110,6 +123,12 @@ async function main(): Promise<void> {
       await deploy(prefix);
       child = startCelld(surface.kind, prefix, surface.port, watch);
       await waitForListening(child);
+      const idempotentBeforeRestart = await call(
+        fetch,
+        `http://127.0.0.1:${surface.port}`,
+        "restart-idempotency",
+        "restart-key"
+      );
       const beforeRestart = await call(
         fetch,
         `http://127.0.0.1:${surface.port}`,
@@ -133,6 +152,20 @@ async function main(): Promise<void> {
       if (afterRestart.historyCount !== 2) {
         throw new Error("restart probe did not preserve state");
       }
+      const idempotentAfterRestart = await call(
+        fetch,
+        `http://127.0.0.1:${surface.port}`,
+        "restart-idempotency",
+        "restart-key"
+      );
+      if (
+        idempotentAfterRestart.historyCount !==
+          idempotentBeforeRestart.historyCount ||
+        idempotentAfterRestart.commitCount !==
+          idempotentBeforeRestart.commitCount
+      ) {
+        throw new Error("idempotency result did not survive restart");
+      }
       const report = await runMatrix({
         baseUrl: `http://127.0.0.1:${surface.port}`,
         concurrency: options.concurrency,
@@ -148,7 +181,10 @@ async function main(): Promise<void> {
       if (child !== undefined) {
         await stopCelld(child);
       }
-      await rm(watch, { force: true, recursive: true });
+      await Promise.all([
+        cleanupPrefix(prefix),
+        rm(watch, { force: true, recursive: true }),
+      ]);
     }
   }
   const output = { ok: true, reports, surface: "matrix" };

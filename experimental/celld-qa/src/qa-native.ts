@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { cleanupPrefix } from "./celld-bucket";
 import {
   createBucket,
   deploy,
@@ -103,7 +104,10 @@ async function main(): Promise<void> {
     if (child !== undefined) {
       await stopCelld(child);
     }
-    await rm(watch, { force: true, recursive: true });
+    await Promise.all([
+      cleanupPrefix(prefix),
+      rm(watch, { force: true, recursive: true }),
+    ]);
   }
 }
 

@@ -16,6 +16,8 @@ export function scheduledWorkTableInfoRows(): unknown[] {
     { name: "thread_key" },
     { name: "run_id" },
     { name: "created_at" },
+    { name: "claim_token" },
+    { name: "claimed_until" },
   ];
 }
 
@@ -44,6 +46,8 @@ export function selectScheduledWorkRowsWithOffset(
     )
     .slice(offset, offset + limit)
     .map((row) => ({
+      claimed_until: row.claimed_until,
+      claim_token: row.claim_token,
       payload: row.payload,
       run_id: row.run_id,
       thread_key: row.thread_key,

@@ -14,17 +14,19 @@ export {
   createCelldHost,
 } from "./host";
 export {
+  createCelldScheduler,
+  listCelldScheduledRuns,
+  listCelldScheduledThreadPrompts,
+} from "./scheduler";
+export {
   ackCelldScheduledRun,
   ackCelldScheduledThreadPrompt,
   claimCelldScheduledRun,
   claimCelldScheduledThreadPrompt,
-  createCelldScheduler,
-  listCelldScheduledRuns,
-  listCelldScheduledThreadPrompts,
   rearmCelldScheduledWork,
   retryCelldScheduledRun,
   retryCelldScheduledThreadPrompt,
-} from "./scheduler";
+} from "./scheduler-claims";
 export type {
   CelldDurableObjectStorage,
   CelldScheduledWorkListOptions,

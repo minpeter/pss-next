@@ -15,4 +15,12 @@ pnpm --filter @minpeter/pss-celld-qa qa:matrix -- --native-port 16421 --containe
 ```
 
 The matrix performs malformed-input, duplicate-idempotency, concurrent
-object, and restart-persistence checks on both native and container Celld.
+object, restart-persistence, and completed-idempotency replay checks on both
+native and container Celld. Its idempotency reservation is durable: an
+interrupted pending request returns `409` rather than repeating agent effects.
+
+`qa:load` also records Celld process RSS, CPU ticks, and file descriptors for
+diagnostics. The optimization gate is intentionally narrower and causal: it
+compares response objects and serialized response bytes retained by the QA
+runner. Celld process metrics are observational because runner-side retention
+cannot causally change the Celld child process.

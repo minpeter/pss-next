@@ -80,6 +80,14 @@ export function writeSqlStatement(
     writeScheduledWork(state, bindings);
     return;
   }
+  if (query.startsWith("update pss_scheduled_work set claim_token = null")) {
+    releaseScheduledWork(state, bindings);
+    return;
+  }
+  if (query.startsWith("update pss_scheduled_work set claim_token")) {
+    claimScheduledWork(state, bindings);
+    return;
+  }
   if (query.startsWith("delete from pss_scheduled_work")) {
     deleteScheduledWork(state, query, bindings);
     return;
@@ -202,6 +210,8 @@ function writeScheduledWork(
       !(row.prefix === prefix && row.kind === kind && row.work_id === workId)
   );
   state.scheduledWork.push({
+    claimed_until: null,
+    claim_token: null,
     created_at: numberBinding(bindings[6]),
     kind,
     payload: stringBinding(bindings[3]),
@@ -210,6 +220,54 @@ function writeScheduledWork(
     thread_key: nullableStringBinding(bindings[4]),
     work_id: workId,
   });
+}
+
+function claimScheduledWork(
+  state: InMemoryDurableObjectSqlState,
+  bindings: readonly unknown[]
+): void {
+  const token = stringBinding(bindings[0]);
+  const claimedUntil = numberBinding(bindings[1]);
+  const prefix = stringBinding(bindings[2]);
+  const kind = stringBinding(bindings[3]);
+  const workId = stringBinding(bindings[4]);
+  const nowMs = numberBinding(bindings[5]);
+  const row = state.scheduledWork.find(
+    (candidate) =>
+      candidate.prefix === prefix &&
+      candidate.kind === kind &&
+      candidate.work_id === workId &&
+      (candidate.claimed_until === null || candidate.claimed_until <= nowMs)
+  );
+  if (row !== undefined) {
+    row.claim_token = token;
+    row.claimed_until = claimedUntil;
+  }
+}
+
+function releaseScheduledWork(
+  state: InMemoryDurableObjectSqlState,
+  bindings: readonly unknown[]
+): void {
+  const payload = stringBinding(bindings[0]);
+  const createdAt = numberBinding(bindings[1]);
+  const prefix = stringBinding(bindings[2]);
+  const kind = stringBinding(bindings[3]);
+  const workId = stringBinding(bindings[4]);
+  const token = stringBinding(bindings[5]);
+  const row = state.scheduledWork.find(
+    (candidate) =>
+      candidate.prefix === prefix &&
+      candidate.kind === kind &&
+      candidate.work_id === workId &&
+      candidate.claim_token === token
+  );
+  if (row !== undefined) {
+    row.claim_token = null;
+    row.claimed_until = null;
+    row.created_at = createdAt;
+    row.payload = payload;
+  }
 }
 
 function deleteScheduledWork(
@@ -242,9 +300,18 @@ function deleteScheduledWork(
   }
   const kind = stringBinding(bindings[1]);
   const workId = stringBinding(bindings[2]);
+  const token =
+    query.includes("claim_token = ?") && bindings.length > 3
+      ? stringBinding(bindings[3])
+      : undefined;
   state.scheduledWork = state.scheduledWork.filter(
     (row) =>
-      !(row.prefix === prefix && row.kind === kind && row.work_id === workId)
+      !(
+        row.prefix === prefix &&
+        row.kind === kind &&
+        row.work_id === workId &&
+        (token === undefined || row.claim_token === token)
+      )
   );
 }
 

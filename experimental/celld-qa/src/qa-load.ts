@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { cleanupPrefix } from "./celld-bucket";
 import type { CelldProcessMetrics } from "./celld-process";
 import {
   createBucket,
@@ -37,6 +38,7 @@ interface LoadReport {
   readonly maxRssBytes: number;
   readonly openFiles: number;
   readonly result: Awaited<ReturnType<typeof runMatrix>>;
+  readonly retainedResponseBytes: number;
   readonly retainedResponseSlots: number;
   readonly runnerCpuUserUs: number;
   readonly surface: "native";
@@ -74,6 +76,7 @@ export async function runLoad({
     errors: 0,
     maxRssBytes: Math.max(before?.maxRssBytes ?? 0, after?.maxRssBytes ?? 0),
     openFiles: Math.max(before?.openFiles ?? 0, after?.openFiles ?? 0),
+    retainedResponseBytes: result.retainedResponseBytes,
     retainedResponseSlots: result.retainedResponseSlots,
     result,
     runnerCpuUserUs: process.resourceUsage().userCPUTime,
@@ -109,7 +112,10 @@ async function main(): Promise<void> {
     if (child !== undefined) {
       await stopCelld(child);
     }
-    await rm(watch, { force: true, recursive: true });
+    await Promise.all([
+      cleanupPrefix(prefix),
+      rm(watch, { force: true, recursive: true }),
+    ]);
   }
 }
 

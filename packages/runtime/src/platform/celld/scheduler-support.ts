@@ -90,7 +90,13 @@ export function listDueWork<T>(
     return [];
   }
   return selectScheduledWork(storage, prefix, kind)
-    .map((row) => parseDuePayload(row.payload))
+    .filter(
+      (row) =>
+        row.claimed_until === undefined ||
+        row.claimed_until === null ||
+        row.claimed_until <= nowMs
+    )
+    .map((row) => requiredDuePayload(row.payload))
     .flatMap((value) => {
       if (value === undefined) {
         return [];
@@ -108,9 +114,10 @@ export function listDueWork<T>(
 
 export async function armNextAlarm(
   storage: CelldDurableObjectStorage,
-  prefix: string
+  prefix: string,
+  nowMs = Date.now()
 ): Promise<void> {
-  const dueAtMs = earliestDueAt(storage, prefix);
+  const dueAtMs = earliestDueAt(storage, prefix, nowMs);
   if (dueAtMs === undefined) {
     await storage.deleteAlarm();
     return;
@@ -122,11 +129,20 @@ export async function armNextAlarm(
 
 function earliestDueAt(
   storage: CelldDurableObjectStorage,
-  prefix: string
+  prefix: string,
+  nowMs: number
 ): number | undefined {
   const values = ([RUN_KIND, THREAD_PROMPT_KIND] as const).flatMap((kind) =>
     selectScheduledWork(storage, prefix, kind)
-      .map((row) => parseDuePayload(row.payload)?.dueAtMs)
+      .map((row) => {
+        if (
+          typeof row.claimed_until === "number" &&
+          row.claimed_until > nowMs
+        ) {
+          return row.claimed_until;
+        }
+        return requiredDuePayload(row.payload).dueAtMs;
+      })
       .filter((value): value is number => value !== undefined)
   );
   return values.length === 0 ? undefined : Math.min(...values);
@@ -148,6 +164,14 @@ function parseDuePayload(payload: string): DuePayload<unknown> | undefined {
   } catch {
     return;
   }
+}
+
+function requiredDuePayload(payload: string): DuePayload<unknown> {
+  const value = parseDuePayload(payload);
+  if (value === undefined) {
+    throw new Error("Invalid Celld scheduled work payload.");
+  }
+  return value;
 }
 
 function normalizeLimit(limit: number | undefined): number | undefined {

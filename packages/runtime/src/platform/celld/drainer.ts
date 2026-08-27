@@ -1,21 +1,29 @@
-import type { TurnRecord, TurnStatus } from "../../execution/host/types";
-import {
-  normalizedListLimit,
-  type ScheduledThreadPrompt,
-} from "../../execution/scheduled-work";
+import type { TurnRecord } from "../../execution/host/types";
+import type { ScheduledThreadPrompt } from "../../execution/scheduled-work";
 import type { AgentEvent } from "../../thread/protocol/events";
 import type { AgentTurn } from "../../thread/protocol/turn";
 import {
-  ackCelldScheduledRun,
-  ackCelldScheduledThreadPrompt,
-  claimCelldScheduledRun,
-  claimCelldScheduledThreadPrompt,
+  ackThreadPrompt,
+  createDrainResult,
+  decrement,
+  isTerminal,
+  listOptions,
+  type MutableDrainResult,
+  threadPromptContext,
+  workOptions,
+} from "./drainer-support";
+import {
   listCelldScheduledRuns,
   listCelldScheduledThreadPrompts,
+} from "./scheduler";
+import {
+  ackCelldScheduledRun,
+  claimCelldScheduledRun,
+  claimCelldScheduledThreadPrompt,
   rearmCelldScheduledWork,
   retryCelldScheduledRun,
   retryCelldScheduledThreadPrompt,
-} from "./scheduler";
+} from "./scheduler-claims";
 import type { CelldDurableObjectStorage } from "./scheduler-support";
 
 export interface CelldScheduledWorkAgent {
@@ -61,15 +69,6 @@ export interface CelldScheduledWorkDrainResult {
   readonly skippedThreadPrompts: readonly ScheduledThreadPrompt[];
 }
 
-interface MutableDrainResult {
-  ackedRuns: string[];
-  ackedThreadPrompts: ScheduledThreadPrompt[];
-  events: AgentEvent[];
-  remaining: number | undefined;
-  skippedRuns: string[];
-  skippedThreadPrompts: ScheduledThreadPrompt[];
-}
-
 export async function drainCelldScheduledWork(
   options: CelldScheduledWorkDrainOptions
 ): Promise<CelldScheduledWorkDrainResult> {
@@ -81,33 +80,33 @@ export async function drainCelldScheduledWork(
     }
     return result;
   } finally {
-    await rearmCelldScheduledWork(
-      options.storage,
-      prefixOptions(options.prefix)
-    );
+    await rearmCelldScheduledWork(options.storage, workOptions(options));
   }
 }
-
 async function drainRuns(
   options: CelldScheduledWorkDrainOptions,
   result: MutableDrainResult
 ): Promise<void> {
-  const { agentForRun, onEvent, prefix, storage } = options;
+  const { agentForRun, onEvent, storage } = options;
   for (const runId of await listCelldScheduledRuns(
     storage,
     listOptions(options, result.remaining)
   )) {
     const context = { kind: "run", runId } as const;
-    if (
-      !(await claimCelldScheduledRun(storage, runId, prefixOptions(prefix)))
-    ) {
+    const claimToken = await claimCelldScheduledRun(
+      storage,
+      runId,
+      workOptions(options)
+    );
+    if (claimToken === undefined) {
       result.remaining = decrement(result.remaining);
       continue;
     }
     try {
       if (await resumeAndDrain(agentForRun, context, result.events, onEvent)) {
         await ackCelldScheduledRun(storage, runId, {
-          ...prefixOptions(prefix),
+          ...workOptions(options),
+          claimToken,
           rearm: false,
         });
         result.ackedRuns.push(runId);
@@ -116,12 +115,17 @@ async function drainRuns(
           storage,
           runId,
           1000,
-          prefixOptions(prefix)
+          workOptions(options, claimToken)
         );
         result.skippedRuns.push(runId);
       }
     } catch (error) {
-      await retryCelldScheduledRun(storage, runId, 1000, prefixOptions(prefix));
+      await retryCelldScheduledRun(
+        storage,
+        runId,
+        1000,
+        workOptions(options, claimToken)
+      );
       throw error;
     }
     result.remaining = decrement(result.remaining);
@@ -144,25 +148,24 @@ async function drainThreadPrompts(
       continue;
     }
     const context = threadPromptContext({ ...prompt, runId: prompt.runId });
-    if (
-      !(await claimCelldScheduledThreadPrompt(
-        storage,
-        prompt,
-        prefixOptions(prefix)
-      ))
-    ) {
+    const claimToken = await claimCelldScheduledThreadPrompt(
+      storage,
+      prompt,
+      workOptions(options)
+    );
+    if (claimToken === undefined) {
       result.remaining = decrement(result.remaining);
       continue;
     }
     try {
       if (await resumeAndDrain(agentForRun, context, result.events, onEvent)) {
-        await ackThreadPrompt(storage, prompt, prefix, false);
+        await ackThreadPrompt(storage, prompt, prefix, false, claimToken);
         result.ackedThreadPrompts.push(prompt);
       } else {
         await retryCelldScheduledThreadPrompt(
           storage,
           prompt,
-          prefixOptions(prefix)
+          workOptions(options, claimToken)
         );
         result.skippedThreadPrompts.push(prompt);
       }
@@ -170,7 +173,7 @@ async function drainThreadPrompts(
       await retryCelldScheduledThreadPrompt(
         storage,
         prompt,
-        prefixOptions(prefix)
+        workOptions(options, claimToken)
       );
       throw error;
     }
@@ -195,68 +198,4 @@ async function resumeAndDrain(
     await onEvent?.(context, event);
   }
   return true;
-}
-
-function createDrainResult(limit: number | undefined): MutableDrainResult {
-  return {
-    ackedRuns: [],
-    ackedThreadPrompts: [],
-    events: [],
-    remaining: normalizedListLimit(limit),
-    skippedRuns: [],
-    skippedThreadPrompts: [],
-  };
-}
-
-function listOptions(
-  options: CelldScheduledWorkDrainOptions,
-  limit: number | undefined
-) {
-  return {
-    ...(limit === undefined ? {} : { limit }),
-    ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
-    ...(options.prefix === undefined ? {} : { prefix: options.prefix }),
-  };
-}
-
-function threadPromptContext(
-  prompt: ScheduledThreadPrompt & { readonly runId: string }
-): CelldScheduledWorkRunContext {
-  return {
-    ...(prompt.idempotencyKey === undefined
-      ? {}
-      : { idempotencyKey: prompt.idempotencyKey }),
-    kind: "thread-prompt",
-    ...(prompt.notificationId === undefined
-      ? {}
-      : { notificationId: prompt.notificationId }),
-    runId: prompt.runId,
-    threadKey: prompt.threadKey,
-  };
-}
-
-async function ackThreadPrompt(
-  storage: CelldDurableObjectStorage,
-  prompt: ScheduledThreadPrompt,
-  prefix: string | undefined,
-  rearm = true
-): Promise<void> {
-  await ackCelldScheduledThreadPrompt(storage, prompt, {
-    ...prefixOptions(prefix),
-    rearm,
-  });
-}
-
-function prefixOptions(prefix: string | undefined): {
-  readonly prefix?: string;
-} {
-  return prefix === undefined ? {} : { prefix };
-}
-
-function decrement(value: number | undefined): number | undefined {
-  return value === undefined ? undefined : Math.max(0, value - 1);
-}
-
-function isTerminal(status: TurnStatus): boolean {
-  return status === "cancelled" || status === "completed" || status === "error";
 }

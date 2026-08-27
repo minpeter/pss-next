@@ -25,7 +25,7 @@ export interface ThreadInputRow {
   readonly admitted_at_ms: number;
   readonly admitted_seq: number;
   readonly claim_id: string | null;
-  readonly created_at: number;
+  created_at: number;
   readonly kind: string;
   readonly message_id: string;
   readonly placement: string | null;
@@ -108,9 +108,11 @@ export interface CheckpointRow {
 }
 
 export interface ScheduledWorkRow {
-  readonly created_at: number;
+  claim_token: string | null;
+  claimed_until: number | null;
+  created_at: number;
   readonly kind: string;
-  readonly payload: string;
+  payload: string;
   readonly prefix: string;
   readonly run_id: string | null;
   readonly thread_key: string | null;

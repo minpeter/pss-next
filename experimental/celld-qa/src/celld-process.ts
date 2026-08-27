@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFile = promisify(execFileCallback);
-const RSS_PATTERN = /^VmRSS:\s+(\d+)\s+kB$/m;
+const RSS_PATTERN = /^VmHWM:\s+(\d+)\s+kB$/m;
 const CELLD = process.env.CELLD_BIN ?? `${process.env.HOME}/.local/bin/celld`;
 const ENDPOINT = process.env.S3_ENDPOINT ?? "http://127.0.0.1:14566";
 const BUCKET = process.env.CELLD_QA_BUCKET ?? "pss-celld-qa";
@@ -130,6 +130,8 @@ export function startCelld(
       stdio: ["ignore", "pipe", "pipe"],
     });
   }
+  const environment = localEnvironment();
+  const sessionToken = environment.AWS_SESSION_TOKEN;
   return spawn(
     "docker",
     [
@@ -140,9 +142,12 @@ export function startCelld(
       "--name",
       `pss-celld-${surface}-${port}`,
       "-e",
-      `AWS_ACCESS_KEY_ID=${localEnvironment().AWS_ACCESS_KEY_ID}`,
+      `AWS_ACCESS_KEY_ID=${environment.AWS_ACCESS_KEY_ID}`,
       "-e",
-      `AWS_SECRET_ACCESS_KEY=${localEnvironment().AWS_SECRET_ACCESS_KEY}`,
+      `AWS_SECRET_ACCESS_KEY=${environment.AWS_SECRET_ACCESS_KEY}`,
+      ...(sessionToken === undefined
+        ? []
+        : ["-e", `AWS_SESSION_TOKEN=${sessionToken}`]),
       "-e",
       `S3_ENDPOINT=${ENDPOINT}`,
       "-e",
@@ -153,7 +158,7 @@ export function startCelld(
       ...args,
     ],
     {
-      env: localEnvironment(),
+      env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     }
   );

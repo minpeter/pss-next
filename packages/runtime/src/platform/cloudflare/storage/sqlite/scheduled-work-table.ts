@@ -11,7 +11,7 @@ import {
   requiredSqlStorage,
   withTransaction,
 } from "../durable-object/sql-access";
-import { hasScheduledWorkColumn } from "./scheduled-work-table-schema";
+import { ensureScheduledWorkSchema } from "./scheduled-work-table-schema";
 
 export type ScheduledWorkKind =
   | "agents-run"
@@ -21,6 +21,8 @@ export type ScheduledWorkKind =
   | SharedScheduledWorkKind;
 
 export interface ScheduledWorkRow {
+  readonly claim_token?: string | null;
+  readonly claimed_until?: number | null;
   readonly payload: string;
   readonly run_id?: string | null;
   readonly thread_key?: string | null;
@@ -65,7 +67,7 @@ export function selectScheduledWork(
   if (limit !== undefined) {
     return sql
       .exec<ScheduledWorkRow>(
-        "SELECT work_id, payload FROM pss_scheduled_work WHERE prefix = ? AND kind = ? ORDER BY created_at, rowid LIMIT ? OFFSET ?",
+        "SELECT work_id, payload, claim_token, claimed_until FROM pss_scheduled_work WHERE prefix = ? AND kind = ? ORDER BY created_at, rowid LIMIT ? OFFSET ?",
         prefix,
         kind,
         normalizedListLimit(limit),
@@ -75,7 +77,7 @@ export function selectScheduledWork(
   }
   return sql
     .exec<ScheduledWorkRow>(
-      "SELECT work_id, payload FROM pss_scheduled_work WHERE prefix = ? AND kind = ? ORDER BY created_at, rowid",
+      "SELECT work_id, payload, claim_token, claimed_until FROM pss_scheduled_work WHERE prefix = ? AND kind = ? ORDER BY created_at, rowid",
       prefix,
       kind
     )
@@ -235,30 +237,6 @@ function deleteScheduledWorkRow(
     kind,
     workId
   );
-}
-
-function ensureScheduledWorkSchema(sql: SqlStorage): void {
-  sql.exec(
-    "CREATE TABLE IF NOT EXISTS pss_scheduled_work (prefix TEXT NOT NULL, kind TEXT NOT NULL, work_id TEXT NOT NULL, payload TEXT NOT NULL, thread_key TEXT, run_id TEXT, created_at INTEGER NOT NULL, PRIMARY KEY (prefix, kind, work_id))"
-  );
-  ensureScheduledWorkColumn(sql, "thread_key");
-  ensureScheduledWorkColumn(sql, "run_id");
-  sql.exec(
-    "CREATE INDEX IF NOT EXISTS pss_scheduled_work_due ON pss_scheduled_work (prefix, kind, created_at, work_id)"
-  );
-  sql.exec(
-    "CREATE INDEX IF NOT EXISTS pss_scheduled_work_thread ON pss_scheduled_work (prefix, thread_key)"
-  );
-  sql.exec(
-    "CREATE INDEX IF NOT EXISTS pss_scheduled_work_run ON pss_scheduled_work (prefix, run_id)"
-  );
-}
-
-function ensureScheduledWorkColumn(sql: SqlStorage, column: string): void {
-  if (hasScheduledWorkColumn(sql, column)) {
-    return;
-  }
-  sql.exec(`ALTER TABLE pss_scheduled_work ADD COLUMN ${column} TEXT`);
 }
 
 function requiredScheduledWorkTableSql(

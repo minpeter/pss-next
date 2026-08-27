@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse } from "@babel/parser";
+import { formatRuntimePublicApiSnapshot } from "./runtime-public-api-format.mjs";
 
 export const RUNTIME_API_SNAPSHOT_PATH = join(
   "packages",
@@ -268,6 +269,6 @@ export function findRuntimePublicApiSnapshotErrors({ cwd, packages }) {
 export function writeRuntimePublicApiSnapshot(cwd = process.cwd()) {
   const snapshotFile = join(cwd, RUNTIME_API_SNAPSHOT_PATH);
   const snapshot = collectRuntimePublicApi(cwd);
-  writeFileSync(snapshotFile, `${JSON.stringify(snapshot, null, 2)}\n`);
+  writeFileSync(snapshotFile, formatRuntimePublicApiSnapshot(snapshot));
   return snapshotFile;
 }

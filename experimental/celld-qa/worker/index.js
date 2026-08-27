@@ -39,7 +39,10 @@ export class Echo {
       typeof payload !== "object" ||
       payload === null ||
       typeof payload.text !== "string" ||
-      payload.text.length === 0
+      payload.text.length === 0 ||
+      ("idempotencyKey" in payload &&
+        (typeof payload.idempotencyKey !== "string" ||
+          payload.idempotencyKey.length === 0))
     ) {
       return Response.json({ error: "invalid_input" }, { status: 400 });
     }
@@ -47,15 +50,9 @@ export class Echo {
       typeof payload.idempotencyKey === "string"
         ? `idempotency:${payload.idempotencyKey}`
         : undefined;
-    if (key !== undefined) {
-      const prior = await this.state.storage.get(key);
-      if (prior !== undefined) {
-        return Response.json(prior);
-      }
-    }
     const run = () => this.process(payload, key);
     if (key === undefined) {
-      return Response.json(await run());
+      return await run();
     }
     const prior = this.idempotency.get(key) ?? Promise.resolve();
     const current = prior.then(run);
@@ -67,7 +64,7 @@ export class Echo {
       )
     );
     try {
-      return Response.json(await current);
+      return await current;
     } finally {
       this.idempotency.delete(key);
     }
@@ -75,9 +72,12 @@ export class Echo {
 
   async process(payload, key) {
     if (key !== undefined) {
-      const prior = await this.state.storage.get(key);
-      if (prior !== undefined) {
-        return prior;
+      const reservation = await reserve(this.state.storage, key);
+      if (reservation.status === "committed") {
+        return Response.json(reservation.result);
+      }
+      if (reservation.status === "pending") {
+        return Response.json({ error: "idempotency_pending" }, { status: 409 });
       }
     }
     const agent = await this.agent();
@@ -91,21 +91,8 @@ export class Echo {
     if (turn.runId !== undefined) {
       await agent.host.scheduler.enqueueRun(turn.runId);
     }
-    const count = ((await this.state.storage.get("historyCount")) ?? 0) + 1;
-    const commitCount =
-      ((await this.state.storage.get("commitCount")) ?? 0) + 1;
-    const result = {
-      commitCount,
-      historyCount: count,
-      ok: true,
-      reply,
-    };
-    await this.state.storage.put("commitCount", commitCount);
-    await this.state.storage.put("historyCount", count);
-    if (key !== undefined) {
-      await this.state.storage.put(key, result);
-    }
-    return result;
+    const result = await commit(this.state.storage, key, reply);
+    return Response.json(result);
   }
 
   async agent() {
@@ -146,4 +133,30 @@ function lastUserText(prompt) {
   }
   const part = message.content.find((item) => item.type === "text");
   return part?.text ?? "";
+}
+
+async function reserve(storage, key) {
+  return await storage.transaction(async (transaction) => {
+    const existing = await transaction.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const pending = { status: "pending" };
+    await transaction.put(key, pending);
+    return { status: "reserved" };
+  });
+}
+
+async function commit(storage, key, reply) {
+  return await storage.transaction(async (transaction) => {
+    const historyCount = ((await transaction.get("historyCount")) ?? 0) + 1;
+    const commitCount = ((await transaction.get("commitCount")) ?? 0) + 1;
+    const result = { commitCount, historyCount, ok: true, reply };
+    await transaction.put("commitCount", commitCount);
+    await transaction.put("historyCount", historyCount);
+    if (key !== undefined) {
+      await transaction.put(key, { result, status: "committed" });
+    }
+    return result;
+  });
 }
