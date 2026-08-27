@@ -322,6 +322,26 @@
       "value openTelemetry",
       "value traceAgentTurn"
     ],
+    "./platform/celld": [
+      "type CelldDurableObjectState",
+      "type CelldDurableObjectStorage",
+      "type CelldHost",
+      "type CelldHostOptions",
+      "type CelldScheduledWorkAgent",
+      "type CelldScheduledWorkDrainOptions",
+      "type CelldScheduledWorkDrainResult",
+      "type CelldScheduledWorkListOptions",
+      "type CelldScheduledWorkRunContext",
+      "type CelldScheduler",
+      "type CelldSchedulerOptions",
+      "value ackCelldScheduledRun",
+      "value ackCelldScheduledThreadPrompt",
+      "value createCelldHost",
+      "value createCelldScheduler",
+      "value drainCelldScheduledWork",
+      "value listCelldScheduledRuns",
+      "value listCelldScheduledThreadPrompts"
+    ],
     "./platform/cloudflare": [
       "type AgentTurnDrainResult",
       "type AgentTurnDrainStopReason",
@@ -539,7 +559,10 @@
       "value encodeJsonl",
       "value servePssProtocol"
     ],
-    "./protocol/node": ["type SpawnPssClientOptions", "value spawnPssClient"],
+    "./protocol/node": [
+      "type SpawnPssClientOptions",
+      "value spawnPssClient"
+    ],
     "./testing": [
       "value agentEvent",
       "value agentEventStream",
