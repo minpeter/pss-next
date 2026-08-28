@@ -78,10 +78,16 @@ export async function drainCelldScheduledWork(
     if (result.remaining !== 0) {
       await drainThreadPrompts(options, result);
     }
-    return result;
-  } finally {
-    await rearmCelldScheduledWork(options.storage, workOptions(options));
+  } catch (error) {
+    try {
+      await rearmCelldScheduledWork(options.storage, workOptions(options));
+    } catch {
+      throw error;
+    }
+    throw error;
   }
+  await rearmCelldScheduledWork(options.storage, workOptions(options));
+  return result;
 }
 async function drainRuns(
   options: CelldScheduledWorkDrainOptions,
@@ -120,12 +126,16 @@ async function drainRuns(
         result.skippedRuns.push(runId);
       }
     } catch (error) {
-      await retryCelldScheduledRun(
-        storage,
-        runId,
-        1000,
-        workOptions(options, claimToken)
-      );
+      try {
+        await retryCelldScheduledRun(
+          storage,
+          runId,
+          1000,
+          workOptions(options, claimToken)
+        );
+      } catch {
+        throw error;
+      }
       throw error;
     }
     result.remaining = decrement(result.remaining);
@@ -170,11 +180,15 @@ async function drainThreadPrompts(
         result.skippedThreadPrompts.push(prompt);
       }
     } catch (error) {
-      await retryCelldScheduledThreadPrompt(
-        storage,
-        prompt,
-        workOptions(options, claimToken)
-      );
+      try {
+        await retryCelldScheduledThreadPrompt(
+          storage,
+          prompt,
+          workOptions(options, claimToken)
+        );
+      } catch {
+        throw error;
+      }
       throw error;
     }
     result.remaining = decrement(result.remaining);

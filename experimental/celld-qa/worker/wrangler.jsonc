@@ -3,7 +3,13 @@
   "main": "index.js",
   "compatibility_date": "2026-01-01",
   "durable_objects": {
-    "bindings": [{ "name": "ECHO", "class_name": "Echo" }]
+    "bindings": [
+      { "name": "ECHO", "class_name": "Echo" },
+      { "name": "REAL_AGENT", "class_name": "RealAgent" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Echo"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Echo"] },
+    { "tag": "v2", "new_sqlite_classes": ["RealAgent"] }
+  ]
 }
