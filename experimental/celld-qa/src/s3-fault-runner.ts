@@ -10,7 +10,6 @@ import {
   deploy,
   restartCelld,
   startCelld,
-  stopCelld,
   waitForListening,
 } from "./celld-process";
 import { celldProcessConfiguration } from "./celld-process-config";
@@ -23,7 +22,12 @@ import {
   type S3FaultReport,
   type ScenarioResult,
 } from "./fault-proxy-types";
-import { measureS3Cleanup } from "./s3-fault-cleanup";
+import {
+  measureS3Cleanup,
+  resetFaultProxy,
+  settleS3Cleanup,
+  stopOwnedCelld,
+} from "./s3-fault-cleanup";
 import {
   type FaultScenarioRuntime,
   runFaultScenario,
@@ -115,33 +119,37 @@ export async function runLiveS3FaultCampaign(
   };
   const cleanup = async (): Promise<void> => {
     try {
-      if (child !== undefined) {
-        await stopCelld(child);
-        child = undefined;
-      }
-      if (localStackStopped) {
-        await startLocalStack();
-        await createBucket();
-        localStackStopped = false;
-      }
-      await control.install({ kind: "pass" });
-      await toxiproxy.clearToxics(proxyName);
-      await cleanupPrefix(prefix, { endpoint: proxyUrl.origin });
-      await rm(watch, { force: true, recursive: true });
-      await toxiproxy.deleteProxy(proxyName);
+      cleanupRemaining = await settleS3Cleanup(
+        [
+          () => stopOwnedCelld(child),
+          async () => {
+            if (localStackStopped) {
+              await startLocalStack();
+              await createBucket();
+              localStackStopped = false;
+            }
+          },
+          () => resetFaultProxy(control),
+          () => toxiproxy.clearToxics(proxyName),
+          () => cleanupPrefix(prefix, { endpoint: proxyUrl.origin }),
+          () => rm(watch, { force: true, recursive: true }),
+          () => toxiproxy.deleteProxy(proxyName),
+        ],
+        () =>
+          measureS3Cleanup({
+            control,
+            endpoint: directS3Url.origin,
+            ownedPids,
+            port: options.port,
+            prefix,
+            proxyName,
+            toxiproxy,
+            watch,
+          })
+      );
     } finally {
       restoreEndpoint(previousEndpoint);
     }
-    cleanupRemaining = await measureS3Cleanup({
-      control,
-      endpoint: directS3Url.origin,
-      ownedPids,
-      port: options.port,
-      prefix,
-      proxyName,
-      toxiproxy,
-      watch,
-    });
   };
   const report = await runWithCampaignCleanup({
     cleanup,

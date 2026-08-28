@@ -51,6 +51,23 @@ describe("campaign command evidence semantics", () => {
     ).toContain("migration regression evidence is incomplete");
   });
 
+  it.each([1, 3])(
+    "rejects checkpoint evidence with %i tool executions",
+    (toolExecutionCount) => {
+      expect(
+        campaignEvidenceViolations("real-agent", "tool-checkpoint-restart", {
+          checkpointed: true,
+          leaseRecovery: "checkpoint-proven-orphan-release",
+          passed: true,
+          resumedSameRun: true,
+          sideEffectCount: 1,
+          terminalResultCount: 1,
+          toolExecutionCount,
+        })
+      ).toContain("tool checkpoint recovery evidence is incomplete");
+    }
+  );
+
   it("requires exact compaction and large-history observables", () => {
     expect(
       campaignEvidenceViolations("real-agent", "compaction-restart", {

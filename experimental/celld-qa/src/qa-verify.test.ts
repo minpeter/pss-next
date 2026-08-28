@@ -138,6 +138,68 @@ describe("qa:verify evidence boundary", () => {
     }
     await expect(verifyCampaignReport(reportPath)).resolves.toEqual(report);
   });
+
+  it("resolves moved profile receipts beside the report", async () => {
+    const directory = await mkdtemp(join("/var/tmp", "celld-verify-"));
+    directories.push(directory);
+    const reportPath = join(directory, "report.json");
+    const missingDirectory = join(directory, "removed");
+    const profiles = ["wide", "hot", "mixed", "restart", "soak"];
+    const report = buildCampaignReport({
+      cleanup: {
+        passed: true,
+        receiptPath: join(missingDirectory, "cleanup.jsonl"),
+      },
+      command: "profiles",
+      runId: "profiles-run",
+      scenarios: profiles.map((name) => ({
+        name,
+        observables: {
+          cleanupPath: join(missingDirectory, `${name}.cleanup.jsonl`),
+          cleanupPassed: true,
+          profile: name,
+          report: {
+            admitted: 1,
+            cleanup: { aborted: 0, drained: true, inFlight: 0 },
+            completed: 1,
+            correct: 1,
+            failed: 0,
+            incorrect: 0,
+          },
+          runId: `${name}-run`,
+        },
+        violations: [],
+      })),
+    });
+    await writeCleanupReceipt(
+      join(directory, "cleanup.jsonl"),
+      [emptyCleanup()],
+      cleanupReceiptBinding("profiles-run", "profiles")
+    );
+    for (const scenario of report.scenarios) {
+      await writeCleanupReceipt(
+        join(directory, `${scenario.name}.cleanup.jsonl`),
+        [emptyCleanup()],
+        cleanupReceiptBinding(String(scenario.observables.runId), "profiles")
+      );
+    }
+    await writeCampaignReport(reportPath, report);
+
+    await expect(verifyCampaignReport(reportPath)).resolves.toEqual(report);
+  });
+
+  it("prints the verifier failure cause after the sentinel", async () => {
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    await expect(
+      runVerifyCommand(["/var/tmp/missing-report.json"])
+    ).resolves.toBe(1);
+    expect(error).toHaveBeenCalledWith("CELLD_QA_REPORT_INVALID");
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("ENOENT"));
+    error.mockRestore();
+  });
 });
 
 function emptyCleanup() {

@@ -1,3 +1,4 @@
+import { basename, dirname, resolve } from "node:path";
 import {
   readCleanupReceipt,
   requireCleanupReceiptBinding,
@@ -11,6 +12,7 @@ export async function verifyCampaignReport(
 ): Promise<CampaignReport> {
   const report = await readCampaignReport(path);
   const cleanupPassed = await verifyBoundCleanup(
+    path,
     report.cleanup.receiptPath,
     report.runId,
     report.command
@@ -32,12 +34,15 @@ export async function verifyCampaignReport(
     throw new Error("Campaign report verdict is internally inconsistent.");
   }
   if (report.command === "profiles") {
-    await verifyProfileReceipts(report);
+    await verifyProfileReceipts(path, report);
   }
   return report;
 }
 
-async function verifyProfileReceipts(report: CampaignReport): Promise<void> {
+async function verifyProfileReceipts(
+  reportPath: string,
+  report: CampaignReport
+): Promise<void> {
   const cleanupPaths = new Set<string>();
   const runIds = new Set<string>();
   for (const scenario of report.scenarios) {
@@ -52,6 +57,7 @@ async function verifyProfileReceipts(report: CampaignReport): Promise<void> {
     cleanupPaths.add(cleanupPath);
     runIds.add(runId);
     const cleanupPassed = await verifyBoundCleanup(
+      reportPath,
       cleanupPath,
       runId,
       "profiles"
@@ -63,14 +69,42 @@ async function verifyProfileReceipts(report: CampaignReport): Promise<void> {
 }
 
 async function verifyBoundCleanup(
-  path: string,
+  reportPath: string,
+  receiptPath: string,
   runId: string,
   command: CampaignReport["command"]
 ): Promise<boolean> {
-  const receipt = await readCleanupReceipt(path);
+  const receipt = await readRelocatedCleanupReceipt(reportPath, receiptPath);
   requireCleanupReceiptBinding(receipt, runId, command);
   const terminal = terminalCleanupEvent(receipt);
   return Object.values(terminal.remaining).every((value) => value === 0);
+}
+
+async function readRelocatedCleanupReceipt(
+  reportPath: string,
+  receiptPath: string
+) {
+  try {
+    return await readCleanupReceipt(receiptPath);
+  } catch (error: unknown) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+    const relocatedPath = resolve(dirname(reportPath), basename(receiptPath));
+    if (relocatedPath === receiptPath) {
+      throw error;
+    }
+    return readCleanupReceipt(relocatedPath);
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }
 
 export async function runVerifyCommand(
@@ -91,8 +125,11 @@ export async function runVerifyCommand(
     }
     console.log(JSON.stringify({ command: report.command, passed: true }));
     return 0;
-  } catch {
+  } catch (error: unknown) {
     console.error("CELLD_QA_REPORT_INVALID");
+    console.error(
+      error instanceof Error ? (error.stack ?? error.message) : String(error)
+    );
     return 1;
   }
 }

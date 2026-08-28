@@ -137,7 +137,7 @@ async function result(state, record, runId) {
       checkpointed &&
       resumedRunId === runId &&
       sideEffectCount === 1 &&
-      toolExecutionCount >= 1 &&
+      toolExecutionCount === 2 &&
       terminalResultCount === 1 &&
       record.turnStatus === "completed",
     resumedRunId,

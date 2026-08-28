@@ -80,6 +80,9 @@ describe("profile CLI contract", () => {
     expect(() =>
       campaignBaseUrl(["--base-url", "https://example.com"], 16_431)
     ).toThrow("--base-url must be loopback");
+    expect(() =>
+      campaignBaseUrl(["--base-url", "http://127.0.0.1:16500"], 16_431)
+    ).toThrow("--base-url must match the measured Celld port");
   });
 
   it("rejects completed restart churn reports containing failed requests", () => {

@@ -35,9 +35,7 @@ function realAgentViolations(
           observables.leaseRecovery === "checkpoint-proven-orphan-release" &&
           observables.resumedSameRun === true &&
           observables.sideEffectCount === 1 &&
-          typeof observables.toolExecutionCount === "number" &&
-          Number.isInteger(observables.toolExecutionCount) &&
-          observables.toolExecutionCount > 0 &&
+          observables.toolExecutionCount === 2 &&
           observables.terminalResultCount === 1,
         "tool checkpoint recovery evidence is incomplete"
       );

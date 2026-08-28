@@ -1,6 +1,7 @@
 import type { CleanupRemaining } from "./campaign-cleanup";
 import { measureCleanupRemaining } from "./campaign-cleanup-measure";
 import { countPrefixObjects } from "./celld-bucket";
+import { type CelldChild, stopCelld } from "./celld-process";
 import type { FaultProxyControlClient } from "./fault-proxy-control-client";
 import type { ToxiproxyClient } from "./toxiproxy-client";
 
@@ -41,4 +42,44 @@ export function measureS3Cleanup({
     ],
     watchPaths: [watch],
   });
+}
+
+export async function settleS3Cleanup(
+  operations: readonly (() => Promise<void>)[],
+  measure: () => Promise<CleanupRemaining>
+): Promise<CleanupRemaining> {
+  const errors: unknown[] = [];
+  for (const operation of operations) {
+    try {
+      await operation();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+  }
+  const measurement = await measure().then(
+    (value) => ({ ok: true, value }) as const,
+    (error: unknown) => ({ error, ok: false }) as const
+  );
+  if (!measurement.ok) {
+    errors.push(measurement.error);
+    throw new AggregateError(errors, "S3 cleanup failed");
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "S3 cleanup failed");
+  }
+  return measurement.value;
+}
+
+export async function stopOwnedCelld(
+  child: CelldChild | undefined
+): Promise<void> {
+  if (child !== undefined) {
+    await stopCelld(child);
+  }
+}
+
+export async function resetFaultProxy(
+  control: FaultProxyControlClient
+): Promise<void> {
+  await control.install({ kind: "pass" });
 }

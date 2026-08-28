@@ -3,7 +3,13 @@ import { buildChaosScenarios } from "./qa-chaos";
 
 describe("chaos campaign evidence", () => {
   it("keeps Cloudflare regression status independent from Celld tests", () => {
-    const scenarios = buildChaosScenarios(true, false, "test output");
+    const scenarios = buildChaosScenarios(
+      true,
+      true,
+      true,
+      false,
+      "test output"
+    );
 
     expect(scenarios.find((scenario) => scenario.name === "migration")).toEqual(
       {
@@ -23,5 +29,26 @@ describe("chaos campaign evidence", () => {
         violations: ["Cloudflare regression tests failed"],
       }
     );
+  });
+
+  it("attributes each Celld test group independently", () => {
+    const scenarios = buildChaosScenarios(
+      false,
+      true,
+      true,
+      true,
+      "test output"
+    );
+
+    expect(
+      scenarios.find((scenario) => scenario.name === "alarm-boundaries")
+        ?.violations
+    ).toEqual(["scheduler chaos tests failed"]);
+    expect(
+      scenarios.find((scenario) => scenario.name === "ordering")?.violations
+    ).toEqual([]);
+    expect(
+      scenarios.find((scenario) => scenario.name === "migration")?.violations
+    ).toEqual([]);
   });
 });

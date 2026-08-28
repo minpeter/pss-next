@@ -92,6 +92,12 @@ export function campaignBaseUrl(args: readonly string[], port: number): string {
       ? `http://127.0.0.1:${port}`
       : requiredStringOption(args, "--base-url");
   assertLoopbackUrl(baseUrl);
+  const expectedBaseUrl = `http://127.0.0.1:${port}/`;
+  if (new URL(baseUrl).href !== expectedBaseUrl) {
+    throw new InvalidProfileArgumentsError(
+      "--base-url must match the measured Celld port"
+    );
+  }
   return baseUrl;
 }
 

@@ -29,12 +29,6 @@ const MIGRATION_TESTS = [
   "src/platform/celld/scheduled-work-migration.test.ts",
 ] as const;
 const DRAINER_TESTS = ["src/platform/celld/drainer-chaos.test.ts"] as const;
-const CHAOS_TESTS = [
-  ...ALARM_TESTS,
-  ...ORDERING_TESTS,
-  ...MIGRATION_TESTS,
-  ...DRAINER_TESTS,
-] as const;
 const CLOUDFLARE_TESTS = [
   "src/platform/cloudflare/host/scheduler-contract.test.ts",
   "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
@@ -50,16 +44,18 @@ export async function runCampaignCommand(
   const cleanupPath = `${reportPath}.cleanup.jsonl`;
   await mkdir(dirname(reportPath), { recursive: true });
 
-  const celldResult = await runTests(CHAOS_TESTS);
+  const alarmResult = await runTests([...ALARM_TESTS, ...DRAINER_TESTS]);
+  const orderingResult = await runTests(ORDERING_TESTS);
+  const migrationResult = await runTests(MIGRATION_TESTS);
   const cloudflareResult = await runTests(CLOUDFLARE_TESTS);
   const output = [
-    `CELLD\n${celldResult.stdout}\n${celldResult.stderr}`,
+    `ALARMS\n${alarmResult.stdout}\n${alarmResult.stderr}`,
+    `ORDERING\n${orderingResult.stdout}\n${orderingResult.stderr}`,
+    `MIGRATION\n${migrationResult.stdout}\n${migrationResult.stderr}`,
     `CLOUDFLARE\n${cloudflareResult.stdout}\n${cloudflareResult.stderr}`,
   ]
     .join("\n")
     .trim();
-  const celldPass = celldResult.exitCode === 0;
-  const cloudflarePass = cloudflareResult.exitCode === 0;
   const cleanup = cleanupCompleteEvent(
     await measureCleanupRemaining({
       containerNames: [],
@@ -79,7 +75,13 @@ export async function runCampaignCommand(
     cleanup: { passed: cleanup.passed, receiptPath: cleanupPath },
     command: "chaos",
     runId,
-    scenarios: buildChaosScenarios(celldPass, cloudflarePass, output),
+    scenarios: buildChaosScenarios(
+      alarmResult.exitCode === 0,
+      orderingResult.exitCode === 0,
+      migrationResult.exitCode === 0,
+      cloudflareResult.exitCode === 0,
+      output
+    ),
   });
   await writeCampaignReport(reportPath, report);
   if (!report.passed) {
@@ -89,7 +91,9 @@ export async function runCampaignCommand(
 }
 
 export function buildChaosScenarios(
-  celldPass: boolean,
+  alarmPass: boolean,
+  orderingPass: boolean,
+  migrationPass: boolean,
   cloudflarePass: boolean,
   output: string
 ): readonly {
@@ -103,28 +107,28 @@ export function buildChaosScenarios(
       observables: {
         testFiles: [...ALARM_TESTS, ...DRAINER_TESTS],
         testOutput: output,
-        testsPassed: celldPass,
+        testsPassed: alarmPass,
       },
-      violations: celldPass ? [] : ["scheduler chaos tests failed"],
+      violations: alarmPass ? [] : ["scheduler chaos tests failed"],
     },
     {
       name: "ordering",
       observables: {
         testFiles: [...ORDERING_TESTS],
-        testsPassed: celldPass,
+        testsPassed: orderingPass,
       },
-      violations: celldPass ? [] : ["ordering tests failed"],
+      violations: orderingPass ? [] : ["ordering tests failed"],
     },
     {
       name: "migration",
       observables: {
         celldTestFiles: [...MIGRATION_TESTS],
-        celldTestsPassed: celldPass,
+        celldTestsPassed: migrationPass,
         cloudflareTestFiles: [...CLOUDFLARE_TESTS],
         cloudflareTestsPassed: cloudflarePass,
       },
       violations: [
-        ...(celldPass ? [] : ["migration tests failed"]),
+        ...(migrationPass ? [] : ["migration tests failed"]),
         ...(cloudflarePass ? [] : ["Cloudflare regression tests failed"]),
       ],
     },
