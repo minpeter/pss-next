@@ -3,17 +3,23 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "qa:chaos": "tsx src/campaign-cli.ts chaos",
     "qa:compare": "tsx src/qa-compare.ts",
     "qa:load": "tsx src/qa-load.ts",
     "qa:matrix": "tsx src/qa-matrix.ts",
     "qa:native": "tsx src/qa-native.ts",
+    "qa:profiles": "tsx src/campaign-cli.ts profiles",
+    "qa:real-agent": "tsx src/campaign-cli.ts real-agent",
     "qa:s3:down": "docker compose --file compose.yaml down --volumes --remove-orphans",
     "qa:s3:up": "docker compose --file compose.yaml up --detach --wait",
+    "qa:s3-faults": "tsx src/campaign-cli.ts s3-faults",
+    "qa:verify": "tsx src/qa-verify.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@minpeter/pss-runtime": "workspace:^"
+    "@minpeter/pss-runtime": "workspace:^",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "tsx": "^4.23.12",
