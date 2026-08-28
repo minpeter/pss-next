@@ -10,6 +10,28 @@ export interface ProcessObservation {
 
 export type ProcessMetricReport = ProcessObservation;
 
+export function mergeProcessMetrics(
+  left: ProcessMetricReport | null,
+  right: ProcessMetricReport | null
+): ProcessMetricReport | null {
+  if (left === null) {
+    return right;
+  }
+  if (right === null) {
+    return left;
+  }
+  if (left.kind !== right.kind) {
+    throw new ProcessObservationKindError(left.kind, right.kind);
+  }
+  return {
+    cpuSystemTicks: left.cpuSystemTicks + right.cpuSystemTicks,
+    cpuUserTicks: left.cpuUserTicks + right.cpuUserTicks,
+    kind: left.kind,
+    maxRssBytes: Math.max(left.maxRssBytes, right.maxRssBytes),
+    openFiles: Math.max(left.openFiles, right.openFiles),
+  };
+}
+
 export function processMetricDelta(
   before: ProcessObservation,
   after: ProcessObservation

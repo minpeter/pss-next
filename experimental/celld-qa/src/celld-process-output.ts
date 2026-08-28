@@ -15,8 +15,14 @@ export class CelldUnexpectedExitError extends Error {
     stdout: string,
     stderr: string
   ) {
+    const output = [
+      stdout === "" ? undefined : `stdout:\n${stdout}`,
+      stderr === "" ? undefined : `stderr:\n${stderr}`,
+    ]
+      .filter((value) => value !== undefined)
+      .join("\n");
     super(
-      `Celld exited unexpectedly: code=${exitCode ?? "null"} signal=${signal ?? "null"}`
+      `Celld exited unexpectedly: code=${exitCode ?? "null"} signal=${signal ?? "null"}${output === "" ? "" : `\n${output}`}`
     );
     this.exitCode = exitCode;
     this.signal = signal;

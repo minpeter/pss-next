@@ -1,7 +1,8 @@
 import { dispatchAgentNotification } from "@minpeter/pss-runtime/execution";
-import { createScenarioAgent, numeric } from "./agent.js";
+import { createScenarioAgent } from "./agent.js";
 import { markers } from "./model.js";
 import { attachmentLifecycle, largeHistory } from "./payload-scenarios.js";
+import { toolCheckpoint } from "./tool-checkpoint.js";
 
 /** @typedef {import("@minpeter/pss-runtime").AgentEvent} AgentEvent */
 /** @typedef {import("@minpeter/pss-runtime").AgentTurn} AgentTurn */
@@ -25,45 +26,6 @@ export async function runScenario(state, scenario, phase, token) {
     default:
       return assertNever(scenario);
   }
-}
-
-/** @param {CelldState} state @param {string} phase @param {string} token */
-async function toolCheckpoint(state, phase, token) {
-  const resultKey = `real-agent:tool-result:${token}`;
-  if (phase === "run" && (await state.storage.get(resultKey)) === undefined) {
-    const { agent } = await createScenarioAgent(state);
-    const turn = await agent.thread(`tool:${token}`).send("TOOL-CHECKPOINT");
-    const events = await collect(turn);
-    const runId = turn.runId;
-    if (runId === undefined) {
-      throw new TypeError("Durable tool turn requires a run id.");
-    }
-    const checkpoint = await agent.host.store.checkpoints.latest(runId);
-    await state.storage.put(resultKey, {
-      checkpointed: checkpoint !== null,
-      errors: events.flatMap((event) =>
-        event.type === "turn-error" ? [String(event.error)] : []
-      ),
-      eventTypes: events.map((event) => event.type),
-      runId,
-    });
-  }
-  const stored = await state.storage.get(resultKey);
-  const sideEffectCount = numeric(
-    await state.storage.get("real-agent:effect-count")
-  );
-  const record =
-    typeof stored === "object" && stored !== null
-      ? /** @type {Record<string, unknown>} */ (stored)
-      : {};
-  const checkpointed = record.checkpointed === true;
-  return {
-    checkpointed,
-    errors: Array.isArray(record.errors) ? record.errors : [],
-    eventTypes: Array.isArray(record.eventTypes) ? record.eventTypes : [],
-    passed: checkpointed && sideEffectCount === 1,
-    sideEffectCount,
-  };
 }
 
 /** @param {CelldState} state @param {string} token */

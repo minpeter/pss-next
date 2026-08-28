@@ -9,6 +9,12 @@ import {
 export type CelldSurface = "native" | "container";
 export type CelldChild = ReturnType<typeof spawn>;
 
+interface RestartDependencies {
+  readonly start?: typeof startCelld;
+  readonly stop?: typeof stopCelld;
+  readonly waitUntilReady?: typeof waitForListening;
+}
+
 export function startCelld(
   surface: CelldSurface,
   prefix: string,
@@ -70,15 +76,19 @@ export function waitForListening(child: CelldChild): Promise<void> {
     const cleanup = (): void => {
       clearTimeout(timeout);
       child.stdout?.off("data", onData);
+      child.stderr?.off("data", onStderrData);
       child.off("error", onError);
       child.off("exit", onExit);
     };
     const onData = (chunk: Buffer): void => {
       if (chunk.toString("utf8").includes("celld listening on")) {
         cleanup();
+        child.stdout?.resume();
+        child.stderr?.resume();
         resolveReady();
       }
     };
+    const onStderrData = (): void => undefined;
     const onError = (error: Error): void => {
       cleanup();
       reject(error);
@@ -88,7 +98,7 @@ export function waitForListening(child: CelldChild): Promise<void> {
       reject(new Error(`Celld exited before readiness: ${code}`));
     };
     child.stdout?.on("data", onData);
-    child.stderr?.on("data", () => undefined);
+    child.stderr?.on("data", onStderrData);
     child.once("error", onError);
     child.once("exit", onExit);
   });
@@ -113,15 +123,25 @@ export async function restartCelld(
   prefix: string,
   port: number,
   watch: string,
-  child: CelldChild
+  child: CelldChild,
+  dependencies: RestartDependencies = {}
 ): Promise<CelldChild> {
-  await stopCelld(child);
-  const restarted = startCelld(surface, prefix, port, watch);
+  const stop = dependencies.stop ?? stopCelld;
+  const start = dependencies.start ?? startCelld;
+  const waitUntilReady = dependencies.waitUntilReady ?? waitForListening;
+  await stop(child);
+  const restarted = start(surface, prefix, port, watch);
   try {
-    await waitForListening(restarted);
+    await waitUntilReady(restarted);
     return restarted;
   } catch (error) {
-    await stopCelld(restarted);
+    try {
+      await stop(restarted);
+    } catch (cleanupError) {
+      if (error instanceof Error && error.cause === undefined) {
+        error.cause = cleanupError;
+      }
+    }
     throw error;
   }
 }

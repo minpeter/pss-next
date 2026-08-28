@@ -41,25 +41,32 @@ async function call(
 }
 
 describe("real-agent Celld worker", () => {
-  it("executes a checkpointed tool side effect exactly once across reconstruction", async () => {
-    // Given a Celld-compatible durable store and an execution token
+  it("resumes the same run after losing the checkpointed tool response", async () => {
+    // Given a Celld-compatible durable store and one execution token
     const { state } = createState();
+    const token = "interrupted-tool-run";
 
-    // When the execution response is lost and the object is reconstructed
-    const first = await call(new RealAgent(state), "tool-checkpoint");
+    // When the object is lost after the tool checkpoint but before completion
+    await expect(
+      call(new RealAgent(state), "tool-checkpoint", "interrupt", token)
+    ).rejects.toThrow("simulated response loss after tool checkpoint");
     const recovered = await call(
       new RealAgent(state),
       "tool-checkpoint",
-      "verify"
+      "resume",
+      token
     );
 
-    // Then the same durable run has one checkpointed side effect
-    expect(first).toMatchObject({ passed: true, sideEffectCount: 1 });
+    // Then reconstruction resumes that run to one authoritative terminal result
     expect(recovered).toMatchObject({
       checkpointed: true,
       passed: true,
+      resumedSameRun: true,
       sideEffectCount: 1,
+      terminalResultCount: 1,
+      toolExecutionCount: 2,
     });
+    expect(recovered.runId).toBe(recovered.resumedRunId);
   });
 
   it("preserves send, steer, follow-up, and notify ordering", async () => {

@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { cleanupCompleteEvent, writeCleanupReceipt } from "./campaign-cleanup";
+import { requireMeasuredCleanupPassed } from "./campaign-cleanup";
 import { runWithCampaignCleanup } from "./campaign-lifecycle";
-import { cleanupPrefix } from "./celld-bucket";
 import {
   type CelldChild,
   createBucket,
@@ -12,15 +11,18 @@ import {
   readProcessMetrics,
   restartCelld,
   startCelld,
-  stopCelld,
   waitForListening,
 } from "./celld-process";
 import { observeCelldExit } from "./celld-process-output";
-import type {
-  ProcessMetricReport,
-  ProcessObservation,
+import {
+  mergeProcessMetrics,
+  type ProcessMetricReport,
+  type ProcessObservation,
 } from "./process-observer";
+import { cleanupLiveProfile, recordOwnedPid } from "./profile-cleanup";
+import { mergeRecentLatencySamples } from "./profile-latency-samples";
 import { PROFILE_PLANS } from "./profile-plans";
+import { isCorrectProfileResponse } from "./profile-response";
 import { type ProfileReport, runProfile } from "./profile-runner";
 import { summarizeLatencies } from "./profile-statistics";
 import type {
@@ -39,6 +41,7 @@ export interface LiveProfileOptions {
 }
 
 export interface LiveProfileResult {
+  readonly cleanupPassed: boolean;
   readonly cleanupPath: string;
   readonly report: ProfileReport | null;
   readonly runId: string;
@@ -52,23 +55,19 @@ export async function runLiveProfile(
   const watch = await mkdtemp(join("/var/tmp", "pss-celld-profile-"));
   const cleanupPath = `${options.reportPath}.cleanup.jsonl`;
   let child: CelldChild | undefined;
+  let cleanupPassed: boolean | undefined;
+  const ownedPids: number[] = [];
   const cleanup = async (): Promise<void> => {
-    if (child !== undefined) {
-      await stopCelld(child);
-      child = undefined;
-    }
-    await cleanupPrefix(prefix);
-    await rm(watch, { force: true, recursive: true });
-    await writeCleanupReceipt(cleanupPath, [
-      cleanupCompleteEvent({
-        containers: 0,
-        ports: 0,
-        prefixObjects: 0,
-        processes: 0,
-        proxyFaults: 0,
-        watchPaths: 0,
-      }),
-    ]);
+    cleanupPassed = await cleanupLiveProfile({
+      child,
+      cleanupPath,
+      ownedPids,
+      port: options.port,
+      prefix,
+      runId,
+      watch,
+    });
+    child = undefined;
   };
   const report = await runWithCampaignCleanup({
     cleanup,
@@ -76,6 +75,7 @@ export async function runLiveProfile(
       await createBucket();
       await deploy(prefix);
       child = startCelld("native", prefix, options.port, watch);
+      recordOwnedPid(child, ownedPids);
       if (options.profile === "restart") {
         await waitForListening(child);
         const result = await runChurnProfile(
@@ -85,6 +85,7 @@ export async function runLiveProfile(
           child,
           (next) => {
             child = next;
+            recordOwnedPid(next, ownedPids);
           }
         );
         return result.report;
@@ -92,7 +93,12 @@ export async function runLiveProfile(
       return runObservedFiniteProfile(options, child);
     },
   });
-  return { cleanupPath, report, runId };
+  return {
+    cleanupPassed: requireMeasuredCleanupPassed(cleanupPassed, "Profile"),
+    cleanupPath,
+    report,
+    runId,
+  };
 }
 
 function runFiniteProfile(
@@ -117,7 +123,7 @@ function runFiniteProfile(
       progressPath === undefined
         ? undefined
         : async (line) => {
-            await writeFile(progressPath, `${line}\n`, { flag: "a" });
+            await writeFile(progressPath, line, { flag: "a" });
           },
     signal,
   });
@@ -158,6 +164,8 @@ async function runChurnProfile(
   let elapsedMs = 0;
   let samples: number[] = [];
   let processMetrics: ProcessMetricReport | null = null;
+  let runnerCpuSystemMicros = 0;
+  let runnerCpuUserMicros = 0;
   const result = await runRestartChurn({
     restart: async () => {
       child = await restartCelld("native", prefix, options.port, watch, child);
@@ -173,9 +181,7 @@ async function runChurnProfile(
             signal
           ),
         plan: {
-          concurrency: plan.concurrency,
-          kind: "hot",
-          objectCount: 1,
+          ...plan,
           requestCount,
         },
         processSampler: async () => ({
@@ -186,11 +192,13 @@ async function runChurnProfile(
       totalCorrect += batch.correct;
       totalCompleted += batch.completed;
       elapsedMs += batch.elapsedMs;
-      samples = [...samples, ...batch.latencySamples];
+      samples = mergeRecentLatencySamples(samples, batch.latencySamples);
       processMetrics = mergeProcessMetrics(
         processMetrics,
         batch.processMetrics
       );
+      runnerCpuSystemMicros += batch.runnerMetrics.cpuSystemMicros;
+      runnerCpuUserMicros += batch.runnerMetrics.cpuUserMicros;
       return {
         cleanup: batch.cleanup,
         completed: batch.completed,
@@ -212,36 +220,13 @@ async function runChurnProfile(
       latency: samples.length === 0 ? null : summarizeLatencies(samples),
       latencySamples: samples,
       processMetrics,
+      runnerMetrics: {
+        cpuSystemMicros: runnerCpuSystemMicros,
+        cpuUserMicros: runnerCpuUserMicros,
+        throughputPerSecond:
+          elapsedMs === 0 ? null : (totalCompleted * 1000) / elapsedMs,
+      },
     },
-  };
-}
-
-function mergeProcessMetrics(
-  left: ProcessMetricReport | null,
-  right: ProcessMetricReport | null
-): ProcessMetricReport | null {
-  if (left === null) {
-    return right;
-  }
-  if (right === null) {
-    return left;
-  }
-  return combineProcessMetrics(left, right);
-}
-
-function combineProcessMetrics(
-  left: ProcessMetricReport,
-  right: ProcessMetricReport
-): ProcessMetricReport {
-  if (left.kind !== right.kind) {
-    throw new Error("Profile process metric kinds diverged.");
-  }
-  return {
-    cpuSystemTicks: left.cpuSystemTicks + right.cpuSystemTicks,
-    cpuUserTicks: left.cpuUserTicks + right.cpuUserTicks,
-    kind: left.kind,
-    maxRssBytes: Math.max(left.maxRssBytes, right.maxRssBytes),
-    openFiles: Math.max(left.openFiles, right.openFiles),
   };
 }
 
@@ -250,10 +235,11 @@ function requestFetcher(baseUrl: string) {
     request: ProfileRequest,
     signal: AbortSignal
   ): Promise<RequestObservation> => {
+    const text = `profile-${request.index}`;
     const response = await fetch(
       `${baseUrl}/?object=${encodeURIComponent(request.objectName)}`,
       {
-        body: JSON.stringify({ text: `profile-${request.index}` }),
+        body: JSON.stringify({ text }),
         headers: { "content-type": "application/json" },
         method: "POST",
         signal,
@@ -261,12 +247,7 @@ function requestFetcher(baseUrl: string) {
     );
     const payload: unknown = await response.json();
     return {
-      correct:
-        response.ok &&
-        typeof payload === "object" &&
-        payload !== null &&
-        "ok" in payload &&
-        payload.ok === true,
+      correct: response.ok && isCorrectProfileResponse(payload, text),
     };
   };
 }

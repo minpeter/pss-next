@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { FaultControlState } from "./fault-proxy-control";
 import { type StartedFaultProxy, startFaultProxy } from "./fault-proxy-server";
@@ -105,6 +105,89 @@ describe("fault proxy server", () => {
     );
   });
 
+  it("does not allow an absolute-form target to escape the upstream", async () => {
+    // Given
+    let configuredCalls = 0;
+    let escapedCalls = 0;
+    const configured = createServer((_request, response) => {
+      configuredCalls += 1;
+      response.end("configured");
+    });
+    const escaped = createServer((_request, response) => {
+      escapedCalls += 1;
+      response.end("escaped");
+    });
+    const configuredPort = await listenOnRandomPort(configured);
+    const escapedPort = await listenOnRandomPort(escaped);
+    const proxy = await startFaultProxy({
+      controlPort: 0,
+      dataPort: 0,
+      upstreamUrl: `http://127.0.0.1:${configuredPort}`,
+    });
+    running.push(proxy);
+    const proxyPort = new URL(proxy.dataUrl).port;
+
+    // When
+    const status = await requestStatus(
+      Number(proxyPort),
+      `http://127.0.0.1:${escapedPort}/foreign`
+    );
+
+    // Then
+    expect(status).toBe(400);
+    expect(configuredCalls).toBe(0);
+    expect(escapedCalls).toBe(0);
+    await Promise.all([closeServer(configured), closeServer(escaped)]);
+  });
+
+  it("records one decision when the upstream fails after headers", async () => {
+    const upstream = createServer((_request, response) => {
+      response.writeHead(200);
+      response.flushHeaders();
+      response.destroy(new Error("mid-stream reset"));
+    });
+    const upstreamPort = await listenOnRandomPort(upstream);
+    const state = new FaultControlState(() => 1);
+    const proxy = await startFaultProxy({
+      controlPort: 0,
+      dataPort: 0,
+      state,
+      upstreamUrl: `http://127.0.0.1:${upstreamPort}`,
+    });
+    running.push(proxy);
+
+    await expect(
+      fetch(`${proxy.dataUrl}/bucket/key`).then((response) => response.text())
+    ).rejects.toThrow();
+    expect(state.events()).toHaveLength(1);
+    expect(state.events()[0]?.error).not.toBeNull();
+
+    await closeServer(upstream);
+  });
+
+  it("closes the data listener when the control listener cannot start", async () => {
+    // Given
+    const blocker = createServer();
+    const controlPort = await listenOnRandomPort(blocker);
+    const reservation = createServer();
+    const dataPort = await listenOnRandomPort(reservation);
+    await closeServer(reservation);
+
+    // When
+    await expect(
+      startFaultProxy({
+        controlPort,
+        dataPort,
+        upstreamUrl: "http://127.0.0.1:4566",
+      })
+    ).rejects.toThrow();
+
+    // Then
+    const replacement = createServer();
+    await listen(replacement, dataPort);
+    await Promise.all([closeServer(replacement), closeServer(blocker)]);
+  });
+
   it("rejects non-loopback upstream and control addresses", async () => {
     // Given / When / Then
     await expect(
@@ -124,3 +207,48 @@ describe("fault proxy server", () => {
     ).rejects.toThrow("loopback");
   });
 });
+
+function listenOnRandomPort(server: Server): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new TypeError("expected TCP address"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+}
+
+function listen(server: Server, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+}
+
+function requestStatus(port: number, path: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      { host: "127.0.0.1", path, port },
+      (response) => {
+        response.resume();
+        response.once("end", () => resolve(response.statusCode ?? 0));
+      }
+    );
+    request.once("error", reject);
+    request.end();
+  });
+}

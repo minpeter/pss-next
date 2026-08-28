@@ -16,6 +16,10 @@ describe("qa:s3:faults CLI boundary", () => {
         "http://127.0.0.1:14568",
         "--toxiproxy-url",
         "http://127.0.0.1:18474",
+        "--s3-url",
+        "http://127.0.0.1:14566",
+        "--port",
+        "16436",
       ],
       { run, write }
     );
@@ -25,7 +29,9 @@ describe("qa:s3:faults CLI boundary", () => {
     expect(run).toHaveBeenCalledWith({
       controlUrl: "http://127.0.0.1:14568",
       proxyUrl: "http://127.0.0.1:14567",
+      s3Url: "http://127.0.0.1:14566",
       toxiproxyUrl: "http://127.0.0.1:18474",
+      port: 16_436,
     });
     expect(write).toHaveBeenCalledWith('{"ok":true,"scenarios":[]}\n');
   });
@@ -35,6 +41,16 @@ describe("qa:s3:faults CLI boundary", () => {
     expect(() =>
       parseS3FaultCli(["--proxy-url", "http://10.0.0.2:14567"])
     ).toThrow("loopback");
+  });
+
+  it("accepts only the complete frozen eight-fault scenario list", () => {
+    const scenarios =
+      "latency,timeout,reset,http_500,throttle_429,localstack_restart,read_after_write,conditional_412";
+
+    expect(parseS3FaultCli(["--scenarios", scenarios]).port).toBe(16_436);
+    expect(() => parseS3FaultCli(["--scenarios", "latency,timeout"])).toThrow(
+      "all eight"
+    );
   });
 
   it("returns failure when any binary observable is false", async () => {

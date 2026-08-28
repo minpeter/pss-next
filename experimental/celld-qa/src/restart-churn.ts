@@ -43,6 +43,18 @@ export class IncompleteChurnBatchError extends Error {
   }
 }
 
+export class IncorrectChurnBatchError extends Error {
+  readonly completed: number;
+  readonly correct: number;
+  readonly name = "IncorrectChurnBatchError";
+
+  constructor(correct: number, completed: number) {
+    super(`${correct} of ${completed} requests were correct`);
+    this.completed = completed;
+    this.correct = correct;
+  }
+}
+
 export async function runRestartChurn({
   restart,
   restartEvery,
@@ -60,6 +72,9 @@ export async function runRestartChurn({
     }
     if (!batch.cleanup.drained || batch.cleanup.inFlight !== 0) {
       throw new ChurnCleanupError(batch.cleanup.inFlight);
+    }
+    if (batch.correct !== batch.completed) {
+      throw new IncorrectChurnBatchError(batch.correct, batch.completed);
     }
     completed += batch.completed;
     correct += batch.correct;

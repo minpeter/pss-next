@@ -11,9 +11,13 @@ describe("S3 fault campaign", () => {
     const report = await runS3FaultCampaign((kind) => {
       visited.push(kind);
       return Promise.resolve({
+        convergence: true,
         detail: `${kind}:observed`,
+        effect: "exactly_once",
+        injectionEvidence: true,
         kind,
         observed: true,
+        recovery: true,
       });
     });
 
@@ -28,9 +32,13 @@ describe("S3 fault campaign", () => {
     // Given / When
     const report = await runS3FaultCampaign((kind) =>
       Promise.resolve({
+        convergence: kind !== "reset",
         detail: kind,
+        effect: kind === "reset" ? "none" : "exactly_once",
+        injectionEvidence: kind !== "reset",
         kind,
         observed: kind !== "reset",
+        recovery: kind !== "reset",
       })
     );
 

@@ -32,11 +32,9 @@ export async function createScenarioAgent(state, options = {}) {
     : undefined;
   const host = createCelldHost({ maxPayloadBytes: 512, state });
   const recordSideEffectTool = {
-    execute: async (
-      /** @type {unknown} */ _input,
-      /** @type {unknown} */ toolOptions
-    ) => await recordSideEffect(state, idempotencyKey(toolOptions)),
-    inputSchema: z.object({}),
+    execute: async (/** @type {unknown} */ input) =>
+      await recordSideEffect(state, operationId(input)),
+    inputSchema: z.object({ operationId: z.string().min(1) }),
     retryPolicy: /** @type {const} */ ("idempotent"),
   };
   const agent = await createAgent({
@@ -57,6 +55,9 @@ export async function createScenarioAgent(state, options = {}) {
 
 /** @param {CelldState} state @param {string} key */
 async function recordSideEffect(state, key) {
+  const executions =
+    numeric(await state.storage.get("real-agent:tool-execution-count")) + 1;
+  await state.storage.put("real-agent:tool-execution-count", executions);
   if (state.storage.transaction === undefined) {
     throw new TypeError("Celld storage transaction() is required.");
   }
@@ -72,17 +73,18 @@ async function recordSideEffect(state, key) {
   });
 }
 
-/** @param {unknown} options */
-function idempotencyKey(options) {
+/** @param {unknown} input */
+function operationId(input) {
   if (
-    typeof options === "object" &&
-    options !== null &&
-    "idempotencyKey" in options &&
-    typeof options.idempotencyKey === "string"
+    typeof input === "object" &&
+    input !== null &&
+    "operationId" in input &&
+    typeof input.operationId === "string" &&
+    input.operationId.length > 0
   ) {
-    return options.idempotencyKey;
+    return input.operationId;
   }
-  throw new TypeError("Runtime tool idempotency key is required.");
+  throw new TypeError("Tool operation ID is required.");
 }
 
 /** @param {unknown} value */

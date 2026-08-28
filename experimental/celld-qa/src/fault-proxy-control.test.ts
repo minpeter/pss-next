@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FaultControlState } from "./fault-proxy-control";
+import { FaultProxyControlClient } from "./fault-proxy-control-client";
 
 describe("FaultControlState", () => {
   it("creates immutable generations and bounds synthetic failures", () => {
@@ -54,6 +55,45 @@ describe("FaultControlState", () => {
     expect(visible.kind).toBe("upstream");
   });
 
+  it("scopes wildcard rules to one bucket prefix", () => {
+    const state = new FaultControlState(() => 10);
+    state.install({ count: 1, key: "/bucket/run/*", kind: "http_500" });
+
+    const matched = state.decide({
+      headers: {},
+      key: "/bucket/run/cell",
+      method: "GET",
+    });
+    const outside = state.decide({
+      headers: {},
+      key: "/bucket/run-other/cell",
+      method: "GET",
+    });
+
+    expect(matched).toMatchObject({ kind: "synthetic", status: 500 });
+    expect(outside.kind).toBe("upstream");
+  });
+
+  it("retains only the newest 1000 completed events", () => {
+    // Given
+    const state = new FaultControlState(() => 20);
+
+    // When
+    for (let index = 0; index < 1001; index += 1) {
+      const decision = state.decide({
+        headers: {},
+        key: `/bucket/key-${index}`,
+        method: "GET",
+      });
+      state.complete(decision, { error: null, status: 200 });
+    }
+
+    // Then
+    expect(state.events()).toHaveLength(1000);
+    expect(state.events()[0]?.key).toBe("/bucket/key-1");
+    expect(state.events().at(-1)?.key).toBe("/bucket/key-1000");
+  });
+
   it("captures decision outcomes without exposing mutable state", () => {
     // Given
     const state = new FaultControlState(() => 20);
@@ -82,5 +122,22 @@ describe("FaultControlState", () => {
       },
     ]);
     expect(Object.isFrozen(events[0])).toBe(true);
+  });
+
+  it("reads the installed control generation for cleanup evidence", async () => {
+    const client = new FaultProxyControlClient("http://127.0.0.1:14568", () =>
+      Promise.resolve(
+        Response.json({
+          id: 3,
+          installedAtMs: 10,
+          rule: { kind: "pass" },
+        })
+      )
+    );
+
+    await expect(client.generation()).resolves.toMatchObject({
+      id: 3,
+      rule: { kind: "pass" },
+    });
   });
 });

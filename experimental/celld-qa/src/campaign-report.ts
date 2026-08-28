@@ -1,5 +1,6 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { campaignEvidenceViolations } from "./campaign-report-semantics";
 
 export type JsonValue =
   | boolean
@@ -36,6 +37,28 @@ const scenarioSchema = z
     }
   });
 
+const REQUIRED_SCENARIOS = {
+  "real-agent": [
+    "tool-checkpoint-restart",
+    "input-ordering",
+    "compaction-restart",
+    "large-history",
+    "attachment-lifecycle",
+  ],
+  chaos: ["alarm-boundaries", "ordering", "migration"],
+  profiles: ["wide", "hot", "mixed", "restart", "soak"],
+  "s3-faults": [
+    "latency",
+    "timeout",
+    "reset",
+    "http_500",
+    "localstack_restart",
+    "throttle_429",
+    "read_after_write",
+    "conditional_412",
+  ],
+} as const;
+
 const campaignReportSchema = z
   .object({
     cleanup: z.object({
@@ -50,15 +73,56 @@ const campaignReportSchema = z
     violations: z.array(z.string().min(1)),
   })
   .superRefine((report, context) => {
+    const expectedViolations = report.scenarios.flatMap((scenario) =>
+      scenario.violations.map((violation) => `${scenario.name}: ${violation}`)
+    );
     const expected =
       report.cleanup.passed &&
-      report.violations.length === 0 &&
+      expectedViolations.length === 0 &&
       report.scenarios.every((scenario) => scenario.passed);
     if (report.passed !== expected) {
       context.addIssue({
         code: "custom",
         message: "Report passed must be derived from scenarios and cleanup.",
       });
+    }
+    if (
+      JSON.stringify(report.violations) !== JSON.stringify(expectedViolations)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Report violations must be derived from scenarios.",
+      });
+    }
+
+    const required: readonly string[] = REQUIRED_SCENARIOS[report.command];
+    const names = report.scenarios.map((scenario) => scenario.name);
+    const invalidMatrix =
+      names.length !== required.length ||
+      required.some((name) => !names.includes(name)) ||
+      new Set(names).size !== names.length;
+    if (invalidMatrix) {
+      context.addIssue({
+        code: "custom",
+        message: `Incomplete ${report.command} scenario matrix.`,
+      });
+    }
+    for (const scenario of report.scenarios) {
+      const semanticViolations = campaignEvidenceViolations(
+        report.command,
+        scenario.name,
+        scenario.observables
+      );
+      if (
+        semanticViolations.some(
+          (violation) => !scenario.violations.includes(violation)
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: `${scenario.name} omits required semantic violations.`,
+        });
+      }
     }
   });
 
@@ -79,10 +143,19 @@ export interface CampaignReportInput {
 export function buildCampaignReport(
   input: CampaignReportInput
 ): CampaignReport {
-  const scenarios = input.scenarios.map((scenario) => ({
-    ...scenario,
-    passed: scenario.violations.length === 0,
-  }));
+  const scenarios = input.scenarios.map((scenario) => {
+    const violations = [
+      ...new Set([
+        ...scenario.violations,
+        ...campaignEvidenceViolations(
+          input.command,
+          scenario.name,
+          scenario.observables
+        ),
+      ]),
+    ];
+    return { ...scenario, passed: violations.length === 0, violations };
+  });
   const violations = scenarios.flatMap((scenario) =>
     scenario.violations.map((violation) => `${scenario.name}: ${violation}`)
   );

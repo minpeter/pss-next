@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readCleanupReceipt } from "./campaign-cleanup";
 import { type JsonValue, readCampaignReport } from "./campaign-report";
 import {
+  assertRealAgentCampaignPassed,
   type RealAgentCampaignDependencies,
   runRealAgentCampaign,
 } from "./qa-real-agent";
@@ -30,10 +31,17 @@ describe("real-agent campaign runner", () => {
       string,
       Readonly<Record<string, JsonValue>>
     > = new Map<string, Readonly<Record<string, JsonValue>>>([
-      ["tool-checkpoint:run", { passed: true, sideEffectCount: 1 }],
       [
-        "tool-checkpoint:verify",
-        { checkpointed: true, passed: true, sideEffectCount: 1 },
+        "tool-checkpoint:resume",
+        {
+          checkpointed: true,
+          leaseRecovery: "checkpoint-proven-orphan-release",
+          passed: true,
+          resumedSameRun: true,
+          sideEffectCount: 1,
+          terminalResultCount: 1,
+          toolExecutionCount: 2,
+        },
       ],
       [
         "input-ordering:run",
@@ -95,7 +103,22 @@ describe("real-agent campaign runner", () => {
         }
         return Promise.resolve(result);
       },
+      interruptScenario: (_baseUrl, scenario) => {
+        calls.push(`interrupt:${scenario}`);
+        return Promise.resolve();
+      },
       makeWatchDirectory: () => Promise.resolve(directory),
+      measureCleanup: () => {
+        calls.push("measure-cleanup");
+        return Promise.resolve({
+          containers: 0,
+          ports: 0,
+          prefixObjects: 0,
+          processes: 0,
+          proxyFaults: 0,
+          watchPaths: 0,
+        });
+      },
       removeWatchDirectory: () => {
         calls.push("remove-watch");
         return Promise.resolve();
@@ -116,6 +139,12 @@ describe("real-agent campaign runner", () => {
         calls.push("ready");
         return Promise.resolve();
       },
+      waitForProcessExit: (_child, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
     };
 
     // When the campaign runs through both restart continuity boundaries
@@ -140,11 +169,23 @@ describe("real-agent campaign runner", () => {
       passed: true,
     });
     expect(calls.filter((call) => call === "restart")).toHaveLength(2);
-    expect(calls.slice(-3)).toEqual(["stop", "cleanup-prefix", "remove-watch"]);
+    expect(calls).toContain("interrupt:tool-checkpoint");
+    expect(calls.slice(-4)).toEqual([
+      "stop",
+      "cleanup-prefix",
+      "remove-watch",
+      "measure-cleanup",
+    ]);
     expect(JSON.parse(await readFile(reportPath, "utf8"))).toMatchObject({
       command: "real-agent",
       passed: true,
       schemaVersion: 1,
     });
+  });
+
+  it("rejects a failed report so the campaign command exits nonzero", () => {
+    expect(() => assertRealAgentCampaignPassed({ passed: false })).toThrow(
+      "Real-agent campaign report failed"
+    );
   });
 });

@@ -53,6 +53,30 @@ describe("campaign cleanup receipt", () => {
     ]);
   });
 
+  it("rejects a dishonest terminal row even when a resource remains", async () => {
+    const directory = await mkdtemp(
+      join("/var/tmp", "pss-celld-cleanup-test-")
+    );
+    directories.push(directory);
+    const path = join(directory, "cleanup.txt");
+    await expect(
+      writeCleanupReceipt(path, [
+        {
+          kind: "cleanup-complete",
+          passed: true,
+          remaining: {
+            containers: 0,
+            ports: 1,
+            prefixObjects: 0,
+            processes: 0,
+            proxyFaults: 0,
+            watchPaths: 0,
+          },
+        },
+      ])
+    ).rejects.toThrow();
+  });
+
   it("fails the terminal row when one resource remains", () => {
     expect(
       cleanupCompleteEvent({

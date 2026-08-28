@@ -66,4 +66,20 @@ describe("restart churn", () => {
       })
     ).rejects.toThrow("did not drain");
   });
+
+  it("stops before restart when any completed request is incorrect", async () => {
+    await expect(
+      runRestartChurn({
+        restartEvery: 250,
+        restart: () => Promise.resolve(),
+        runBatch: () =>
+          Promise.resolve({
+            cleanup: { drained: true, inFlight: 0 },
+            completed: 250,
+            correct: 249,
+          }),
+        totalRequests: 5000,
+      })
+    ).rejects.toThrow("249 of 250 requests were correct");
+  });
 });

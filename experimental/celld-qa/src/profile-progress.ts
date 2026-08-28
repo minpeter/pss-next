@@ -1,13 +1,13 @@
 import type { MonotonicClock, ProgressSnapshot } from "./profile-types";
 
 export interface ProgressReporter {
-  readonly finish: (snapshot: ProgressSnapshot) => void;
-  readonly record: (snapshot: ProgressSnapshot) => void;
+  readonly finish: (snapshot: ProgressSnapshot) => Promise<void>;
+  readonly record: (snapshot: ProgressSnapshot) => Promise<void>;
 }
 
 interface ProgressOptions {
   readonly clock: MonotonicClock;
-  readonly sink: (jsonLine: string) => void;
+  readonly sink: (jsonLine: string) => Promise<void> | void;
 }
 
 export function createProgressReporter({
@@ -17,25 +17,30 @@ export function createProgressReporter({
   let lastCompleted = 0;
   let lastEmittedAt = clock.now();
   let finished = false;
-  const emit = (snapshot: ProgressSnapshot, final: boolean): void => {
-    sink(`${JSON.stringify({ ...snapshot, atMs: clock.now(), final })}\n`);
+  const emit = async (
+    snapshot: ProgressSnapshot,
+    final: boolean
+  ): Promise<void> => {
+    await sink(
+      `${JSON.stringify({ ...snapshot, atMs: clock.now(), final })}\n`
+    );
     lastCompleted = snapshot.completed;
     lastEmittedAt = clock.now();
   };
   return {
-    finish: (snapshot) => {
+    finish: async (snapshot) => {
       if (!finished) {
         finished = true;
-        emit(snapshot, true);
+        await emit(snapshot, true);
       }
     },
-    record: (snapshot) => {
+    record: async (snapshot) => {
       if (
         !finished &&
         (snapshot.completed - lastCompleted >= 100 ||
           clock.now() - lastEmittedAt >= 10_000)
       ) {
-        emit(snapshot, false);
+        await emit(snapshot, false);
       }
     },
   };

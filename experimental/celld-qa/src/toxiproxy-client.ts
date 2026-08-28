@@ -49,9 +49,13 @@ export class ToxiproxyClient {
 
   async clearToxics(proxyName: string): Promise<void> {
     const response = await this.send({
+      acceptedStatuses: [404],
       method: "GET",
       path: `/proxies/${encodeURIComponent(proxyName)}/toxics`,
     });
+    if (response.status === 404) {
+      return;
+    }
     const value: unknown = await response.json();
     if (!Array.isArray(value)) {
       throw new BoundaryInputError(
@@ -69,12 +73,50 @@ export class ToxiproxyClient {
     }
   }
 
+  async countToxics(proxyName: string): Promise<number> {
+    const response = await this.send({
+      acceptedStatuses: [404],
+      method: "GET",
+      path: `/proxies/${encodeURIComponent(proxyName)}/toxics`,
+    });
+    if (response.status === 404) {
+      return 0;
+    }
+    const value: unknown = await response.json();
+    if (!Array.isArray(value)) {
+      throw new BoundaryInputError(
+        "Toxiproxy toxics response must be an array"
+      );
+    }
+    return value.length;
+  }
+
   async deleteProxy(proxyName: string): Promise<void> {
     await this.send({
       acceptedStatuses: [404],
       method: "DELETE",
       path: `/proxies/${encodeURIComponent(proxyName)}`,
     });
+  }
+
+  async deleteProxiesListeningOn(port: number): Promise<void> {
+    const response = await this.send({ method: "GET", path: "/proxies" });
+    const value: unknown = await response.json();
+    if (!isRecord(value)) {
+      throw new BoundaryInputError(
+        "Toxiproxy proxies response must be an object"
+      );
+    }
+    for (const proxy of Object.values(value)) {
+      if (
+        isRecord(proxy) &&
+        typeof proxy.name === "string" &&
+        typeof proxy.listen === "string" &&
+        proxy.listen.endsWith(`:${positivePort(port)}`)
+      ) {
+        await this.deleteProxy(proxy.name);
+      }
+    }
   }
 
   async addLatency(proxyName: string, latencyMs: number): Promise<void> {
@@ -144,6 +186,13 @@ export class ToxiproxyClient {
 function positiveMilliseconds(value: number): number {
   if (!Number.isInteger(value) || value < 1) {
     throw new BoundaryInputError("toxic duration must be a positive integer");
+  }
+  return value;
+}
+
+function positivePort(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new BoundaryInputError("proxy port must be a positive integer");
   }
   return value;
 }

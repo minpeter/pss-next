@@ -1,5 +1,7 @@
 /** @typedef {{ hydratedByteLength: number, hydratedMediaType: string, promptText: string }} ModelObservations */
 
+const CHECKPOINT_OPERATION_PATTERN = /TOOL-CHECKPOINT\s+(\S+)/;
+
 const usage = {
   inputTokens: { cacheRead: 0, cacheWrite: 0, noCache: 0, total: 0 },
   outputTokens: { reasoning: 0, text: 0, total: 0 },
@@ -52,9 +54,10 @@ function modelContent(prompt, text) {
     return [{ text: `summary:${markers(text).join(",")}`, type: "text" }];
   }
   if (text.includes("TOOL-CHECKPOINT") && !hasToolResult(prompt)) {
+    const operationId = checkpointOperationId(text);
     return [
       {
-        input: JSON.stringify({}),
+        input: JSON.stringify({ operationId }),
         toolCallId: "checkpoint-side-effect",
         toolName: "record_side_effect",
         type: "tool-call",
@@ -67,6 +70,15 @@ function modelContent(prompt, text) {
       type: "text",
     },
   ];
+}
+
+/** @param {string} text */
+function checkpointOperationId(text) {
+  const match = CHECKPOINT_OPERATION_PATTERN.exec(text);
+  if (match?.[1] === undefined) {
+    throw new TypeError("Tool checkpoint operation ID is required.");
+  }
+  return match[1];
 }
 
 /** @param {string} text */

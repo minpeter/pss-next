@@ -80,4 +80,46 @@ describe("ToxiproxyClient", () => {
       "loopback"
     );
   });
+
+  it("removes a stale proxy that owns the campaign listener", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${String(input)}`);
+      return Promise.resolve(
+        calls.length === 1
+          ? Response.json({
+              stale: {
+                listen: "[::]:8666",
+                name: "stale",
+                upstream: "localstack:4566",
+              },
+            })
+          : new Response(null, { status: 204 })
+      );
+    };
+    const client = new ToxiproxyClient("http://127.0.0.1:18474", fetchImpl);
+
+    await client.deleteProxiesListeningOn(8666);
+
+    expect(calls).toEqual([
+      "GET http://127.0.0.1:18474/proxies",
+      "DELETE http://127.0.0.1:18474/proxies/stale",
+    ]);
+  });
+
+  it("measures no remaining toxics after the proxy is deleted", async () => {
+    const client = new ToxiproxyClient("http://127.0.0.1:18474", () =>
+      Promise.resolve(new Response(null, { status: 404 }))
+    );
+
+    await expect(client.countToxics("deleted")).resolves.toBe(0);
+  });
+
+  it("clears a proxy that was never created", async () => {
+    const client = new ToxiproxyClient("http://127.0.0.1:18474", () =>
+      Promise.resolve(new Response(null, { status: 404 }))
+    );
+
+    await expect(client.clearToxics("missing")).resolves.toBeUndefined();
+  });
 });

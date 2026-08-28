@@ -79,27 +79,27 @@ cleanup receipts. Use a separate loopback port for each live profile.
 evidence=/var/tmp/pss-celld-campaign
 mkdir -p "$evidence"
 
+pnpm --filter @minpeter/pss-celld-qa qa:s3:up
 pnpm --filter @minpeter/pss-celld-qa qa:real-agent -- \
   --scenario all --port 16430 --report "$evidence/real-agent.json"
 pnpm --filter @minpeter/pss-celld-qa qa:chaos -- \
   --scenario all --scheduled-items 1000 --report "$evidence/chaos.json"
 pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
-  --profiles wide --port 16431 --report "$evidence/profile-wide.json"
-pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
-  --profiles hot --port 16432 --report "$evidence/profile-hot.json"
-pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
-  --profiles mixed --port 16433 --report "$evidence/profile-mixed.json"
-pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
-  --profiles restart --port 16434 --report "$evidence/profile-restart.json"
-pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
-  --profiles soak --port 16435 --progress "$evidence/soak-progress.jsonl" \
-  --report "$evidence/profile-soak.json"
+  --profiles wide,hot,mixed,restart,soak --port 16431 \
+  --progress "$evidence/profile-progress.jsonl" \
+  --report "$evidence/profiles.json"
 pnpm --filter @minpeter/pss-celld-qa qa:s3-faults -- \
   --proxy-url http://127.0.0.1:14567 \
   --control-url http://127.0.0.1:14568 \
   --toxiproxy-url http://127.0.0.1:18474 \
+  --s3-url http://127.0.0.1:14566 \
   --report "$evidence/s3-faults.json"
 ```
+
+The profile command defaults `CELLD_ACTIVATIONS` to `128`. This lets the
+256-wide cold-object burst make progress through the intentional 100-cell
+residency cap without queued activations expiring. Set `CELLD_ACTIVATIONS`
+explicitly to override the campaign default.
 
 Verify every report before accepting evidence:
 
@@ -107,12 +107,22 @@ Verify every report before accepting evidence:
 for report in "$evidence"/*.json; do
   pnpm --filter @minpeter/pss-celld-qa qa:verify -- "$report"
 done
+pnpm --filter @minpeter/pss-celld-qa qa:s3:down
 ```
 
-The real-agent workload covers tool checkpoint restart, durable input ordering,
+The real-agent workload covers tool checkpoint restart with an explicit
+checkpoint-proven orphan lease release and reports replay executions separately
+from the business-deduplicated committed effect, durable input ordering,
 compaction recovery, large payload integrity, and attachment hydration. Chaos
 tests scheduler/drainer boundaries, thousand-row ordering, legacy SQLite
 migration, and the shared Cloudflare adapter. Profiles capture p50/p95/p99
-latency and native Celld CPU, RSS, and file-descriptor observations. The
-loopback-only S3 campaign covers latency, timeout, reset, HTTP 500, throttling,
-read-after-write visibility, and conditional-write failures.
+latency over a rolling window capped at 4,096 samples plus native Celld CPU,
+RSS, and file-descriptor observations. The loopback-only S3 campaign covers
+latency, timeout, reset, HTTP 500, throttling, a real LocalStack restart,
+read-after-write visibility, and conditional-write failures. Every fault must
+show injection, recovery, convergence, and one committed effect.
+
+The Compose stack starts LocalStack, Toxiproxy, and the typed fault proxy.
+Override their loopback ports with `CELLD_QA_S3_PORT`,
+`CELLD_QA_TOXIPROXY_CONTROL_PORT`, `CELLD_QA_TOXIPROXY_DATA_PORT`,
+`CELLD_QA_FAULT_PROXY_PORT`, and `CELLD_QA_FAULT_CONTROL_PORT`.

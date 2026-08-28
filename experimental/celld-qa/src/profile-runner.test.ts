@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_RETAINED_LATENCY_SAMPLES } from "./profile-latency-samples";
 import { PROFILE_PLANS } from "./profile-plans";
 import { runProfile } from "./profile-runner";
 
@@ -38,6 +39,11 @@ describe("profile runner", () => {
       kind: "celld-native",
       cpuUserTicks: 1,
     });
+    expect(report.runnerMetrics).toMatchObject({
+      throughputPerSecond: null,
+    });
+    expect(report.runnerMetrics.cpuSystemMicros).toBeGreaterThanOrEqual(0);
+    expect(report.runnerMetrics.cpuUserMicros).toBeGreaterThanOrEqual(0);
   });
 
   it("does not label Docker launcher observations as Celld native metrics", async () => {
@@ -99,5 +105,19 @@ describe("profile runner", () => {
 
     expect(calls).toBe(1);
     expect(report.admitted).toBe(1);
+  });
+
+  it("bounds retained latency samples while counting every completion", async () => {
+    const requestCount = MAX_RETAINED_LATENCY_SAMPLES + 904;
+    const report = await runProfile({
+      clock: { now: () => 0 },
+      fetchRequest: () => Promise.resolve({ correct: true }),
+      plan: { ...PROFILE_PLANS.hot, requestCount },
+    });
+
+    expect(report.completed).toBe(requestCount);
+    expect(report.correct).toBe(requestCount);
+    expect(report.latencySamples).toHaveLength(MAX_RETAINED_LATENCY_SAMPLES);
+    expect(report.latency?.count).toBe(MAX_RETAINED_LATENCY_SAMPLES);
   });
 });

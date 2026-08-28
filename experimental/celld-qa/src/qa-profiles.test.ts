@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { ProfileReport } from "./profile-runner";
 import {
+  campaignBaseUrl,
   campaignProgressPath,
   parseProfileArgs,
+  profileViolations,
   runProfileCommand,
 } from "./qa-profiles";
 
@@ -70,5 +73,40 @@ describe("profile CLI contract", () => {
       "/var/tmp/celld-progress.wide.jsonl"
     );
     expect(campaignProgressPath([], "soak", 1)).toBeUndefined();
+  });
+
+  it("keeps campaign traffic on the selected loopback Celld port", () => {
+    expect(campaignBaseUrl([], 16_431)).toBe("http://127.0.0.1:16431");
+    expect(() =>
+      campaignBaseUrl(["--base-url", "https://example.com"], 16_431)
+    ).toThrow("--base-url must be loopback");
+  });
+
+  it("rejects completed restart churn reports containing failed requests", () => {
+    const report: ProfileReport = {
+      admitted: 5000,
+      cleanup: { aborted: 0, drained: true, inFlight: 0 },
+      completed: 5000,
+      correct: 2416,
+      elapsedMs: 1,
+      failed: 2584,
+      incorrect: 0,
+      latency: null,
+      latencySamples: [],
+      processMetrics: null,
+      runnerMetrics: {
+        cpuSystemMicros: 0,
+        cpuUserMicros: 0,
+        throughputPerSecond: 5_000_000,
+      },
+    };
+
+    expect(profileViolations(report, true)).toEqual([
+      "2584 requests failed",
+      "2416 of 5000 completed requests were correct",
+    ]);
+    expect(profileViolations(report, false)).toContain(
+      "profile cleanup left owned resources"
+    );
   });
 });

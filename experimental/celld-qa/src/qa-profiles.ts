@@ -1,19 +1,19 @@
-import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { cleanupCompleteEvent, writeCleanupReceipt } from "./campaign-cleanup";
 import {
   csvOption,
   integerOption,
   normalizeCliArguments,
   requiredStringOption,
 } from "./campaign-cli-utils";
+import type { JsonValue } from "./campaign-report";
 import {
-  buildCampaignReport,
-  type JsonValue,
-  writeCampaignReport,
-} from "./campaign-report";
+  type ProfileCampaignScenario,
+  writeProfileCampaignReport,
+} from "./profile-campaign-report";
+import { withProfileCelldEnvironment } from "./profile-celld-environment";
 import { runLiveProfile } from "./profile-live";
+import type { ProfileReport } from "./profile-runner";
 import type { ProfileName } from "./profile-types";
 
 export interface ProfileCliOptions {
@@ -85,6 +85,16 @@ export function campaignProgressPath(
   return profileCount === 1 ? basePath : `${basePath}.${profile}.jsonl`;
 }
 
+export function campaignBaseUrl(args: readonly string[], port: number): string {
+  const baseIndex = args.indexOf("--base-url");
+  const baseUrl =
+    baseIndex < 0
+      ? `http://127.0.0.1:${port}`
+      : requiredStringOption(args, "--base-url");
+  assertLoopbackUrl(baseUrl);
+  return baseUrl;
+}
+
 export function runProfileCommand<T>(
   options: ProfileCliOptions,
   dependencies: CommandDependencies<T>
@@ -102,6 +112,45 @@ export function runProfileCommand<T>(
   }
 }
 
+export function profileViolations(
+  report: ProfileReport | null,
+  cleanupPassed: boolean
+): readonly string[] {
+  if (report === null) {
+    return ["profile failed"];
+  }
+  const violations: string[] = [];
+  if (report.failed > 0) {
+    violations.push(`${report.failed} requests failed`);
+  }
+  if (report.incorrect > 0) {
+    violations.push(`${report.incorrect} responses were incorrect`);
+  }
+  if (report.correct !== report.completed) {
+    violations.push(
+      `${report.correct} of ${report.completed} completed requests were correct`
+    );
+  }
+  if (report.completed !== report.admitted) {
+    violations.push(
+      `${report.completed} of ${report.admitted} admitted requests completed`
+    );
+  }
+  if (!report.cleanup.drained) {
+    violations.push("profile cleanup did not drain");
+  }
+  if (report.cleanup.inFlight !== 0) {
+    violations.push(`${report.cleanup.inFlight} requests remained in flight`);
+  }
+  if (report.cleanup.aborted !== 0) {
+    violations.push(`${report.cleanup.aborted} requests were aborted`);
+  }
+  if (!cleanupPassed) {
+    violations.push("profile cleanup left owned resources");
+  }
+  return violations;
+}
+
 export async function runCampaignCommand(
   args: readonly string[]
 ): Promise<void> {
@@ -109,17 +158,9 @@ export async function runCampaignCommand(
   const reportPath = requiredStringOption(normalized, "--report");
   const profiles = csvOption(normalized, "--profiles").map(parseProfileName);
   const port = integerOption(normalized, "--port", 16_431);
-  const baseIndex = normalized.indexOf("--base-url");
-  const baseUrl =
-    baseIndex < 0
-      ? `http://127.0.0.1:${port}`
-      : requiredStringOption(normalized, "--base-url");
+  const baseUrl = campaignBaseUrl(normalized, port);
   await mkdir(dirname(reportPath), { recursive: true });
-  const scenarioReports: {
-    readonly name: ProfileName;
-    readonly observables: Readonly<Record<string, JsonValue>>;
-    readonly violations: readonly string[];
-  }[] = [];
+  const scenarioReports: ProfileCampaignScenario[] = [];
   for (const profile of profiles) {
     const progressPath = campaignProgressPath(
       normalized,
@@ -129,44 +170,30 @@ export async function runCampaignCommand(
     if (progressPath !== undefined) {
       await mkdir(dirname(progressPath), { recursive: true });
     }
-    const result = await runLiveProfile({
-      baseUrl,
-      profile,
-      port,
-      ...(progressPath === undefined ? {} : { progressPath }),
-      reportPath: `${reportPath}.${profile}`,
-    });
+    const result = await withProfileCelldEnvironment(process.env, profile, () =>
+      runLiveProfile({
+        baseUrl,
+        profile,
+        port,
+        ...(progressPath === undefined ? {} : { progressPath }),
+        reportPath: `${reportPath}.${profile}`,
+      })
+    );
     const reportJson: JsonValue =
       result.report === null ? null : JSON.parse(JSON.stringify(result.report));
     scenarioReports.push({
       name: profile,
       observables: {
         cleanupPath: result.cleanupPath,
+        cleanupPassed: result.cleanupPassed,
         profile,
         report: reportJson,
         runId: result.runId,
       },
-      violations: result.report === null ? ["profile failed"] : [],
+      violations: profileViolations(result.report, result.cleanupPassed),
     });
   }
-  const cleanupPath = `${reportPath}.cleanup.jsonl`;
-  await writeCleanupReceipt(cleanupPath, [
-    cleanupCompleteEvent({
-      containers: 0,
-      ports: 0,
-      prefixObjects: 0,
-      processes: 0,
-      proxyFaults: 0,
-      watchPaths: 0,
-    }),
-  ]);
-  const report = buildCampaignReport({
-    cleanup: { passed: true, receiptPath: cleanupPath },
-    command: "profiles",
-    runId: randomUUID(),
-    scenarios: scenarioReports,
-  });
-  await writeCampaignReport(reportPath, report);
+  const report = await writeProfileCampaignReport(reportPath, scenarioReports);
   if (!report.passed) {
     throw new Error(`Celld profile campaign failed: ${reportPath}`);
   }
@@ -174,6 +201,9 @@ export async function runCampaignCommand(
 }
 
 function parseProfileName(value: string): ProfileName {
+  if (value === "restart-churn") {
+    return "restart";
+  }
   if (
     value !== "wide" &&
     value !== "hot" &&

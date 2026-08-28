@@ -3,7 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { cleanupCompleteEvent, writeCleanupReceipt } from "./campaign-cleanup";
+import {
+  cleanupCompleteEvent,
+  cleanupReceiptBinding,
+  requireMeasuredCleanupPassed,
+  writeCleanupReceipt,
+} from "./campaign-cleanup";
 import {
   integerOption,
   normalizeCliArguments,
@@ -25,50 +30,30 @@ import {
   stopCelld,
   waitForListening,
 } from "./celld-process";
+import {
+  fetchRealAgentScenario,
+  interruptRealAgentScenario,
+  waitForChildProcessExit,
+  whileProcessLives,
+} from "./qa-real-agent-http";
+import type {
+  RealAgentCampaignDependencies,
+  RealAgentCampaignOptions,
+  ScenarioName,
+  ScenarioPhase,
+} from "./qa-real-agent-types";
+import { measureRealAgentCleanup } from "./real-agent-cleanup";
+
+export type {
+  RealAgentCampaignDependencies,
+  RealAgentCampaignOptions,
+} from "./qa-real-agent-types";
 
 const scenarioResultSchema = z
   .record(z.string(), z.json())
   .refine((value) => typeof value.passed === "boolean", {
     message: "Scenario response requires a boolean passed field.",
   });
-
-const scenarioNames = [
-  "tool-checkpoint",
-  "input-ordering",
-  "compaction",
-  "large-history",
-  "attachment",
-] as const;
-type ScenarioName = (typeof scenarioNames)[number];
-type ScenarioPhase = "run" | "verify";
-
-export interface RealAgentCampaignOptions {
-  readonly port: number;
-  readonly report: string;
-}
-
-export interface RealAgentCampaignDependencies<TChild = unknown> {
-  readonly cleanupPrefix: (prefix: string) => Promise<void>;
-  readonly createBucket: () => Promise<void>;
-  readonly deploy: (prefix: string) => Promise<void>;
-  readonly fetchScenario: (
-    baseUrl: string,
-    scenario: ScenarioName,
-    phase: ScenarioPhase,
-    token: string
-  ) => Promise<Readonly<Record<string, JsonValue>>>;
-  readonly makeWatchDirectory: () => Promise<string>;
-  readonly removeWatchDirectory: (path: string) => Promise<void>;
-  readonly restartCelld: (
-    prefix: string,
-    port: number,
-    watch: string,
-    child: TChild
-  ) => Promise<TChild>;
-  readonly startCelld: (prefix: string, port: number, watch: string) => TChild;
-  readonly stopCelld: (child: TChild) => Promise<void>;
-  readonly waitForListening: (child: TChild) => Promise<void>;
-}
 
 export async function runRealAgentCampaign<TChild>(
   options: RealAgentCampaignOptions,
@@ -79,6 +64,8 @@ export async function runRealAgentCampaign<TChild>(
   const watch = await dependencies.makeWatchDirectory();
   const receiptPath = `${options.report}.cleanup.jsonl`;
   let child: TChild | undefined;
+  const children: TChild[] = [];
+  let cleanupPassed: boolean | undefined;
   const cleanup = async (): Promise<void> => {
     if (child !== undefined) {
       await dependencies.stopCelld(child);
@@ -86,16 +73,19 @@ export async function runRealAgentCampaign<TChild>(
     }
     await dependencies.cleanupPrefix(prefix);
     await dependencies.removeWatchDirectory(watch);
-    await writeCleanupReceipt(receiptPath, [
-      cleanupCompleteEvent({
-        containers: 0,
-        ports: 0,
-        prefixObjects: 0,
-        processes: 0,
-        proxyFaults: 0,
-        watchPaths: 0,
-      }),
-    ]);
+    const remaining = await dependencies.measureCleanup({
+      children,
+      port: options.port,
+      prefix,
+      watch,
+    });
+    const cleanupEvent = cleanupCompleteEvent(remaining);
+    cleanupPassed = cleanupEvent.passed;
+    await writeCleanupReceipt(
+      receiptPath,
+      [cleanupEvent],
+      cleanupReceiptBinding(runId, "real-agent")
+    );
   };
   const scenarios = await runWithCampaignCleanup({
     cleanup,
@@ -103,15 +93,13 @@ export async function runRealAgentCampaign<TChild>(
       await dependencies.createBucket();
       await dependencies.deploy(prefix);
       child = dependencies.startCelld(prefix, options.port, watch);
+      children.push(child);
       await dependencies.waitForListening(child);
       const baseUrl = `http://127.0.0.1:${options.port}`;
       const token = runId;
 
-      const toolRun = await dependencies.fetchScenario(
-        baseUrl,
-        "tool-checkpoint",
-        "run",
-        token
+      await whileProcessLives(child, dependencies.waitForProcessExit, () =>
+        dependencies.interruptScenario(baseUrl, "tool-checkpoint", token)
       );
       child = await dependencies.restartCelld(
         prefix,
@@ -119,11 +107,17 @@ export async function runRealAgentCampaign<TChild>(
         watch,
         child
       );
-      const toolVerify = await dependencies.fetchScenario(
-        baseUrl,
-        "tool-checkpoint",
-        "verify",
-        token
+      children.push(child);
+      const toolVerify = await whileProcessLives(
+        child,
+        dependencies.waitForProcessExit,
+        () =>
+          dependencies.fetchScenario(
+            baseUrl,
+            "tool-checkpoint",
+            "resume",
+            token
+          )
       );
       const ordering = await dependencies.fetchScenario(
         baseUrl,
@@ -143,6 +137,7 @@ export async function runRealAgentCampaign<TChild>(
         watch,
         child
       );
+      children.push(child);
       const compactionVerify = await dependencies.fetchScenario(
         baseUrl,
         "compaction",
@@ -162,7 +157,7 @@ export async function runRealAgentCampaign<TChild>(
         token
       );
       return [
-        scenario("tool-checkpoint-restart", { ...toolRun, ...toolVerify }),
+        scenario("tool-checkpoint-restart", toolVerify),
         scenario("input-ordering", ordering),
         scenario("compaction-restart", {
           ...compactionRun,
@@ -176,7 +171,10 @@ export async function runRealAgentCampaign<TChild>(
     },
   });
   const report = buildCampaignReport({
-    cleanup: { passed: true, receiptPath },
+    cleanup: {
+      passed: requireMeasuredCleanupPassed(cleanupPassed, "Real-agent"),
+      receiptPath,
+    },
     command: "real-agent",
     runId,
     scenarios,
@@ -206,21 +204,9 @@ async function fetchScenario(
   phase: ScenarioPhase,
   token: string
 ): Promise<Readonly<Record<string, JsonValue>>> {
-  const response = await fetch(
-    `${baseUrl}/real-agent?object=${encodeURIComponent(`${scenario}:${token}`)}`,
-    {
-      body: JSON.stringify({ phase, scenario, token }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    }
+  return scenarioResultSchema.parse(
+    await fetchRealAgentScenario(baseUrl, scenario, phase, token)
   );
-  const value: unknown = await response.json();
-  if (!response.ok) {
-    throw new TypeError(
-      `Real-agent scenario failed with HTTP ${response.status}.`
-    );
-  }
-  return scenarioResultSchema.parse(value);
 }
 
 const defaultDependencies: RealAgentCampaignDependencies<
@@ -230,7 +216,9 @@ const defaultDependencies: RealAgentCampaignDependencies<
   createBucket,
   deploy,
   fetchScenario,
+  interruptScenario: interruptRealAgentScenario,
   makeWatchDirectory: () => mkdtemp(join(tmpdir(), "pss-celld-real-agent-")),
+  measureCleanup: measureRealAgentCleanup,
   removeWatchDirectory: (path) => rm(path, { force: true, recursive: true }),
   restartCelld: (prefix, port, watch, child) =>
     restartCelld("native", prefix, port, watch, child),
@@ -238,6 +226,7 @@ const defaultDependencies: RealAgentCampaignDependencies<
     startCelld("native", prefix, port, watch),
   stopCelld,
   waitForListening,
+  waitForProcessExit: waitForChildProcessExit,
 };
 
 export async function runCampaignCommand(
@@ -246,5 +235,17 @@ export async function runCampaignCommand(
   const normalized = normalizeCliArguments(args);
   const report = requiredStringOption(normalized, "--report");
   const port = integerOption(normalized, "--port", 16_431);
-  await runRealAgentCampaign({ port, report }, defaultDependencies);
+  const campaign = await runRealAgentCampaign(
+    { port, report },
+    defaultDependencies
+  );
+  assertRealAgentCampaignPassed(campaign);
+}
+
+export function assertRealAgentCampaignPassed(
+  report: Pick<CampaignReport, "passed">
+): void {
+  if (!report.passed) {
+    throw new Error("Real-agent campaign report failed.");
+  }
 }

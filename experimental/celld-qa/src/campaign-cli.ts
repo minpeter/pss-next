@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { CampaignCommand } from "./campaign-report";
 
 const commandSchema = z.enum(["real-agent", "chaos", "profiles", "s3-faults"]);
+const CAMPAIGN_USAGE =
+  "Usage: campaign-cli <real-agent|chaos|profiles|s3-faults> [options]";
 
 export interface CampaignCommonOptions {
   readonly report: string;
@@ -63,6 +65,10 @@ export async function runCampaignCli(
 ): Promise<number> {
   try {
     const [rawCommand, ...commandArgs] = normalizeCliArguments(args);
+    if (rawCommand === "--help" || rawCommand === "-h") {
+      console.log(CAMPAIGN_USAGE);
+      return 0;
+    }
     const command = commandSchema.parse(rawCommand);
     const loaded: unknown = await import(`./qa-${command}.ts`);
     if (!isCampaignCommandModule(loaded)) {

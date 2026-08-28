@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runScenario } from "./scenarios.js";
 
 const requestSchema = z.object({
-  phase: z.enum(["run", "verify"]),
+  phase: z.enum(["interrupt", "resume", "run", "verify"]),
   scenario: z.enum([
     "tool-checkpoint",
     "input-ordering",

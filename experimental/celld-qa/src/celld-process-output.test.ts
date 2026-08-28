@@ -19,6 +19,7 @@ describe("Celld process output observer", () => {
     expect(error).toBeInstanceOf(CelldUnexpectedExitError);
     expect(error).toMatchObject({
       exitCode: 7,
+      message: expect.stringContaining("celld panic detail"),
       signal: null,
       stderr: "celld panic detail",
     });

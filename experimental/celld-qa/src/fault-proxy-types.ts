@@ -1,10 +1,10 @@
 export const FAULT_KINDS = [
-  "pass",
   "latency",
   "timeout",
   "reset",
   "http_500",
   "throttle_429",
+  "localstack_restart",
   "read_after_write",
   "conditional_412",
 ] as const;
@@ -13,7 +13,11 @@ export type FaultKind = (typeof FAULT_KINDS)[number];
 
 export type TypedFaultRule =
   | { readonly kind: "pass" }
-  | { readonly count: number; readonly key: string; readonly kind: "http_500" }
+  | {
+      readonly count: number;
+      readonly key: string;
+      readonly kind: "http_500";
+    }
   | {
       readonly count: number;
       readonly key: string;
@@ -51,7 +55,7 @@ export type ProxyDecision =
       readonly generation: number;
       readonly headers: Readonly<Record<string, string>>;
       readonly kind: "synthetic";
-      readonly status: 404 | 412 | 429 | 500;
+      readonly status: 404 | 412 | 429 | 500 | 503;
     };
 
 export interface ProxyOutcome {
@@ -70,9 +74,13 @@ export interface RequestDecisionEvent {
 }
 
 export interface ScenarioResult {
+  readonly convergence: boolean;
   readonly detail: string;
+  readonly effect: "exactly_once" | "none";
+  readonly injectionEvidence: boolean;
   readonly kind: FaultKind;
   readonly observed: boolean;
+  readonly recovery: boolean;
 }
 
 export interface S3FaultReport {

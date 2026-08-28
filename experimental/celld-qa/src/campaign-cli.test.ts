@@ -6,6 +6,18 @@ afterEach(() => {
 });
 
 describe("campaign CLI failure reporting", () => {
+  it("prints command help without starting a campaign", async () => {
+    const output: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((value: unknown) => {
+      output.push(String(value));
+    });
+
+    await expect(runCampaignCli(["--help"])).resolves.toBe(0);
+    expect(output).toEqual([
+      "Usage: campaign-cli <real-agent|chaos|profiles|s3-faults> [options]",
+    ]);
+  });
+
   it("reports the underlying cause alongside the failure sentinel", async () => {
     const errors: string[] = [];
     vi.spyOn(console, "error").mockImplementation((value: unknown) => {

@@ -2,15 +2,18 @@ import {
   createServer,
   request as httpRequest,
   type IncomingMessage,
-  type Server,
   type ServerResponse,
 } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { FaultControlState } from "./fault-proxy-control";
+import { FaultControlState, handleFaultControl } from "./fault-proxy-control";
+import {
+  closeServer,
+  listenServer,
+  tcpPort,
+} from "./fault-proxy-server-lifecycle";
 import {
   BoundaryInputError,
   type ProxyDecision,
-  parseFaultRule,
   requireLoopbackUrl,
 } from "./fault-proxy-types";
 
@@ -53,7 +56,7 @@ export async function startFaultProxy(
     proxyRequest(request, response, context)
   );
   const controlServer = createServer((request, response) => {
-    handleControl(request, response, state).catch((error: unknown) => {
+    handleFaultControl(request, response, state).catch((error: unknown) => {
       const message =
         error instanceof Error ? error.message : "invalid control request";
       if (!response.headersSent) {
@@ -62,15 +65,23 @@ export async function startFaultProxy(
       response.end(JSON.stringify({ error: message }));
     });
   });
-  await Promise.all([
-    listen(dataServer, options.dataPort, "127.0.0.1"),
-    listen(controlServer, options.controlPort, controlHost),
+  const startup = await Promise.allSettled([
+    listenServer(dataServer, options.dataPort, "127.0.0.1"),
+    listenServer(controlServer, options.controlPort, controlHost),
   ]);
+  const failure = startup.find((result) => result.status === "rejected");
+  if (failure !== undefined) {
+    await Promise.allSettled([
+      closeServer(dataServer),
+      closeServer(controlServer),
+    ]);
+    throw failure.reason;
+  }
   const dataPort = tcpPort(dataServer);
   const controlPort = tcpPort(controlServer);
   return Object.freeze({
     close: async () =>
-      Promise.all([close(dataServer), close(controlServer)]).then(
+      Promise.all([closeServer(dataServer), closeServer(controlServer)]).then(
         () => undefined
       ),
     controlUrl: `http://127.0.0.1:${controlPort}`,
@@ -84,18 +95,33 @@ function proxyRequest(
   response: ServerResponse,
   context: ProxyContext
 ): void {
-  const key = new URL(incoming.url ?? "/", "http://127.0.0.1").pathname;
+  const target = proxyTarget(incoming.url, context.upstream);
+  if (target === null) {
+    incoming.resume();
+    response.writeHead(400, { "content-type": "text/plain" });
+    response.end("invalid proxy target");
+    return;
+  }
   const decision = context.state.decide({
     headers: incoming.headers,
-    key,
+    key: target.pathname,
     method: incoming.method ?? "GET",
   });
   if (decision.kind === "synthetic") {
     sendSynthetic(incoming, response, { decision, state: context.state });
     return;
   }
-  const target = new URL(incoming.url ?? "/", context.upstream);
   const send = target.protocol === "https:" ? httpsRequest : httpRequest;
+  let completed = false;
+  const complete = (
+    outcome: Readonly<{ error: string | null; status: number | null }>
+  ): void => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    context.state.complete(decision, outcome);
+  };
   const outgoing = send(
     target,
     { headers: incoming.headers, method: incoming.method },
@@ -106,21 +132,58 @@ function proxyRequest(
       );
       upstreamResponse.pipe(response);
       upstreamResponse.once("end", () => {
-        context.state.complete(decision, {
+        complete({
           error: null,
           status: upstreamResponse.statusCode ?? 502,
         });
       });
+      upstreamResponse.once("aborted", () => {
+        complete({ error: "upstream response aborted", status: null });
+        response.destroy();
+      });
+      upstreamResponse.once("error", (error) => {
+        complete({ error: error.message, status: null });
+        response.destroy(error);
+      });
     }
   );
   outgoing.once("error", (error) => {
-    context.state.complete(decision, { error: error.message, status: null });
-    if (!response.headersSent) {
-      response.writeHead(502, { "content-type": "text/plain" });
+    complete({ error: error.message, status: null });
+    if (!response.destroyed) {
+      if (!response.headersSent) {
+        response.writeHead(502, { "content-type": "text/plain" });
+      }
+      response.end("upstream unavailable");
     }
-    response.end("upstream unavailable");
+  });
+  incoming.once("aborted", () => {
+    complete({ error: "downstream request aborted", status: null });
+    outgoing.destroy();
+  });
+  incoming.once("error", (error) => {
+    complete({ error: error.message, status: null });
+    outgoing.destroy(error);
+  });
+  response.once("close", () => {
+    if (!response.writableEnded) {
+      complete({ error: "downstream response closed", status: null });
+      outgoing.destroy();
+    }
   });
   incoming.pipe(outgoing);
+}
+
+function proxyTarget(value: string | undefined, upstream: URL): URL | null {
+  const requestTarget = value ?? "/";
+  if (!requestTarget.startsWith("/") || requestTarget.startsWith("//")) {
+    return null;
+  }
+  try {
+    const target = new URL(requestTarget, upstream);
+    return target.origin === upstream.origin ? target : null;
+  } catch {
+    return null;
+  }
 }
 
 function sendSynthetic(
@@ -142,83 +205,7 @@ function sendSynthetic(
   });
 }
 
-async function handleControl(
-  request: IncomingMessage,
-  response: ServerResponse,
-  state: FaultControlState
-): Promise<void> {
-  if (!isLoopbackAddress(request.socket.remoteAddress)) {
-    response.writeHead(403).end();
-    return;
-  }
-  const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  if (request.method === "GET" && url.pathname === "/events") {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(state.events()));
-    return;
-  }
-  if (request.method === "GET" && url.pathname === "/generation") {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(state.generation()));
-    return;
-  }
-  if (request.method === "POST" && url.pathname === "/generation") {
-    const body = await readJson(request);
-    const generation = state.install(parseFaultRule(body));
-    response.writeHead(201, { "content-type": "application/json" });
-    response.end(JSON.stringify(generation));
-    return;
-  }
-  response.writeHead(404).end();
-}
-
-async function readJson(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    if (!Buffer.isBuffer(chunk)) {
-      throw new BoundaryInputError("control body must be bytes");
-    }
-    size += chunk.length;
-    if (size > 65_536) {
-      throw new BoundaryInputError("control body exceeds 64 KiB");
-    }
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function listen(server: Server, port: number, host: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-}
-
-function close(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((error) => (error === undefined ? resolve() : reject(error)));
-  });
-}
-
-function tcpPort(server: Server): number {
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new BoundaryInputError("proxy has no TCP address");
-  }
-  return address.port;
-}
-
-function isLoopbackAddress(value: string | undefined): boolean {
-  return (
-    value === "127.0.0.1" || value === "::1" || value === "::ffff:127.0.0.1"
-  );
-}
-
-function errorCode(status: 404 | 412 | 429 | 500): string {
+function errorCode(status: 404 | 412 | 429 | 500 | 503): string {
   switch (status) {
     case 404:
       return "NoSuchKey";
@@ -228,6 +215,8 @@ function errorCode(status: 404 | 412 | 429 | 500): string {
       return "SlowDown";
     case 500:
       return "InternalError";
+    case 503:
+      return "ServiceUnavailable";
     default:
       return assertNever(status);
   }

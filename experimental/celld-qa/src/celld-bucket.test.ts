@@ -18,10 +18,13 @@ describe("Celld bucket cleanup boundary", () => {
     const keys = Array.from({ length: 40 }, (_, index) => `run/key-${index}`);
     let activeDeletes = 0;
     let maxActiveDeletes = 0;
+    let listingCount = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => {
       if (init?.method !== "DELETE") {
+        listingCount += 1;
+        const listedKeys = listingCount === 1 ? keys : [];
         return new Response(
-          `<ListBucketResult>${keys.map((key) => `<Key>${key}</Key>`).join("")}</ListBucketResult>`
+          `<ListBucketResult>${listedKeys.map((key) => `<Key>${key}</Key>`).join("")}</ListBucketResult>`
         );
       }
       activeDeletes += 1;
@@ -40,5 +43,49 @@ describe("Celld bucket cleanup boundary", () => {
     expect(
       fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE")
     ).toHaveLength(keys.length);
+    expect(listingCount).toBe(2);
+  });
+
+  it("refuses to delete keys outside the requested prefix", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          "<ListBucketResult><Key>run/owned</Key><Key>other/foreign</Key></ListBucketResult>"
+        )
+      )
+    );
+
+    await expect(
+      cleanupPrefix("run", {
+        endpoint: "http://127.0.0.1:14566",
+        fetchImpl,
+      })
+    ).rejects.toThrow("outside cleanup prefix");
+    expect(
+      fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE")
+    ).toHaveLength(0);
+  });
+
+  it("fails when the final verification still finds an object", async () => {
+    let listingCount = 0;
+    const fetchImpl = vi.fn<typeof fetch>((_input, init) => {
+      if (init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      listingCount += 1;
+      return Promise.resolve(
+        new Response(
+          `<ListBucketResult><Key>run/${listingCount === 1 ? "initial" : "late"}</Key></ListBucketResult>`
+        )
+      );
+    });
+
+    await expect(
+      cleanupPrefix("run", {
+        endpoint: "http://127.0.0.1:14566",
+        fetchImpl,
+      })
+    ).rejects.toThrow("not empty after cleanup");
+    expect(listingCount).toBe(2);
   });
 });

@@ -3,6 +3,7 @@ import {
   type ProcessObservation,
   processMetricDelta,
 } from "./process-observer";
+import { recordRecentLatencySample } from "./profile-latency-samples";
 import { requestAt } from "./profile-plans";
 import {
   createProgressReporter,
@@ -35,6 +36,12 @@ interface Completion {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+export interface RunnerMetricReport {
+  readonly cpuSystemMicros: number;
+  readonly cpuUserMicros: number;
+  readonly throughputPerSecond: number | null;
+}
+
 export interface ProfileReport {
   readonly admitted: number;
   readonly cleanup: {
@@ -50,6 +57,7 @@ export interface ProfileReport {
   readonly latency: LatencySummary | null;
   readonly latencySamples: readonly number[];
   readonly processMetrics: ProcessMetricReport | null;
+  readonly runnerMetrics: RunnerMetricReport;
 }
 
 export async function runProfile({
@@ -62,6 +70,7 @@ export async function runProfile({
   waitUntil = defaultWaitUntil(clock),
 }: RunnerOptions): Promise<ProfileReport> {
   const startedAt = clock.now();
+  const runnerCpuStartedAt = process.cpuUsage();
   const before = await processSampler?.();
   const controller = new AbortController();
   const runSignal =
@@ -142,21 +151,22 @@ export async function runProfile({
     const observation = await Promise.race(active.values());
     active.delete(observation.token);
     completed += 1;
-    latencies.push(observation.latencyMs);
+    recordRecentLatencySample(latencies, observation.latencyMs, completed);
     failed += Number(observation.failed);
     correct += Number(!observation.failed && observation.correct);
     incorrect += Number(!(observation.failed || observation.correct));
-    reporter?.record(snapshot());
+    await reporter?.record(snapshot());
   }
 
   const after = runSignal.aborted ? undefined : await processSampler?.();
-  reporter?.finish(snapshot());
+  await reporter?.finish(snapshot());
+  const elapsedMs = clock.now() - startedAt;
   return {
     admitted,
     cleanup: { aborted, drained, inFlight: active.size },
     completed,
     correct,
-    elapsedMs: clock.now() - startedAt,
+    elapsedMs,
     failed,
     incorrect,
     latency: latencies.length === 0 ? null : summarizeLatencies(latencies),
@@ -165,6 +175,25 @@ export async function runProfile({
       before === undefined || after === undefined
         ? null
         : processMetricDelta(before, after),
+    runnerMetrics: collectRunnerMetrics(
+      runnerCpuStartedAt,
+      completed,
+      elapsedMs
+    ),
+  };
+}
+
+function collectRunnerMetrics(
+  startedAt: NodeJS.CpuUsage,
+  completed: number,
+  elapsedMs: number
+): RunnerMetricReport {
+  const cpu = process.cpuUsage(startedAt);
+  return {
+    cpuSystemMicros: cpu.system,
+    cpuUserMicros: cpu.user,
+    throughputPerSecond:
+      elapsedMs === 0 ? null : (completed * 1000) / elapsedMs,
   };
 }
 
