@@ -69,3 +69,50 @@ diagnostics. The optimization gate is intentionally narrower and causal: it
 compares response objects and serialized response bytes retained by the QA
 runner. Celld process metrics are observational because runner-side retention
 cannot causally change the Celld child process.
+
+## Complete validation campaign
+
+The campaign commands emit schema-validated JSON reports plus machine-readable
+cleanup receipts. Use a separate loopback port for each live profile.
+
+```sh
+evidence=/var/tmp/pss-celld-campaign
+mkdir -p "$evidence"
+
+pnpm --filter @minpeter/pss-celld-qa qa:real-agent -- \
+  --scenario all --port 16430 --report "$evidence/real-agent.json"
+pnpm --filter @minpeter/pss-celld-qa qa:chaos -- \
+  --scenario all --scheduled-items 1000 --report "$evidence/chaos.json"
+pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
+  --profiles wide --port 16431 --report "$evidence/profile-wide.json"
+pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
+  --profiles hot --port 16432 --report "$evidence/profile-hot.json"
+pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
+  --profiles mixed --port 16433 --report "$evidence/profile-mixed.json"
+pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
+  --profiles restart --port 16434 --report "$evidence/profile-restart.json"
+pnpm --filter @minpeter/pss-celld-qa qa:profiles -- \
+  --profiles soak --port 16435 --progress "$evidence/soak-progress.jsonl" \
+  --report "$evidence/profile-soak.json"
+pnpm --filter @minpeter/pss-celld-qa qa:s3-faults -- \
+  --proxy-url http://127.0.0.1:14567 \
+  --control-url http://127.0.0.1:14568 \
+  --toxiproxy-url http://127.0.0.1:18474 \
+  --report "$evidence/s3-faults.json"
+```
+
+Verify every report before accepting evidence:
+
+```sh
+for report in "$evidence"/*.json; do
+  pnpm --filter @minpeter/pss-celld-qa qa:verify -- "$report"
+done
+```
+
+The real-agent workload covers tool checkpoint restart, durable input ordering,
+compaction recovery, large payload integrity, and attachment hydration. Chaos
+tests scheduler/drainer boundaries, thousand-row ordering, legacy SQLite
+migration, and the shared Cloudflare adapter. Profiles capture p50/p95/p99
+latency and native Celld CPU, RSS, and file-descriptor observations. The
+loopback-only S3 campaign covers latency, timeout, reset, HTTP 500, throttling,
+read-after-write visibility, and conditional-write failures.
