@@ -7,6 +7,8 @@
     "qa:load": "tsx src/qa-load.ts",
     "qa:matrix": "tsx src/qa-matrix.ts",
     "qa:native": "tsx src/qa-native.ts",
+    "qa:s3:down": "docker compose --file compose.yaml down --volumes --remove-orphans",
+    "qa:s3:up": "docker compose --file compose.yaml up --detach --wait",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -1,0 +1,22 @@
+services:
+  localstack:
+    image: localstack/localstack:4.8.1
+    ports:
+      - "127.0.0.1:${CELLD_QA_S3_PORT:-14566}:4566"
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      EAGER_SERVICE_LOADING: "1"
+      SERVICES: s3
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS http://localhost:4566/_localstack/health |
+          grep -Eq '"s3"[[:space:]]*:[[:space:]]*"(available|running)"'
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    stop_grace_period: 10s
