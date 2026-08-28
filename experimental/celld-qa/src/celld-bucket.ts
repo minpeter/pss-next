@@ -1,5 +1,6 @@
 const ENDPOINT = process.env.S3_ENDPOINT ?? "http://127.0.0.1:14566";
 const BUCKET = process.env.CELLD_QA_BUCKET ?? "pss-celld-qa";
+const CLEANUP_CONCURRENCY = 16;
 const LOCAL_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 interface CleanupOptions {
@@ -31,19 +32,35 @@ export async function cleanupPrefix(
     const keys = [...xml.matchAll(/<Key>([\s\S]*?)<\/Key>/g)].map((match) =>
       decodeXml(match[1] ?? "")
     );
-    await Promise.all(
-      keys.map(async (key) => {
-        const deleted = await fetchImpl(
-          `${endpoint}/${BUCKET}/${encodeKey(key)}`,
-          { method: "DELETE" }
-        );
-        if (!deleted.ok && deleted.status !== 404) {
-          throw new Error(`bucket object cleanup failed: ${deleted.status}`);
-        }
-      })
-    );
+    await deleteKeys(keys, endpoint, fetchImpl);
     continuation = decodeTag(xml, "NextContinuationToken");
   } while (continuation !== undefined);
+}
+
+async function deleteKeys(
+  keys: readonly string[],
+  endpoint: string,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  let nextIndex = 0;
+  const deleteNext = async (): Promise<void> => {
+    while (nextIndex < keys.length) {
+      const key = keys[nextIndex];
+      nextIndex += 1;
+      if (key === undefined) {
+        return;
+      }
+      const deleted = await fetchImpl(
+        `${endpoint}/${BUCKET}/${encodeKey(key)}`,
+        { method: "DELETE" }
+      );
+      if (!deleted.ok && deleted.status !== 404) {
+        throw new Error(`bucket object cleanup failed: ${deleted.status}`);
+      }
+    }
+  };
+  const workerCount = Math.min(CLEANUP_CONCURRENCY, keys.length);
+  await Promise.all(Array.from({ length: workerCount }, deleteNext));
 }
 
 export function assertLoopbackEndpoint(endpoint: string): void {

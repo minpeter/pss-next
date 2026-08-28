@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { cleanupCompleteEvent, writeCleanupReceipt } from "./campaign-cleanup";
+import { runWithCampaignCleanup } from "./campaign-lifecycle";
 import { cleanupPrefix } from "./celld-bucket";
 import {
   type CelldChild,
@@ -50,37 +51,43 @@ export async function runLiveProfile(
   const watch = await mkdtemp(join("/var/tmp", "pss-celld-profile-"));
   const cleanupPath = `${options.reportPath}.cleanup.jsonl`;
   let child: CelldChild | undefined;
-  try {
-    await createBucket();
-    await deploy(prefix);
-    child = startCelld("native", prefix, options.port, watch);
-    await waitForListening(child);
-    const result =
-      options.profile === "restart"
-        ? await runChurnProfile(options, prefix, watch, child, (next) => {
-            child = next;
-          })
-        : {
-            report: await runFiniteProfile(options, child.pid ?? undefined),
-          };
-    const report = result.report;
-    const cleanup = cleanupCompleteEvent({
-      containers: 0,
-      ports: 0,
-      prefixObjects: 0,
-      processes: 0,
-      proxyFaults: 0,
-      watchPaths: 0,
-    });
-    await writeCleanupReceipt(cleanupPath, [cleanup]);
-    return { cleanupPath, report, runId };
-  } finally {
+  const cleanup = async (): Promise<void> => {
     if (child !== undefined) {
       await stopCelld(child);
+      child = undefined;
     }
     await cleanupPrefix(prefix);
     await rm(watch, { force: true, recursive: true });
-  }
+    await writeCleanupReceipt(cleanupPath, [
+      cleanupCompleteEvent({
+        containers: 0,
+        ports: 0,
+        prefixObjects: 0,
+        processes: 0,
+        proxyFaults: 0,
+        watchPaths: 0,
+      }),
+    ]);
+  };
+  const report = await runWithCampaignCleanup({
+    cleanup,
+    run: async () => {
+      await createBucket();
+      await deploy(prefix);
+      child = startCelld("native", prefix, options.port, watch);
+      await waitForListening(child);
+      const result =
+        options.profile === "restart"
+          ? await runChurnProfile(options, prefix, watch, child, (next) => {
+              child = next;
+            })
+          : {
+              report: await runFiniteProfile(options, child.pid ?? undefined),
+            };
+      return result.report;
+    },
+  });
+  return { cleanupPath, report, runId };
 }
 
 function runFiniteProfile(
