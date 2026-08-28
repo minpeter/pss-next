@@ -97,7 +97,10 @@ export async function insertDueWorkAndArm<T>(
           .toArray()[0];
         return typeof row?.due_at === "number" ? [row.due_at] : [];
       })
-      .reduce((earliest, value) => Math.min(earliest, value), dueAtMs);
+      .reduce(
+        (earliest, persistedValue) => Math.min(earliest, persistedValue),
+        Number.POSITIVE_INFINITY
+      );
     await transaction.setAlarm(
       currentAlarm === null
         ? persistedDueAt
