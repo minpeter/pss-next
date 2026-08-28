@@ -82,4 +82,22 @@ describe("profile runner", () => {
     expect(report.admitted).toBe(1);
     expect(report.cleanup).toEqual({ aborted: 1, drained: false, inFlight: 1 });
   });
+
+  it("stops admitting requests when the live process aborts the profile", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const report = await runProfile({
+      clock: { now: () => 0 },
+      fetchRequest: () => {
+        calls += 1;
+        controller.abort(new Error("Celld exited"));
+        return Promise.resolve({ correct: false });
+      },
+      plan: { ...PROFILE_PLANS.hot, concurrency: 1, requestCount: 10 },
+      signal: controller.signal,
+    });
+
+    expect(calls).toBe(1);
+    expect(report.admitted).toBe(1);
+  });
 });

@@ -15,6 +15,7 @@ import {
   stopCelld,
   waitForListening,
 } from "./celld-process";
+import { observeCelldExit } from "./celld-process-output";
 import type {
   ProcessMetricReport,
   ProcessObservation,
@@ -75,16 +76,20 @@ export async function runLiveProfile(
       await createBucket();
       await deploy(prefix);
       child = startCelld("native", prefix, options.port, watch);
-      await waitForListening(child);
-      const result =
-        options.profile === "restart"
-          ? await runChurnProfile(options, prefix, watch, child, (next) => {
-              child = next;
-            })
-          : {
-              report: await runFiniteProfile(options, child.pid ?? undefined),
-            };
-      return result.report;
+      if (options.profile === "restart") {
+        await waitForListening(child);
+        const result = await runChurnProfile(
+          options,
+          prefix,
+          watch,
+          child,
+          (next) => {
+            child = next;
+          }
+        );
+        return result.report;
+      }
+      return runObservedFiniteProfile(options, child);
     },
   });
   return { cleanupPath, report, runId };
@@ -92,7 +97,8 @@ export async function runLiveProfile(
 
 function runFiniteProfile(
   options: LiveProfileOptions,
-  pid: number | undefined
+  pid: number | undefined,
+  signal?: AbortSignal
 ): Promise<ProfileReport> {
   const plan = PROFILE_PLANS[options.profile];
   if (plan.kind === "restart") {
@@ -113,7 +119,29 @@ function runFiniteProfile(
         : async (line) => {
             await writeFile(progressPath, `${line}\n`, { flag: "a" });
           },
+    signal,
   });
+}
+
+async function runObservedFiniteProfile(
+  options: LiveProfileOptions,
+  child: CelldChild
+): Promise<ProfileReport> {
+  const controller = new AbortController();
+  const observer = observeCelldExit(child);
+  const exit = observer.exit.catch((error: unknown) => {
+    controller.abort(error);
+    throw error;
+  });
+  try {
+    await Promise.race([waitForListening(child), exit]);
+    return await Promise.race([
+      runFiniteProfile(options, child.pid ?? undefined, controller.signal),
+      exit,
+    ]);
+  } finally {
+    observer.dispose();
+  }
 }
 
 async function runChurnProfile(

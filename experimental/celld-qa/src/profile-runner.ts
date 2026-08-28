@@ -22,6 +22,7 @@ interface RunnerOptions {
   readonly plan: ProfilePlan;
   readonly processSampler?: () => Promise<ProcessObservation>;
   readonly progressSink?: (jsonLine: string) => void;
+  readonly signal?: AbortSignal;
   readonly waitUntil?: (deadlineMs: number) => Promise<void>;
 }
 
@@ -57,11 +58,16 @@ export async function runProfile({
   plan,
   processSampler,
   progressSink,
+  signal: externalSignal,
   waitUntil = defaultWaitUntil(clock),
 }: RunnerOptions): Promise<ProfileReport> {
   const startedAt = clock.now();
   const before = await processSampler?.();
   const controller = new AbortController();
+  const runSignal =
+    externalSignal === undefined
+      ? controller.signal
+      : AbortSignal.any([controller.signal, externalSignal]);
   const active = new Map<number, Promise<Completion>>();
   const latencies: number[] = [];
   let admitted = 0;
@@ -82,22 +88,20 @@ export async function runProfile({
     failed,
     inFlight: active.size,
   });
+  const admissionOpen = (): boolean =>
+    !runSignal.aborted &&
+    isAdmissionOpen(plan, admitted, clock.now() - startedAt);
+  const hasWork = (): boolean => admissionOpen() || active.size > 0;
 
-  while (
-    isAdmissionOpen(plan, admitted, clock.now() - startedAt) ||
-    active.size > 0
-  ) {
-    while (
-      active.size < plan.concurrency &&
-      isAdmissionOpen(plan, admitted, clock.now() - startedAt)
-    ) {
+  while (hasWork()) {
+    while (active.size < plan.concurrency && admissionOpen()) {
       const token = nextToken;
       nextToken += 1;
       const request = requestAt(plan, admitted);
       admitted += 1;
       const requestStartedAt = clock.now();
       const requestSignal = AbortSignal.any([
-        controller.signal,
+        runSignal,
         AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       ]);
       const pending = fetchRequest(request, requestSignal).then(
@@ -145,7 +149,7 @@ export async function runProfile({
     reporter?.record(snapshot());
   }
 
-  const after = await processSampler?.();
+  const after = runSignal.aborted ? undefined : await processSampler?.();
   reporter?.finish(snapshot());
   return {
     admitted,
