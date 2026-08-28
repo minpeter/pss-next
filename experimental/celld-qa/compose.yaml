@@ -20,3 +20,49 @@ services:
       retries: 30
       start_period: 5s
     stop_grace_period: 10s
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    ports:
+      - "127.0.0.1:${CELLD_QA_TOXIPROXY_CONTROL_PORT:-18474}:8474"
+      - "127.0.0.1:${CELLD_QA_TOXIPROXY_DATA_PORT:-14666}:8666"
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /toxiproxy-cli, list]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 2s
+
+  fault-proxy:
+    image: oven/bun:1.4.0
+    network_mode: host
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    command:
+      - bun
+      - experimental/celld-qa/src/fault-proxy-server.ts
+      - --upstream
+      - http://127.0.0.1:${CELLD_QA_TOXIPROXY_DATA_PORT:-14666}
+      - --data-port
+      - ${CELLD_QA_FAULT_PROXY_PORT:-14567}
+      - --control-port
+      - ${CELLD_QA_FAULT_CONTROL_PORT:-14568}
+    depends_on:
+      toxiproxy:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          fetch('http://127.0.0.1:${CELLD_QA_FAULT_CONTROL_PORT:-14568}/generation')
+          .then(response => process.exit(response.ok ? 0 : 1))
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 2s
