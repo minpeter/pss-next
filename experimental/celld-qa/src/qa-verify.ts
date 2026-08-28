@@ -1,5 +1,5 @@
 import { type CleanupEvent, readCleanupReceipt } from "./campaign-cleanup";
-import { normalizeCliArguments } from "./campaign-cli";
+import { normalizeCliArguments } from "./campaign-cli-utils";
 import { type CampaignReport, readCampaignReport } from "./campaign-report";
 
 export async function verifyCampaignReport(
@@ -42,5 +42,7 @@ function terminalCleanupEvent(
 }
 
 if (import.meta.main) {
-  process.exitCode = await runVerifyCommand();
+  runVerifyCommand().then((code) => {
+    process.exitCode = code;
+  });
 }

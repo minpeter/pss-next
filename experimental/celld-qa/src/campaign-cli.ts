@@ -70,8 +70,9 @@ export async function runCampaignCli(
     }
     await loaded.runCampaignCommand(commandArgs);
     return 0;
-  } catch {
+  } catch (error: unknown) {
     console.error("CELLD_QA_CAMPAIGN_FAILED");
+    console.error(error instanceof Error ? error.stack : String(error));
     return 1;
   }
 }
