@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createCelldTestStorage } from "../../../packages/runtime/src/platform/celld/celld-test-storage";
 import { RealAgent } from "../worker/real-agent.js";
+import { createCelldTestStorage } from "./celld-test-storage";
 
 function createState(storage = createCelldTestStorage()) {
   const waits: Promise<unknown>[] = [];

@@ -12,7 +12,11 @@ describe("campaign CLI failure reporting", () => {
       errors.push(String(value));
     });
 
-    const exitCode = await runCampaignCli(["profiles", "--profiles", "restart"]);
+    const exitCode = await runCampaignCli([
+      "profiles",
+      "--profiles",
+      "restart",
+    ]);
 
     expect(exitCode).toBe(1);
     expect(errors[0]).toBe("CELLD_QA_CAMPAIGN_FAILED");
