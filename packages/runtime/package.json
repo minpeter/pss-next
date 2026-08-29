@@ -25,25 +25,30 @@
       "@minpeter/pss-source": "./src/platform/memory/index.ts",
       "import": "./dist/platform/memory/index.js"
     },
-    "./platform/cloudflare": {
-      "types": "./dist/platform/cloudflare/index.d.ts",
-      "@minpeter/pss-source": "./src/platform/cloudflare/index.ts",
-      "import": "./dist/platform/cloudflare/index.js"
+    "./platform/durable-object": {
+      "types": "./dist/platform/durable-object/host/storage-host.d.ts",
+      "@minpeter/pss-source": "./src/platform/durable-object/host/storage-host.ts",
+      "import": "./dist/platform/durable-object/host/storage-host.js"
     },
-    "./platform/cloudflare/image-codecs": {
-      "types": "./dist/platform/cloudflare/image-codecs-edge.d.ts",
-      "@minpeter/pss-source": "./src/platform/cloudflare/image-codecs-edge.ts",
-      "import": "./dist/platform/cloudflare/image-codecs-edge.js"
+    "./platform/durable-object/cloudflare": {
+      "types": "./dist/platform/durable-object/cloudflare/agents/index.d.ts",
+      "@minpeter/pss-source": "./src/platform/durable-object/cloudflare/agents/index.ts",
+      "import": "./dist/platform/durable-object/cloudflare/agents/index.js"
+    },
+    "./platform/durable-object/cloudflare/image-codecs": {
+      "types": "./dist/platform/durable-object/cloudflare/image-codecs-edge.d.ts",
+      "@minpeter/pss-source": "./src/platform/durable-object/cloudflare/image-codecs-edge.ts",
+      "import": "./dist/platform/durable-object/cloudflare/image-codecs-edge.js"
+    },
+    "./platform/durable-object/celld": {
+      "types": "./dist/platform/durable-object/celld/host.d.ts",
+      "@minpeter/pss-source": "./src/platform/durable-object/celld/host.ts",
+      "import": "./dist/platform/durable-object/celld/host.js"
     },
     "./platform/file": {
       "types": "./dist/platform/file/index.d.ts",
       "@minpeter/pss-source": "./src/platform/file/index.ts",
       "import": "./dist/platform/file/index.js"
-    },
-    "./platform/celld": {
-      "types": "./dist/platform/celld/index.d.ts",
-      "@minpeter/pss-source": "./src/platform/celld/index.ts",
-      "import": "./dist/platform/celld/index.js"
     },
     "./execution": {
       "types": "./dist/execution/index.d.ts",
@@ -106,10 +111,10 @@
     "build": "tsdown",
     "lint": "ultracite check .",
     "test": "vitest run",
-    "test:storage-stress": "vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
-    "test:storage-stress:extreme": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=extreme vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts",
-    "test:storage-stress:heavy": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=heavy vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
-    "test:storage-stress:torture": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=torture vitest run src/platform/cloudflare/storage/execution/store-stress.test.ts src/platform/cloudflare/storage/execution/store-oversized-payload.test.ts",
+    "test:storage-stress": "vitest run src/platform/durable-object/storage/execution/store-stress.test.ts src/platform/durable-object/storage/execution/store-oversized-payload.test.ts",
+    "test:storage-stress:extreme": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=extreme vitest run src/platform/durable-object/storage/execution/store-stress.test.ts",
+    "test:storage-stress:heavy": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=heavy vitest run src/platform/durable-object/storage/execution/store-stress.test.ts src/platform/durable-object/storage/execution/store-oversized-payload.test.ts",
+    "test:storage-stress:torture": "PSS_RUNTIME_STORAGE_STRESS_PROFILE=torture vitest run src/platform/durable-object/storage/execution/store-stress.test.ts src/platform/durable-object/storage/execution/store-oversized-payload.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.production.json --noEmit && tsc -p tsconfig.exact-optional.json --noEmit"
   },
   "dependencies": {

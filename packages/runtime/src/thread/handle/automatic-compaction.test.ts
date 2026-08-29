@@ -4,7 +4,7 @@ import {
   createStore,
   readCompactionRows,
   readRows,
-} from "../../platform/cloudflare/storage/sqlite/thread-store.test-support";
+} from "../../platform/durable-object/storage/sqlite/thread-store.test-support";
 import { hostWithThreads } from "../../testing/host-with-threads";
 import {
   assistantMessage,

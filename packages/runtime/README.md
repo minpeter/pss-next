@@ -1189,7 +1189,8 @@ There is a single host contract: `AgentHost` (`HostStore` + `HostScheduler` + op
 `createInMemoryHost()`. Platform factories (`createInMemoryHost`,
 `createFileHost`, `createCloudflareHost`) all return that same shape.
 `createCloudflareHost` is the Cloudflare Agents SDK path (fibers + schedule).
-For store/alarm-only DO tooling use `createCloudflareStorageHost`.
+For store/alarm-only DO tooling use `createDurableObjectStorageHost` from
+`@minpeter/pss-runtime/platform/durable-object`.
 
 Speculative compaction prepares a summary in the background before promoting it.
 Each episode has one absolute pre-commit deadline:
@@ -1310,7 +1311,7 @@ must survive process restarts.
 
 Cloudflare Durable Objects and similar edge hosts should call `createAgent()` per
 turn and persist opaque thread state through a durable `threadStore`.
-Use `@minpeter/pss-runtime/platform/cloudflare` for the packaged Cloudflare Durable
+Use `@minpeter/pss-runtime/platform/durable-object/cloudflare` for the packaged Cloudflare Durable
 Object adapter. See the sync example package for blocking app-owned delegation
 and the background example package for durable background delegation in a local
 interactive CLI.
@@ -1318,7 +1319,7 @@ interactive CLI.
 Cloudflare is the preferred substrate when deploying PSS Runtime on Workers and
 Durable Objects, but runtime core stays platform-agnostic. Do not import the
 Cloudflare Agents SDK, `cloudflare:agents`, or other Cloudflare SDK packages from
-core runtime code. Use `@minpeter/pss-runtime/platform/cloudflare` as the
+core runtime code. Use `@minpeter/pss-runtime/platform/durable-object/cloudflare` as the
 canonical Cloudflare adapter for Durable Object storage, alarms, dispatch, and
 Cloudflare Agents SDK fiber, schedule, recovery, and context helpers.
 
@@ -1330,14 +1331,15 @@ to `startFiber()`, delayed resumes to SDK `schedule()`, and recovery to
 `onFiberRecovered()`. HTTP app routes should use `onRequest` (PartyServer entry).
 Scheduled callback and recovery payloads are prefix-guarded by default; pass
 `allowedPrefixes` or `allowPrefix` for multi-namespace Workers. The
-`worker-agent` app is the reference. Low-level `createCloudflareStorageHost`
-remains available for store inspection and tests; wake/resume is Agents-owned
-via `createCloudflarePlatformContext` / fibers.
+`worker-agent` app is the reference. Low-level `createDurableObjectStorageHost`
+(from `@minpeter/pss-runtime/platform/durable-object`) remains available for
+store inspection and tests; wake/resume is Agents-owned via
+`createCloudflarePlatformContext` / fibers.
 
 **Migration from alarm drain:** the DO `alarm` / alarm-scheduler dual stack was
 removed. Pending work that used the shared scheduled-work kinds (`run`,
 thread prompts) is still listed/acked through Agents fibers and
-`createCloudflareScheduledWorkScheduler` storage rows; do not re-arm DO `setAlarm`
+`createDurableObjectScheduledWorkScheduler` storage rows; do not re-arm DO `setAlarm`
 for PSS turn drain.
 
 ### Platform adapter parity
@@ -1356,7 +1358,7 @@ timers.
 | Scheduled runs and thread prompts     | list/ack, deduped | list/ack, deduped        | list/ack/claim, deduped       |
 | Delayed runs (`runAfterMs`)           | due-time filtered | due-time filtered        | Agents `schedule()` / fibers  |
 | Product host factory                  | `createInMemoryHost` | `createFileHost`      | `createCloudflareHost`        |
-| Low-level storage host                | —                 | —                        | `createCloudflareStorageHost` |
+| Low-level storage host                | —                 | —                        | `createDurableObjectStorageHost` |
 | Drain helper                          | app-driven        | `drainScheduledNodeWork` | Agents fiber resume               |
 | Scheduled fiber retry backoff         | —                 | —                        | Cloudflare Agents SDK adapter |
 

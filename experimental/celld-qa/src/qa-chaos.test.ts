@@ -16,13 +16,13 @@ describe("chaos campaign evidence", () => {
         name: "migration",
         observables: {
           celldTestFiles: [
-            "src/platform/celld/scheduled-work-migration.test.ts",
+            "src/platform/durable-object/celld/scheduled-work-migration.test.ts",
           ],
           celldTestsPassed: true,
           cloudflareTestFiles: [
-            "src/platform/cloudflare/host/scheduler-contract.test.ts",
-            "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
-            "src/platform/cloudflare/storage/sqlite/bootstrap.test.ts",
+            "src/platform/durable-object/host/scheduler-contract.test.ts",
+            "src/platform/durable-object/storage/execution/store-transaction.test.ts",
+            "src/platform/durable-object/storage/sqlite/bootstrap.test.ts",
           ],
           cloudflareTestsPassed: false,
         },

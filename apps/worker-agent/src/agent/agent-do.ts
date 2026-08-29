@@ -3,9 +3,9 @@ import type {
   CloudflareAgentsFiberRecoveryContext,
   CloudflareAgentsFiberRecoveryResult,
   CloudflarePlatformContext,
-} from "@minpeter/pss-runtime/platform/cloudflare";
-import { createCloudflarePlatformContext } from "@minpeter/pss-runtime/platform/cloudflare";
-import { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/cloudflare/image-codecs";
+} from "@minpeter/pss-runtime/platform/durable-object/cloudflare";
+import { createCloudflarePlatformContext } from "@minpeter/pss-runtime/platform/durable-object/cloudflare";
+import { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/durable-object/cloudflare/image-codecs";
 import { Agent as CloudflareAgent } from "agents";
 import type { ChannelAddress } from "../channel";
 import type { Env } from "../env";

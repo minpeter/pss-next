@@ -6,6 +6,7 @@ import {
   REQUIRED_RUNTIME_CHANNEL_EXPORTS,
   REQUIRED_RUNTIME_CLOUDFLARE_AGENTS_EXPORTS,
   REQUIRED_RUNTIME_CLOUDFLARE_WORKER_EXPORTS,
+  REQUIRED_RUNTIME_DURABLE_OBJECT_EXPORTS,
   REQUIRED_RUNTIME_EXECUTION_EXPORTS,
   REQUIRED_RUNTIME_OTEL_EXPORTS,
 } from "./verify-release-artifacts/runtime-public-surface.mjs";
@@ -19,6 +20,10 @@ afterEach(cleanupFixtures);
 
 function runtimeDistDeclaration(cwd, ...segments) {
   return join(cwd, "packages", "runtime", "dist", ...segments, "index.d.ts");
+}
+
+function runtimeDistFile(cwd, ...segments) {
+  return join(cwd, "packages", "runtime", "dist", ...segments);
 }
 
 describe("verifyReleaseArtifacts runtime subpath checks", () => {
@@ -73,12 +78,58 @@ describe("verifyReleaseArtifacts runtime subpath checks", () => {
     );
   });
 
-  it("requires the runtime cloudflare declaration entrypoint", () => {
+  it("requires the runtime durable object declaration entrypoint", () => {
     const cwd = createFixture();
-    rmSync(runtimeDistDeclaration(cwd, "platform", "cloudflare"));
+    rmSync(
+      runtimeDistFile(
+        cwd,
+        "platform",
+        "durable-object",
+        "host",
+        "storage-host.d.ts"
+      )
+    );
 
     expect(verifyReleaseArtifacts({ cwd, packages: ["runtime"] })).toEqual([
-      "packages/runtime/dist/platform/cloudflare/index.d.ts: missing cloudflare runtime declaration",
+      "packages/runtime/dist/platform/durable-object/host/storage-host.d.ts: missing durable object runtime declaration",
+    ]);
+  });
+
+  it("checks durable object helpers on the durable object declaration subpath", () => {
+    const cwd = createFixture();
+    writeFileSync(
+      runtimeDistFile(
+        cwd,
+        "platform",
+        "durable-object",
+        "host",
+        "storage-host.d.ts"
+      ),
+      "export {};\n"
+    );
+
+    expect(verifyReleaseArtifacts({ cwd, packages: ["runtime"] })).toEqual(
+      REQUIRED_RUNTIME_DURABLE_OBJECT_EXPORTS.map(
+        (name) =>
+          `packages/runtime/dist/platform/durable-object/host/storage-host.d.ts: missing explicit durable object runtime export ${name}`
+      )
+    );
+  });
+
+  it("requires the runtime cloudflare declaration entrypoint", () => {
+    const cwd = createFixture();
+    rmSync(
+      runtimeDistDeclaration(
+        cwd,
+        "platform",
+        "durable-object",
+        "cloudflare",
+        "agents"
+      )
+    );
+
+    expect(verifyReleaseArtifacts({ cwd, packages: ["runtime"] })).toEqual([
+      "packages/runtime/dist/platform/durable-object/cloudflare/agents/index.d.ts: missing cloudflare runtime declaration",
     ]);
   });
 
@@ -94,18 +145,24 @@ describe("verifyReleaseArtifacts runtime subpath checks", () => {
   it("checks Cloudflare Worker helpers on the cloudflare declaration subpath", () => {
     const cwd = createFixture();
     writeFileSync(
-      runtimeDistDeclaration(cwd, "platform", "cloudflare"),
+      runtimeDistDeclaration(
+        cwd,
+        "platform",
+        "durable-object",
+        "cloudflare",
+        "agents"
+      ),
       "export {};\n"
     );
 
     expect(verifyReleaseArtifacts({ cwd, packages: ["runtime"] })).toEqual([
       ...REQUIRED_RUNTIME_CLOUDFLARE_WORKER_EXPORTS.map(
         (name) =>
-          `packages/runtime/dist/platform/cloudflare/index.d.ts: missing explicit cloudflare runtime export ${name}`
+          `packages/runtime/dist/platform/durable-object/cloudflare/agents/index.d.ts: missing explicit cloudflare runtime export ${name}`
       ),
       ...REQUIRED_RUNTIME_CLOUDFLARE_AGENTS_EXPORTS.map(
         (name) =>
-          `packages/runtime/dist/platform/cloudflare/index.d.ts: missing explicit cloudflare runtime export ${name}`
+          `packages/runtime/dist/platform/durable-object/cloudflare/agents/index.d.ts: missing explicit cloudflare runtime export ${name}`
       ),
     ]);
   });
@@ -113,14 +170,20 @@ describe("verifyReleaseArtifacts runtime subpath checks", () => {
   it("checks Cloudflare Agents helpers on the canonical cloudflare declaration subpath", () => {
     const cwd = createFixture();
     writeFileSync(
-      runtimeDistDeclaration(cwd, "platform", "cloudflare"),
+      runtimeDistDeclaration(
+        cwd,
+        "platform",
+        "durable-object",
+        "cloudflare",
+        "agents"
+      ),
       runtimeCloudflareWorkerDeclaration
     );
 
     expect(verifyReleaseArtifacts({ cwd, packages: ["runtime"] })).toEqual(
       REQUIRED_RUNTIME_CLOUDFLARE_AGENTS_EXPORTS.map(
         (name) =>
-          `packages/runtime/dist/platform/cloudflare/index.d.ts: missing explicit cloudflare runtime export ${name}`
+          `packages/runtime/dist/platform/durable-object/cloudflare/agents/index.d.ts: missing explicit cloudflare runtime export ${name}`
       )
     );
   });

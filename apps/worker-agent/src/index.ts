@@ -1,4 +1,4 @@
-import { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/cloudflare/image-codecs";
+import { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/durable-object/cloudflare/image-codecs";
 import { defineWorkerFetch } from "evlog/workers";
 
 import type { Env } from "./env";

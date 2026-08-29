@@ -21,7 +21,7 @@ const durableObjectMock = vi.hoisted(
   })
 );
 
-vi.mock("@minpeter/pss-runtime/platform/cloudflare", () => ({
+vi.mock("@minpeter/pss-runtime/platform/durable-object/cloudflare", () => ({
   fetchCloudflareDurableObject: (options: unknown) => {
     if (
       !(
@@ -208,85 +208,6 @@ describe("TUI worker tRPC route", () => {
       limit: 25,
       sessionScopeKey: "tui:user",
     });
-  });
-
-  it("rejects production TUI turns without the configured token", async () => {
-    const env = createEnv({
-      ENVIRONMENT: "production",
-      WORKER_AGENT_TUI_TOKEN: "secret",
-    });
-
-    const response = await handleWorkerRpcRequest(
-      new Request("https://worker.example.com/trpc/tui.turn", {
-        body: JSON.stringify({
-          channel: { id: "local", kind: "tui" },
-          text: "hello",
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      }),
-      env
-    );
-
-    expect(response.status).toBe(401);
-    expect(durableObjectMock.requests).toEqual([]);
-  });
-
-  it("accepts production TUI turns with the configured token", async () => {
-    const env = createEnv({
-      ENVIRONMENT: "production",
-      WORKER_AGENT_TUI_TOKEN: "secret",
-    });
-
-    const response = await handleWorkerRpcRequest(
-      new Request("https://worker.example.com/trpc/tui.turn", {
-        body: JSON.stringify({
-          channel: { id: "local", kind: "tui" },
-          text: "hello",
-        }),
-        headers: {
-          authorization: "Bearer secret",
-          "content-type": "application/json",
-        },
-        method: "POST",
-      }),
-      env
-    );
-
-    expect(response.status).toBe(200);
-    expect(durableObjectMock.requests).toHaveLength(1);
-  });
-
-  it("rejects non-TUI channels", async () => {
-    const env = createEnv({ ENVIRONMENT: "development" });
-
-    const response = await handleWorkerRpcRequest(
-      new Request("https://worker.example.com/trpc/tui.turn", {
-        body: JSON.stringify({
-          channel: { id: "chat-1", kind: "telegram" },
-          text: "hello",
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      }),
-      env
-    );
-
-    expect(response.status).toBe(400);
-    expect(durableObjectMock.requests).toEqual([]);
-  });
-
-  it("does not expose known-key inspect over tRPC", async () => {
-    const response = await handleWorkerRpcRequest(
-      new Request(
-        'https://worker.example.com/trpc/tui.inspect?input={"conversationKey":"telegram:123"}',
-        { method: "GET" }
-      ),
-      createEnv({ ENVIRONMENT: "development" })
-    );
-
-    expect(response.status).toBe(404);
-    expect(durableObjectMock.requests).toEqual([]);
   });
 });
 

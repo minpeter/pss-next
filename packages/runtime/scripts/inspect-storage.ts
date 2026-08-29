@@ -5,13 +5,13 @@ import type {
   TurnRecord,
 } from "../src/execution";
 import {
-  createCloudflareStorageHost,
-  listScheduledCloudflareRuns,
-  listScheduledCloudflareThreadPrompts,
-} from "../src/platform/cloudflare/host/durable-object-host";
-import { InMemorySqlStorage } from "../src/platform/cloudflare/sql/node-test/node-sqlite-storage";
-import { InMemoryCloudflareDurableObjectStorage } from "../src/platform/cloudflare/storage/durable-object/durable-object-storage";
-import type { StorageLatencyTiming } from "../src/platform/cloudflare/storage/execution/storage-metrics";
+  createDurableObjectStorageHost,
+  listScheduledDurableObjectRuns,
+  listScheduledDurableObjectThreadPrompts,
+} from "../src/platform/durable-object/host/storage-host";
+import { InMemorySqlStorage } from "../src/platform/durable-object/sql/node-test/node-sqlite-storage";
+import { InMemoryDurableObjectStorage } from "../src/platform/durable-object/storage/durable-object/durable-object-storage";
+import type { StorageLatencyTiming } from "../src/platform/durable-object/storage/execution/storage-metrics";
 import type { AgentEvent } from "../src/thread/protocol/events";
 import {
   preview,
@@ -41,8 +41,8 @@ const ids: DemoIds = {
 };
 
 const sql = new InMemorySqlStorage();
-const storage = new InMemoryCloudflareDurableObjectStorage({ sql });
-const host = createCloudflareStorageHost({
+const storage = new InMemoryDurableObjectStorage({ sql });
+const host = createDurableObjectStorageHost({
   maxPayloadBytes: 64_000,
   prefix,
   storage,
@@ -192,10 +192,15 @@ async function printLoadResults(runtimeHost: AgentHost): Promise<void> {
   console.log(`notifications.claimByIdempotencyKey(${ids.idempotencyKey})`);
   console.log(`  ${preview(notification, 220)}`);
 
-  const scheduledRuns = await listScheduledCloudflareRuns(storage, { prefix });
-  const scheduledPrompts = await listScheduledCloudflareThreadPrompts(storage, {
+  const scheduledRuns = await listScheduledDurableObjectRuns(storage, {
     prefix,
   });
+  const scheduledPrompts = await listScheduledDurableObjectThreadPrompts(
+    storage,
+    {
+      prefix,
+    }
+  );
   console.log("scheduled work lists");
   console.log(`  runs: ${preview(scheduledRuns, 180)}`);
   console.log(`  thread prompts: ${preview(scheduledPrompts, 220)}`);

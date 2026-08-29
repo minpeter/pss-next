@@ -13,7 +13,7 @@ MinIO is not a supported backend. Set `S3_ENDPOINT`, `AWS_ACCESS_KEY_ID`, and
 
 The package includes an ephemeral LocalStack S3 service bound only to loopback.
 Build the runtime first because the deployed QA worker imports the published
-`@minpeter/pss-runtime/platform/celld` subpath.
+`@minpeter/pss-runtime/platform/durable-object/celld` subpath.
 
 ```sh
 pnpm --filter @minpeter/pss-runtime build

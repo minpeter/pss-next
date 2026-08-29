@@ -1,5 +1,5 @@
 import type { Agent } from "@minpeter/pss-runtime";
-import { InMemoryCloudflareDurableObjectStorage } from "@minpeter/pss-runtime/platform/cloudflare";
+import { InMemoryDurableObjectStorage } from "@minpeter/pss-runtime/platform/durable-object";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../env";
 import type { TurnSession } from "./agent-do-turn-session";
@@ -86,7 +86,7 @@ function fakeAgent(): Agent {
 }
 
 function createDurableObject(): InstanceType<typeof AgentDurableObject> {
-  const storage = new InMemoryCloudflareDurableObjectStorage();
+  const storage = new InMemoryDurableObjectStorage();
   const state = { storage } as unknown as DurableObjectState;
   const env = {
     AGENT_DO: {

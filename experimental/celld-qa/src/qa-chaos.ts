@@ -21,18 +21,22 @@ import {
 
 const execFile = promisify(execFileCallback);
 const RUNTIME_ROOT = resolve(import.meta.dirname, "../../../packages/runtime");
-const ALARM_TESTS = ["src/platform/celld/scheduler-chaos.test.ts"] as const;
+const ALARM_TESTS = [
+  "src/platform/durable-object/celld/scheduler-chaos.test.ts",
+] as const;
 const ORDERING_TESTS = [
-  "src/platform/celld/scheduler-ordering.test.ts",
+  "src/platform/durable-object/celld/scheduler-ordering.test.ts",
 ] as const;
 const MIGRATION_TESTS = [
-  "src/platform/celld/scheduled-work-migration.test.ts",
+  "src/platform/durable-object/celld/scheduled-work-migration.test.ts",
 ] as const;
-const DRAINER_TESTS = ["src/platform/celld/drainer-chaos.test.ts"] as const;
+const DRAINER_TESTS = [
+  "src/platform/durable-object/celld/drainer-chaos.test.ts",
+] as const;
 const CLOUDFLARE_TESTS = [
-  "src/platform/cloudflare/host/scheduler-contract.test.ts",
-  "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
-  "src/platform/cloudflare/storage/sqlite/bootstrap.test.ts",
+  "src/platform/durable-object/host/scheduler-contract.test.ts",
+  "src/platform/durable-object/storage/execution/store-transaction.test.ts",
+  "src/platform/durable-object/storage/sqlite/bootstrap.test.ts",
 ] as const;
 
 export async function runCampaignCommand(

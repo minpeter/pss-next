@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentHost, Checkpoint } from "../execution";
-import { InMemorySqlStorage } from "../platform/cloudflare/sql/node-test/node-sqlite-storage";
-import { InMemoryCloudflareDurableObjectStorage } from "../platform/cloudflare/storage/durable-object/durable-object-storage";
-import { DurableObjectExecutionStore } from "../platform/cloudflare/storage/execution/store";
+import { InMemorySqlStorage } from "../platform/durable-object/sql/node-test/node-sqlite-storage";
+import { InMemoryDurableObjectStorage } from "../platform/durable-object/storage/durable-object/durable-object-storage";
+import { DurableObjectExecutionStore } from "../platform/durable-object/storage/execution/store";
 import {
   checkpointedTool,
   createCheckpointSpyHost,
@@ -27,7 +27,7 @@ function createCheckpointSpyCloudflareHost(maxPayloadBytes: number): {
 } {
   const store = new DurableObjectExecutionStore({
     maxPayloadBytes,
-    storage: new InMemoryCloudflareDurableObjectStorage({
+    storage: new InMemoryDurableObjectStorage({
       sql: new InMemorySqlStorage(),
     }),
   });

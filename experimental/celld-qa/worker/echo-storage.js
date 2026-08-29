@@ -1,4 +1,4 @@
-/** @typedef {import("@minpeter/pss-runtime/platform/celld").CelldDurableObjectStorage} CelldStorage */
+/** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectStorage} CelldStorage */
 /** @typedef {{ commitCount: number, historyCount: number, ok: true, reply: string }} EchoResult */
 /** @typedef {{ status: "committed", result: EchoResult } | { status: "pending" } | { status: "reserved" }} Reservation */
 

@@ -1,4 +1,4 @@
-import type { SqlStorage } from "@minpeter/pss-runtime/platform/cloudflare";
+import type { SqlStorage } from "@minpeter/pss-runtime/platform/durable-object";
 
 import { ChannelAddressSchema } from "../channel";
 import type {

@@ -9,7 +9,7 @@ import {
   speculativeCompaction,
 } from "@minpeter/pss-runtime";
 import { openTelemetry } from "@minpeter/pss-runtime/otel";
-import { drainAgentTurn } from "@minpeter/pss-runtime/platform/cloudflare";
+import { drainAgentTurn } from "@minpeter/pss-runtime/platform/durable-object/cloudflare";
 
 import type { EnvironmentName } from "../env";
 import {

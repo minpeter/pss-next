@@ -1,14 +1,14 @@
-import type { CelldDurableObjectStorage } from "@minpeter/pss-runtime/platform/celld";
 import {
-  type CloudflareDurableObjectStorage,
-  InMemoryCloudflareDurableObjectStorage,
+  type DurableObjectStorage,
+  InMemoryDurableObjectStorage,
   type SqlStorage,
-} from "@minpeter/pss-runtime/platform/cloudflare";
+} from "@minpeter/pss-runtime/platform/durable-object";
+import type { CelldDurableObjectStorage } from "@minpeter/pss-runtime/platform/durable-object/celld";
 
 export function createCelldTestStorage(): CelldDurableObjectStorage & {
   readonly sql: SqlStorage;
 } {
-  const inner = new InMemoryCloudflareDurableObjectStorage();
+  const inner = new InMemoryDurableObjectStorage();
   let alarmTime: number | null = null;
   const storage: CelldDurableObjectStorage & { readonly sql: SqlStorage } = {
     delete: (key) => inner.delete(key),
@@ -37,7 +37,7 @@ export function createCelldTestStorage(): CelldDurableObjectStorage & {
               await transaction.setAlarm?.(scheduledTime);
             },
             sql: transaction.sql ?? inner.sql,
-          } satisfies CloudflareDurableObjectStorage)
+          } satisfies DurableObjectStorage)
         );
       } catch (error) {
         alarmTime = previousAlarm;

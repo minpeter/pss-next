@@ -44,7 +44,7 @@ export async function ensureImageCodecRuntimeReady(): Promise<void> {
     try {
       // Wrangler follows this static specifier and bundles .wasm imports.
       const edge = await import(
-        "../../platform/cloudflare/image-codecs-edge.js"
+        "../../platform/durable-object/cloudflare/image-codecs-edge.js"
       );
       edge.installCloudflareImageCodecs();
     } catch {
@@ -61,7 +61,7 @@ async function ensureAvifDecoderInitialized(): Promise<void> {
       const wasm = getInstalledImageCodecWasm().avifDecodeWasm;
       if (!wasm) {
         throw new Error(
-          "AVIF decode wasm is not installed. On Cloudflare Workers, import @minpeter/pss-runtime/platform/cloudflare (image-codecs-edge) or call installImageCodecWasm()."
+          "AVIF decode wasm is not installed. On Cloudflare Workers, import @minpeter/pss-runtime/platform/durable-object/cloudflare (image-codecs-edge) or call installImageCodecWasm()."
         );
       }
       const mod = await import("@jsquash/avif/decode.js");
@@ -78,7 +78,7 @@ async function ensureWebpDecoderInitialized(): Promise<void> {
       const wasm = getInstalledImageCodecWasm().webpDecodeWasm;
       if (!wasm) {
         throw new Error(
-          "WebP decode wasm is not installed. On Cloudflare Workers, import @minpeter/pss-runtime/platform/cloudflare (image-codecs-edge) or call installImageCodecWasm()."
+          "WebP decode wasm is not installed. On Cloudflare Workers, import @minpeter/pss-runtime/platform/durable-object/cloudflare (image-codecs-edge) or call installImageCodecWasm()."
         );
       }
       const mod = await import("@jsquash/webp/decode.js");

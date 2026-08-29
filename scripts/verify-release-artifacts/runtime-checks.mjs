@@ -7,6 +7,7 @@ import {
   FORBIDDEN_RUNTIME_SUBAGENT_NAMES,
   REQUIRED_RUNTIME_CHANNEL_EXPORTS,
   REQUIRED_RUNTIME_CLOUDFLARE_EXPORTS,
+  REQUIRED_RUNTIME_DURABLE_OBJECT_EXPORTS,
   REQUIRED_RUNTIME_EXECUTION_EXPORTS,
   REQUIRED_RUNTIME_FILE_EXPORTS,
   REQUIRED_RUNTIME_MEMORY_EXPORTS,
@@ -57,7 +58,21 @@ export function findRuntimeDeclarationLeaks({ cwd, packages }) {
       file: join(
         packageDistPath(cwd, "runtime"),
         "platform",
+        "durable-object",
+        "host",
+        "storage-host.d.ts"
+      ),
+      requiredExports: REQUIRED_RUNTIME_DURABLE_OBJECT_EXPORTS,
+      surface: "durable object",
+    }),
+    ...findRuntimeDeclarationExportLeaks({
+      cwd,
+      file: join(
+        packageDistPath(cwd, "runtime"),
+        "platform",
+        "durable-object",
         "cloudflare",
+        "agents",
         "index.d.ts"
       ),
       requiredExports: REQUIRED_RUNTIME_CLOUDFLARE_EXPORTS,

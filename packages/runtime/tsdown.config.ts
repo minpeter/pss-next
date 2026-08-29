@@ -4,10 +4,11 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/otel/index.ts",
-    "src/platform/cloudflare/index.ts",
+    "src/platform/durable-object/host/storage-host.ts",
+    "src/platform/durable-object/cloudflare/agents/index.ts",
     // Edge-only: static .wasm imports for Workers (not pulled into Node CF barrel).
-    "src/platform/cloudflare/image-codecs-edge.ts",
-    "src/platform/celld/index.ts",
+    "src/platform/durable-object/cloudflare/image-codecs-edge.ts",
+    "src/platform/durable-object/celld/host.ts",
     "src/platform/file/index.ts",
     "src/platform/memory/index.ts",
     "src/platform/sql-queue/index.ts",

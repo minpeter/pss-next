@@ -159,8 +159,10 @@ The vNext ownership rule is:
 | `/execution` | durable host/store/scheduler contracts and inspection |
 | `/platform/memory` | in-memory host and stores |
 | `/platform/file` | Node file host, stores, scheduler and options |
-| `/platform/cloudflare` | Workers/Agents host adapters and scheduling |
-| `/platform/cloudflare/image-codecs` | edge-only codec installation |
+| `/platform/durable-object` | platform-neutral Durable Object host, stores and scheduling |
+| `/platform/durable-object/cloudflare` | Workers/Agents host adapters and scheduling |
+| `/platform/durable-object/cloudflare/image-codecs` | edge-only codec installation |
+| `/platform/durable-object/celld` | Celld Durable Object host and scheduling |
 | `/otel` | OpenTelemetry adapter |
 | `/channel` | channel projection contracts |
 | `/fsm`, `/namespace`, `/evals`, `/testing` | their named specialist surfaces |
