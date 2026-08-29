@@ -109,5 +109,8 @@ export type {
 
 /** Lazy so Node tests can import the Cloudflare entry without loading .wasm. */
 export async function installCloudflareImageCodecs(): Promise<void> {
-  await import("../image-codecs-edge");
+  const { installCloudflareImageCodecs: install } = await import(
+    "../image-codecs-edge"
+  );
+  install();
 }
