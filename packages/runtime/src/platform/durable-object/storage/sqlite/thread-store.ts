@@ -27,6 +27,7 @@ import {
   writeThreadHistoryRows,
   writeThreadMeta,
 } from "./thread-store-sql";
+import { ThreadStoreWriteQueue } from "./thread-store-write-queue";
 
 /**
  * Append-only thread store for SQLite-backed Durable Objects.
@@ -46,7 +47,7 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
   readonly #sql: SqlStorage;
   readonly #transaction: <T>(operation: () => T) => Promise<T>;
   #schemaReady = false;
-  #writeQueue: Promise<void> = Promise.resolve();
+  readonly #writes = new ThreadStoreWriteQueue();
 
   constructor(
     storage: DurableObjectStorage,
@@ -100,7 +101,7 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
             ),
           };
 
-      return await this.#enqueueWrite(() =>
+      return await this.#writes.run(() =>
         this.#transaction(() => {
           // --- begin synchronous read-modify-write critical section (no await) ---
           const meta = readThreadMeta(this.#sql, key);
@@ -156,7 +157,7 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
   async delete(threadKey: string): Promise<void> {
     this.#ensureSchema();
     const key = this.#rowKey(threadKey);
-    await this.#enqueueWrite(() =>
+    await this.#writes.run(() =>
       this.#transaction(() => {
         deleteThreadRows(this.#sql, key);
       })
@@ -211,15 +212,6 @@ export class DurableObjectSqliteThreadStore implements ThreadStore {
     }
     ensureThreadSchema(this.#sql);
     this.#schemaReady = true;
-  }
-
-  #enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.#writeQueue.then(operation, operation);
-    this.#writeQueue = next.then(
-      () => undefined,
-      () => undefined
-    );
-    return next;
   }
 }
 
