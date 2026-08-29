@@ -1,3 +1,16 @@
+## @minpeter/pss-runtime@0.3.0-next.14 (next)
+
+### Add Celld platform compatibility
+
+Add a structural Celld host and alarm-backed scheduled-work adapter for
+self-hosted Durable Objects deployments, with local native and container QA.
+
+### Add complete Celld validation coverage
+
+Exercise real-agent durability, scheduler chaos, native performance profiles,
+and loopback S3 fault injection while fixing scheduler boundaries proven by the
+campaign.
+
 ## @minpeter/pss-runtime@0.3.0-next.13 (next)
 
 ### Bound automatic compaction blocking
