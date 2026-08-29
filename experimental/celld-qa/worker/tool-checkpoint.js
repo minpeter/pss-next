@@ -4,7 +4,7 @@ import { createScenarioAgent, numeric } from "./agent.js";
 /** @typedef {import("@minpeter/pss-runtime").AgentEvent} AgentEvent */
 /** @typedef {import("@minpeter/pss-runtime").AgentTurn} AgentTurn */
 /** @typedef {import("@minpeter/pss-runtime/execution").AgentHost} AgentHost */
-/** @typedef {import("@minpeter/pss-runtime/platform/celld").CelldDurableObjectState} CelldState */
+/** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectState} CelldState */
 
 /** @param {CelldState} state @param {string} phase @param {string} token */
 export async function toolCheckpoint(state, phase, token) {

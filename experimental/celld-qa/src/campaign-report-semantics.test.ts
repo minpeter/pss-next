@@ -39,12 +39,14 @@ describe("campaign command evidence semantics", () => {
     ).toContain("tool checkpoint recovery evidence is incomplete");
     expect(
       campaignEvidenceViolations("chaos", "migration", {
-        celldTestFiles: ["src/platform/celld/scheduled-work-migration.test.ts"],
+        celldTestFiles: [
+          "src/platform/durable-object/celld/scheduled-work-migration.test.ts",
+        ],
         celldTestsPassed: true,
         cloudflareTestFiles: [
-          "src/platform/cloudflare/host/scheduler-contract.test.ts",
-          "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
-          "src/platform/cloudflare/storage/sqlite/bootstrap.test.ts",
+          "src/platform/durable-object/host/scheduler-contract.test.ts",
+          "src/platform/durable-object/storage/execution/store-transaction.test.ts",
+          "src/platform/durable-object/storage/sqlite/bootstrap.test.ts",
         ],
         cloudflareTestsPassed: false,
       })

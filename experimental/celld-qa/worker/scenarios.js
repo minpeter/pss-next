@@ -7,7 +7,7 @@ import { toolCheckpoint } from "./tool-checkpoint.js";
 /** @typedef {import("@minpeter/pss-runtime").AgentEvent} AgentEvent */
 /** @typedef {import("@minpeter/pss-runtime").AgentTurn} AgentTurn */
 /** @typedef {{ exec(query: string, ...bindings: unknown[]): { toArray(): unknown[] } }} SqlStorage */
-/** @typedef {import("@minpeter/pss-runtime/platform/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
+/** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
 /** @typedef {"tool-checkpoint" | "input-ordering" | "compaction" | "large-history" | "attachment"} ScenarioName */
 
 /** @param {CelldState} state @param {ScenarioName} scenario @param {string} phase @param {string} token */

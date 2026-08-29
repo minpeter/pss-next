@@ -1,4 +1,4 @@
-import { fetchCloudflareDurableObject } from "@minpeter/pss-runtime/platform/cloudflare";
+import { fetchCloudflareDurableObject } from "@minpeter/pss-runtime/platform/durable-object/cloudflare";
 
 import { channelKey } from "../channel";
 import { durableObjectName, type Env } from "../env";

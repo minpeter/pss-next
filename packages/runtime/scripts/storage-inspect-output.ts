@@ -1,9 +1,9 @@
-import type { SqlStorage } from "../src/platform/cloudflare/sql/ports/storage-port";
+import type { SqlStorage } from "../src/platform/durable-object/sql/ports/storage-port";
 import {
   collectStorageMetrics,
   type StorageLatencyTiming,
   summarizeStorageLatencyTimings,
-} from "../src/platform/cloudflare/storage/execution/storage-metrics";
+} from "../src/platform/durable-object/storage/execution/storage-metrics";
 
 type TableName =
   | "pss_checkpoint"

@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { CelldHost, CelldScheduler } from "../platform/celld";
 
 interface RuntimeExport {
   readonly "@minpeter/pss-source": string;
@@ -12,6 +11,54 @@ interface RuntimeExport {
 interface RuntimePackageJson {
   readonly exports: Record<string, RuntimeExport>;
 }
+
+interface RuntimePublicApiSnapshot {
+  readonly surfaces: Record<string, readonly string[]>;
+}
+
+const DURABLE_OBJECT_EXPORTS = [
+  ["./platform/durable-object", "platform/durable-object/host/storage-host"],
+  [
+    "./platform/durable-object/cloudflare",
+    "platform/durable-object/cloudflare/agents/index",
+  ],
+  [
+    "./platform/durable-object/cloudflare/image-codecs",
+    "platform/durable-object/cloudflare/image-codecs-edge",
+  ],
+  ["./platform/durable-object/celld", "platform/durable-object/celld/host"],
+] as const;
+
+const LEGACY_DURABLE_OBJECT_EXPORTS = [
+  "./platform/cloudflare",
+  "./platform/cloudflare/image-codecs",
+  "./platform/celld",
+] as const;
+
+/**
+ * Generic storage aliases the Cloudflare subpath re-exported before the
+ * durable-object hierarchy landed. They now live only on `/durable-object`.
+ */
+const FORBIDDEN_CLOUDFLARE_ALIASES = [
+  "CloudflareDurableObjectStorage",
+  "CloudflareScheduledThreadPrompt",
+  "CloudflareStorageHostOptions",
+  "CloudflareAttachmentStore",
+  "InMemoryCloudflareDurableObjectStorage",
+  "ackScheduledCloudflareRun",
+  "ackScheduledCloudflareThreadPrompt",
+  "createCloudflareScheduledWorkScheduler",
+  "createCloudflareStorageHost",
+  "listScheduledCloudflareRuns",
+  "listScheduledCloudflareThreadPrompts",
+] as const;
+
+const REQUIRED_CLOUDFLARE_EXPORTS = [
+  "createCloudflareHost",
+  "createCloudflarePlatformContext",
+  "fetchCloudflareDurableObject",
+  "startCloudflareAgentsResumeFiber",
+] as const;
 
 describe("runtime package subpaths", () => {
   it("declares memory as a platform implementation subpath", async () => {
@@ -26,59 +73,50 @@ describe("runtime package subpaths", () => {
     expect(packageJson.exports["./execution/memory"]).toBeUndefined();
   });
 
-  it("declares the Cloudflare adapter as a platform implementation subpath", async () => {
-    const packageJson = await readRuntimePackageJson();
+  it.each(DURABLE_OBJECT_EXPORTS)(
+    "declares %s as a canonical durable-object subpath",
+    async (subpath, target) => {
+      const packageJson = await readRuntimePackageJson();
 
-    expect(packageJson.exports["./platform/cloudflare"]).toMatchObject({
-      "@minpeter/pss-source": "./src/platform/cloudflare/index.ts",
-      import: "./dist/platform/cloudflare/index.js",
-      types: "./dist/platform/cloudflare/index.d.ts",
-    });
-    expect(packageJson.exports["./platform/cloudflare-agents"]).toBeUndefined();
-    expect(packageJson.exports["./cloudflare"]).toBeUndefined();
-    expect(packageJson.exports["./cloudflare-agents"]).toBeUndefined();
+      expect(packageJson.exports[subpath]).toMatchObject({
+        "@minpeter/pss-source": `./src/${target}.ts`,
+        import: `./dist/${target}.js`,
+        types: `./dist/${target}.d.ts`,
+      });
+    }
+  );
+
+  it.each(LEGACY_DURABLE_OBJECT_EXPORTS)(
+    "does not declare the legacy durable-object subpath %s",
+    async (subpath) => {
+      const packageJson = await readRuntimePackageJson();
+
+      expect(packageJson.exports[subpath]).toBeUndefined();
+    }
+  );
+
+  it("drops every legacy generic alias from the cloudflare subpath", async () => {
+    const cloudflare = await readRuntimePublicApiNames(
+      "./platform/durable-object/cloudflare"
+    );
+
+    const reachable = FORBIDDEN_CLOUDFLARE_ALIASES.filter((name) =>
+      cloudflare.has(name)
+    );
+
+    expect(reachable).toEqual([]);
   });
 
-  it("exports the combined Cloudflare platform facade from the canonical subpath", async () => {
-    const cloudflarePlatform = await import("../platform/cloudflare");
-    const canonicalCloudflareExports = [
-      "createCloudflareHost",
-      "createCloudflareStorageHost",
-      "createCloudflareScheduledWorkScheduler",
-      "createCloudflareAgentsFiberScheduler",
-      "createCloudflarePlatformContext",
-      "recoverCloudflareAgentsFiber",
-      "startCloudflareAgentsResumeFiber",
-      "drainAgentTurn",
-    ] as const;
+  it("keeps Cloudflare-specific helpers on the cloudflare subpath", async () => {
+    const cloudflare = await readRuntimePublicApiNames(
+      "./platform/durable-object/cloudflare"
+    );
 
-    for (const exportName of canonicalCloudflareExports) {
-      expect(cloudflarePlatform).toHaveProperty(exportName);
-    }
-  }, 30_000);
+    const missing = REQUIRED_CLOUDFLARE_EXPORTS.filter(
+      (name) => !cloudflare.has(name)
+    );
 
-  it("declares the Celld adapter as a platform implementation subpath", async () => {
-    const packageJson = await readRuntimePackageJson();
-    const root = await import("../index");
-    const celld = await import("../platform/celld");
-
-    expect(packageJson.exports["./platform/celld"]).toMatchObject({
-      "@minpeter/pss-source": "./src/platform/celld/index.ts",
-      import: "./dist/platform/celld/index.js",
-      types: "./dist/platform/celld/index.d.ts",
-    });
-    expect(celld).toHaveProperty("createCelldHost");
-    expect(celld).toHaveProperty("createCelldScheduler");
-    expect(celld).toHaveProperty("drainCelldScheduledWork");
-    expect(root).not.toHaveProperty("createCelldHost");
-    expect(root).not.toHaveProperty("createCelldScheduler");
-    expect(root).not.toHaveProperty("drainCelldScheduledWork");
-
-    const acceptsCelldTypes = (
-      host: CelldHost,
-      scheduler: CelldScheduler
-    ): readonly [CelldHost, CelldScheduler] => [host, scheduler];
-    expect(acceptsCelldTypes).toBeTypeOf("function");
+    expect(missing).toEqual([]);
   });
 
   it("declares the file adapter as a platform implementation subpath", async () => {
@@ -152,6 +190,22 @@ async function readRuntimePackageJson(): Promise<RuntimePackageJson> {
   return parseRuntimePackageJson(JSON.parse(packageJsonText));
 }
 
+async function readRuntimePublicApiNames(
+  subpath: string
+): Promise<ReadonlySet<string>> {
+  const snapshotText = await readFile(
+    fileURLToPath(new URL("../../public-api.snapshot.json", import.meta.url)),
+    "utf8"
+  );
+  const snapshot = parseRuntimePublicApiSnapshot(JSON.parse(snapshotText));
+  return new Set(
+    (snapshot.surfaces[subpath] ?? []).map((entry) => {
+      const separator = entry.indexOf(" ");
+      return separator === -1 ? entry : entry.slice(separator + 1);
+    })
+  );
+}
+
 function parseRuntimePackageJson(value: unknown): RuntimePackageJson {
   if (!(isRecord(value) && isRecord(value.exports))) {
     throw new TypeError("Expected runtime package.json exports object");
@@ -174,6 +228,26 @@ function isRuntimeExport(value: unknown): value is RuntimeExport {
     (value.import === undefined || typeof value.import === "string") &&
     (value.types === undefined || typeof value.types === "string")
   );
+}
+
+function parseRuntimePublicApiSnapshot(
+  value: unknown
+): RuntimePublicApiSnapshot {
+  if (!(isRecord(value) && isRecord(value.surfaces))) {
+    throw new TypeError("Expected runtime public API surfaces object");
+  }
+  const surfaces: Record<string, readonly string[]> = {};
+  for (const [subpath, entries] of Object.entries(value.surfaces)) {
+    if (!(Array.isArray(entries) && entries.every(isString))) {
+      throw new TypeError(`Expected runtime public API array for ${subpath}`);
+    }
+    surfaces[subpath] = entries;
+  }
+  return { surfaces };
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

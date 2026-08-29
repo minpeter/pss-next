@@ -4,7 +4,7 @@ import { markers } from "./model.js";
 /** @typedef {import("@minpeter/pss-runtime").AgentEvent} AgentEvent */
 /** @typedef {import("@minpeter/pss-runtime").AgentTurn} AgentTurn */
 /** @typedef {{ exec(query: string, ...bindings: unknown[]): { toArray(): unknown[] } }} SqlStorage */
-/** @typedef {import("@minpeter/pss-runtime/platform/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
+/** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
 
 /** @param {CelldState} state @param {string} token */
 export async function largeHistory(state, token) {

@@ -2,7 +2,7 @@ import { createAgent } from "@minpeter/pss-runtime";
 import {
   createCelldHost,
   drainCelldScheduledWork,
-} from "@minpeter/pss-runtime/platform/celld";
+} from "@minpeter/pss-runtime/platform/durable-object/celld";
 import { echoModel } from "./echo-model.js";
 import { commitEcho, reserveEcho } from "./echo-storage.js";
 

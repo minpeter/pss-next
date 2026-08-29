@@ -1,5 +1,5 @@
 import { createAgent } from "@minpeter/pss-runtime";
-import { createCelldHost } from "@minpeter/pss-runtime/platform/celld";
+import { createCelldHost } from "@minpeter/pss-runtime/platform/durable-object/celld";
 import { z } from "zod";
 import { createDeterministicModel } from "./model.js";
 

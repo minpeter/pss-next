@@ -6,17 +6,24 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@minpeter\/pss-runtime\/platform\/cloudflare\/image-codecs$/,
+        find: /^@minpeter\/pss-runtime\/platform\/durable-object\/cloudflare\/image-codecs$/,
         replacement: resolve(
           import.meta.dirname,
           "src/testing/image-codecs-test-shim.ts"
         ),
       },
       {
-        find: /^@minpeter\/pss-runtime\/platform\/cloudflare$/,
+        find: /^@minpeter\/pss-runtime\/platform\/durable-object\/cloudflare$/,
         replacement: resolve(
           import.meta.dirname,
-          "../../packages/runtime/src/platform/cloudflare/index.ts"
+          "../../packages/runtime/src/platform/durable-object/cloudflare/agents/index.ts"
+        ),
+      },
+      {
+        find: /^@minpeter\/pss-runtime\/platform\/durable-object$/,
+        replacement: resolve(
+          import.meta.dirname,
+          "../../packages/runtime/src/platform/durable-object/host/storage-host.ts"
         ),
       },
       {

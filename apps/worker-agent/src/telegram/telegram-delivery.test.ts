@@ -19,7 +19,7 @@ const durableObjectMock = vi.hoisted(
   })
 );
 
-vi.mock("@minpeter/pss-runtime/platform/cloudflare", () => ({
+vi.mock("@minpeter/pss-runtime/platform/durable-object/cloudflare", () => ({
   fetchCloudflareDurableObject: (options: unknown) => {
     if (
       !(

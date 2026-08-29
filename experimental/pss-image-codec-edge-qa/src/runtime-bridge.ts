@@ -9,4 +9,4 @@ export {
   DEFAULT_MAX_IMAGE_ATTACHMENT_BYTES,
   prepareAttachmentBytesForStorage,
 } from "@minpeter/pss-runtime";
-export { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/cloudflare/image-codecs";
+export { installCloudflareImageCodecs } from "@minpeter/pss-runtime/platform/durable-object/cloudflare/image-codecs";

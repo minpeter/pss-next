@@ -1,7 +1,7 @@
 import {
   DurableObjectSqliteThreadStore,
-  InMemoryCloudflareDurableObjectStorage,
-} from "@minpeter/pss-runtime/platform/cloudflare";
+  InMemoryDurableObjectStorage,
+} from "@minpeter/pss-runtime/platform/durable-object";
 import { describe, expect, it } from "vitest";
 
 import { AgentDurableObject } from "../agent/agent-do";
@@ -16,7 +16,7 @@ import {
 import { createNodeTestSqlStorage } from "./session-index-test-sql";
 
 function createIndexDurableObject() {
-  const storage = new InMemoryCloudflareDurableObjectStorage({
+  const storage = new InMemoryDurableObjectStorage({
     sql: createNodeTestSqlStorage(),
   });
   const env = {
@@ -31,7 +31,7 @@ function createIndexDurableObject() {
 }
 
 async function createDurableObjectWithThread(history: readonly unknown[]) {
-  const storage = new InMemoryCloudflareDurableObjectStorage({
+  const storage = new InMemoryDurableObjectStorage({
     sql: createNodeTestSqlStorage(),
   });
   const threadStore = new DurableObjectSqliteThreadStore(

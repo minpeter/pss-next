@@ -15,8 +15,8 @@ describe("campaign report contract", () => {
           name: "alarm-boundaries",
           observables: {
             testFiles: [
-              "src/platform/celld/scheduler-chaos.test.ts",
-              "src/platform/celld/drainer-chaos.test.ts",
+              "src/platform/durable-object/celld/scheduler-chaos.test.ts",
+              "src/platform/durable-object/celld/drainer-chaos.test.ts",
             ],
             testsPassed: true,
           },
@@ -25,7 +25,9 @@ describe("campaign report contract", () => {
         {
           name: "ordering",
           observables: {
-            testFiles: ["src/platform/celld/scheduler-ordering.test.ts"],
+            testFiles: [
+              "src/platform/durable-object/celld/scheduler-ordering.test.ts",
+            ],
             testsPassed: true,
           },
           violations: ["model-visible order mismatch"],
@@ -34,13 +36,13 @@ describe("campaign report contract", () => {
           name: "migration",
           observables: {
             celldTestFiles: [
-              "src/platform/celld/scheduled-work-migration.test.ts",
+              "src/platform/durable-object/celld/scheduled-work-migration.test.ts",
             ],
             celldTestsPassed: true,
             cloudflareTestFiles: [
-              "src/platform/cloudflare/host/scheduler-contract.test.ts",
-              "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
-              "src/platform/cloudflare/storage/sqlite/bootstrap.test.ts",
+              "src/platform/durable-object/host/scheduler-contract.test.ts",
+              "src/platform/durable-object/storage/execution/store-transaction.test.ts",
+              "src/platform/durable-object/storage/sqlite/bootstrap.test.ts",
             ],
             cloudflareTestsPassed: true,
           },

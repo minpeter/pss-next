@@ -8,11 +8,14 @@
       "@minpeter/pss-runtime/otel": [
         "../../packages/runtime/src/otel/index.ts"
       ],
-      "@minpeter/pss-runtime/platform/cloudflare": [
-        "../../packages/runtime/src/platform/cloudflare/index.ts"
+      "@minpeter/pss-runtime/platform/durable-object": [
+        "../../packages/runtime/src/platform/durable-object/host/storage-host.ts"
       ],
-      "@minpeter/pss-runtime/platform/cloudflare/image-codecs": [
-        "../../packages/runtime/src/platform/cloudflare/image-codecs-edge.ts"
+      "@minpeter/pss-runtime/platform/durable-object/cloudflare": [
+        "../../packages/runtime/src/platform/durable-object/cloudflare/agents/index.ts"
+      ],
+      "@minpeter/pss-runtime/platform/durable-object/cloudflare/image-codecs": [
+        "../../packages/runtime/src/platform/durable-object/cloudflare/image-codecs-edge.ts"
       ],
       "@minpeter/pss-runtime/platform/file": [
         "../../packages/runtime/src/platform/file/index.ts"

@@ -1,5 +1,5 @@
 import type { Agent, ThreadHandle } from "@minpeter/pss-runtime";
-import type { CloudflarePlatformContext } from "@minpeter/pss-runtime/platform/cloudflare";
+import type { CloudflarePlatformContext } from "@minpeter/pss-runtime/platform/durable-object/cloudflare";
 
 import type { ChannelRuntimeBinding } from "../channel";
 import type { Env } from "../env";

@@ -95,8 +95,8 @@ function chaosViolations(
       return truth(
         observables.testsPassed === true &&
           stringArrayEquals(observables.testFiles, [
-            "src/platform/celld/scheduler-chaos.test.ts",
-            "src/platform/celld/drainer-chaos.test.ts",
+            "src/platform/durable-object/celld/scheduler-chaos.test.ts",
+            "src/platform/durable-object/celld/drainer-chaos.test.ts",
           ]),
         "scheduler boundary evidence is incomplete"
       );
@@ -104,7 +104,7 @@ function chaosViolations(
       return truth(
         observables.testsPassed === true &&
           stringArrayEquals(observables.testFiles, [
-            "src/platform/celld/scheduler-ordering.test.ts",
+            "src/platform/durable-object/celld/scheduler-ordering.test.ts",
           ]),
         "scheduler ordering evidence is incomplete"
       );
@@ -113,12 +113,12 @@ function chaosViolations(
         observables.celldTestsPassed === true &&
           observables.cloudflareTestsPassed === true &&
           stringArrayEquals(observables.celldTestFiles, [
-            "src/platform/celld/scheduled-work-migration.test.ts",
+            "src/platform/durable-object/celld/scheduled-work-migration.test.ts",
           ]) &&
           stringArrayEquals(observables.cloudflareTestFiles, [
-            "src/platform/cloudflare/host/scheduler-contract.test.ts",
-            "src/platform/cloudflare/storage/execution/store-transaction.test.ts",
-            "src/platform/cloudflare/storage/sqlite/bootstrap.test.ts",
+            "src/platform/durable-object/host/scheduler-contract.test.ts",
+            "src/platform/durable-object/storage/execution/store-transaction.test.ts",
+            "src/platform/durable-object/storage/sqlite/bootstrap.test.ts",
           ]),
         "migration regression evidence is incomplete"
       );

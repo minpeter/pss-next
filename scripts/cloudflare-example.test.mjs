@@ -8,27 +8,27 @@ function readText(path) {
 describe("cloudflare durable object adapter", () => {
   it("exposes the packaged Worker/Durable Object adapter surface", () => {
     const hostSource = readText(
-      "packages/runtime/src/platform/cloudflare/host/durable-object-host.ts"
+      "packages/runtime/src/platform/durable-object/host/storage-host.ts"
     );
     const storeSource = readText(
-      "packages/runtime/src/platform/cloudflare/storage/execution/store.ts"
+      "packages/runtime/src/platform/durable-object/storage/execution/store.ts"
     );
     const platformHostSource = readText(
-      "packages/runtime/src/platform/cloudflare/host/create-cloudflare-host.ts"
+      "packages/runtime/src/platform/durable-object/cloudflare/host/create-cloudflare-host.ts"
     );
     const platformContextSource = readText(
-      "packages/runtime/src/platform/cloudflare/agents/context.ts"
+      "packages/runtime/src/platform/durable-object/cloudflare/agents/context.ts"
     );
     const threadStoreSource = readText(
-      "packages/runtime/src/platform/cloudflare/storage/sqlite/thread-store.ts"
+      "packages/runtime/src/platform/durable-object/storage/sqlite/thread-store.ts"
     );
     const threadStoreSchemaSource = readText(
-      "packages/runtime/src/platform/cloudflare/storage/sqlite/thread-store-sql/schema/bootstrap.ts"
+      "packages/runtime/src/platform/durable-object/storage/sqlite/thread-store-sql/schema/bootstrap.ts"
     );
 
     expect(hostSource).not.toContain("createFakeCloudflareDurableObjectHost");
-    expect(hostSource).toContain("createCloudflareStorageHost");
-    expect(hostSource).toContain("createCloudflareScheduledWorkScheduler");
+    expect(hostSource).toContain("createDurableObjectStorageHost");
+    expect(hostSource).toContain("createDurableObjectScheduledWorkScheduler");
     expect(hostSource).not.toContain("setAlarm");
     expect(platformHostSource).toContain("createCloudflareHost");
     expect(platformHostSource).toContain(
@@ -41,22 +41,24 @@ describe("cloudflare durable object adapter", () => {
     expect(threadStoreSchemaSource).toContain("pss_thread_meta");
   });
 
-  it("drives Cloudflare scheduled work through the queue-only storage host", async () => {
+  it("drives durable object scheduled work through the queue-only storage host", async () => {
     const { InMemorySqlStorage } = await import(
-      "../packages/runtime/src/platform/cloudflare/sql/node-test/node-sqlite-storage.ts"
+      "../packages/runtime/src/platform/durable-object/sql/node-test/node-sqlite-storage.ts"
     );
     const {
-      InMemoryCloudflareDurableObjectStorage,
-      ackScheduledCloudflareRun,
-      ackScheduledCloudflareThreadPrompt,
-      createCloudflareStorageHost,
-      listScheduledCloudflareRuns,
-      listScheduledCloudflareThreadPrompts,
-    } = await import("../packages/runtime/src/platform/cloudflare/index.ts");
-    const storage = new InMemoryCloudflareDurableObjectStorage({
+      InMemoryDurableObjectStorage,
+      ackScheduledDurableObjectRun,
+      ackScheduledDurableObjectThreadPrompt,
+      createDurableObjectStorageHost,
+      listScheduledDurableObjectRuns,
+      listScheduledDurableObjectThreadPrompts,
+    } = await import(
+      "../packages/runtime/src/platform/durable-object/host/storage-host.ts"
+    );
+    const storage = new InMemoryDurableObjectStorage({
       sql: new InMemorySqlStorage(),
     });
-    const host = createCloudflareStorageHost({ storage });
+    const host = createDurableObjectStorageHost({ storage });
     const runId = "background:bg_cloudflare_delayed";
     const idempotencyKey = "background-complete:example:bg_delayed";
     const notificationRunId = "notification-run-delayed";
@@ -75,11 +77,11 @@ describe("cloudflare durable object adapter", () => {
       threadKey: "example",
     });
 
-    await expect(listScheduledCloudflareRuns(storage)).resolves.toEqual([
+    await expect(listScheduledDurableObjectRuns(storage)).resolves.toEqual([
       runId,
     ]);
     await expect(
-      listScheduledCloudflareThreadPrompts(storage)
+      listScheduledDurableObjectThreadPrompts(storage)
     ).resolves.toEqual([
       {
         idempotencyKey,
@@ -88,16 +90,16 @@ describe("cloudflare durable object adapter", () => {
       },
     ]);
 
-    await ackScheduledCloudflareRun(storage, runId);
-    await ackScheduledCloudflareThreadPrompt(storage, {
+    await ackScheduledDurableObjectRun(storage, runId);
+    await ackScheduledDurableObjectThreadPrompt(storage, {
       idempotencyKey,
       runId: notificationRunId,
       threadKey: "example",
     });
 
-    await expect(listScheduledCloudflareRuns(storage)).resolves.toEqual([]);
+    await expect(listScheduledDurableObjectRuns(storage)).resolves.toEqual([]);
     await expect(
-      listScheduledCloudflareThreadPrompts(storage)
+      listScheduledDurableObjectThreadPrompts(storage)
     ).resolves.toEqual([]);
   });
 });

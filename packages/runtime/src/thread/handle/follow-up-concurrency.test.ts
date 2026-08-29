@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { Agent } from "../../agent/core/agent";
 import type { AgentHost } from "../../execution";
 import {
-  createCloudflareStorageHost,
-  InMemoryCloudflareDurableObjectStorage,
-} from "../../platform/cloudflare/host/durable-object-host";
+  createDurableObjectStorageHost,
+  InMemoryDurableObjectStorage,
+} from "../../platform/durable-object/host/storage-host";
 import { FileExecutionStore } from "../../platform/file/storage/file-execution-store";
 import { tempDir } from "../../platform/file/storage/file-execution-store-test-support";
 import { createInMemoryHost } from "../../platform/memory";
@@ -28,11 +28,11 @@ const hostFactories: readonly [string, () => AgentHost | Promise<AgentHost>][] =
       },
     ],
     [
-      "Cloudflare",
+      "durable object",
       () =>
-        createCloudflareStorageHost({
+        createDurableObjectStorageHost({
           prefix: `follow-up-concurrency-${crypto.randomUUID()}`,
-          storage: new InMemoryCloudflareDurableObjectStorage(),
+          storage: new InMemoryDurableObjectStorage(),
         }),
     ],
   ];

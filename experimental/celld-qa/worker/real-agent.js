@@ -14,7 +14,7 @@ const requestSchema = z.object({
 });
 
 /** @typedef {{ exec(query: string, ...bindings: unknown[]): { toArray(): unknown[] } }} SqlStorage */
-/** @typedef {import("@minpeter/pss-runtime/platform/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
+/** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectState & { readonly storage: { readonly sql: SqlStorage } }} CelldState */
 
 export class RealAgent {
   /** @param {CelldState} state */
