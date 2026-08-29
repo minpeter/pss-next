@@ -1,32 +1,28 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add Celld platform compatibility\n\nAdd a structural Celld host and alarm-backed scheduled-work adapter for\nself-hosted Durable Objects deployments, with local native and container QA.\n"
-    filename: 2026-08-27-celld.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Add complete Celld validation coverage\n\nExercise real-agent durability, scheduler chaos, native performance profiles,\nand loopback S3 fault injection while fixing scheduler boundaries proven by the\ncampaign.\n"
-    filename: 2026-08-28-celld-validation.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Reorganize Durable Object platforms\n\nMove shared Durable Object storage, SQLite, and scheduled-work primitives into\na neutral platform core, with Cloudflare and Celld as sibling implementations.\nReplace the former Cloudflare and Celld package paths with the new hierarchy.\n"
+    filename: 2026-08-30-durable-object-hierarchy.md
     v: 0.0.0
 core:packages:
   - id: npm:@minpeter/pss-coding-agent
     updated: false
-  - changelogIds:
-      - 2026-08-27-celld.md
-      - 2026-08-28-celld-validation.md
-    id: npm:@minpeter/pss-runtime
-    updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
   - id: npm:@minpeter/pss-extension-mermaid
     updated: false
   - id: npm:@minpeter/pss-extension-web
     updated: false
+  - changelogIds:
+      - 2026-08-30-durable-object-hierarchy.md
+    id: npm:@minpeter/pss-runtime
+    updated: true
 npm:packages:
   - distTag: next
     id: npm:@minpeter/pss-coding-agent
-  - distTag: next
-    id: npm:@minpeter/pss-runtime
   - distTag: latest
     id: npm:@minpeter/pss-extension-latex
   - distTag: latest
     id: npm:@minpeter/pss-extension-mermaid
   - distTag: latest
     id: npm:@minpeter/pss-extension-web
+  - distTag: next
+    id: npm:@minpeter/pss-runtime

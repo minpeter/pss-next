@@ -1,3 +1,11 @@
+## @minpeter/pss-runtime@0.3.0-next.15 (next)
+
+### Reorganize Durable Object platforms
+
+Move shared Durable Object storage, SQLite, and scheduled-work primitives into
+a neutral platform core, with Cloudflare and Celld as sibling implementations.
+Replace the former Cloudflare and Celld package paths with the new hierarchy.
+
 ## @minpeter/pss-runtime@0.3.0-next.14 (next)
 
 ### Add Celld platform compatibility
