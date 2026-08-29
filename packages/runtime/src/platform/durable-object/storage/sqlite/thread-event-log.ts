@@ -52,7 +52,7 @@ export class DurableObjectSqliteThreadEventLog implements ThreadEventLog {
   }
 
   append(threadKey: string, event: AgentEvent): Promise<ThreadEventCursor> {
-    try {
+    return new Promise((resolve) => {
       this.#ensureSchema();
       const key = this.#rowKey(threadKey);
       const seq = this.#readNextSeq(key);
@@ -70,13 +70,8 @@ export class DurableObjectSqliteThreadEventLog implements ThreadEventLog {
         serializedEvent
       );
       this.#writeNextSeq(key, seq + 1);
-      return Promise.resolve(createThreadEventCursor(seq + 1));
-    } catch (error) {
-      if (error instanceof Error) {
-        return Promise.reject(error);
-      }
-      throw error;
-    }
+      resolve(createThreadEventCursor(seq + 1));
+    });
   }
 
   async *read(

@@ -65,7 +65,7 @@ export class DurableObjectSqliteEventStore implements EventStore {
   }
 
   append(runId: string, event: AgentEvent): Promise<EventCursor> {
-    try {
+    return new Promise((resolve) => {
       this.#ensureSchema();
       const key = this.#rowKey(runId);
       // Synchronous read-modify-write critical section (no await): concurrent
@@ -86,13 +86,8 @@ export class DurableObjectSqliteEventStore implements EventStore {
         serializedEvent
       );
       this.#writeNextSeq(key, seq + 1);
-      return Promise.resolve(createEventCursor(seq + 1));
-    } catch (error) {
-      if (error instanceof Error) {
-        return Promise.reject(error);
-      }
-      throw error;
-    }
+      resolve(createEventCursor(seq + 1));
+    });
   }
 
   async *read(
