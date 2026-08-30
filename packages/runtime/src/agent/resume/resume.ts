@@ -9,7 +9,10 @@ import { ownsAgentNamespace } from "../identity/namespace";
 interface ResumeAgentTurnInput {
   readonly host: AgentHost;
   readonly ownerNamespace: string;
-  resumeNotification(notification: NotificationRecord): Promise<AgentTurn>;
+  resumeNotification(
+    notification: NotificationRecord,
+    run: TurnRecord
+  ): Promise<AgentTurn>;
   readonly runId: string;
 }
 
@@ -44,7 +47,7 @@ export async function resumeAgentTurn({
     }
 
     try {
-      const notificationRun = await resumeNotification(notification);
+      const notificationRun = await resumeNotification(notification, claimed);
       if (notificationRun.runId !== claimed.runId) {
         await completeNotificationRun(host, claimed.runId);
       }
@@ -114,7 +117,16 @@ export async function completeNotificationRun(
     return;
   }
 
-  await host.store.turns.update({ ...run, status: "completed" });
+  const transition = await host.store.turns.transition(
+    runId,
+    { leaseId: run.lease?.leaseId, status: run.status },
+    { ...run, status: "completed" }
+  );
+  if (!transition.ok) {
+    throw new Error(
+      `Notification run ${runId} transition failed: ${transition.reason}.`
+    );
+  }
 }
 
 async function claimRun(

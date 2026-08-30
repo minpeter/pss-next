@@ -8,7 +8,7 @@ import type {
   ThreadInputInbox,
   TurnStore,
 } from "../../../../execution";
-import type { ThreadStore } from "../../../../index";
+import type { ThreadStore } from "../../../../thread/store/types";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import {
   type DurableObjectStorage,

@@ -1,4 +1,8 @@
-import type { AgentHost, NotificationRecord } from "../../execution/host/types";
+import type {
+  AgentHost,
+  NotificationRecord,
+  TurnRecord,
+} from "../../execution/host/types";
 import {
   ContextTokenCalibrationRegistry,
   ContextTokenMeter,
@@ -148,8 +152,8 @@ export class Agent {
     return await resumeAgentTurn({
       host: this.#host,
       ownerNamespace: this.#ownerNamespace,
-      resumeNotification: (notification) =>
-        this.#resumeNotification(notification, runId),
+      resumeNotification: (notification, run) =>
+        this.#resumeNotification(notification, run),
       runId,
     });
   }
@@ -221,12 +225,16 @@ export class Agent {
 
   async #resumeNotification(
     notification: NotificationRecord,
-    runId: string
+    run: TurnRecord
   ): Promise<AgentTurn> {
     const turn = await this.#threadEntry(notification.threadKey).notify(
       notification.input,
       {
-        executionRun: { kind: "notification", runId: notification.runId },
+        executionRun: {
+          kind: "notification",
+          leaseId: run.lease?.leaseId,
+          runId: notification.runId,
+        },
         observerEvents: notification.observerEvents,
         overlays: [
           ...(notification.overlays ?? []),
@@ -237,7 +245,7 @@ export class Agent {
     return this.#instrumentTurn(turn, {
       namespace: this.namespace,
       operation: "resume",
-      runId,
+      runId: run.runId,
       threadKey: notification.threadKey,
     });
   }

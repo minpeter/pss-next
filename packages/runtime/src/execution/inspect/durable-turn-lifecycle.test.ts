@@ -200,6 +200,8 @@ describe("durable turn lifecycle inspection", () => {
               transaction.turns.getByDedupeKey(dedupeKey),
             listByParentRunId: (parentRunId) =>
               transaction.turns.listByParentRunId(parentRunId),
+            transition: (runId, expected, record) =>
+              transaction.turns.transition(runId, expected, record),
             update: (record) => transaction.turns.update(record),
           },
         })

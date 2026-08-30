@@ -29,9 +29,19 @@ export class FileCheckpointStore implements CheckpointStore {
 
   async append(
     checkpoint: Checkpoint,
-    options: { readonly expectedVersion: number }
+    options: {
+      readonly expectedLeaseId?: string | null;
+      readonly expectedVersion: number;
+    }
   ): Promise<CheckpointWriteResult> {
     return await this.#lock(async () => {
+      const run = await this.#turns.getUnlocked(checkpoint.runId);
+      if (
+        options.expectedLeaseId !== undefined &&
+        (run?.lease?.leaseId ?? null) !== options.expectedLeaseId
+      ) {
+        return { ok: false, reason: "lease-conflict" };
+      }
       const current = await this.latestUnlocked(checkpoint.runId);
       const currentVersion = current?.version ?? 0;
       if (options.expectedVersion !== currentVersion) {

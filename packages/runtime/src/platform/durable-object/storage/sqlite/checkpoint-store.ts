@@ -63,11 +63,20 @@ export class DurableObjectSqliteCheckpointStore implements CheckpointStore {
 
   async append(
     checkpoint: Checkpoint,
-    options: { readonly expectedVersion: number }
+    options: {
+      readonly expectedLeaseId?: string | null;
+      readonly expectedVersion: number;
+    }
   ): Promise<CheckpointWriteResult> {
     this.#ensureSchema();
     return await withTransaction(this.#storage, async (storage) => {
       const run = await getRun(storage, this.#prefix, checkpoint.runId);
+      if (
+        options.expectedLeaseId !== undefined &&
+        (run?.lease?.leaseId ?? null) !== options.expectedLeaseId
+      ) {
+        return { ok: false, reason: "lease-conflict" };
+      }
       const currentVersion = run?.checkpointVersion ?? 0;
       if (currentVersion !== options.expectedVersion) {
         return {

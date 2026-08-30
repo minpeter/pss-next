@@ -117,11 +117,21 @@ export async function appendCheckpoint({
         threadSnapshot,
         version,
       },
-      { expectedVersion: run.checkpointVersion }
+      {
+        expectedLeaseId: run.lease?.leaseId,
+        expectedVersion: run.checkpointVersion,
+      }
     );
 
     if (result.ok) {
       return;
+    }
+    if (result.reason === "lease-conflict") {
+      throw new ResumeRunCheckpointError(
+        runId,
+        run.checkpointVersion,
+        run.checkpointVersion
+      );
     }
 
     lastConflict = {

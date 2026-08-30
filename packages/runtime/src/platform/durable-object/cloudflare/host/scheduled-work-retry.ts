@@ -33,7 +33,14 @@ export async function prepareScheduledNotificationRetry(
       return;
     }
 
-    await tx.turns.update(retryableNotificationRun(run));
+    const transition = await tx.turns.transition(
+      runId,
+      { leaseId: run.lease?.leaseId, status: run.status },
+      retryableNotificationRun(run)
+    );
+    if (!transition.ok) {
+      return;
+    }
     await tx.notifications.releaseByIdempotencyKey(run.dedupeKey);
     prepared = true;
   });

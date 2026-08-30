@@ -8,7 +8,7 @@ import {
   createThreadEventCursor,
   normalizeThreadEventReadOptions,
 } from "../../../../execution/host/event-cursors";
-import type { AgentEvent } from "../../../../index";
+import type { AgentEvent } from "../../../../thread/protocol/events";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import type { DurableObjectStorage } from "../durable-object/durable-object-storage";
 import { storeKey } from "../execution/records";

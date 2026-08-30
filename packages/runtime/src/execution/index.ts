@@ -25,6 +25,7 @@ export type {
   Checkpoint,
   CheckpointPhase,
   CheckpointStore,
+  CheckpointWriteOptions,
   CheckpointWriteResult,
   ClaimedThreadInput,
   ClaimThreadInputOptions,
@@ -59,6 +60,8 @@ export type {
   TurnRecord,
   TurnStatus,
   TurnStore,
+  TurnTransitionExpected,
+  TurnTransitionResult,
 } from "./host/types";
 export type {
   DurableTurnInspectionResult,

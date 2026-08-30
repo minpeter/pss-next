@@ -6,6 +6,12 @@ const IMPORT_SPECIFIER_PATTERN =
   /\bfrom\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/;
 
 describe("platform adapter import boundaries", () => {
+  it("keeps production platform files independent of the root barrel", async () => {
+    const violations = await findPlatformRootImports();
+
+    expect(violations).toEqual([]);
+  });
+
   it("keeps production Cloudflare files independent of Celld", async () => {
     const crossAdapterImports = await findCrossAdapterImports(
       "cloudflare",
@@ -24,6 +30,32 @@ describe("platform adapter import boundaries", () => {
     expect(crossAdapterImports).toEqual([]);
   });
 });
+
+async function findPlatformRootImports(): Promise<readonly string[]> {
+  const violations: string[] = [];
+  for await (const sourcePath of glob("**/*.ts", { cwd: PLATFORM_ROOT })) {
+    if (
+      sourcePath.endsWith(".test.ts") ||
+      sourcePath.endsWith(".test-support.ts") ||
+      sourcePath.endsWith("/test-support.ts") ||
+      sourcePath.includes("-stress-") ||
+      sourcePath.includes("-test-") ||
+      sourcePath.includes("/node-test/") ||
+      sourcePath.includes("/durable-object-test/")
+    ) {
+      continue;
+    }
+    const source = await readFile(new URL(sourcePath, PLATFORM_ROOT), "utf8");
+    for (const [index, line] of source.split("\n").entries()) {
+      const importMatch = line.match(IMPORT_SPECIFIER_PATTERN);
+      const specifier = importMatch?.[1] ?? importMatch?.[2];
+      if (specifier?.startsWith("../") && specifier.endsWith("/index")) {
+        violations.push(`${sourcePath}:${index + 1}: ${specifier}`);
+      }
+    }
+  }
+  return violations;
+}
 
 async function findCrossAdapterImports(
   adapter: "cloudflare" | "celld",

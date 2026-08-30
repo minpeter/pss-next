@@ -117,8 +117,14 @@ export interface Checkpoint {
   readonly version: number;
 }
 
+export interface CheckpointWriteOptions {
+  readonly expectedLeaseId?: string | null;
+  readonly expectedVersion: number;
+}
+
 export type CheckpointWriteResult =
   | { readonly ok: true; readonly version: number }
+  | { readonly ok: false; readonly reason: "lease-conflict" }
   | {
       readonly currentVersion: number;
       readonly ok: false;
@@ -199,13 +205,35 @@ export interface TurnStore {
   get(runId: string): Promise<TurnRecord | null>;
   getByDedupeKey(dedupeKey: string): Promise<TurnRecord | null>;
   listByParentRunId(parentRunId: string): Promise<readonly TurnRecord[]>;
+  transition(
+    runId: string,
+    expected: TurnTransitionExpected,
+    record: TurnRecord
+  ): Promise<TurnTransitionResult>;
   update(record: TurnRecord): Promise<TurnRecord>;
 }
+
+export interface TurnTransitionExpected {
+  readonly checkpointVersion?: number;
+  readonly leaseId?: string | null;
+  readonly status?: TurnStatus;
+}
+
+export type TurnTransitionResult =
+  | { readonly ok: true; readonly record: TurnRecord }
+  | {
+      readonly ok: false;
+      readonly reason:
+        | "checkpoint-conflict"
+        | "lease-conflict"
+        | "not-found"
+        | "status-conflict";
+    };
 
 export interface CheckpointStore {
   append(
     checkpoint: Checkpoint,
-    options: { readonly expectedVersion: number }
+    options: CheckpointWriteOptions
   ): Promise<CheckpointWriteResult>;
   latest(runId: string): Promise<Checkpoint | null>;
 }

@@ -198,9 +198,18 @@ class InMemoryCheckpointStore implements CheckpointStore {
 
   append(
     checkpoint: Checkpoint,
-    options: { readonly expectedVersion: number }
+    options: {
+      readonly expectedLeaseId?: string | null;
+      readonly expectedVersion: number;
+    }
   ): Promise<CheckpointWriteResult> {
     const run = this.#state().turns.get(checkpoint.runId);
+    if (
+      options.expectedLeaseId !== undefined &&
+      (run?.lease?.leaseId ?? null) !== options.expectedLeaseId
+    ) {
+      return Promise.resolve({ ok: false, reason: "lease-conflict" });
+    }
     const currentVersion = run?.checkpointVersion ?? 0;
     if (currentVersion !== options.expectedVersion) {
       return Promise.resolve({

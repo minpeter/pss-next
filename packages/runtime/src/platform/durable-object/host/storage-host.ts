@@ -1,6 +1,6 @@
 import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { AgentHost, HostScheduler } from "../../../execution";
-import type { ThreadStore } from "../../../index";
+import type { ThreadStore } from "../../../thread/store/types";
 import type {
   SqlStorageCursorLike as SqlStorageCursorLikeType,
   SqlStorage as SqlStorageType,

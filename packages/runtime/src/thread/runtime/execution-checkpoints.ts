@@ -35,12 +35,14 @@ export function createThreadToolExecutionContext({
   executionHost,
   interceptToolCall,
   interceptToolResult,
+  leaseId,
   runId,
   state,
 }: {
   readonly executionHost: AgentHost;
   readonly interceptToolCall?: ThreadToolCallInterceptor;
   readonly interceptToolResult?: ThreadToolResultInterceptor;
+  readonly leaseId?: string;
   readonly runId: string;
   readonly state: ThreadState;
 }): RuntimeToolExecutionContext {
@@ -49,6 +51,7 @@ export function createThreadToolExecutionContext({
     afterTool: async (checkpoint) => {
       await appendThreadToolExecutionCheckpoint({
         executionHost,
+        leaseId,
         phase: "after-tool",
         runId,
         state,
@@ -59,6 +62,7 @@ export function createThreadToolExecutionContext({
     beforeTool: async (checkpoint) => {
       await appendThreadToolExecutionCheckpoint({
         executionHost,
+        leaseId,
         phase: "before-tool",
         runId,
         state,
@@ -71,6 +75,7 @@ export function createThreadToolExecutionContext({
       ) {
         await appendThreadToolExecutionCheckpoint({
           executionHost,
+          leaseId,
           phase: "before-tool",
           runId,
           state,
@@ -85,12 +90,14 @@ export function createThreadToolExecutionContext({
 
 async function appendThreadToolExecutionCheckpoint({
   executionHost,
+  leaseId,
   phase,
   runId,
   state,
   toolCall,
 }: {
   readonly executionHost: AgentHost;
+  readonly leaseId?: string;
   readonly phase: Extract<CheckpointPhase, "after-tool" | "before-tool">;
   readonly runId: string;
   readonly state: ThreadState;
@@ -121,13 +128,21 @@ async function appendThreadToolExecutionCheckpoint({
         threadSnapshot: state.threadCheckpointReference(),
         version,
       },
-      { expectedVersion: run.checkpointVersion }
+      {
+        expectedLeaseId: leaseId,
+        expectedVersion: run.checkpointVersion,
+      }
     );
 
     if (result.ok) {
       return;
     }
 
+    if (result.reason === "lease-conflict") {
+      throw new Error(
+        `Thread execution run ${runId} checkpoint lease conflict.`
+      );
+    }
     lastConflict = {
       current: result.currentVersion,
       expected: run.checkpointVersion,

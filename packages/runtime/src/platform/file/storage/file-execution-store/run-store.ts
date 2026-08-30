@@ -1,5 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  decideTurnClaim,
+  decideTurnTransition,
+} from "../../../../execution/host/turn-status";
 import type {
   ClaimTurnOptions,
   ClaimTurnResult,
@@ -7,10 +11,12 @@ import type {
   TurnLease,
   TurnRecord,
   TurnStore,
+  TurnTransitionExpected,
+  TurnTransitionResult,
 } from "../../../../execution/host/types";
 import { isNodeError } from "../../../../internal/guards";
 import { readJsonFile, writeJsonFile } from "./json";
-import { isClaimable, parseRunRecord } from "./schemas";
+import { parseRunRecord } from "./schemas";
 import type { DataDirectoryResolver } from "./types";
 import { encodeKey } from "./utils";
 
@@ -36,16 +42,9 @@ export class FileRunStore implements TurnStore {
         return { ok: false, reason: "not-found" };
       }
 
-      if (!isClaimable(record)) {
-        return { ok: false, reason: "not-claimable" };
-      }
-
-      if (
-        record.lease &&
-        record.lease.leaseUntilMs > options.nowMs &&
-        record.status === "leased"
-      ) {
-        return { ok: false, reason: "leased" };
+      const decision = decideTurnClaim(record, options.nowMs);
+      if (!decision.ok) {
+        return decision;
       }
 
       const lease: TurnLease = {
@@ -101,6 +100,22 @@ export class FileRunStore implements TurnStore {
     });
   }
 
+  async transition(
+    runId: string,
+    expected: TurnTransitionExpected,
+    record: TurnRecord
+  ): Promise<TurnTransitionResult> {
+    return await this.#lock(async () => {
+      const current = await this.#getUnlocked(runId);
+      const conflict = decideTurnTransition(current, expected);
+      if (conflict) {
+        return conflict;
+      }
+      await this.#writeUnlocked(record);
+      return { ok: true, record: structuredClone(record) };
+    });
+  }
+
   async update(record: TurnRecord): Promise<TurnRecord> {
     return await this.#lock(async () => {
       await this.#writeUnlocked(record);
@@ -117,6 +132,10 @@ export class FileRunStore implements TurnStore {
       return;
     }
     await this.#writeUnlocked({ ...record, checkpointVersion });
+  }
+
+  getUnlocked(runId: string): Promise<TurnRecord | null> {
+    return this.#getUnlocked(runId);
   }
 
   async #getByDedupeKeyUnlocked(dedupeKey: string): Promise<TurnRecord | null> {

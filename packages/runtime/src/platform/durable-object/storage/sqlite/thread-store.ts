@@ -1,11 +1,11 @@
+import { isAgentThreadSnapshot } from "../../../../thread/state/snapshot";
 import type {
   CommitResult,
   ExpectedThreadVersion,
   StoredThread,
   ThreadStore,
   ThreadStoreCommit,
-} from "../../../../index";
-import { isAgentThreadSnapshot } from "../../../../thread/state/snapshot";
+} from "../../../../thread/store/types";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import type { DurableObjectStorage } from "../durable-object/durable-object-storage";
 import {

@@ -1,4 +1,5 @@
-import type { AgentEvent, AgentTurn } from "../../../index";
+import type { AgentEvent } from "../../../thread/protocol/events";
+import type { AgentTurn } from "../../../thread/protocol/turn";
 
 export type AgentTurnDrainStopReason = "deadline" | "event-budget";
 

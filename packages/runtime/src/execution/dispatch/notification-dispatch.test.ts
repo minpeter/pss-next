@@ -465,6 +465,8 @@ function hostWithDuplicateRunCreateAfterFirstLookup(
     },
     listByParentRunId: (parentRunId) =>
       host.store.turns.listByParentRunId(parentRunId),
+    transition: (runId, expected, record) =>
+      host.store.turns.transition(runId, expected, record),
     update: (record) => host.store.turns.update(record),
   } satisfies TurnStore;
 
@@ -487,6 +489,8 @@ function hostWithDuplicateRunCreate(host: AgentHost): AgentHost {
     getByDedupeKey: (dedupeKey) => host.store.turns.getByDedupeKey(dedupeKey),
     listByParentRunId: (parentRunId) =>
       host.store.turns.listByParentRunId(parentRunId),
+    transition: (runId, expected, record) =>
+      host.store.turns.transition(runId, expected, record),
     update: (record) => host.store.turns.update(record),
   } satisfies TurnStore;
 

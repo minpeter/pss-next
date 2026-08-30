@@ -1,19 +1,17 @@
+import {
+  decideTurnClaim,
+  decideTurnTransition,
+} from "../../../execution/host/turn-status";
 import type {
   ClaimTurnOptions,
   ClaimTurnResult,
   CreateTurnResult,
   TurnRecord,
-  TurnStatus,
   TurnStore,
+  TurnTransitionExpected,
+  TurnTransitionResult,
 } from "../../../execution/host/types";
 import type { ExecutionState } from "./state";
-
-const claimableStatuses = new Set<TurnStatus>([
-  "leased",
-  "queued",
-  "running",
-  "suspended",
-]);
 
 export class InMemoryRunStore implements TurnStore {
   readonly #state: () => ExecutionState;
@@ -58,6 +56,24 @@ export class InMemoryRunStore implements TurnStore {
     return Promise.resolve(records.map((record) => structuredClone(record)));
   }
 
+  transition(
+    runId: string,
+    expected: TurnTransitionExpected,
+    record: TurnRecord
+  ): Promise<TurnTransitionResult> {
+    const state = this.#state();
+    const conflict = decideTurnTransition(
+      state.turns.get(runId) ?? null,
+      expected
+    );
+    if (conflict) {
+      return Promise.resolve(conflict);
+    }
+    const stored = structuredClone(record);
+    state.turns.set(runId, stored);
+    return Promise.resolve({ ok: true, record: structuredClone(stored) });
+  }
+
   update(record: TurnRecord): Promise<TurnRecord> {
     const stored = structuredClone(record);
     this.#state().turns.set(record.runId, stored);
@@ -70,12 +86,9 @@ export class InMemoryRunStore implements TurnStore {
       return Promise.resolve({ ok: false, reason: "not-found" });
     }
 
-    if (!claimableStatuses.has(record.status)) {
-      return Promise.resolve({ ok: false, reason: "not-claimable" });
-    }
-
-    if (record.lease && record.lease.leaseUntilMs > options.nowMs) {
-      return Promise.resolve({ ok: false, reason: "leased" });
+    const decision = decideTurnClaim(record, options.nowMs);
+    if (!decision.ok) {
+      return Promise.resolve(decision);
     }
 
     const lease = {
