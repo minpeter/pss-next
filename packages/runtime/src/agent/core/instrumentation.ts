@@ -1,3 +1,4 @@
+import type { AgentEvent } from "../../thread/protocol/events";
 import type { AgentTurn } from "../../thread/protocol/turn";
 
 export type AgentInstrumentationOperation =
@@ -40,15 +41,14 @@ export function applyAgentInstrumentations(
   context: AgentInstrumentationContext
 ): AgentTurn {
   const runId = turn.runId;
-  let wrapped = turn;
+  let wrapped = createPublicAgentTurn(turn, runId);
   for (const instrumentation of instrumentations) {
-    wrapped = instrumentation.wrapTurn(wrapped, context);
-    assertAgentTurn(wrapped);
+    wrapped = createPublicAgentTurn(
+      instrumentation.wrapTurn(wrapped, context),
+      runId
+    );
   }
-  return Object.freeze({
-    events: () => wrapped.events(),
-    ...(runId === undefined ? {} : { runId }),
-  });
+  return wrapped;
 }
 
 function assertAgentInstrumentation(
@@ -65,14 +65,41 @@ function assertAgentInstrumentation(
   }
 }
 
-function assertAgentTurn(value: unknown): asserts value is AgentTurn {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    typeof (value as { readonly events?: unknown }).events !== "function"
-  ) {
+function createPublicAgentTurn(
+  turn: unknown,
+  runId: string | undefined
+): AgentTurn {
+  if (turn === null || typeof turn !== "object") {
     throw new TypeError(
       "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
     );
   }
+  const events = Reflect.get(turn, "events");
+  if (typeof events !== "function") {
+    throw new TypeError(
+      "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
+    );
+  }
+  return Object.freeze({
+    events: () => {
+      const iterable = Reflect.apply(events, turn, []);
+      if (!isAgentEventIterable(iterable)) {
+        throw new TypeError(
+          "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
+        );
+      }
+      return iterable;
+    },
+    ...(runId === undefined ? {} : { runId }),
+  });
+}
+
+function isAgentEventIterable(
+  value: unknown
+): value is AsyncIterable<AgentEvent> {
+  return (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof Reflect.get(value, Symbol.asyncIterator) === "function"
+  );
 }
