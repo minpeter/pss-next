@@ -1,5 +1,7 @@
 import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
+import { transitionTurn } from "../../execution/host/turn-status";
+import { TurnTransitionConflictError } from "../../execution/host/turn-transition-conflict";
 import type {
   AgentHost,
   TurnKind,
@@ -9,12 +11,21 @@ import type {
 } from "../../execution/host/types";
 import type { RuntimeToolExecutionContext } from "../../llm/tool-execution-types";
 import type { ThreadState } from "../state/thread-state";
+import type { CommitResult } from "../store/types";
 import type { AgentCompaction } from "./auto-compaction-types";
 import {
   createThreadToolExecutionContext,
   type ThreadToolCallInterceptor,
   type ThreadToolResultInterceptor,
 } from "./execution-checkpoints";
+import {
+  commitOwnedThreadExecutionRunStorage,
+  completeThreadExecutionRun,
+  isTerminalTurnStatus,
+  type OwnedRunStorageCommit,
+  settleThreadExecutionRun,
+  type TerminalRunStorageCommit,
+} from "./terminal-run-settlement";
 
 export interface ThreadExecutionOptions {
   readonly compaction?: AgentCompaction;
@@ -24,12 +35,26 @@ export interface ThreadExecutionOptions {
 
 export interface QueuedThreadExecutionRun {
   readonly kind: TurnKind;
+  readonly leaseId?: string | null;
   readonly runId: string;
 }
 
+export type ThreadExecutionCancellation =
+  | {
+      readonly kind: "owned";
+      readonly leaseId: string | null;
+      readonly runId: string;
+    }
+  | { readonly kind: "unleased"; readonly runId: string };
+
 export interface ThreadExecutionRun {
+  commitOwned<Result>(persist: OwnedRunStorageCommit<Result>): Promise<Result>;
   complete(status: ThreadExecutionTerminalStatus): Promise<void>;
   readonly runId: string;
+  settle(
+    status: ThreadExecutionTerminalStatus,
+    persist: TerminalRunStorageCommit
+  ): Promise<CommitResult>;
   readonly toolExecution: RuntimeToolExecutionContext;
 }
 
@@ -104,46 +129,111 @@ export async function startThreadExecutionRun({
       threadKey,
     })
   );
+  let running = created.record;
   if (!(created.ok || isTerminalTurnStatus(created.record.status))) {
-    await executionHost.store.turns.update({
-      ...created.record,
-      status: "running",
+    const transition = await transitionTurn(executionHost.store.turns, {
+      expected: {
+        leaseId: executionRun?.leaseId ?? null,
+        status: created.record.status,
+      },
+      runId,
+      update: { status: "running" },
     });
+    if (!transition.ok) {
+      throw new TurnTransitionConflictError(runId, "start", transition.reason);
+    }
+    running = transition.record;
   }
 
+  const leaseId = running.lease?.leaseId ?? null;
   return {
-    complete: (status) =>
-      completeThreadExecutionRun({ executionHost, runId, status }),
+    commitOwned: async (persist) =>
+      await commitOwnedThreadExecutionRunStorage({
+        executionHost,
+        leaseId,
+        persist,
+        runId,
+      }),
+    complete: async (status) =>
+      await completeThreadExecutionRun({
+        executionHost,
+        leaseId,
+        runId,
+        status,
+      }),
     runId,
+    settle: async (status, persist) =>
+      await settleThreadExecutionRun({
+        executionHost,
+        leaseId,
+        persist,
+        runId,
+        status,
+      }),
     toolExecution: createThreadToolExecutionContext({
       executionHost,
       interceptToolCall,
       interceptToolResult,
+      leaseId,
       runId,
       state,
     }),
   };
 }
 
+export function cancellationForExecutionRun(
+  executionRun: QueuedThreadExecutionRun | undefined
+): ThreadExecutionCancellation | undefined {
+  if (!executionRun) {
+    return;
+  }
+  return {
+    kind: "owned",
+    leaseId: executionRun.leaseId ?? null,
+    runId: executionRun.runId,
+  };
+}
+
 export async function cancelThreadExecutionRun({
+  cancellation,
   executionHost,
-  executionRun,
-  runId,
 }: {
+  readonly cancellation: ThreadExecutionCancellation | undefined;
   readonly executionHost?: AgentHost;
-  readonly executionRun?: QueuedThreadExecutionRun;
-  readonly runId?: string;
 }): Promise<void> {
-  const targetRunId = runId ?? executionRun?.runId;
-  if (!(executionHost && targetRunId)) {
+  if (!(executionHost && cancellation)) {
     return;
   }
 
-  const run = await executionHost.store.turns.get(targetRunId);
+  const run = await executionHost.store.turns.get(cancellation.runId);
   if (!run || isTerminalTurnStatus(run.status)) {
     return;
   }
-  await executionHost.store.turns.update({ ...run, status: "cancelled" });
+  const transition = await transitionTurn(executionHost.store.turns, {
+    expected: {
+      leaseId: cancellation.kind === "owned" ? cancellation.leaseId : null,
+      status: run.status,
+    },
+    runId: cancellation.runId,
+    update: { status: "cancelled" },
+  });
+  if (!transition.ok) {
+    if (transition.reason === "lease-conflict") {
+      return;
+    }
+    const current =
+      transition.reason === "status-conflict"
+        ? await executionHost.store.turns.get(cancellation.runId)
+        : undefined;
+    if (current && isTerminalTurnStatus(current.status)) {
+      return;
+    }
+    throw new TurnTransitionConflictError(
+      cancellation.runId,
+      "cancel",
+      transition.reason
+    );
+  }
 }
 
 export function createThreadExecutionRunRecord({
@@ -166,30 +256,4 @@ export function createThreadExecutionRunRecord({
     threadKey,
     status,
   };
-}
-
-async function completeThreadExecutionRun({
-  executionHost,
-  runId,
-  status,
-}: {
-  readonly executionHost: AgentHost;
-  readonly runId: string;
-  readonly status: ThreadExecutionTerminalStatus;
-}): Promise<void> {
-  const run = await executionHost.store.turns.get(runId);
-  if (!run || isTerminalTurnStatus(run.status)) {
-    return;
-  }
-
-  await executionHost.store.turns.update({ ...run, status });
-}
-
-function isTerminalTurnStatus(status: TurnStatus): boolean {
-  return (
-    status === "cancelled" ||
-    status === "completed" ||
-    status === "error" ||
-    status === "needs-recovery"
-  );
 }

@@ -1,24 +1,40 @@
+import { transitionTurn } from "../../execution/host/turn-status";
+import { TurnTransitionConflictError } from "../../execution/host/turn-transition-conflict";
 import type {
   AgentHost,
+  NotificationInbox,
   NotificationRecord,
+  TurnLease,
   TurnRecord,
+  TurnStore,
 } from "../../execution/host/types";
 import type { AgentTurn } from "../../thread/protocol/turn";
 import { ownsAgentNamespace } from "../identity/namespace";
+import { leaseIdForResumeClaim } from "./retry-authority";
+
+export type ClaimedTurnRecord = TurnRecord & {
+  readonly lease: TurnLease;
+};
 
 interface ResumeAgentTurnInput {
+  readonly claim?: object;
   readonly host: AgentHost;
   readonly ownerNamespace: string;
-  resumeNotification(notification: NotificationRecord): Promise<AgentTurn>;
+  resumeNotification(
+    notification: NotificationRecord,
+    run: ClaimedTurnRecord
+  ): Promise<AgentTurn>;
   readonly runId: string;
 }
 
 export async function resumeAgentTurn({
+  claim,
   host,
   ownerNamespace,
   resumeNotification,
   runId,
 }: ResumeAgentTurnInput): Promise<AgentTurn | null> {
+  const retryLeaseId = leaseIdForResumeClaim(claim, runId);
   const run = await host.store.turns.get(runId);
   if (!run) {
     return null;
@@ -29,24 +45,55 @@ export async function resumeAgentTurn({
 
   if (run.kind === "notification" && run.dedupeKey) {
     const idempotencyKey = run.dedupeKey;
-    const claimed = await claimRun(host, run);
-    if (!claimed) {
-      return null;
-    }
+    const claimedTuple = await host.store.transaction(async (transaction) => {
+      const claimed = await claimRun(transaction.turns, run, retryLeaseId);
+      if (!claimed) {
+        return null;
+      }
 
-    const notification = await claimNotificationForRun({
-      host,
-      idempotencyKey,
-      ownerNamespace,
+      const notificationClaim = await claimNotificationForRun(
+        transaction.notifications,
+        idempotencyKey
+      );
+      if (!notificationClaim) {
+        await requeueClaimedRun(transaction.turns, claimed);
+        return null;
+      }
+      const notification = notificationClaim.record;
+      if (
+        claimed.kind !== "notification" ||
+        claimed.dedupeKey === undefined ||
+        notification.idempotencyKey !== claimed.dedupeKey ||
+        notification.runId !== claimed.runId ||
+        notification.threadKey !== claimed.threadKey ||
+        notification.ownerNamespace !== claimed.ownerNamespace ||
+        !ownsAgentNamespace(claimed.ownerNamespace, ownerNamespace) ||
+        notification.notificationId.length === 0
+      ) {
+        if (notificationClaim.release) {
+          await transaction.notifications.releaseByIdempotencyKey(
+            idempotencyKey
+          );
+        }
+        await requeueClaimedRun(transaction.turns, claimed);
+        return null;
+      }
+
+      return { notification: notificationClaim.record, run: claimed };
     });
-    if (!notification) {
+    if (!claimedTuple) {
       return null;
     }
+    const { notification, run: claimed } = claimedTuple;
 
     try {
-      const notificationRun = await resumeNotification(notification);
+      const notificationRun = await resumeNotification(notification, claimed);
       if (notificationRun.runId !== claimed.runId) {
-        await completeNotificationRun(host, claimed.runId);
+        await completeNotificationRun(
+          host,
+          claimed.runId,
+          claimed.lease.leaseId
+        );
       }
       return notificationRun;
     } catch (error) {
@@ -58,39 +105,44 @@ export async function resumeAgentTurn({
   return null;
 }
 
-async function claimNotificationForRun({
-  host,
-  idempotencyKey,
-  ownerNamespace,
-}: {
-  readonly host: AgentHost;
-  readonly idempotencyKey: string;
-  readonly ownerNamespace: string;
-}): Promise<NotificationRecord | null> {
-  const current =
-    await host.store.notifications.getByIdempotencyKey(idempotencyKey);
-  if (!ownsAgentNamespace(current?.ownerNamespace, ownerNamespace)) {
-    return null;
-  }
+interface ClaimedNotification {
+  readonly record: NotificationRecord;
+  readonly release: boolean;
+}
 
-  const claim =
-    await host.store.notifications.claimByIdempotencyKey(idempotencyKey);
+async function claimNotificationForRun(
+  notifications: NotificationInbox,
+  idempotencyKey: string
+): Promise<ClaimedNotification | null> {
+  const claim = await notifications.claimByIdempotencyKey(idempotencyKey);
   if (claim.ok) {
-    if (ownsAgentNamespace(claim.record.ownerNamespace, ownerNamespace)) {
-      return claim.record;
-    }
-    await host.store.notifications.releaseByIdempotencyKey(idempotencyKey);
-    return null;
+    return { record: claim.record, release: true };
   }
-
-  if (
-    claim.reason === "already-claimed" &&
-    ownsAgentNamespace(claim.record?.ownerNamespace, ownerNamespace)
-  ) {
-    return claim.record ?? null;
+  if (claim.reason === "already-claimed" && claim.record) {
+    return { record: claim.record, release: false };
   }
-
   return null;
+}
+
+async function requeueClaimedRun(
+  turns: TurnStore,
+  run: TurnRecord
+): Promise<void> {
+  const transition = await transitionTurn(turns, {
+    expected: {
+      leaseId: run.lease?.leaseId ?? null,
+      status: run.status,
+    },
+    runId: run.runId,
+    update: { lease: null, status: "queued" },
+  });
+  if (!transition.ok) {
+    throw new TurnTransitionConflictError(
+      run.runId,
+      "notification",
+      transition.reason
+    );
+  }
 }
 
 function canAccessRun(run: TurnRecord, ownerNamespace: string): boolean {
@@ -101,7 +153,8 @@ function canAccessRun(run: TurnRecord, ownerNamespace: string): boolean {
 
 export async function completeNotificationRun(
   host: AgentHost,
-  runId: string
+  runId: string,
+  leaseId: string | null
 ): Promise<void> {
   const run = await host.store.turns.get(runId);
   if (
@@ -114,18 +167,30 @@ export async function completeNotificationRun(
     return;
   }
 
-  await host.store.turns.update({ ...run, status: "completed" });
+  const transition = await transitionTurn(host.store.turns, {
+    expected: { leaseId, status: run.status },
+    runId,
+    update: { status: "completed" },
+  });
+  if (!transition.ok) {
+    throw new TurnTransitionConflictError(
+      runId,
+      "notification",
+      transition.reason
+    );
+  }
 }
 
 async function claimRun(
-  host: AgentHost,
-  run: TurnRecord
-): Promise<TurnRecord | null> {
-  const claim = await host.store.turns.claim(run.runId, {
+  turns: TurnStore,
+  run: TurnRecord,
+  retryLeaseId: string | undefined
+): Promise<ClaimedTurnRecord | null> {
+  const result = await turns.claim(run.runId, {
     attempt: (run.lease?.attempt ?? 0) + 1,
-    leaseId: crypto.randomUUID(),
+    leaseId: retryLeaseId ?? crypto.randomUUID(),
     leaseMs: 300_000,
     nowMs: Date.now(),
   });
-  return claim.ok ? claim.record : null;
+  return result.ok ? { ...result.record, lease: result.lease } : null;
 }

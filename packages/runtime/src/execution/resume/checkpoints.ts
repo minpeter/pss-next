@@ -1,5 +1,7 @@
+import { assertNever } from "../../internal/guards";
 import { ToolExecutionNeedsRecoveryError } from "../../llm/tool-execution-checkpoint";
 import type { RuntimeToolExecutionCheckpointMetadata } from "../../llm/tool-execution-types";
+import { appendLeaseFencedCheckpoint } from "../host/checkpoint-fencing";
 import { createCheckpointId } from "../host/checkpoint-ids";
 import type { AgentHost, Checkpoint, CheckpointPhase } from "../host/types";
 import type { ResumeRunState } from "./types";
@@ -84,6 +86,7 @@ export function throwIfManualToolRecoveryRequired(
 
 export async function appendCheckpoint({
   host,
+  leaseId,
   phase,
   pendingToolCall,
   runId,
@@ -91,6 +94,7 @@ export async function appendCheckpoint({
   threadSnapshot,
 }: {
   readonly host: AgentHost;
+  readonly leaseId: string | null;
   readonly pendingToolCall?: unknown;
   readonly phase: CheckpointPhase;
   readonly runId: string;
@@ -107,7 +111,8 @@ export async function appendCheckpoint({
     }
 
     const version = run.checkpointVersion + 1;
-    const result = await host.store.checkpoints.append(
+    const result = await appendLeaseFencedCheckpoint(
+      host.store,
       {
         checkpointId: createCheckpointId({ phase, runId, version }),
         ...(pendingToolCall === undefined ? {} : { pendingToolCall }),
@@ -117,17 +122,33 @@ export async function appendCheckpoint({
         threadSnapshot,
         version,
       },
-      { expectedVersion: run.checkpointVersion }
+      {
+        expectedLeaseId: leaseId,
+        expectedVersion: run.checkpointVersion,
+      }
     );
 
     if (result.ok) {
       return;
     }
-
-    lastConflict = {
-      current: result.currentVersion,
-      expected: run.checkpointVersion,
-    };
+    switch (result.reason) {
+      case "lease-conflict":
+      case "not-found":
+      case "status-conflict":
+        throw new ResumeRunCheckpointError(
+          runId,
+          run.checkpointVersion,
+          run.checkpointVersion
+        );
+      case "stale-version":
+        lastConflict = {
+          current: result.currentVersion,
+          expected: run.checkpointVersion,
+        };
+        break;
+      default:
+        assertNever(result);
+    }
   }
 
   throw new ResumeRunCheckpointError(

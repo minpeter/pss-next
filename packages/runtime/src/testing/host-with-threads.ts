@@ -17,6 +17,7 @@ export function hostWithThreads(
       checkpoints: base.store.checkpoints,
       events: base.store.events,
       inputs: base.store.inputs,
+      leaseFencedCheckpoints: base.store.leaseFencedCheckpoints,
       notifications: base.store.notifications,
       threadEvents: base.store.threadEvents,
       threads: threadStore,

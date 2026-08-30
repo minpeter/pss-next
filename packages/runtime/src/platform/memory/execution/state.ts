@@ -7,12 +7,18 @@ import type {
   TurnRecord,
 } from "../../../execution/host/types";
 import type { StoredThread } from "../../../thread/store/types";
+import {
+  cloneScheduledState,
+  createEmptyScheduledState,
+  type MemoryScheduledState,
+} from "./scheduled-state";
 
 export interface ExecutionState {
   readonly checkpoints: Map<string, Checkpoint[]>;
   readonly events: Map<string, StoredAgentEvent[]>;
   readonly inputsByThread: Map<string, ThreadInputRecord[]>;
   readonly notificationsByKey: Map<string, NotificationRecord>;
+  readonly scheduledWork: MemoryScheduledState;
   readonly threadEvents: Map<string, StoredThreadEvent[]>;
   readonly threads: Map<string, StoredThread>;
   readonly threadVersions: Map<string, number>;
@@ -25,6 +31,7 @@ export function createEmptyState(): ExecutionState {
     events: new Map(),
     inputsByThread: new Map(),
     notificationsByKey: new Map(),
+    scheduledWork: createEmptyScheduledState(),
     threadEvents: new Map(),
     turns: new Map(),
     threadVersions: new Map(),
@@ -38,6 +45,7 @@ export function cloneState(state: ExecutionState): ExecutionState {
     events: cloneEventMap(state.events),
     inputsByThread: cloneInputMap(state.inputsByThread),
     notificationsByKey: cloneRecordMap(state.notificationsByKey),
+    scheduledWork: cloneScheduledState(state.scheduledWork),
     threadEvents: cloneThreadEventMap(state.threadEvents),
     turns: cloneRecordMap(state.turns),
     threadVersions: cloneRecordMap(state.threadVersions),

@@ -149,6 +149,10 @@ export class AgentThread {
     const deletePromise = settled.promise;
     const remove = async (): Promise<void> => {
       await killPromise;
+      const drainState = this.#context.drain.state;
+      if (drainState.tag === "draining") {
+        await drainState.promise;
+      }
       const afterKill = terminal.state;
       if (afterKill.tag === "deleting" || afterKill.tag === "deleted") {
         return await afterKill.deletePromise;
@@ -194,7 +198,13 @@ export class AgentThread {
 
   async #deleteThread(): Promise<void> {
     await this.#shutdown();
-    await this.#context.state.delete();
+    const hostStore = this.#context.execution.executionHost?.store;
+    const deleteThread = hostStore?.deleteThread?.bind(hostStore);
+    await this.#context.state.delete(
+      deleteThread
+        ? async () => await deleteThread(this.#context.threadKey)
+        : undefined
+    );
   }
 
   async #shutdown(): Promise<void> {

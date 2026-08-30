@@ -3,9 +3,16 @@ import type {
   ClaimTurnResult,
   CreateTurnResult,
   TurnRecord,
-  TurnStatus,
   TurnStore,
+  TurnTransitionExpected,
+  TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "../../../../execution";
+import {
+  applyTurnTransitionUpdate,
+  decideTurnClaim,
+  decideTurnTransition,
+} from "../../../../execution/host/turn-status";
 import type { DurableObjectStorage } from "../durable-object/durable-object-storage";
 import { withTransaction } from "../durable-object/sql-access";
 import {
@@ -19,13 +26,6 @@ import {
   listRunsByParentRunId,
   putRun,
 } from "./run-records";
-
-const claimableStatuses = new Set<TurnStatus>([
-  "leased",
-  "queued",
-  "running",
-  "suspended",
-]);
 
 export class DurableObjectRunStore implements TurnStore {
   readonly #maxPayloadBytes: number;
@@ -51,11 +51,9 @@ export class DurableObjectRunStore implements TurnStore {
       if (!run) {
         return { ok: false, reason: "not-found" };
       }
-      if (!claimableStatuses.has(run.status)) {
-        return { ok: false, reason: "not-claimable" };
-      }
-      if (run.lease && run.lease.leaseUntilMs > options.nowMs) {
-        return { ok: false, reason: "leased" };
+      const decision = decideTurnClaim(runId, run, options.nowMs);
+      if (!decision.ok) {
+        return decision;
       }
 
       const lease = {
@@ -107,6 +105,28 @@ export class DurableObjectRunStore implements TurnStore {
       this.#prefix,
       parentRunId
     );
+  }
+
+  async transition(
+    runId: string,
+    expected: TurnTransitionExpected,
+    update: TurnTransitionUpdate
+  ): Promise<TurnTransitionResult> {
+    return await withTransaction(this.#storage, async (storage) => {
+      const current = await getRun(storage, this.#prefix, runId);
+      if (!current) {
+        return { ok: false, reason: "not-found" };
+      }
+      const conflict = decideTurnTransition(runId, current, expected);
+      if (conflict) {
+        return conflict;
+      }
+      const record = applyTurnTransitionUpdate(current, update);
+      await putRun(storage, this.#prefix, record, {
+        maxPayloadBytes: this.#maxPayloadBytes,
+      });
+      return { ok: true, record: structuredClone(record) };
+    });
   }
 
   async update(record: TurnRecord): Promise<TurnRecord> {

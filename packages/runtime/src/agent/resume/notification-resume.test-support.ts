@@ -28,6 +28,7 @@ export function createThreadLoadFailingHost(): AgentHost {
         delete: base.store.threads.delete.bind(base.store.threads),
         load: () => Promise.reject(new Error("thread load failed")),
       },
+      transaction: (callback) => base.store.transaction(callback),
     },
   };
 }

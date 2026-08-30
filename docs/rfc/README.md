@@ -7,3 +7,4 @@ Design RFCs for `pss-runtime` live here as numbered, versioned documents. An RFC
 | 0002 | App-Owned Session RPC and Streaming Transport | Implemented | [#172](https://github.com/minpeter/pss-runtime/issues/172) |
 | 0003 | Plugin System Improvements — Closing Gaps vs Pi Harness Extensions | Accepted | [#213](https://github.com/minpeter/pss-runtime/issues/213) |
 | 0004 | Public API vNext | Proposed | Repository RFC |
+| 0005 | Runtime v3 hardening | Accepted for incremental implementation | Repository RFC |

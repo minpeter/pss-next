@@ -34,7 +34,7 @@ export function traceAgentTurn(
   options: TraceAgentTurnOptions = {}
 ): AgentTurn {
   let consumed = false;
-  return {
+  return Object.freeze({
     events: () => {
       if (consumed) {
         throw new Error("AgentTurn.events() can only be consumed once");
@@ -45,7 +45,8 @@ export function traceAgentTurn(
         createTraceState(options)
       );
     },
-  };
+    ...(turn.runId === undefined ? {} : { runId: turn.runId }),
+  });
 }
 
 class TracedAgentEventIterator implements AsyncIterableIterator<AgentEvent> {

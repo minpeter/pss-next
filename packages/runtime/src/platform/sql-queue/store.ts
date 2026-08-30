@@ -3,6 +3,7 @@ import type {
   EventStore,
   HostStore,
   HostStoreTransaction,
+  LeaseFencedCheckpointStore,
   NotificationInbox,
   ThreadEventLog,
   ThreadInputInbox,
@@ -22,6 +23,7 @@ export interface SqlHostStorePort {
   deleteThread?(threadKey: string): Promise<void>;
   readonly events: EventStore;
   readonly inputs: ThreadInputInbox;
+  readonly leaseFencedCheckpoints?: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
   readonly threadEvents?: ThreadEventLog;
   readonly threads: ThreadStore;
@@ -49,6 +51,10 @@ export class SqlHostStore implements HostStore {
 
   get inputs(): ThreadInputInbox {
     return this.#port.inputs;
+  }
+
+  get leaseFencedCheckpoints(): LeaseFencedCheckpointStore | undefined {
+    return this.#port.leaseFencedCheckpoints;
   }
 
   get notifications(): NotificationInbox {

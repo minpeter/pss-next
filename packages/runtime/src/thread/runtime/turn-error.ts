@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import { TurnTransitionConflictError } from "../../execution/host/turn-transition-conflict";
 import type { AgentHost } from "../../execution/host/types";
 import { ToolExecutionNeedsRecoveryError } from "../../llm/tool-execution-checkpoint";
 import {
@@ -16,7 +17,7 @@ import type {
   ThreadExecutionTerminalStatus,
 } from "./execution";
 import {
-  commitThreadStateAndEvents,
+  commitTerminalThreadStateAndEvents,
   type DurableThreadEventBuffer,
 } from "./thread-event-log";
 import { normalizeTurnError } from "./turn-error-metadata";
@@ -71,14 +72,17 @@ export async function emitTurnErrorAfterRecovery({
     } else {
       await state.commit();
     }
-  } catch {
+  } catch (persistenceError) {
+    if (isErrorInstance(persistenceError, TurnTransitionConflictError)) {
+      throw persistenceError;
+    }
     run.emit({
       ...(event.error === undefined ? {} : { error: event.error }),
       type: "turn-error",
       message: `${event.message} History rollback persistence failed.`,
     });
     closeRuntimeInput(runtimeInput, "turn-error");
-    return;
+    throw persistenceError;
   }
 
   run.emit(event);
@@ -108,17 +112,18 @@ export async function recoverTurnProcessingError({
   readonly state: ThreadState;
   readonly threadKey: string;
 }): Promise<void> {
-  await executionRun?.complete(executionStatusForError(error));
   await emitTurnErrorAfterRecovery({
     error,
     historySnapshot,
     observeEvent: undefined,
     persistEvent: async (event) => {
       recordEvent(event);
-      await commitThreadStateAndEvents({
+      await commitTerminalThreadStateAndEvents({
         buffer: durableEvents,
         executionHost,
+        executionRun,
         state,
+        status: executionStatusForError(error),
         threadKey,
       });
     },

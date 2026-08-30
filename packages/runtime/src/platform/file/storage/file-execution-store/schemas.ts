@@ -129,16 +129,6 @@ export function parseNotificationRecord(
   };
 }
 
-export function isClaimable(record: TurnRecord): boolean {
-  return (
-    record.status === "leased" ||
-    record.status === "needs-recovery" ||
-    record.status === "queued" ||
-    record.status === "running" ||
-    record.status === "suspended"
-  );
-}
-
 function isAgentEvent(value: unknown): value is AgentEvent {
   return isRecord(value) && typeof value.type === "string";
 }

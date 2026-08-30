@@ -17,6 +17,7 @@ import {
   claimDurableThreadInput,
   releaseDurableThreadInputClaim,
 } from "./durable-input-claims";
+import type { ThreadExecutionRun } from "./execution";
 import type { ThreadEventDispatcher } from "./thread-event-dispatcher";
 import {
   commitThreadStateAndEvents,
@@ -27,6 +28,7 @@ export async function drainRuntimeInput({
   durableEvents,
   events,
   executionHost,
+  executionRun,
   placement,
   run,
   runtimeInput,
@@ -39,6 +41,7 @@ export async function drainRuntimeInput({
   readonly durableEvents: DurableThreadEventBuffer;
   readonly events: ThreadEventDispatcher;
   readonly executionHost?: AgentHost;
+  readonly executionRun?: ThreadExecutionRun;
   readonly placement: RuntimeInputPlacement;
   readonly recordEvent?: (event: AgentEvent) => void;
   readonly run: BufferedAgentTurn;
@@ -56,6 +59,7 @@ export async function drainRuntimeInput({
           commitThreadStateAndEvents({
             buffer: durableEvents,
             executionHost,
+            executionRun,
             state,
             threadKey,
           }),
@@ -71,6 +75,7 @@ export async function drainRuntimeInput({
     (await drainDurableRuntimeInput({
       events,
       executionHost,
+      executionRun,
       durableEvents,
       attachmentStore,
       placement,
@@ -86,6 +91,7 @@ async function drainDurableRuntimeInput({
   durableEvents,
   events,
   executionHost,
+  executionRun,
   attachmentStore,
   placement,
   run,
@@ -96,6 +102,7 @@ async function drainDurableRuntimeInput({
   readonly durableEvents: DurableThreadEventBuffer;
   readonly events: ThreadEventDispatcher;
   readonly executionHost?: AgentHost;
+  readonly executionRun?: ThreadExecutionRun;
   readonly attachmentStore: HostAttachmentStore | undefined;
   readonly placement: RuntimeInputPlacement;
   readonly recordEvent?: (event: AgentEvent) => void;
@@ -130,6 +137,7 @@ async function drainDurableRuntimeInput({
             commitAndAckDurableThreadInput({
               buffer: durableEvents,
               executionHost,
+              executionRun,
               record,
               state,
               threadKey,

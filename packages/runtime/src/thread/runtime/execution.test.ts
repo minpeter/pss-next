@@ -37,7 +37,10 @@ describe("thread execution run lifecycle helpers", () => {
       status: "running",
     });
 
-    await cancelThreadExecutionRun({ executionHost: host, runId });
+    await cancelThreadExecutionRun({
+      cancellation: { kind: "owned", leaseId: null, runId },
+      executionHost: host,
+    });
     await expect(host.store.turns.get(runId)).resolves.toMatchObject({
       status: "cancelled",
     });
@@ -63,7 +66,10 @@ describe("thread execution run lifecycle helpers", () => {
         threadKey: "terminal-thread",
       });
 
-      await cancelThreadExecutionRun({ executionHost: host, runId });
+      await cancelThreadExecutionRun({
+        cancellation: { kind: "unleased", runId },
+        executionHost: host,
+      });
       await expect(host.store.turns.get(runId)).resolves.toMatchObject({
         status,
       });

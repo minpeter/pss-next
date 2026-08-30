@@ -1,6 +1,6 @@
 import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { AgentHost, HostScheduler } from "../../../execution";
-import type { ThreadStore } from "../../../index";
+import type { ThreadStore } from "../../../thread/store/types";
 import type {
   SqlStorageCursorLike as SqlStorageCursorLikeType,
   SqlStorage as SqlStorageType,
@@ -104,6 +104,11 @@ export function createDurableObjectStorageHost({
   storage,
   scheduler = createDurableObjectScheduledWorkScheduler({ prefix, storage }),
 }: DurableObjectStorageHostOptions): AgentHost {
+  if (threadStore !== undefined) {
+    throw new TypeError(
+      "Durable Object storage host external threadStore cannot join its atomic transactions."
+    );
+  }
   const store = new ExecutionStoreImplementation({
     maxPayloadBytes,
     prefix,
@@ -116,7 +121,7 @@ export function createDurableObjectStorageHost({
     }),
     diagnostics: noopRuntimeDiagnostics,
     scheduler,
-    store: threadStore ? executionStoreWithThreads(store, threadStore) : store,
+    store,
   };
 }
 
@@ -174,29 +179,4 @@ export async function ackScheduledDurableObjectThreadPrompt(
   options: { readonly prefix?: string } = {}
 ): Promise<void> {
   await ackScheduledThreadPrompt(storage, prompt, options, defaultPrefix);
-}
-
-function executionStoreWithThreads(
-  store: AgentHost["store"],
-  threads: ThreadStore
-): AgentHost["store"] {
-  return {
-    events: store.events,
-    inputs: store.inputs,
-    notifications: store.notifications,
-    checkpoints: store.checkpoints,
-    threads,
-    turns: store.turns,
-    transaction: (fn) =>
-      store.transaction((tx) =>
-        fn({
-          events: tx.events,
-          inputs: tx.inputs,
-          notifications: tx.notifications,
-          checkpoints: tx.checkpoints,
-          threads,
-          turns: tx.turns,
-        })
-      ),
-  };
 }

@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createRetryHost } from "./fiber-retry-test-support";
+import type { SqlStorage } from "../../sql/ports/storage-port";
+import type { DurableObjectTransactionStorage } from "../../storage/durable-object/durable-object-storage";
+import {
+  isSqlStorage,
+  withSqlStorage,
+} from "../../storage/durable-object/durable-object-storage";
+import {
+  createRetryHost,
+  prepareRetryAuthority,
+  seedRetryableNotification,
+  seedRetryableRun,
+} from "./fiber-retry-test-support";
 import {
   ackScheduledCloudflareAgentsRun,
   ackScheduledCloudflareAgentsThreadPrompt,
@@ -24,10 +35,13 @@ describe("Cloudflare Agents scheduled ack parity", () => {
       retryRunAfterMs: 1000,
       storage,
     });
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableRun(host, runId);
 
-    await expect(
-      retry(cloudflareAgentsRunPayload({ prefix, runId }), "event-budget")
-    ).resolves.toBe(true);
+    const payload = cloudflareAgentsRunPayload({ prefix, runId });
+    const authority = await prepareRetryAuthority(host, payload);
+
+    await expect(retry(payload, "event-budget", authority)).resolves.toBe(true);
     await expect(
       listScheduledCloudflareAgentsRuns(storage, { prefix })
     ).resolves.toEqual([runId]);
@@ -53,17 +67,19 @@ describe("Cloudflare Agents scheduled ack parity", () => {
       retryRunAfterMs: 1000,
       storage,
     });
+    const payload = cloudflareAgentsThreadPayload({
+      ...prompt,
+      prefix,
+      runId: "background:bg_thread_retry_ack",
+    });
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableNotification(host, payload.runId, {
+      leaseUntilMs: null,
+      status: "running",
+    });
+    const authority = await prepareRetryAuthority(host, payload);
 
-    await expect(
-      retry(
-        cloudflareAgentsThreadPayload({
-          ...prompt,
-          prefix,
-          runId: "background:bg_thread_retry_ack",
-        }),
-        "event-budget"
-      )
-    ).resolves.toBe(true);
+    await expect(retry(payload, "event-budget", authority)).resolves.toBe(true);
     const listed = await listScheduledCloudflareAgentsThreadPrompts(storage, {
       prefix,
     });
@@ -80,6 +96,98 @@ describe("Cloudflare Agents scheduled ack parity", () => {
     await expect(
       listScheduledCloudflareAgentsThreadPrompts(storage, { prefix })
     ).resolves.toEqual([]);
+  });
+
+  it("leaves no retry side effects when the owned transition conflicts", async () => {
+    // Given: an eligible unleased notification whose status changes after the
+    // transaction eligibility read but before its owned transition read.
+    const cloudflareAgent = createFakeCloudflareAgent();
+    const storage = cloudflareAgent.durableObjectContext.storage;
+    const transaction = storage.transaction?.bind(storage);
+    if (!transaction) {
+      throw new TypeError("Test storage requires transaction support.");
+    }
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    const runId = "background:bg_transition_conflict";
+    await seedRetryableNotification(host, runId);
+    const initialRun = await host.store.turns.get(runId);
+    if (!initialRun) {
+      throw new TypeError("Test run disappeared before conflict injection.");
+    }
+    const { lease: _lease, ...runWithoutLease } = initialRun;
+    const runningRun = { ...runWithoutLease, status: "running" as const };
+    await host.store.turns.update(runningRun);
+    const completedRun = { ...runningRun, status: "completed" as const };
+    const conflictedStorage = new Proxy(storage, {
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        if (property !== "transaction") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return async <T>(
+          fn: (tx: DurableObjectTransactionStorage) => Promise<T>
+        ): Promise<T> =>
+          await transaction(async (tx) => {
+            if (!isSqlStorage(tx.sql)) {
+              throw new TypeError("Test transaction requires SQL storage.");
+            }
+            const sql = tx.sql;
+            let runReads = 0;
+            const conflictedSql: SqlStorage = {
+              exec: (query, ...bindings) => {
+                const readsRun = query.includes(
+                  "SELECT record FROM pss_run WHERE prefix = ? AND run_id = ?"
+                );
+                if (readsRun) {
+                  runReads += 1;
+                }
+                if (readsRun && runReads === 2) {
+                  sql.exec(
+                    "INSERT INTO pss_run (prefix, run_id, record, dedupe_key, parent_run_id, root_run_id, thread_key, status, checkpoint_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(prefix, run_id) DO UPDATE SET record = excluded.record",
+                    prefix,
+                    runId,
+                    JSON.stringify(completedRun),
+                    completedRun.dedupeKey ?? null,
+                    completedRun.parentRunId ?? null,
+                    completedRun.rootRunId,
+                    completedRun.threadKey,
+                    completedRun.status,
+                    completedRun.checkpointVersion,
+                    1,
+                    1
+                  );
+                }
+                return sql.exec(query, ...bindings);
+              },
+            };
+            return await fn(withSqlStorage(tx, conflictedSql));
+          });
+      },
+    });
+    const retry = createCloudflareAgentsFiberRetryScheduler({
+      cloudflareAgent,
+      storage: conflictedStorage,
+    });
+
+    const payload = cloudflareAgentsRunPayload({ prefix, runId });
+    const authority = await prepareRetryAuthority(host, payload);
+
+    // When: retry loses its owned transition after eligibility passed.
+    const retried = await retry(payload, "event-budget", authority);
+
+    // Then: the winner remains terminal and no schedule or release escapes.
+    expect(retried).toBe(false);
+    expect(cloudflareAgent.scheduled).toEqual([]);
+    await expect(
+      listScheduledCloudflareAgentsRuns(storage, { prefix })
+    ).resolves.toEqual([]);
+    await expect(host.store.turns.get(runId)).resolves.toMatchObject({
+      runId,
+      status: "completed",
+    });
+    await expect(
+      host.store.notifications.getByIdempotencyKey(`dedupe:${runId}`)
+    ).resolves.toMatchObject({ runId, status: "acked" });
   });
 
   it("does not leave retry side effects when notification retry preparation is not claimable", async () => {

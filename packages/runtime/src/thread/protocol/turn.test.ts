@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "./events";
-import { BufferedAgentTurn } from "./turn";
+import { BufferedAgentTurn, bindTurnExecutionRun } from "./turn";
 
 const expectPending = async (promise: Promise<unknown>) => {
   const marker = Symbol("pending");
@@ -40,11 +40,11 @@ describe("AgentTurn", () => {
     const local = new BufferedAgentTurn();
     expect(local.runId).toBeUndefined();
 
-    local.bindRunId("run-1");
-    local.bindRunId("run-1");
+    bindTurnExecutionRun(local, "run-1");
+    bindTurnExecutionRun(local, "run-1");
 
     expect(local.runId).toBe("run-1");
-    expect(() => local.bindRunId("run-2")).toThrow(
+    expect(() => bindTurnExecutionRun(local, "run-2")).toThrow(
       "AgentTurn is already bound to run id run-1"
     );
   });

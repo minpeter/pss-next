@@ -2,7 +2,15 @@ import type {
   Checkpoint,
   CheckpointStore,
   CheckpointWriteResult,
+  LeaseFencedCheckpointStore,
+  LeaseFencedCheckpointWriteOptions,
+  LeaseFencedCheckpointWriteResult,
+  TurnRecord,
 } from "../../../../execution";
+import {
+  decideCheckpointVersionWrite,
+  decideLeaseFencedCheckpointWrite,
+} from "../../../../execution/host/checkpoint-write-decision";
 import type { SqlStorage } from "../../sql/ports/storage-port";
 import type { DurableObjectStorage } from "../durable-object/durable-object-storage";
 import { withTransaction } from "../durable-object/sql-access";
@@ -37,7 +45,9 @@ interface CheckpointRow {
  * transaction is part of that transaction, per the Durable Object SQLite storage
  * API.)
  */
-export class DurableObjectSqliteCheckpointStore implements CheckpointStore {
+export class DurableObjectSqliteCheckpointStore
+  implements CheckpointStore, LeaseFencedCheckpointStore
+{
   readonly #maxPayloadBytes: number;
   readonly #prefix: string;
   readonly #sql: SqlStorage;
@@ -68,50 +78,49 @@ export class DurableObjectSqliteCheckpointStore implements CheckpointStore {
     this.#ensureSchema();
     return await withTransaction(this.#storage, async (storage) => {
       const run = await getRun(storage, this.#prefix, checkpoint.runId);
-      const currentVersion = run?.checkpointVersion ?? 0;
-      if (currentVersion !== options.expectedVersion) {
-        return {
-          currentVersion,
-          ok: false,
-          reason: "stale-version",
-        };
-      }
-
-      const key = this.#rowKey(checkpoint.runId);
-      const serializedCheckpoint = writeJsonPayloadToSqlRows(
-        this.#sql,
-        this.#payloadLocation(key, checkpoint.version),
-        "checkpoint",
-        checkpoint,
-        this.#maxPayloadBytes
+      const decision = decideCheckpointVersionWrite(
+        run?.checkpointVersion ?? 0,
+        options.expectedVersion
       );
-      this.#sql.exec(
-        "INSERT INTO pss_checkpoint (run_key, version, checkpoint) VALUES (?, ?, ?)",
-        key,
-        checkpoint.version,
-        serializedCheckpoint
-      );
-      if (run) {
-        await putRun(
-          storage,
-          this.#prefix,
-          {
-            ...run,
-            checkpointVersion: checkpoint.version,
-          },
-          { maxPayloadBytes: this.#maxPayloadBytes }
-        );
+      if (!decision.ok) {
+        return decision;
       }
+      await this.#persist(storage, checkpoint, run);
       return { ok: true, version: checkpoint.version };
     });
   }
 
-  latest(runId: string): Promise<Checkpoint | null> {
+  async appendFenced(
+    checkpoint: Checkpoint,
+    options: LeaseFencedCheckpointWriteOptions
+  ): Promise<LeaseFencedCheckpointWriteResult> {
     this.#ensureSchema();
+    return await withTransaction(this.#storage, async (storage) => {
+      const decision = decideLeaseFencedCheckpointWrite(
+        checkpoint.runId,
+        await getRun(storage, this.#prefix, checkpoint.runId),
+        checkpoint,
+        options
+      );
+      if (!decision.ok) {
+        return decision;
+      }
+      await this.#persist(storage, checkpoint, decision.run);
+      return { ok: true, version: checkpoint.version };
+    });
+  }
+
+  async latest(runId: string): Promise<Checkpoint | null> {
+    this.#ensureSchema();
+    const run = await getRun(this.#storage, this.#prefix, runId);
+    if (!(run && run.runId === runId && run.checkpointVersion > 0)) {
+      return null;
+    }
     const rows = this.#sql
       .exec<CheckpointRow>(
-        "SELECT version, checkpoint FROM pss_checkpoint WHERE run_key = ? ORDER BY version DESC LIMIT 1",
-        this.#rowKey(runId)
+        "SELECT version, checkpoint FROM pss_checkpoint WHERE run_key = ? AND version = ? LIMIT 1",
+        this.#rowKey(runId),
+        run.checkpointVersion
       )
       .toArray();
     const row = rows[0];
@@ -122,9 +131,36 @@ export class DurableObjectSqliteCheckpointStore implements CheckpointStore {
           row.checkpoint
         )
       : null;
-    return Promise.resolve(
-      checkpoint ? (JSON.parse(checkpoint) as Checkpoint) : null
+    return checkpoint ? (JSON.parse(checkpoint) as Checkpoint) : null;
+  }
+
+  async #persist(
+    storage: Parameters<typeof putRun>[0],
+    checkpoint: Checkpoint,
+    run: TurnRecord | null
+  ): Promise<void> {
+    const key = this.#rowKey(checkpoint.runId);
+    const serializedCheckpoint = writeJsonPayloadToSqlRows(
+      this.#sql,
+      this.#payloadLocation(key, checkpoint.version),
+      "checkpoint",
+      checkpoint,
+      this.#maxPayloadBytes
     );
+    this.#sql.exec(
+      "INSERT INTO pss_checkpoint (run_key, version, checkpoint) VALUES (?, ?, ?)",
+      key,
+      checkpoint.version,
+      serializedCheckpoint
+    );
+    if (run) {
+      await putRun(
+        storage,
+        this.#prefix,
+        { ...run, checkpointVersion: checkpoint.version },
+        { maxPayloadBytes: this.#maxPayloadBytes }
+      );
+    }
   }
 
   #rowKey(runId: string): string {

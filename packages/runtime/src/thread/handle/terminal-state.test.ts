@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { createAgent } from "../../agent/core/agent";
+import { createInMemoryHost } from "../../platform/memory";
 import { hostWithThreads } from "../../testing/host-with-threads";
 import {
   assistantMessage,
@@ -105,7 +106,9 @@ describe("Agent thread terminal state", () => {
     const llmStarted = createDeferred();
     const llmGate = createDeferred();
     const seenHistory: ModelMessage[][] = [];
+    const host = createInMemoryHost();
     const agent = await createAgent({
+      host,
       model: createCallbackModel(async ({ history }) => {
         seenHistory.push([...history]);
         if (seenHistory.length === 1) {
@@ -116,12 +119,17 @@ describe("Agent thread terminal state", () => {
       }),
     });
     const thread = agent.thread("delete-active");
-    const deletedRun = collect(await thread.send("first"));
+    const deletedTurn = await thread.send("first");
+    const deletedRun = collect(deletedTurn);
 
     await llmStarted.promise;
-    await thread.delete();
+    const deletion = thread.delete();
     llmGate.resolve();
+    await deletion;
     await deletedRun;
+    await expect(
+      host.store.turns.get(deletedTurn.runId ?? "")
+    ).resolves.toBeNull();
     await collect(await agent.thread("delete-active").send("fresh"));
 
     expect(seenHistory.at(-1)).toEqual([
@@ -131,12 +139,14 @@ describe("Agent thread terminal state", () => {
 
   it("closes the active run while thread delete is pending", async () => {
     const llmStarted = createDeferred();
+    const llmGate = createDeferred();
     const store = new BlockingDeleteStore();
     const agent = await createAgent({
       host: hostWithThreads(store),
-      model: createCallbackModel(() => {
+      model: createCallbackModel(async () => {
         llmStarted.resolve();
-        return new Promise<never>(() => undefined);
+        await llmGate.promise;
+        return [assistantMessage("DONE")];
       }),
     });
     const thread = agent.thread("delete-pending-active");
@@ -144,8 +154,9 @@ describe("Agent thread terminal state", () => {
 
     await llmStarted.promise;
     const deletion = thread.delete();
-    await store.deleteStarted.promise;
     const events = await withShortTimeout(collecting);
+    llmGate.resolve();
+    await store.deleteStarted.promise;
     store.allowDelete.resolve();
     await deletion;
 

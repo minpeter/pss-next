@@ -92,6 +92,7 @@ export type {
   CloudflareAgentsFiberRecoveryResult,
   CloudflareAgentsFiberStatus,
   CloudflareAgentsPlatformAgent,
+  CloudflareAgentsResumeOptions,
   CloudflareAgentsResumeRun,
   CloudflareAgentsRetryFiber,
   CloudflareAgentsRetryReason,

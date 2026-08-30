@@ -6,6 +6,37 @@ export interface AgentTurn {
   readonly runId?: string | undefined;
 }
 
+export interface TurnExecutionOwnership {
+  readonly leaseId: string | null;
+  readonly runId: string;
+}
+
+const executionOwnershipByTurn = new WeakMap<
+  AgentTurn,
+  TurnExecutionOwnership
+>();
+
+export function bindTurnExecutionRun(
+  turn: AgentTurn,
+  runId: string,
+  leaseId: string | null = null
+): void {
+  const existing = executionOwnershipByTurn.get(turn);
+  if (existing === undefined) {
+    executionOwnershipByTurn.set(turn, { leaseId, runId });
+    return;
+  }
+  if (existing.runId !== runId || existing.leaseId !== leaseId) {
+    throw new Error(`AgentTurn is already bound to run id ${existing.runId}`);
+  }
+}
+
+export function turnExecutionOwnership(
+  turn: AgentTurn
+): TurnExecutionOwnership | undefined {
+  return executionOwnershipByTurn.get(turn);
+}
+
 interface QueuedEvent {
   readonly ack?: () => void;
   readonly event: AgentEvent;
@@ -73,24 +104,15 @@ export class BufferedAgentTurn implements AgentTurn {
   readonly #channel = createChannelMachine();
   readonly #consumer = createConsumerMachine();
   readonly #events: QueuedEvent[] = [];
-  #runId: string | undefined;
-
   constructor(runId?: string) {
-    this.#runId = runId;
+    if (runId !== undefined) {
+      bindTurnExecutionRun(this, runId);
+    }
+    Object.preventExtensions(this);
   }
 
   get runId(): string | undefined {
-    return this.#runId;
-  }
-
-  bindRunId(runId: string): void {
-    if (this.#runId === undefined) {
-      this.#runId = runId;
-      return;
-    }
-    if (this.#runId !== runId) {
-      throw new Error(`AgentTurn is already bound to run id ${this.#runId}`);
-    }
+    return executionOwnershipByTurn.get(this)?.runId;
   }
 
   emit(event: AgentEvent): void {

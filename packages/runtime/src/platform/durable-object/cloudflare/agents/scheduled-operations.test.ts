@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  createRetryHost,
+  prepareRetryAuthority,
+  seedRetryableNotification,
+} from "./fiber-retry-test-support";
 import type { CloudflareAgentsFiberPayload } from "./index";
 import {
   ackScheduledCloudflareAgentsRun,
@@ -146,18 +151,21 @@ describe("Cloudflare Agents scheduled operations parity", () => {
       storage,
     });
 
-    await expect(
-      retry(
-        cloudflareAgentsThreadPayload({
-          idempotencyKey: "source:thread:1",
-          notificationId: "notification:1",
-          prefix: "tenant-a",
-          runId: "background:bg_thread_retry",
-          threadKey: "thread-a",
-        }),
-        "event-budget"
-      )
-    ).resolves.toBe(true);
+    const payload = cloudflareAgentsThreadPayload({
+      idempotencyKey: "source:thread:1",
+      notificationId: "notification:1",
+      prefix: "tenant-a",
+      runId: "background:bg_thread_retry",
+      threadKey: "thread-a",
+    });
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableNotification(host, payload.runId, {
+      leaseUntilMs: null,
+      status: "running",
+    });
+    const authority = await prepareRetryAuthority(host, payload);
+
+    await expect(retry(payload, "event-budget", authority)).resolves.toBe(true);
 
     expect(cloudflareAgent.scheduled).toMatchObject([
       {

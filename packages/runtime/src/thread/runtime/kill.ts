@@ -6,7 +6,10 @@ import {
 } from "../input/runtime-input";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import { cancelQueuedDurableThreadInputs } from "./durable-input-cancellation";
-import { cancelThreadExecutionRun } from "./execution";
+import {
+  cancellationForExecutionRun,
+  cancelThreadExecutionRun,
+} from "./execution";
 
 interface CloseKilledRuntimeInputsOptions {
   readonly activeRuntimeInput: RuntimeInputState | undefined;
@@ -35,8 +38,8 @@ export async function closeKilledRuntimeInputs({
   );
 
   // Durable cancellation must succeed before queued callers are terminalized.
-  // Active callers close promptly on abort, while queued ownership remains
-  // protective and retryable if cancellation fails.
+  // The active run settles its abort status, thread state, and terminal event
+  // atomically in its processor; only queued runs cancel directly here.
   await cancelQueuedDurableThreadInputs({
     executionHost,
     items: queuedItems,
@@ -49,16 +52,17 @@ export async function closeKilledRuntimeInputs({
     item.run.close();
   }
 
-  await Promise.all([
-    cancelThreadExecutionRun({
-      executionHost,
-      runId: runToClose?.runId,
-    }),
-    ...nonDurableRuns.map((item) =>
-      cancelThreadExecutionRun({
-        executionHost,
-        executionRun: item.executionRun,
-      })
-    ),
-  ]);
+  await Promise.all(
+    nonDurableRuns.map((item) => {
+      const executionCancellation = cancellationForExecutionRun(
+        item.executionRun
+      );
+      const cancellation =
+        executionCancellation ??
+        (item.run.runId
+          ? { kind: "unleased" as const, runId: item.run.runId }
+          : undefined);
+      return cancelThreadExecutionRun({ cancellation, executionHost });
+    })
+  );
 }

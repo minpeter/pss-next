@@ -2,8 +2,22 @@ import type { RuntimeDiagnosticsSink } from "../../diagnostics";
 import type { HostAttachmentStore } from "../../thread/input/attachments";
 import type { AgentEvent, UserInput } from "../../thread/protocol/events";
 import type { ThreadStore } from "../../thread/store/types";
+import type {
+  CheckpointStore,
+  LeaseFencedCheckpointStore,
+} from "./checkpoint-types";
 import type { ResumeThreadOptions } from "./scheduler-options";
 import type { ThreadInputInbox } from "./thread-input-types";
+
+export type {
+  Checkpoint,
+  CheckpointPhase,
+  CheckpointStore,
+  CheckpointWriteResult,
+  LeaseFencedCheckpointStore,
+  LeaseFencedCheckpointWriteOptions,
+  LeaseFencedCheckpointWriteResult,
+} from "./checkpoint-types";
 
 export type {
   AdmitReceipt,
@@ -19,6 +33,16 @@ export type {
   ThreadInputRecord,
   ThreadInputStatus,
 } from "./thread-input-types";
+
+import type {
+  TurnTransitionResult,
+  TurnTransitionUpdate,
+} from "./turn-transition-result";
+
+export type {
+  TurnTransitionResult,
+  TurnTransitionUpdate,
+} from "./turn-transition-result";
 
 /** Single host contract: persistence, scheduling, and optional attachments. */
 export interface AgentHost {
@@ -48,9 +72,18 @@ export type TurnStatus =
   | "running"
   | "suspended";
 
+/**
+ * Captured authority for a turn attempt.
+ *
+ * `leaseUntilMs` is the deadline after which another worker may atomically
+ * replace this claim. Time passing alone does not revoke `leaseId`; the owner
+ * remains authoritative until a successful replacement claim persists a new
+ * lease ID or a terminal transition settles the run.
+ */
 export interface TurnLease {
   readonly attempt: number;
   readonly leaseId: string;
+  /** Reclaim deadline, not a hard write-expiry timestamp. */
   readonly leaseUntilMs: number;
 }
 
@@ -94,36 +127,6 @@ export interface ClaimTurnOptions {
   readonly leaseMs: number;
   readonly nowMs: number;
 }
-
-export type CheckpointPhase =
-  | "after-model"
-  | "after-notification"
-  | "after-tool"
-  | "before-child-run"
-  | "before-model"
-  | "before-notification"
-  | "before-tool"
-  | "child-linked"
-  | "suspended";
-
-export interface Checkpoint {
-  readonly checkpointId: string;
-  readonly childRunId?: string;
-  readonly pendingToolCall?: unknown;
-  readonly phase: CheckpointPhase;
-  readonly runId: string;
-  readonly runtimeState: unknown;
-  readonly threadSnapshot: unknown;
-  readonly version: number;
-}
-
-export type CheckpointWriteResult =
-  | { readonly ok: true; readonly version: number }
-  | {
-      readonly currentVersion: number;
-      readonly ok: false;
-      readonly reason: "stale-version";
-    };
 
 /**
  * Cursor scoped to a single run event log.
@@ -199,15 +202,18 @@ export interface TurnStore {
   get(runId: string): Promise<TurnRecord | null>;
   getByDedupeKey(dedupeKey: string): Promise<TurnRecord | null>;
   listByParentRunId(parentRunId: string): Promise<readonly TurnRecord[]>;
+  transition?(
+    runId: string,
+    expected: TurnTransitionExpected,
+    update: TurnTransitionUpdate
+  ): Promise<TurnTransitionResult>;
   update(record: TurnRecord): Promise<TurnRecord>;
 }
 
-export interface CheckpointStore {
-  append(
-    checkpoint: Checkpoint,
-    options: { readonly expectedVersion: number }
-  ): Promise<CheckpointWriteResult>;
-  latest(runId: string): Promise<Checkpoint | null>;
+export interface TurnTransitionExpected {
+  readonly checkpointVersion?: number;
+  readonly leaseId?: string | null;
+  readonly status?: TurnStatus;
 }
 
 export interface EventStore {
@@ -243,6 +249,8 @@ export interface HostStorePorts {
   readonly checkpoints: CheckpointStore;
   readonly events: EventStore;
   readonly inputs: ThreadInputInbox;
+  /** Atomic lease-fenced checkpoint capability required by runtime writes. */
+  readonly leaseFencedCheckpoints?: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
   readonly threadEvents?: ThreadEventLog;
   readonly threads: ThreadStore;

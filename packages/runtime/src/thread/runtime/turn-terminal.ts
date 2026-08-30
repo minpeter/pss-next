@@ -6,15 +6,16 @@ import {
 import type { AgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import type { ThreadState } from "../state/thread-state";
+import type { ThreadExecutionRun } from "./execution";
 import type { ThreadEventDispatcher } from "./thread-event-dispatcher";
 import {
-  commitThreadStateAndEvents,
+  commitTerminalThreadStateAndEvents,
   type DurableThreadEventBuffer,
 } from "./thread-event-log";
 
 export async function closeTurnWithDurableTerminalEvent({
   buffer,
-  completeExecution,
+  executionRun,
   deactivateRun,
   events,
   executionHost,
@@ -26,10 +27,8 @@ export async function closeTurnWithDurableTerminalEvent({
   threadKey,
 }: {
   readonly buffer: DurableThreadEventBuffer;
-  readonly completeExecution: (
-    status: "cancelled" | "completed" | "error"
-  ) => Promise<void>;
   readonly deactivateRun: () => void;
+  readonly executionRun?: ThreadExecutionRun;
   readonly events: ThreadEventDispatcher;
   readonly executionHost?: AgentHost;
   readonly recordEvent: (event: AgentEvent) => void;
@@ -43,13 +42,14 @@ export async function closeTurnWithDurableTerminalEvent({
   closeRuntimeInput(runtimeInput, terminalEvent.type);
   deactivateRun();
   recordEvent(terminalEvent);
-  await commitThreadStateAndEvents({
+  await commitTerminalThreadStateAndEvents({
     buffer,
     executionHost,
+    executionRun,
     state,
+    status: result === "aborted" ? "cancelled" : "completed",
     threadKey,
   });
-  await completeExecution(result === "aborted" ? "cancelled" : "completed");
   events.emitProcessedEvent(run, terminalEvent);
 }
 

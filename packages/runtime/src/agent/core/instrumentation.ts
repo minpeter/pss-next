@@ -1,4 +1,10 @@
-import type { AgentTurn } from "../../thread/protocol/turn";
+import type { AgentEvent } from "../../thread/protocol/events";
+import {
+  type AgentTurn,
+  bindTurnExecutionRun,
+  type TurnExecutionOwnership,
+  turnExecutionOwnership,
+} from "../../thread/protocol/turn";
 
 export type AgentInstrumentationOperation =
   | "follow-up"
@@ -39,10 +45,15 @@ export function applyAgentInstrumentations(
   instrumentations: readonly AgentInstrumentation[],
   context: AgentInstrumentationContext
 ): AgentTurn {
-  let wrapped = turn;
+  const ownership = turnExecutionOwnership(turn);
+  const runId = ownership?.runId ?? turn.runId;
+  let wrapped = createPublicAgentTurn(turn, runId, ownership);
   for (const instrumentation of instrumentations) {
-    wrapped = instrumentation.wrapTurn(wrapped, context);
-    assertAgentTurn(wrapped);
+    wrapped = createPublicAgentTurn(
+      instrumentation.wrapTurn(wrapped, context),
+      runId,
+      ownership
+    );
   }
   return wrapped;
 }
@@ -61,14 +72,46 @@ function assertAgentInstrumentation(
   }
 }
 
-function assertAgentTurn(value: unknown): asserts value is AgentTurn {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    typeof (value as { readonly events?: unknown }).events !== "function"
-  ) {
+function createPublicAgentTurn(
+  turn: unknown,
+  runId: string | undefined,
+  ownership: TurnExecutionOwnership | undefined
+): AgentTurn {
+  if (turn === null || typeof turn !== "object") {
     throw new TypeError(
       "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
     );
   }
+  const events = Reflect.get(turn, "events");
+  if (typeof events !== "function") {
+    throw new TypeError(
+      "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
+    );
+  }
+  const publicTurn = Object.freeze({
+    events: () => {
+      const iterable = Reflect.apply(events, turn, []);
+      if (!isAgentEventIterable(iterable)) {
+        throw new TypeError(
+          "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
+        );
+      }
+      return iterable;
+    },
+    ...(runId === undefined ? {} : { runId }),
+  });
+  if (ownership) {
+    bindTurnExecutionRun(publicTurn, ownership.runId, ownership.leaseId);
+  }
+  return publicTurn;
+}
+
+function isAgentEventIterable(
+  value: unknown
+): value is AsyncIterable<AgentEvent> {
+  return (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof Reflect.get(value, Symbol.asyncIterator) === "function"
+  );
 }

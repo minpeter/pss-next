@@ -2,10 +2,12 @@
 
 export {
   createInMemoryHost,
-  InMemoryExecutionScheduler,
   type InMemoryHost,
+} from "./execution/execution-host";
+export {
+  InMemoryExecutionScheduler,
   type MemoryScheduledThreadPrompt,
   type MemoryScheduledWorkListOptions,
-} from "./execution/execution-host";
+} from "./execution/scheduler";
 export { MemoryAttachmentStore } from "./storage/memory-attachment-store";
 export { MemoryThreadStore } from "./storage/memory-thread-store";

@@ -14,7 +14,7 @@ import {
 } from "../../thread/state/migrations";
 import type { ThreadStore } from "../../thread/store/types";
 import { stableAgentNamespace } from "../identity/namespace";
-import { resumeAgentTurn } from "../resume/resume";
+import { type ClaimedTurnRecord, resumeAgentTurn } from "../resume/resume";
 import { AgentHookRuntime } from "./hook-runtime";
 import { threadStoreForHost } from "./host-thread-store";
 import {
@@ -144,12 +144,18 @@ export class Agent {
    * `supportsResume` first when you need to distinguish unsupported from
    * not-found.
    */
-  async resume(runId: string): Promise<AgentTurn | null> {
+  async resume(
+    runId: string,
+    options: {
+      readonly claim?: object;
+    } = {}
+  ): Promise<AgentTurn | null> {
     return await resumeAgentTurn({
+      claim: options.claim,
       host: this.#host,
       ownerNamespace: this.#ownerNamespace,
-      resumeNotification: (notification) =>
-        this.#resumeNotification(notification, runId),
+      resumeNotification: (notification, run) =>
+        this.#resumeNotification(notification, run),
       runId,
     });
   }
@@ -221,12 +227,16 @@ export class Agent {
 
   async #resumeNotification(
     notification: NotificationRecord,
-    runId: string
+    run: ClaimedTurnRecord
   ): Promise<AgentTurn> {
     const turn = await this.#threadEntry(notification.threadKey).notify(
       notification.input,
       {
-        executionRun: { kind: "notification", runId: notification.runId },
+        executionRun: {
+          kind: "notification",
+          leaseId: run.lease.leaseId,
+          runId: notification.runId,
+        },
         observerEvents: notification.observerEvents,
         overlays: [
           ...(notification.overlays ?? []),
@@ -237,7 +247,7 @@ export class Agent {
     return this.#instrumentTurn(turn, {
       namespace: this.namespace,
       operation: "resume",
-      runId,
+      runId: run.runId,
       threadKey: notification.threadKey,
     });
   }

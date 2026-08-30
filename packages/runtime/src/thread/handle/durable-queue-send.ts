@@ -16,7 +16,7 @@ import {
   type QueuedRuntimeInput,
 } from "../input/runtime-input";
 import type { AgentEvent } from "../protocol/events";
-import type { BufferedAgentTurn } from "../protocol/turn";
+import { type BufferedAgentTurn, bindTurnExecutionRun } from "../protocol/turn";
 import { admitDurableThreadInput } from "../runtime/durable-input-admission";
 import {
   registerLiveThreadInput,
@@ -168,7 +168,7 @@ export async function createQueuedSendInput({
       const precreated = admission.executionRun;
       if (precreated) {
         executionRun = { kind: precreated.kind, runId: precreated.runId };
-        run.bindRunId(precreated.runId);
+        bindTurnExecutionRun(run, precreated.runId);
       }
     }
 

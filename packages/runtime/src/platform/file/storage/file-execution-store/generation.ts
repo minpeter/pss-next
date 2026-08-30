@@ -9,6 +9,7 @@ const DATA_DIRECTORIES = [
   "inputs",
   "notifications",
   "runs",
+  "scheduled-work",
   "thread-events",
   "threads",
 ] as const;
@@ -38,6 +39,22 @@ export async function copyDataDirectories(
 export async function currentDataDirectory(directory: string): Promise<string> {
   const generationId = await currentGenerationId(directory);
   return join(directory, GENERATIONS_DIRECTORY, generationId);
+}
+
+export async function migrateLegacyScheduledWork(
+  directory: string,
+  target: string
+): Promise<void> {
+  const source = join(directory, "scheduled-work");
+  try {
+    await cp(source, join(target, "scheduled-work"), { recursive: true });
+    await rm(source, { force: true, recursive: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 }
 
 async function currentGenerationId(directory: string): Promise<string> {

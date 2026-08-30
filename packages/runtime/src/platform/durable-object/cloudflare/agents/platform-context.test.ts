@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resumeAgentTurn } from "../../../../agent/resume/resume";
 import type { AgentHost } from "../../../../execution";
 import {
   type CloudflareAgentsResumeRun,
@@ -129,12 +130,21 @@ describe("Cloudflare Agents platform context", () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     const context = createCloudflarePlatformContext({
       cloudflareAgent,
-      createAgent: ({ prefix }) => ({
+      createAgent: ({ host, prefix }) => ({
         prefix,
-        resume: () => Promise.resolve(null),
+        resume: (runId, options) =>
+          resumeAgentTurn({
+            ...(options?.claim ? { claim: options.claim } : {}),
+            host,
+            ownerNamespace: prefix,
+            resumeNotification: (_notification, run) =>
+              Promise.resolve({ ...runWithText(run.runId), runId: run.runId }),
+            runId,
+          }),
       }),
       allowedPrefixes: ["scheduled-prefix"],
       defaultPrefix: "current-prefix",
+      drain: { maxEvents: 0 },
       durableObjectContext: cloudflareAgent.durableObjectContext,
       env: {},
     });
@@ -210,6 +220,7 @@ async function seedRetryableNotification(
     checkpointVersion: 0,
     dedupeKey,
     kind: "notification",
+    ownerNamespace: "scheduled-prefix",
     rootRunId: runId,
     runId,
     status: "queued",
@@ -219,8 +230,9 @@ async function seedRetryableNotification(
     idempotencyKey: dedupeKey,
     input: { text: "retry", type: "user-input" },
     notificationId: `notification:${runId}`,
+    ownerNamespace: "scheduled-prefix",
     runId,
-    status: "acked",
+    status: "pending",
     threadKey: "thread-a",
   });
 }

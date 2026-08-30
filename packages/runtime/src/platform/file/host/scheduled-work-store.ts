@@ -5,6 +5,11 @@ import {
   threadPromptScheduledWorkId,
 } from "../../../execution/scheduled-work";
 import {
+  currentDataDirectory,
+  migrateLegacyScheduledWork,
+} from "../storage/file-execution-store/generation";
+import { withFileLock } from "../storage/file-execution-store/lock";
+import {
   fileForScheduledWork,
   parseStoredScheduledRunWork,
   parseStoredScheduledThreadPromptWork,
@@ -26,53 +31,65 @@ export async function appendScheduledNodeRun(
   runId: string,
   options: NodeScheduledWorkAppendOptions = {}
 ): Promise<void> {
-  await insertScheduledWork(directory, "run", runId, runId, options);
+  await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    await insertScheduledWork(dataDirectory, "run", runId, runId, options);
+  });
 }
 
 export async function appendScheduledNodeThreadPrompt(
   directory: string,
   prompt: NodeScheduledThreadPrompt
 ): Promise<void> {
-  await insertScheduledWork(
-    directory,
-    "thread-prompt",
-    threadPromptScheduledWorkId(prompt),
-    prompt
-  );
+  await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    await insertScheduledWork(
+      dataDirectory,
+      "thread-prompt",
+      threadPromptScheduledWorkId(prompt),
+      prompt
+    );
+  });
 }
 
 export async function listScheduledNodeRuns(
   directory: string,
   options: NodeScheduledWorkListOptions = {}
 ): Promise<readonly string[]> {
-  const rows = await selectScheduledRunWork(directory, options);
-  return rows.map((row) => row.payload);
+  return await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    const rows = await selectScheduledRunWork(dataDirectory, options);
+    return rows.map((row) => row.payload);
+  });
 }
 
 export async function ackScheduledNodeRun(
   directory: string,
   runId: string
 ): Promise<void> {
-  await deleteScheduledWork(directory, "run", runId);
+  await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    await deleteScheduledWork(dataDirectory, "run", runId);
+  });
 }
 
 export async function listScheduledNodeThreadPrompts(
   directory: string,
   options: NodeScheduledWorkListOptions = {}
 ): Promise<readonly NodeScheduledThreadPrompt[]> {
-  const rows = await selectScheduledThreadPromptWork(directory, options);
-  return rows.map((row) => row.payload);
+  return await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    const rows = await selectScheduledThreadPromptWork(dataDirectory, options);
+    return rows.map((row) => row.payload);
+  });
 }
 
 export async function ackScheduledNodeThreadPrompt(
   directory: string,
   prompt: NodeScheduledThreadPrompt
 ): Promise<void> {
-  await deleteScheduledWork(
-    directory,
-    "thread-prompt",
-    threadPromptScheduledWorkId(prompt)
-  );
+  await withScheduledDataDirectory(directory, async (dataDirectory) => {
+    await deleteScheduledWork(
+      dataDirectory,
+      "thread-prompt",
+      threadPromptScheduledWorkId(prompt)
+    );
+  });
 }
 
 async function insertScheduledWork<T>(
@@ -102,11 +119,11 @@ async function insertScheduledWork<T>(
 }
 
 async function selectScheduledRunWork(
-  directory: string,
+  dataDirectory: string,
   options: NodeScheduledWorkListOptions
 ): Promise<readonly StoredScheduledRunWork[]> {
   return await selectScheduledWork(
-    directory,
+    dataDirectory,
     "run",
     options,
     parseStoredScheduledRunWork
@@ -114,11 +131,11 @@ async function selectScheduledRunWork(
 }
 
 async function selectScheduledThreadPromptWork(
-  directory: string,
+  dataDirectory: string,
   options: NodeScheduledWorkListOptions
 ): Promise<readonly StoredScheduledThreadPromptWork[]> {
   return await selectScheduledWork(
-    directory,
+    dataDirectory,
     "thread-prompt",
     options,
     parseStoredScheduledThreadPromptWork
@@ -174,6 +191,21 @@ async function deleteScheduledWork(
   workId: string
 ): Promise<void> {
   await rm(fileForScheduledWork(directory, kind, workId), { force: true });
+}
+
+async function withScheduledDataDirectory<T>(
+  directory: string,
+  operation: (dataDirectory: string) => Promise<T>
+): Promise<T> {
+  return await withFileLock(
+    join(directory, ".execution.lock"),
+    "File scheduled work",
+    async () => {
+      const current = await currentDataDirectory(directory);
+      await migrateLegacyScheduledWork(directory, current);
+      return await operation(current);
+    }
+  );
 }
 
 import { isNodeError } from "../../../internal/guards";

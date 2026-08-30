@@ -54,6 +54,18 @@ function createCheckpointSpyCloudflareHost(maxPayloadBytes: number): {
         },
         deleteThread: store.deleteThread.bind(store),
         events: store.events,
+        leaseFencedCheckpoints: {
+          appendFenced: async (checkpoint, options) => {
+            const result = await store.leaseFencedCheckpoints.appendFenced(
+              checkpoint,
+              options
+            );
+            if (result.ok) {
+              checkpoints.push(checkpoint);
+            }
+            return result;
+          },
+        },
         inputs: store.inputs,
         notifications: store.notifications,
         turns: store.turns,
