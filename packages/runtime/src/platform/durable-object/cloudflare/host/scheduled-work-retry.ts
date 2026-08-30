@@ -1,45 +1,80 @@
-import type { TurnRecord, TurnStatus } from "../../../../execution";
+import { type TurnStatus, transitionTurn } from "../../../../execution";
 import { createDurableObjectStorageHost as createCloudflareStorageHost } from "../../host/storage-host";
-import type { DurableObjectStorage as CloudflareDurableObjectStorage } from "../../storage/durable-object/durable-object-storage";
+import {
+  type DurableObjectStorage as CloudflareDurableObjectStorage,
+  withSqlStorage,
+} from "../../storage/durable-object/durable-object-storage";
+import { withTransaction } from "../../storage/durable-object/sql-access";
 
-export async function shouldRetryNotClaimableScheduledRun(
-  storage: CloudflareDurableObjectStorage,
-  prefix: string,
-  runId: string
-): Promise<boolean> {
-  const run = await createCloudflareStorageHost({
-    prefix,
-    storage,
-  }).store.turns.get(runId);
-  return (
-    run?.kind === "notification" &&
-    run.dedupeKey !== undefined &&
-    run.dedupeKey.length > 0 &&
-    isRetryableRunStatus(run.status) &&
-    !hasActiveLease(run)
-  );
+interface ScheduledNotificationRetry {
+  readonly allowActiveLease: boolean;
+  readonly allowNonNotification: boolean;
+  readonly leaseId: string | null;
+  readonly prefix: string;
+  readonly runId: string;
+  readonly schedule: (storage: CloudflareDurableObjectStorage) => Promise<void>;
+  readonly storage: CloudflareDurableObjectStorage;
 }
 
-export async function prepareScheduledNotificationRetry(
-  storage: CloudflareDurableObjectStorage,
-  prefix: string,
-  runId: string
-): Promise<boolean> {
-  const host = createCloudflareStorageHost({ prefix, storage });
+export async function prepareScheduledNotificationRetry({
+  allowActiveLease,
+  allowNonNotification,
+  leaseId,
+  prefix,
+  runId,
+  schedule,
+  storage,
+}: ScheduledNotificationRetry): Promise<boolean> {
   let prepared = false;
-  await host.store.transaction(async (tx) => {
+  await withTransaction(storage, async (txStorage) => {
+    const transactionStorage = withSqlStorage(
+      txStorage,
+      txStorage.sql ?? storage.sql
+    );
+    const tx = createCloudflareStorageHost({
+      prefix,
+      storage: transactionStorage,
+    }).store;
     const run = await tx.turns.get(runId);
-    if (run?.kind !== "notification" || !run.dedupeKey) {
+    if (run?.kind !== "notification") {
+      if (allowNonNotification) {
+        await schedule(transactionStorage);
+        prepared = true;
+      }
+      return;
+    }
+    const currentLeaseId = run.lease?.leaseId ?? null;
+    const recoversExpiredLease =
+      !allowActiveLease &&
+      leaseId === null &&
+      run.lease !== undefined &&
+      run.lease.leaseUntilMs <= Date.now();
+    if (
+      !(run.dedupeKey && isRetryableRunStatus(run.status)) ||
+      (!allowActiveLease &&
+        run.lease !== undefined &&
+        run.lease.leaseUntilMs > Date.now()) ||
+      (currentLeaseId !== leaseId && !recoversExpiredLease)
+    ) {
       return;
     }
 
-    const transition = await tx.turns.transition(
+    const transition = await transitionTurn(tx.turns, {
+      expected: {
+        leaseId: recoversExpiredLease ? currentLeaseId : leaseId,
+        status: run.status,
+      },
       runId,
-      { leaseId: run.lease?.leaseId, status: run.status },
-      retryableNotificationRun(run)
-    );
+      update: { lease: null, status: "queued" },
+    });
     if (!transition.ok) {
       return;
+    }
+    try {
+      await schedule(transactionStorage);
+    } catch (error) {
+      await tx.turns.update(run);
+      throw error;
     }
     await tx.notifications.releaseByIdempotencyKey(run.dedupeKey);
     prepared = true;
@@ -47,20 +82,11 @@ export async function prepareScheduledNotificationRetry(
   return prepared;
 }
 
-function isRetryableRunStatus(status: TurnStatus | undefined): boolean {
+function isRetryableRunStatus(status: TurnStatus): boolean {
   return (
     status === "leased" ||
     status === "queued" ||
     status === "running" ||
     status === "suspended"
   );
-}
-
-function hasActiveLease(run: TurnRecord): boolean {
-  return run.lease !== undefined && run.lease.leaseUntilMs > Date.now();
-}
-
-function retryableNotificationRun(run: TurnRecord): TurnRecord {
-  const { lease: _lease, ...runWithoutLease } = run;
-  return { ...runWithoutLease, status: "queued" };
 }

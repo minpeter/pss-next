@@ -1,3 +1,5 @@
+import { transitionTurn } from "../../execution/host/turn-status";
+import { TurnTransitionConflictError } from "../../execution/host/turn-transition-conflict";
 import type { AgentHost, TurnRecord } from "../../execution/host/types";
 import type { QueuedInput } from "../input/runtime-input";
 import { DurableThreadInputClaimError } from "./durable-input-acknowledgement";
@@ -85,14 +87,19 @@ async function cancelDurableItem(
   if (!(run && !isTerminalTurnStatus(run.status))) {
     return;
   }
-  const transition = await transaction.turns.transition(
+  const transition = await transitionTurn(transaction.turns, {
+    expected: {
+      leaseId: item.executionRun ? (item.executionRun.leaseId ?? null) : null,
+      status: run.status,
+    },
     runId,
-    { leaseId: run.lease?.leaseId, status: run.status },
-    { ...run, status: "cancelled" }
-  );
+    update: { status: "cancelled" },
+  });
   if (!transition.ok) {
-    throw new Error(
-      `Durable input run ${runId} cancellation failed: ${transition.reason}.`
+    throw new TurnTransitionConflictError(
+      runId,
+      "durable-input",
+      transition.reason
     );
   }
 }

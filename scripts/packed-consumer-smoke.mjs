@@ -10,6 +10,11 @@ const root = resolve(import.meta.dirname, "..");
 const temporary = await mkdtemp(join(tmpdir(), "pss-packed-consumer-"));
 
 try {
+  await writeFile(
+    join(temporary, "package.json"),
+    `${JSON.stringify({ name: "pss-packed-consumer", private: true })}\n`,
+    "utf8"
+  );
   const tarballs = [pack("packages/runtime"), pack("apps/coding-agent")];
   run(
     "npm",

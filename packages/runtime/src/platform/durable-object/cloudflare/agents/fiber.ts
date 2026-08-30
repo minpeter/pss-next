@@ -1,3 +1,7 @@
+import {
+  capturedResumedTurnLeaseId,
+  capturedResumeErrorLeaseId,
+} from "../../../../agent/resume/resume";
 import type { DurableObjectStorage as CloudflareDurableObjectStorage } from "../../storage/durable-object/durable-object-storage";
 import { drainAgentTurnWithBudget } from "../turn-drain";
 import { cloudflareAgentsDrainOptionsForPayload } from "./drain-options";
@@ -8,6 +12,7 @@ import {
   cloudflareAgentsFiberName,
   parseCloudflareAgentsFiberPayload,
 } from "./payload";
+import { captureCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import {
   areCloudflareAgentsPayloadsEquivalent,
   type CloudflareAgentsPayloadTrustOptions,
@@ -162,6 +167,10 @@ async function resumeAndDrain({
       });
     }
     resumed = true;
+    const resumedLeaseId = capturedResumedTurnLeaseId(turn);
+    if (resumedLeaseId !== undefined) {
+      captureCloudflareAgentsRetryLeaseId(payload, resumedLeaseId);
+    }
     const drainResult = await drainAgentTurnWithBudget(
       turn,
       await cloudflareAgentsDrainOptionsForPayload({ drain, payload, storage })
@@ -180,6 +189,10 @@ async function resumeAndDrain({
       resumed,
     };
   } catch (error) {
+    const resumedLeaseId = capturedResumeErrorLeaseId(error);
+    if (resumedLeaseId !== undefined) {
+      captureCloudflareAgentsRetryLeaseId(payload, resumedLeaseId);
+    }
     const result = await retryInterrupted({
       payload,
       reason: "error",

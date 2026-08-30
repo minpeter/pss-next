@@ -11,6 +11,7 @@ export type {
   DispatchedAgentNotification,
 } from "./dispatch/notification-dispatch";
 export { dispatchAgentNotification } from "./dispatch/notification-dispatch";
+export { UnsupportedCheckpointFencingError } from "./host/checkpoint-fencing";
 export {
   createEventCursor,
   createThreadEventCursor,
@@ -18,6 +19,7 @@ export {
 export { threadStoreFromHost } from "./host/host";
 export type { ResumeThreadOptions } from "./host/scheduler-options";
 export { ThreadInputDuplicateConflictError } from "./host/thread-input-conflict";
+export { transitionTurn } from "./host/turn-status";
 export type {
   AdmitReceipt,
   AdmitThreadInput,
@@ -25,7 +27,6 @@ export type {
   Checkpoint,
   CheckpointPhase,
   CheckpointStore,
-  CheckpointWriteOptions,
   CheckpointWriteResult,
   ClaimedThreadInput,
   ClaimThreadInputOptions,
@@ -37,6 +38,9 @@ export type {
   HostScheduler,
   HostStore,
   HostStoreTransaction,
+  LeaseFencedCheckpointStore,
+  LeaseFencedCheckpointWriteOptions,
+  LeaseFencedCheckpointWriteResult,
   NotificationClaimResult,
   NotificationInbox,
   NotificationRecord,
@@ -62,6 +66,7 @@ export type {
   TurnStore,
   TurnTransitionExpected,
   TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "./host/types";
 export type {
   DurableTurnInspectionResult,

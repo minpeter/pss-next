@@ -8,6 +8,7 @@ import { type AgentEvent, isStreamAgentEvent } from "../protocol/events";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import type { ThreadState } from "../state/thread-state";
 import { drainRuntimeInput } from "./drain";
+import type { ThreadExecutionRun } from "./execution";
 import type { ThreadEventDispatcher } from "./thread-event-dispatcher";
 import {
   type DurableThreadEventBuffer,
@@ -19,6 +20,7 @@ export async function emitTurnEvent({
   event,
   events,
   executionHost,
+  executionRun,
   attachmentStore,
   awaitBoundaries,
   run,
@@ -33,6 +35,7 @@ export async function emitTurnEvent({
   readonly awaitBoundaries: boolean;
   readonly events: ThreadEventDispatcher;
   readonly executionHost: AgentHost | undefined;
+  readonly executionRun?: ThreadExecutionRun;
   readonly recordEvent?: (event: AgentEvent) => void;
   readonly run: BufferedAgentTurn;
   readonly runtimeInput: RuntimeInputState;
@@ -45,6 +48,7 @@ export async function emitTurnEvent({
       await flushDurableThreadEvents({
         buffer: durableEvents,
         executionHost,
+        executionRun,
         threadKey,
       });
     });
@@ -75,6 +79,7 @@ export async function emitTurnEvent({
     durableEvents,
     events,
     executionHost,
+    executionRun,
     placement: event.type,
     recordEvent,
     run,

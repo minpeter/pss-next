@@ -3,6 +3,7 @@ import type {
   EventStore,
   HostStore,
   HostStoreTransaction,
+  LeaseFencedCheckpointStore,
   NotificationInbox,
   ThreadEventLog,
   ThreadInputInbox,
@@ -31,6 +32,7 @@ export class DurableObjectExecutionStore implements HostStore {
   readonly checkpoints: CheckpointStore;
   readonly events: EventStore;
   readonly inputs: ThreadInputInbox;
+  readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
   readonly threadEvents: ThreadEventLog;
   readonly turns: TurnStore;
@@ -52,11 +54,13 @@ export class DurableObjectExecutionStore implements HostStore {
     this.#prefix = prefix;
     this.#storage = storage;
     const payloadBudget = { maxPayloadBytes: this.#maxPayloadBytes };
-    this.checkpoints = new DurableObjectSqliteCheckpointStore(
+    const checkpoints = new DurableObjectSqliteCheckpointStore(
       storage,
       prefix,
       payloadBudget
     );
+    this.checkpoints = checkpoints;
+    this.leaseFencedCheckpoints = checkpoints;
     this.events = new DurableObjectSqliteEventStore(
       storage,
       prefix,

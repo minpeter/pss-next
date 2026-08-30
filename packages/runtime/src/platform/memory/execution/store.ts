@@ -1,10 +1,9 @@
 import type {
-  Checkpoint,
   CheckpointStore,
-  CheckpointWriteResult,
   EventStore,
   HostStore,
   HostStoreTransaction,
+  LeaseFencedCheckpointStore,
   NotificationInbox,
   ThreadEventLog,
   ThreadInputInbox,
@@ -17,52 +16,62 @@ import type {
   ThreadStore,
   ThreadStoreCommit,
 } from "../../../thread/store/types";
+import { InMemoryCheckpointStore } from "./checkpoint-store";
 import { InMemoryEventStore, InMemoryThreadEventLog } from "./event-stores";
 import { InMemoryThreadInputInbox } from "./inputs";
 import { InMemoryNotificationInbox } from "./notifications";
 import { InMemoryRunStore } from "./runs";
+import {
+  type MutationTransaction,
+  serializeCheckpointMutations,
+  serializeEventMutations,
+  serializeInputMutations,
+  serializeNotificationMutations,
+  serializeThreadEventMutations,
+  serializeThreadMutations,
+  serializeTurnMutations,
+} from "./serialized-ports";
 import type { ExecutionState } from "./state";
 import { cloneState, createEmptyState } from "./state";
 
 export class InMemoryExecutionStore implements HostStore {
   #state = createEmptyState();
   #transactionChain: Promise<void> = Promise.resolve();
-  readonly checkpoints: CheckpointStore = new InMemoryCheckpointStore(
-    () => this.#state
-  );
-  readonly events: EventStore = new InMemoryEventStore(() => this.#state);
-  readonly inputs: ThreadInputInbox = {
-    ack: async (record) =>
-      await this.transaction(async (tx) => await tx.inputs.ack(record)),
-    admit: async (input) =>
-      await this.transaction(async (tx) => await tx.inputs.admit(input)),
-    claimNext: async (threadKey, boundary, options) =>
-      await this.transaction(
-        async (tx) => await tx.inputs.claimNext(threadKey, boundary, options)
-      ),
-    markPromoted: async (record) =>
-      await this.transaction(
-        async (tx) => await tx.inputs.markPromoted(record)
-      ),
-    recoverClaims: async (threadKey, options) =>
-      await this.transaction(
-        async (tx) => await tx.inputs.recoverClaims(threadKey, options)
-      ),
-    releaseClaim: async (record) =>
-      await this.transaction(
-        async (tx) => await tx.inputs.releaseClaim(record)
-      ),
-  };
-  readonly notifications: NotificationInbox = new InMemoryNotificationInbox(
-    () => this.#state
-  );
-  readonly threadEvents: ThreadEventLog = new InMemoryThreadEventLog(
-    () => this.#state
-  );
-  readonly turns: TurnStore = new InMemoryRunStore(() => this.#state);
-  readonly threads: ThreadStore = new InMemoryExecutionThreadStore(
-    () => this.#state
-  );
+  readonly checkpoints: CheckpointStore;
+  readonly events: EventStore;
+  readonly inputs: ThreadInputInbox;
+  readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
+  readonly notifications: NotificationInbox;
+  readonly threadEvents: ThreadEventLog;
+  readonly turns: TurnStore;
+  readonly threads: ThreadStore;
+
+  constructor() {
+    const state = () => this.#state;
+    const run = async <T>(mutation: (tx: MutationTransaction) => Promise<T>) =>
+      await this.#enqueue(mutation);
+    const checkpoints = serializeCheckpointMutations(
+      new InMemoryCheckpointStore(state),
+      run
+    );
+    this.checkpoints = checkpoints;
+    this.leaseFencedCheckpoints = checkpoints;
+    this.events = serializeEventMutations(new InMemoryEventStore(state), run);
+    this.inputs = serializeInputMutations(run);
+    this.notifications = serializeNotificationMutations(
+      new InMemoryNotificationInbox(state),
+      run
+    );
+    this.threadEvents = serializeThreadEventMutations(
+      new InMemoryThreadEventLog(state),
+      run
+    );
+    this.turns = serializeTurnMutations(new InMemoryRunStore(state), run);
+    this.threads = serializeThreadMutations(
+      new InMemoryExecutionThreadStore(state),
+      run
+    );
+  }
   get sessions(): ThreadStore {
     return this.threads;
   }
@@ -76,6 +85,12 @@ export class InMemoryExecutionStore implements HostStore {
   async transaction<T>(
     fn: (tx: HostStoreTransaction) => Promise<T>
   ): Promise<T> {
+    return await this.#enqueue(async (tx) => await fn(tx));
+  }
+
+  async #enqueue<T>(
+    mutation: (tx: MutationTransaction) => Promise<T>
+  ): Promise<T> {
     const previousTransaction = this.#transactionChain;
     let releaseTransaction: () => void = () => undefined;
     this.#transactionChain = new Promise<void>((resolve) => {
@@ -85,7 +100,7 @@ export class InMemoryExecutionStore implements HostStore {
     const transactionState = cloneState(this.#state);
     const transactionStore = new InMemoryTransactionStore(transactionState);
     try {
-      const result = await fn(transactionStore);
+      const result = await mutation(transactionStore);
       this.#state = transactionState;
       return result;
     } finally {
@@ -98,15 +113,18 @@ class InMemoryTransactionStore implements HostStoreTransaction {
   readonly checkpoints: CheckpointStore;
   readonly events: EventStore;
   readonly inputs: ThreadInputInbox;
+  readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
   readonly threadEvents: ThreadEventLog;
-  readonly turns: TurnStore;
+  readonly turns: InMemoryRunStore;
   readonly threads: ThreadStore;
   readonly #state: ExecutionState;
 
   constructor(state: ExecutionState) {
     this.#state = state;
-    this.checkpoints = new InMemoryCheckpointStore(() => this.#state);
+    const checkpoints = new InMemoryCheckpointStore(() => this.#state);
+    this.checkpoints = checkpoints;
+    this.leaseFencedCheckpoints = checkpoints;
     this.events = new InMemoryEventStore(() => this.#state);
     this.inputs = new InMemoryThreadInputInbox(() => this.#state);
     this.notifications = new InMemoryNotificationInbox(() => this.#state);
@@ -186,56 +204,5 @@ class InMemoryExecutionThreadStore implements ThreadStore {
   load(key: string): Promise<StoredThread | null> {
     const stored = this.#state().threads.get(key);
     return Promise.resolve(stored ? structuredClone(stored) : null);
-  }
-}
-
-class InMemoryCheckpointStore implements CheckpointStore {
-  readonly #state: () => ExecutionState;
-
-  constructor(state: () => ExecutionState) {
-    this.#state = state;
-  }
-
-  append(
-    checkpoint: Checkpoint,
-    options: {
-      readonly expectedLeaseId?: string | null;
-      readonly expectedVersion: number;
-    }
-  ): Promise<CheckpointWriteResult> {
-    const run = this.#state().turns.get(checkpoint.runId);
-    if (
-      options.expectedLeaseId !== undefined &&
-      (run?.lease?.leaseId ?? null) !== options.expectedLeaseId
-    ) {
-      return Promise.resolve({ ok: false, reason: "lease-conflict" });
-    }
-    const currentVersion = run?.checkpointVersion ?? 0;
-    if (currentVersion !== options.expectedVersion) {
-      return Promise.resolve({
-        currentVersion,
-        ok: false,
-        reason: "stale-version",
-      });
-    }
-
-    const stored = structuredClone(checkpoint);
-    const checkpoints = this.#state().checkpoints.get(checkpoint.runId) ?? [];
-    checkpoints.push(stored);
-    this.#state().checkpoints.set(checkpoint.runId, checkpoints);
-    if (run) {
-      this.#state().turns.set(checkpoint.runId, {
-        ...run,
-        checkpointVersion: checkpoint.version,
-      });
-    }
-
-    return Promise.resolve({ ok: true, version: checkpoint.version });
-  }
-
-  latest(runId: string): Promise<Checkpoint | null> {
-    const checkpoints = this.#state().checkpoints.get(runId) ?? [];
-    const checkpoint = checkpoints.at(-1);
-    return Promise.resolve(checkpoint ? structuredClone(checkpoint) : null);
   }
 }

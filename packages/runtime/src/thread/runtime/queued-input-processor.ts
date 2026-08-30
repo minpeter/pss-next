@@ -9,23 +9,22 @@ import {
   commitPreUserRuntimeInputs,
   emitCommittedRuntimeInputs,
 } from "../input/runtime-input-emit";
-import type { AgentEvent } from "../protocol/events";
 import { scheduleThreadCompaction } from "./auto-compaction-runner";
 import { drainRuntimeInput } from "./drain";
 import { commitAndAckDurableThreadInput } from "./durable-input-acknowledgement";
-import { releaseDurableThreadInputClaim } from "./durable-input-claims";
+import { releasePendingDurableThreadInputClaim } from "./durable-input-claims";
 import { startThreadExecutionRun, type ThreadExecutionRun } from "./execution";
 import { runAgentLoopWithOverflowCompaction } from "./loop-overflow";
+import { recoverQueuedInputFailure } from "./queued-input-error-recovery";
 import {
   commitThreadStateAndEvents,
-  type DurableThreadEventBuffer,
-  recordDurableThreadEvent,
+  createDurableThreadEventRecorder,
 } from "./thread-event-log";
-import { recoverTurnProcessingError } from "./turn-error";
 import { emitTurnEvent } from "./turn-events";
 import { createTurnModelTransforms } from "./turn-model-transforms";
 import type { ProcessQueuedInputOptions } from "./turn-processor-options";
 import { closeTurnWithDurableTerminalEvent } from "./turn-terminal";
+import { isTurnTransitionConflictError } from "./turn-transition-conflict-predicate";
 
 export async function processQueuedInput({
   activate,
@@ -43,9 +42,7 @@ export async function processQueuedInput({
     durableInputClaim,
     executionRun: queuedExecutionRun,
     awaitBoundaries = true,
-    initialEvents,
     input: queuedInput,
-    preUserRuntimeInputs,
     run,
     runtimeInput,
   } = item;
@@ -61,17 +58,14 @@ export async function processQueuedInput({
   const meterCheckpoint = model.contextTokenMeter?.checkpoint();
   let executionRun: ThreadExecutionRun | undefined;
   let pendingDurableInputClaim = durableInputClaim;
-  const durableEvents: DurableThreadEventBuffer = [];
-  const recordEvent = (event: AgentEvent) =>
-    recordDurableThreadEvent(durableEvents, event);
+  const { buffer: durableEvents, record: recordEvent } =
+    createDurableThreadEventRecorder();
   const { latestContextTransform, transformModelContext, transformModelStep } =
     createTurnModelTransforms({
       hookRuntime: execution.hookRuntime ?? new AgentHookRuntime(),
       state,
       threadKey,
     });
-  const agentLoopRuntimeState = { runtimeStepIndex: 0 };
-
   try {
     executionRun = await startThreadExecutionRun({
       executionRun: queuedExecutionRun,
@@ -84,7 +78,7 @@ export async function processQueuedInput({
       state,
       turnId,
     });
-    for (const event of initialEvents) {
+    for (const event of item.initialEvents) {
       const processed = await events.emitRunEvent(run, event);
       if (processed !== "handled") {
         recordEvent(processed);
@@ -93,13 +87,14 @@ export async function processQueuedInput({
     const committedPreUser = await commitPreUserRuntimeInputs(
       events,
       state,
-      preUserRuntimeInputs,
+      item.preUserRuntimeInputs,
       model.attachmentStore,
       {
         commitRecordedEvents: () =>
           commitThreadStateAndEvents({
             buffer: durableEvents,
             executionHost: execution.executionHost,
+            executionRun,
             state,
             threadKey,
           }),
@@ -117,6 +112,7 @@ export async function processQueuedInput({
         await commitAndAckDurableThreadInput({
           buffer: durableEvents,
           executionHost: execution.executionHost,
+          executionRun,
           record: pendingDurableInputClaim,
           state,
           threadKey,
@@ -127,6 +123,7 @@ export async function processQueuedInput({
         await commitThreadStateAndEvents({
           buffer: durableEvents,
           executionHost: execution.executionHost,
+          executionRun,
           state,
           threadKey,
         });
@@ -146,6 +143,7 @@ export async function processQueuedInput({
       durableEvents,
       events,
       executionHost: execution.executionHost,
+      executionRun,
       placement: "turn-start",
       recordEvent,
       run,
@@ -154,6 +152,7 @@ export async function processQueuedInput({
       threadKey,
     });
 
+    const agentLoopRuntimeState = { runtimeStepIndex: 0 };
     const result = await runAgentLoopWithOverflowCompaction({
       compact: (input, guard) => events.compact(state, input, guard),
       execution,
@@ -168,6 +167,7 @@ export async function processQueuedInput({
               event,
               events,
               executionHost: execution.executionHost,
+              executionRun,
               awaitBoundaries,
               recordEvent,
               run,
@@ -195,10 +195,10 @@ export async function processQueuedInput({
     state.clearTransientInputs();
     await closeTurnWithDurableTerminalEvent({
       buffer: durableEvents,
-      completeExecution: async (status) => await executionRun?.complete(status),
       deactivateRun,
       events,
       executionHost: execution.executionHost,
+      executionRun,
       recordEvent,
       result,
       run,
@@ -219,46 +219,32 @@ export async function processQueuedInput({
       });
     }
   } catch (error) {
-    if (pendingDurableInputClaim) {
-      await releaseDurableThreadInputClaim({
-        executionHost: execution.executionHost,
-        record: pendingDurableInputClaim,
-      });
-      pendingDurableInputClaim = undefined;
+    if (isTurnTransitionConflictError(error) && !executionRun) {
+      throw error;
     }
-    restoreContextTokenMeter(model.contextTokenMeter, meterCheckpoint, run);
-    await recoverTurnProcessingError({
+    pendingDurableInputClaim = await recoverQueuedInputFailure({
       durableEvents,
       error,
-      executionHost: execution.executionHost,
+      execution,
       executionRun,
       historySnapshot,
+      item,
+      meterCheckpoint,
+      model,
+      pendingDurableInputClaim,
       recordEvent,
-      run,
-      runtimeInput,
       state,
       threadKey,
     });
   } finally {
-    if (pendingDurableInputClaim) {
-      await releaseDurableThreadInputClaim({
-        executionHost: execution.executionHost,
-        record: pendingDurableInputClaim,
-      });
-    }
-    closeRuntimeInput(runtimeInput);
-    release();
-    run.close();
+    await releasePendingDurableThreadInputClaim({
+      executionHost: execution.executionHost,
+      onReleased: () => {
+        closeRuntimeInput(runtimeInput);
+        release();
+        run.close();
+      },
+      record: pendingDurableInputClaim,
+    });
   }
-}
-
-function restoreContextTokenMeter(
-  meter: ProcessQueuedInputOptions["model"]["contextTokenMeter"],
-  checkpoint: ReturnType<NonNullable<typeof meter>["checkpoint"]> | undefined,
-  run: ProcessQueuedInputOptions["item"]["run"]
-): void {
-  if (!(meter && checkpoint)) {
-    return;
-  }
-  run.emit({ ...meter.restore(checkpoint), type: "context-usage" });
 }

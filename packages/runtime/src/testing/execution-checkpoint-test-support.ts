@@ -68,6 +68,16 @@ export function createCheckpointSpyHost(): {
         },
         ...(deleteThread === undefined ? {} : { deleteThread }),
         events: baseHost.store.events,
+        leaseFencedCheckpoints: {
+          appendFenced: async (checkpoint, options) => {
+            checkpoints.push(checkpoint);
+            const capability = baseHost.store.leaseFencedCheckpoints;
+            if (!capability) {
+              throw new Error("Expected checkpoint fencing support.");
+            }
+            return await capability.appendFenced(checkpoint, options);
+          },
+        },
         inputs: baseHost.store.inputs,
         notifications: baseHost.store.notifications,
         turns: baseHost.store.turns,

@@ -1,4 +1,5 @@
 import {
+  applyTurnTransitionUpdate,
   decideTurnClaim,
   decideTurnTransition,
 } from "../../../execution/host/turn-status";
@@ -10,6 +11,7 @@ import type {
   TurnStore,
   TurnTransitionExpected,
   TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "../../../execution/host/types";
 import type { ExecutionState } from "./state";
 
@@ -59,17 +61,18 @@ export class InMemoryRunStore implements TurnStore {
   transition(
     runId: string,
     expected: TurnTransitionExpected,
-    record: TurnRecord
+    update: TurnTransitionUpdate
   ): Promise<TurnTransitionResult> {
     const state = this.#state();
-    const conflict = decideTurnTransition(
-      state.turns.get(runId) ?? null,
-      expected
-    );
+    const current = state.turns.get(runId);
+    if (!current) {
+      return Promise.resolve({ ok: false, reason: "not-found" });
+    }
+    const conflict = decideTurnTransition(current, expected);
     if (conflict) {
       return Promise.resolve(conflict);
     }
-    const stored = structuredClone(record);
+    const stored = structuredClone(applyTurnTransitionUpdate(current, update));
     state.turns.set(runId, stored);
     return Promise.resolve({ ok: true, record: structuredClone(stored) });
   }

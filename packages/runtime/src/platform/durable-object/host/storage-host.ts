@@ -183,6 +183,7 @@ function executionStoreWithThreads(
   return {
     events: store.events,
     inputs: store.inputs,
+    leaseFencedCheckpoints: store.leaseFencedCheckpoints,
     notifications: store.notifications,
     checkpoints: store.checkpoints,
     threads,
@@ -192,6 +193,7 @@ function executionStoreWithThreads(
         fn({
           events: tx.events,
           inputs: tx.inputs,
+          leaseFencedCheckpoints: tx.leaseFencedCheckpoints,
           notifications: tx.notifications,
           checkpoints: tx.checkpoints,
           threads,

@@ -18,6 +18,7 @@ import type { AgentEvent } from "../protocol/events";
 import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
 import { errorMessage } from "../state/thread-errors";
 import {
+  cancellationForExecutionRun,
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
   type QueuedThreadExecutionRun,
@@ -116,29 +117,29 @@ export async function queueThreadNotification(
       kind: "notification",
       threadKey: state.threadKey,
     }));
-  if (precreatedRun) {
-    run.bindRunId(precreatedRun.runId);
+  const queuedExecutionRun: QueuedThreadExecutionRun | undefined = precreatedRun
+    ? {
+        kind: precreatedRun.kind,
+        leaseId: options.executionRun?.leaseId ?? null,
+        runId: precreatedRun.runId,
+      }
+    : undefined;
+  if (queuedExecutionRun) {
+    run.bindRunId(queuedExecutionRun.runId, queuedExecutionRun.leaseId ?? null);
   }
   try {
     state.throwIfTerminal();
   } catch (error) {
     await cancelThreadExecutionRun({
+      cancellation: cancellationForExecutionRun(queuedExecutionRun),
       executionHost: state.executionHost,
-      runId: precreatedRun?.runId,
     });
     run.emit({ type: "turn-error", message: errorMessage(error) });
     run.close();
     throw error;
   }
   state.inputQueue.push({
-    ...(precreatedRun
-      ? {
-          executionRun: {
-            kind: precreatedRun.kind,
-            runId: precreatedRun.runId,
-          },
-        }
-      : {}),
+    ...(queuedExecutionRun ? { executionRun: queuedExecutionRun } : {}),
     initialEvents: observerEvents,
     preUserRuntimeInputs: queuedOverlays,
     run,

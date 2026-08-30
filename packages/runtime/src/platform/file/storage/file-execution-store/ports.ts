@@ -1,5 +1,9 @@
 import { join } from "node:path";
-import type { HostStoreTransaction } from "../../../../execution/host/types";
+import type {
+  HostStoreTransaction,
+  LeaseFencedCheckpointStore,
+  ThreadEventLog,
+} from "../../../../execution/host/types";
 import { FileCheckpointStore } from "./checkpoint-store";
 import { FileEventStore, FileThreadEventLog } from "./event-store";
 import { FileThreadInputInbox } from "./input-inbox";
@@ -8,10 +12,18 @@ import { FileNotificationInbox } from "./notification-inbox";
 import { FileRunStore } from "./run-store";
 import type { DataDirectoryResolver } from "./types";
 
+export type FileExecutionStorePorts = Omit<
+  HostStoreTransaction,
+  "leaseFencedCheckpoints" | "threadEvents"
+> & {
+  readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
+  readonly threadEvents: ThreadEventLog;
+};
+
 export function createFileExecutionStorePorts(
   directory: DataDirectoryResolver,
   lock: <T>(fn: () => Promise<T>) => Promise<T>
-): HostStoreTransaction {
+): FileExecutionStorePorts {
   const runs = new FileRunStore(directory, lock);
   const checkpoints = new FileCheckpointStore(directory, lock, runs);
   const threads = new LockedThreadStore(
@@ -21,6 +33,7 @@ export function createFileExecutionStorePorts(
   return {
     events: new FileEventStore(directory, lock),
     inputs: new FileThreadInputInbox(directory, lock),
+    leaseFencedCheckpoints: checkpoints,
     notifications: new FileNotificationInbox(directory, lock),
     checkpoints,
     threadEvents: new FileThreadEventLog(directory, lock),

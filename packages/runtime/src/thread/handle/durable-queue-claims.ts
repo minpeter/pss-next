@@ -11,6 +11,7 @@ import {
   releaseDurableThreadInputClaim,
 } from "../runtime/durable-input-claims";
 import {
+  cancellationForExecutionRun,
   cancelThreadExecutionRun,
   precreateThreadExecutionRun,
 } from "../runtime/execution";
@@ -135,8 +136,8 @@ export async function prepareQueuedDurableInput({
     );
   }
   await cancelThreadExecutionRun({
+    cancellation: cancellationForExecutionRun(item.executionRun),
     executionHost,
-    executionRun: item.executionRun,
   });
   item.run.close();
   return { kind: "unavailable" };

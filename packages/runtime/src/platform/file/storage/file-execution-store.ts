@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { appendLeaseFencedCheckpoint } from "../../../execution/host/checkpoint-fencing";
 import type {
   CheckpointStore,
   EventStore,
   HostStore,
   HostStoreTransaction,
+  LeaseFencedCheckpointStore,
   NotificationInbox,
   ThreadEventLog,
   ThreadInputInbox,
@@ -33,6 +35,7 @@ export class FileExecutionStore implements HostStore {
   readonly checkpoints: CheckpointStore;
   readonly events: EventStore;
   readonly inputs: ThreadInputInbox;
+  readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
   readonly threadEvents: ThreadEventLog;
   readonly turns: TurnStore;
@@ -51,7 +54,20 @@ export class FileExecutionStore implements HostStore {
 
     this.turns = ports.turns;
     this.events = ports.events;
-    this.checkpoints = ports.checkpoints;
+    this.checkpoints = {
+      append: async (checkpoint, options) =>
+        await this.transaction(
+          async (tx) => await tx.checkpoints.append(checkpoint, options)
+        ),
+      latest: async (runId) => await ports.checkpoints.latest(runId),
+    };
+    this.leaseFencedCheckpoints = {
+      appendFenced: async (checkpoint, options) =>
+        await this.transaction(
+          async (tx) =>
+            await appendLeaseFencedCheckpoint(tx, checkpoint, options)
+        ),
+    };
     this.inputs = ports.inputs;
     this.notifications = ports.notifications;
     this.threadEvents = assertFileThreadEvents(ports.threadEvents);

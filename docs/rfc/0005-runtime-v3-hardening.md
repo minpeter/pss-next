@@ -14,7 +14,8 @@ Cloudflare/Celld sibling adapters remain.
 The almost-v3 program is a correctness-first hardening sequence:
 
 1. unify run claim and lease semantics across every store;
-2. add lease-fenced run transitions and checkpoint writes;
+2. add lease-fenced run transitions and checkpoint writes, then settle terminal
+   run status, thread state, and durable thread events atomically;
 3. add exact-work transactional outbox/reconciliation while wake mechanisms
    remain platform-owned;
 4. introduce workflow-local versioned checkpoint payloads;
@@ -67,6 +68,9 @@ One execution module owns:
 - the all-status claim decision.
 
 Every first-party store runs the same status/lease contract matrix.
+Contract parity alone is not sufficient: memory, file, and Durable Object
+implement transitions natively so each check and write runs inside one lock or
+storage transaction. The shared fallback is a legacy accommodation only.
 
 #### Lease-fenced transitions
 
@@ -74,9 +78,14 @@ Runtime-owned run mutations use an additive compare-and-set operation:
 
 ```ts
 type TurnTransitionExpected = {
-  status?: TurnStatus;
-  leaseOwnerId?: string;
   checkpointVersion?: number;
+  leaseId?: string | null;
+  status?: TurnStatus;
+};
+
+type TurnTransitionUpdate = {
+  lease?: TurnLease | null;
+  status: TurnStatus;
 };
 
 type TurnTransitionResult =
@@ -91,8 +100,63 @@ type TurnTransitionResult =
     };
 ```
 
-Stores must reject stale workers instead of allowing them to adopt a newer
-checkpoint version or overwrite a newer terminal state.
+The update is deliberately narrow. Callers state the new status and, only when
+ownership changes, the new lease. The store carries forward identity,
+checkpoint version, and every other field from its current row.
+
+Ownership expectations are explicit. `leaseId: undefined` means no ownership
+assertion; `leaseId: null` asserts that the run currently has no lease. Runtime
+call sites always pass a string or `null`, so an absent lease cannot silently
+downgrade a fenced write into an unfenced one.
+
+Ownership is captured from the write that established it, never from a
+follow-up read. Run start uses the successful create or transition result, so a
+worker cannot adopt a lease acquired by another worker between those calls.
+
+Rejected transitions surface as typed conflicts carrying the run ID, operation,
+and store reason. Callers can distinguish lease, status, and checkpoint
+conflicts without parsing error messages.
+
+`leaseUntilMs` is a reclaim deadline, not a hard authority-expiry timestamp.
+After that deadline another worker may atomically claim a nonterminal run, but
+passing the deadline alone does not revoke the captured lease. The original
+owner's writes continue to succeed while its lease ID remains persisted. A
+replacement claim first persists a new lease ID and thereby fences the old
+owner; a terminal settlement that wins first makes the run unclaimable.
+
+#### Lease-fenced checkpoints
+
+The released `CheckpointStore.append(checkpoint, { expectedVersion })` and
+`CheckpointWriteResult` remain unchanged for third-party source compatibility.
+Runtime-owned checkpoint writes do not use that legacy port. They require the
+distinct optional `HostStore.leaseFencedCheckpoints` capability, whose native
+memory, file, and Durable Object implementations compare lease ID, run status,
+and checkpoint version in the same transaction as the payload and run-version
+write.
+
+A host without the capability fails closed with
+`UnsupportedCheckpointFencingError` before legacy `append` is called. There is
+no read-then-append fallback because it cannot make the ownership check atomic.
+For the file store, standalone legacy and fenced appends enter the generation
+transaction; transaction-scoped checkpoint ports stay raw so they do not
+recursively open another generation.
+
+File checkpoint reads treat the run record's `checkpointVersion` as authority.
+Version zero returns no checkpoint even if legacy orphan files exist, higher
+orphan files are ignored, and a positive authoritative version without its
+payload is reported as corruption.
+
+#### Atomic terminal settlement
+
+Successful, aborted, and failed turns settle run status, thread state, and
+durable terminal/error events inside one host transaction. The transition is
+fenced by the lease captured when execution began. A stale owner, thread commit
+conflict, or event-log failure rolls the entire settlement back, and buffered
+events remain available for recovery rather than being partially consumed.
+
+Nonterminal durable-event flushes use the same captured lease to verify
+ownership before appending, while model calls, hooks, observers, and scheduling
+remain outside storage transactions.
 
 #### Transactional wake outbox
 
@@ -141,16 +205,26 @@ RFC 0004 remains the API roadmap:
 
 1. Extract shared lifecycle predicates.
 2. Make all stores call the shared claim decision.
-3. Add `TurnStore.transition`.
+3. Add optional `TurnStore.transition` plus one `transitionTurn` helper used by
+   every runtime call site.
 4. Migrate runtime start, completion, cancellation, and checkpoint paths.
-5. Keep `TurnStore.update` only as a compatibility seam until all internal
-   callers migrate.
+5. Route stores without native transition support through the helper's read,
+   decide, and update fallback so legacy hosts keep working.
+6. Route every in-memory mutation through the same serialized transaction
+   queue used by explicit transactions.
+7. Decide scheduled-notification retry eligibility in the same transaction
+   that schedules the retry and requeues the run.
+8. Settle terminal run status, thread state, and durable terminal/error events
+   in one lease-fenced host transaction.
 
 ### Verification
 
 - shared execution-store contract matrix;
 - targeted runtime start/complete/checkpoint tests;
 - memory/file/Durable Object package surfaces;
+- in-memory isolation proving direct mutations serialize behind transactions;
+- retry races proving reclaimed and terminal runs remain untouched;
+- terminal-settlement rollback tests for ownership loss and event-log failure;
 - manual driver showing file and memory return the same decisions;
 - root build, typecheck, test, lint, coverage, boundaries, API, package, and
   Tegami gates.
@@ -168,9 +242,10 @@ verified for file, Cloudflare, and Celld.
 ## Rollback
 
 The first increment is reversible because it introduces no data migration.
-If fenced transitions expose a legacy third-party store deficiency, that host
-continues using the deprecated update seam until it passes the conformance
-suite; first-party stores may not opt out.
+A third-party store that never implements `transition` still works through the
+shared helper's read, decide, and update fallback. That path is compare-and-set
+but not atomic, so it is a compatibility floor rather than a supported target.
+First-party stores may not opt out of native atomic transitions.
 
 ## Non-goals
 

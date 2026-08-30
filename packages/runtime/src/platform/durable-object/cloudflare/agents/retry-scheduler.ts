@@ -1,8 +1,5 @@
 import type { DurableObjectStorage as CloudflareDurableObjectStorage } from "../../storage/durable-object/durable-object-storage";
-import {
-  prepareScheduledNotificationRetry,
-  shouldRetryNotClaimableScheduledRun,
-} from "../host/scheduled-work-retry";
+import { prepareScheduledNotificationRetry } from "../host/scheduled-work-retry";
 import { scheduleCloudflareAgentsDelayedPayload } from "./delayed-schedule";
 import {
   assertNeverPayload,
@@ -11,11 +8,11 @@ import {
   cloudflareAgentsRunPayload,
   cloudflareAgentsThreadPayload,
 } from "./payload";
+import { capturedCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import {
   type CloudflareAgentsDelayedCallbackOption,
   delayedCallbackName,
 } from "./schedule-payload";
-import { removeCloudflareAgentsScheduledPayload } from "./scheduled-work";
 import type {
   CloudflareAgentsDefaultResumeAgent,
   CloudflareAgentsRetryFiber,
@@ -51,14 +48,8 @@ export function createCloudflareAgentsFiberRetryScheduler<
     storage,
   } = options;
   return async (payload, reason) => {
-    if (
-      reason === "not-claimable" &&
-      !(await shouldRetryNotClaimableScheduledRun(
-        storage,
-        payload.prefix,
-        payload.runId
-      ))
-    ) {
+    const leaseId = capturedCloudflareAgentsRetryLeaseId(payload);
+    if (leaseId === undefined) {
       return false;
     }
     const retryPayload = nextRetryPayload(payload);
@@ -70,28 +61,22 @@ export function createCloudflareAgentsFiberRetryScheduler<
       maxRunAfterMs: retryMaxRunAfterMs,
       runAfterMs: retryRunAfterMs,
     });
-    await scheduleCloudflareAgentsDelayedPayload({
-      callback,
-      cloudflareAgent,
-      payload: retryPayload,
-      runAfterMs,
+    return await prepareScheduledNotificationRetry({
+      allowActiveLease: reason !== "not-claimable",
+      allowNonNotification: reason !== "not-claimable",
+      leaseId,
+      prefix: payload.prefix,
+      runId: payload.runId,
+      schedule: (transactionStorage) =>
+        scheduleCloudflareAgentsDelayedPayload({
+          callback,
+          cloudflareAgent,
+          payload: retryPayload,
+          runAfterMs,
+          storage: transactionStorage,
+        }),
       storage,
     });
-    try {
-      const preparedNotification = await prepareScheduledNotificationRetry(
-        storage,
-        payload.prefix,
-        payload.runId
-      );
-      if (reason === "not-claimable" && !preparedNotification) {
-        await removeCloudflareAgentsScheduledPayload(storage, retryPayload);
-        return false;
-      }
-    } catch (error) {
-      await removeCloudflareAgentsScheduledPayload(storage, retryPayload);
-      throw error;
-    }
-    return true;
   };
 }
 

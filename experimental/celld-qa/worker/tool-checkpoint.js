@@ -78,9 +78,13 @@ async function resumeCheckpointedRun(state, runId, token) {
 
 /** @param {AgentHost} host @param {() => void} onCheckpoint */
 function freezeAfterToolCheckpoint(host, onCheckpoint) {
-  const append = host.store.checkpoints.append.bind(host.store.checkpoints);
-  host.store.checkpoints.append = async (checkpoint, options) => {
-    const written = await append(checkpoint, options);
+  const checkpoints = host.store.leaseFencedCheckpoints;
+  if (checkpoints === undefined) {
+    throw new TypeError("Lease-fenced checkpoint capability is required.");
+  }
+  const appendFenced = checkpoints.appendFenced.bind(checkpoints);
+  checkpoints.appendFenced = async (checkpoint, options) => {
+    const written = await appendFenced(checkpoint, options);
     if (written.ok && checkpoint.phase === "after-tool") {
       onCheckpoint();
       await new Promise(() => undefined);

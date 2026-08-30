@@ -1,5 +1,7 @@
 import type { AgentHookRuntime } from "../../agent/core/hook-runtime";
 import { createThreadExecutionRunId } from "../../execution/host/thread-execution-run-id";
+import { transitionTurn } from "../../execution/host/turn-status";
+import { TurnTransitionConflictError } from "../../execution/host/turn-transition-conflict";
 import type {
   AgentHost,
   TurnKind,
@@ -9,12 +11,21 @@ import type {
 } from "../../execution/host/types";
 import type { RuntimeToolExecutionContext } from "../../llm/tool-execution-types";
 import type { ThreadState } from "../state/thread-state";
+import type { CommitResult } from "../store/types";
 import type { AgentCompaction } from "./auto-compaction-types";
 import {
   createThreadToolExecutionContext,
   type ThreadToolCallInterceptor,
   type ThreadToolResultInterceptor,
 } from "./execution-checkpoints";
+import {
+  commitOwnedThreadExecutionRunStorage,
+  completeThreadExecutionRun,
+  isTerminalTurnStatus,
+  type OwnedRunStorageCommit,
+  settleThreadExecutionRun,
+  type TerminalRunStorageCommit,
+} from "./terminal-run-settlement";
 
 export interface ThreadExecutionOptions {
   readonly compaction?: AgentCompaction;
@@ -24,13 +35,26 @@ export interface ThreadExecutionOptions {
 
 export interface QueuedThreadExecutionRun {
   readonly kind: TurnKind;
-  readonly leaseId?: string;
+  readonly leaseId?: string | null;
   readonly runId: string;
 }
 
+export type ThreadExecutionCancellation =
+  | {
+      readonly kind: "owned";
+      readonly leaseId: string | null;
+      readonly runId: string;
+    }
+  | { readonly kind: "unleased"; readonly runId: string };
+
 export interface ThreadExecutionRun {
+  commitOwned<Result>(persist: OwnedRunStorageCommit<Result>): Promise<Result>;
   complete(status: ThreadExecutionTerminalStatus): Promise<void>;
   readonly runId: string;
+  settle(
+    status: ThreadExecutionTerminalStatus,
+    persist: TerminalRunStorageCommit
+  ): Promise<CommitResult>;
   readonly toolExecution: RuntimeToolExecutionContext;
 }
 
@@ -105,76 +129,106 @@ export async function startThreadExecutionRun({
       threadKey,
     })
   );
+  let running = created.record;
   if (!(created.ok || isTerminalTurnStatus(created.record.status))) {
-    const transition = await executionHost.store.turns.transition(
-      runId,
-      {
-        leaseId: executionRun?.leaseId,
+    const transition = await transitionTurn(executionHost.store.turns, {
+      expected: {
+        leaseId: executionRun?.leaseId ?? null,
         status: created.record.status,
       },
-      { ...created.record, status: "running" }
-    );
+      runId,
+      update: { status: "running" },
+    });
     if (!transition.ok) {
-      throw new Error(
-        `Thread execution run ${runId} transition failed: ${transition.reason}.`
-      );
+      throw new TurnTransitionConflictError(runId, "start", transition.reason);
     }
+    running = transition.record;
   }
 
-  const running = await executionHost.store.turns.get(runId);
-  if (!running) {
-    throw new Error(`Thread execution run ${runId} is missing.`);
-  }
-
+  const leaseId = running.lease?.leaseId ?? null;
   return {
-    complete: (status) =>
-      completeThreadExecutionRun({
+    commitOwned: async (persist) =>
+      await commitOwnedThreadExecutionRunStorage({
         executionHost,
-        leaseId: running.lease?.leaseId,
+        leaseId,
+        persist,
+        runId,
+      }),
+    complete: async (status) =>
+      await completeThreadExecutionRun({
+        executionHost,
+        leaseId,
         runId,
         status,
       }),
     runId,
+    settle: async (status, persist) =>
+      await settleThreadExecutionRun({
+        executionHost,
+        leaseId,
+        persist,
+        runId,
+        status,
+      }),
     toolExecution: createThreadToolExecutionContext({
       executionHost,
       interceptToolCall,
       interceptToolResult,
-      leaseId: running.lease?.leaseId,
+      leaseId,
       runId,
       state,
     }),
   };
 }
 
+export function cancellationForExecutionRun(
+  executionRun: QueuedThreadExecutionRun | undefined
+): ThreadExecutionCancellation | undefined {
+  if (!executionRun) {
+    return;
+  }
+  return {
+    kind: "owned",
+    leaseId: executionRun.leaseId ?? null,
+    runId: executionRun.runId,
+  };
+}
+
 export async function cancelThreadExecutionRun({
+  cancellation,
   executionHost,
-  executionRun,
-  runId,
 }: {
+  readonly cancellation: ThreadExecutionCancellation | undefined;
   readonly executionHost?: AgentHost;
-  readonly executionRun?: QueuedThreadExecutionRun;
-  readonly runId?: string;
 }): Promise<void> {
-  const targetRunId = runId ?? executionRun?.runId;
-  if (!(executionHost && targetRunId)) {
+  if (!(executionHost && cancellation)) {
     return;
   }
 
-  const run = await executionHost.store.turns.get(targetRunId);
+  const run = await executionHost.store.turns.get(cancellation.runId);
   if (!run || isTerminalTurnStatus(run.status)) {
     return;
   }
-  const transition = await executionHost.store.turns.transition(
-    targetRunId,
-    {
-      leaseId: executionRun?.leaseId ?? run.lease?.leaseId,
+  const transition = await transitionTurn(executionHost.store.turns, {
+    expected: {
+      leaseId: cancellation.kind === "owned" ? cancellation.leaseId : null,
       status: run.status,
     },
-    { ...run, status: "cancelled" }
-  );
+    runId: cancellation.runId,
+    update: { status: "cancelled" },
+  });
   if (!transition.ok) {
-    throw new Error(
-      `Thread execution run ${targetRunId} cancellation failed: ${transition.reason}.`
+    const current =
+      transition.reason === "status-conflict"
+        ? await executionHost.store.turns.get(cancellation.runId)
+        : undefined;
+    if (current && isTerminalTurnStatus(current.status)) {
+      return;
+    }
+    throw new TurnTransitionConflictError(
+      cancellation.runId,
+      "cancel",
+      transition.reason
     );
   }
 }
@@ -199,41 +253,4 @@ export function createThreadExecutionRunRecord({
     threadKey,
     status,
   };
-}
-
-async function completeThreadExecutionRun({
-  executionHost,
-  leaseId,
-  runId,
-  status,
-}: {
-  readonly executionHost: AgentHost;
-  readonly leaseId?: string;
-  readonly runId: string;
-  readonly status: ThreadExecutionTerminalStatus;
-}): Promise<void> {
-  const run = await executionHost.store.turns.get(runId);
-  if (!run || isTerminalTurnStatus(run.status)) {
-    return;
-  }
-
-  const transition = await executionHost.store.turns.transition(
-    runId,
-    { leaseId, status: run.status },
-    { ...run, status }
-  );
-  if (!transition.ok) {
-    throw new Error(
-      `Thread execution run ${runId} terminal transition failed: ${transition.reason}.`
-    );
-  }
-}
-
-function isTerminalTurnStatus(status: TurnStatus): boolean {
-  return (
-    status === "cancelled" ||
-    status === "completed" ||
-    status === "error" ||
-    status === "needs-recovery"
-  );
 }

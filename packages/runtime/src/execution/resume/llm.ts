@@ -51,23 +51,27 @@ export async function readModelOutput({
   }
 }
 
-export async function createResumeToolExecution({
+export function createResumeToolExecution({
+  attempt,
   host,
+  leaseId,
   runId,
   threadSnapshot,
   stepNumber,
 }: {
+  readonly attempt: number;
   readonly host: AgentHost;
+  readonly leaseId: string | null;
   readonly runId: string;
   readonly threadSnapshot: ResumeRunState;
   readonly stepNumber: number;
-}): Promise<RuntimeToolExecutionContext> {
-  const run = await host.store.turns.get(runId);
+}): RuntimeToolExecutionContext {
   return {
-    attempt: run?.lease?.attempt ?? 1,
+    attempt,
     afterTool: async (checkpoint) => {
       await appendCheckpoint({
         host,
+        leaseId,
         pendingToolCall: persistedToolExecutionCheckpoint(checkpoint),
         phase: "after-tool",
         runId,
@@ -83,6 +87,7 @@ export async function createResumeToolExecution({
     beforeTool: async (checkpoint) => {
       await appendCheckpoint({
         host,
+        leaseId,
         pendingToolCall: persistedToolExecutionCheckpoint(checkpoint),
         phase: "before-tool",
         runId,

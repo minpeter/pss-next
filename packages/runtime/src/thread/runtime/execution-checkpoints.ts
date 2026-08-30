@@ -1,5 +1,11 @@
+import { appendLeaseFencedCheckpoint } from "../../execution/host/checkpoint-fencing";
 import { createCheckpointId } from "../../execution/host/checkpoint-ids";
-import type { AgentHost, CheckpointPhase } from "../../execution/host/types";
+import type {
+  AgentHost,
+  CheckpointPhase,
+  LeaseFencedCheckpointWriteResult,
+} from "../../execution/host/types";
+import { assertNever } from "../../internal/guards";
 import { persistedToolExecutionCheckpoint } from "../../llm/tool-execution-checkpoint";
 import type {
   RuntimeToolExecutionCheckpoint,
@@ -31,6 +37,31 @@ export class ThreadExecutionCheckpointError extends Error {
   }
 }
 
+type CheckpointAuthorityConflictReason = Exclude<
+  Extract<LeaseFencedCheckpointWriteResult, { readonly ok: false }>["reason"],
+  "stale-version"
+>;
+
+const CHECKPOINT_AUTHORITY_CONFLICT_MESSAGES = {
+  "lease-conflict": "checkpoint lease conflict.",
+  "not-found": "checkpoint run is missing.",
+  "status-conflict": "checkpoint status conflict: run is terminal.",
+} as const satisfies Record<CheckpointAuthorityConflictReason, string>;
+
+export class ThreadExecutionCheckpointAuthorityError extends Error {
+  readonly reason: CheckpointAuthorityConflictReason;
+  readonly runId: string;
+
+  constructor(runId: string, reason: CheckpointAuthorityConflictReason) {
+    super(
+      `Thread execution run ${runId} ${CHECKPOINT_AUTHORITY_CONFLICT_MESSAGES[reason]}`
+    );
+    this.name = "ThreadExecutionCheckpointAuthorityError";
+    this.reason = reason;
+    this.runId = runId;
+  }
+}
+
 export function createThreadToolExecutionContext({
   executionHost,
   interceptToolCall,
@@ -42,7 +73,7 @@ export function createThreadToolExecutionContext({
   readonly executionHost: AgentHost;
   readonly interceptToolCall?: ThreadToolCallInterceptor;
   readonly interceptToolResult?: ThreadToolResultInterceptor;
-  readonly leaseId?: string;
+  readonly leaseId: string | null;
   readonly runId: string;
   readonly state: ThreadState;
 }): RuntimeToolExecutionContext {
@@ -97,7 +128,7 @@ async function appendThreadToolExecutionCheckpoint({
   toolCall,
 }: {
   readonly executionHost: AgentHost;
-  readonly leaseId?: string;
+  readonly leaseId: string | null;
   readonly phase: Extract<CheckpointPhase, "after-tool" | "before-tool">;
   readonly runId: string;
   readonly state: ThreadState;
@@ -115,7 +146,8 @@ async function appendThreadToolExecutionCheckpoint({
     }
 
     const version = run.checkpointVersion + 1;
-    const result = await executionHost.store.checkpoints.append(
+    const result = await appendLeaseFencedCheckpoint(
+      executionHost.store,
       {
         checkpointId: createCheckpointId({ phase, runId, version }),
         pendingToolCall: persistedToolExecutionCheckpoint(toolCall),
@@ -138,15 +170,20 @@ async function appendThreadToolExecutionCheckpoint({
       return;
     }
 
-    if (result.reason === "lease-conflict") {
-      throw new Error(
-        `Thread execution run ${runId} checkpoint lease conflict.`
-      );
+    switch (result.reason) {
+      case "lease-conflict":
+      case "not-found":
+      case "status-conflict":
+        throw new ThreadExecutionCheckpointAuthorityError(runId, result.reason);
+      case "stale-version":
+        lastConflict = {
+          current: result.currentVersion,
+          expected: run.checkpointVersion,
+        };
+        break;
+      default:
+        assertNever(result);
     }
-    lastConflict = {
-      current: result.currentVersion,
-      expected: run.checkpointVersion,
-    };
   }
 
   throw new ThreadExecutionCheckpointError(

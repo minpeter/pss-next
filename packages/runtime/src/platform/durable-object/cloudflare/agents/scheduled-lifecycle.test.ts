@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { captureRetryOwnership } from "./fiber-retry-test-support";
 import type {
   CloudflareAgentsFiberPayload,
   CloudflareAgentsStartFiberOptions,
@@ -44,8 +45,10 @@ describe("Cloudflare Agents scheduled lifecycle", () => {
       cloudflareAgent,
       drain: { maxEvents: 0 },
       payload: cloudflareAgent.scheduled[0]?.payload,
-      resume: (payload: CloudflareAgentsFiberPayload) =>
-        Promise.resolve(runWithText(payload.runId)),
+      resume: (payload: CloudflareAgentsFiberPayload) => {
+        captureRetryOwnership(payload, null);
+        return Promise.resolve(runWithText(payload.runId));
+      },
       retry,
       storage,
     });
@@ -111,26 +114,21 @@ describe("Cloudflare Agents scheduled lifecycle", () => {
       storage,
     });
 
-    await expect(
-      retry(
-        cloudflareAgentsRunPayload({
-          attempt: 1,
-          prefix: "tenant-a",
-          runId: "background:bg_retry_cap",
-        }),
-        "error"
-      )
-    ).resolves.toBe(true);
-    await expect(
-      retry(
-        cloudflareAgentsRunPayload({
-          attempt: 2,
-          prefix: "tenant-a",
-          runId: "background:bg_retry_cap",
-        }),
-        "error"
-      )
-    ).resolves.toBe(false);
+    const eligiblePayload = cloudflareAgentsRunPayload({
+      attempt: 1,
+      prefix: "tenant-a",
+      runId: "background:bg_retry_cap",
+    });
+    const cappedPayload = cloudflareAgentsRunPayload({
+      attempt: 2,
+      prefix: "tenant-a",
+      runId: "background:bg_retry_cap",
+    });
+    captureRetryOwnership(eligiblePayload, null);
+    captureRetryOwnership(cappedPayload, null);
+
+    await expect(retry(eligiblePayload, "error")).resolves.toBe(true);
+    await expect(retry(cappedPayload, "error")).resolves.toBe(false);
 
     expect(cloudflareAgent.scheduled).toMatchObject([
       {

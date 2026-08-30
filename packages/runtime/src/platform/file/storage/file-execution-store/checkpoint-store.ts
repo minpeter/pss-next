@@ -1,18 +1,40 @@
-import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  decideCheckpointVersionWrite,
+  decideLeaseFencedCheckpointWrite,
+} from "../../../../execution/host/checkpoint-write-decision";
 import type {
   Checkpoint,
   CheckpointStore,
   CheckpointWriteResult,
+  LeaseFencedCheckpointStore,
+  LeaseFencedCheckpointWriteOptions,
+  LeaseFencedCheckpointWriteResult,
+  TurnRecord,
 } from "../../../../execution/host/types";
-import { isNodeError } from "../../../../internal/guards";
 import { readJsonFile, writeJsonFile } from "./json";
 import type { FileRunStore } from "./run-store";
 import { parseRunCheckpoint } from "./schemas";
 import type { DataDirectoryResolver } from "./types";
 import { encodeKey } from "./utils";
 
-export class FileCheckpointStore implements CheckpointStore {
+export class FileCheckpointCorruptionError extends Error {
+  readonly checkpointVersion: number;
+  readonly runId: string;
+
+  constructor(runId: string, checkpointVersion: number) {
+    super(
+      `File checkpoint authority for run ${runId} references missing version ${checkpointVersion}.`
+    );
+    this.name = "FileCheckpointCorruptionError";
+    this.checkpointVersion = checkpointVersion;
+    this.runId = runId;
+  }
+}
+
+export class FileCheckpointStore
+  implements CheckpointStore, LeaseFencedCheckpointStore
+{
   readonly #directory: DataDirectoryResolver;
   readonly #lock: <T>(fn: () => Promise<T>) => Promise<T>;
   readonly #turns: FileRunStore;
@@ -29,37 +51,36 @@ export class FileCheckpointStore implements CheckpointStore {
 
   async append(
     checkpoint: Checkpoint,
-    options: {
-      readonly expectedLeaseId?: string | null;
-      readonly expectedVersion: number;
-    }
+    options: { readonly expectedVersion: number }
   ): Promise<CheckpointWriteResult> {
     return await this.#lock(async () => {
       const run = await this.#turns.getUnlocked(checkpoint.runId);
-      if (
-        options.expectedLeaseId !== undefined &&
-        (run?.lease?.leaseId ?? null) !== options.expectedLeaseId
-      ) {
-        return { ok: false, reason: "lease-conflict" };
+      const decision = decideCheckpointVersionWrite(
+        run?.checkpointVersion ?? 0,
+        options.expectedVersion
+      );
+      if (!decision.ok) {
+        return decision;
       }
-      const current = await this.latestUnlocked(checkpoint.runId);
-      const currentVersion = current?.version ?? 0;
-      if (options.expectedVersion !== currentVersion) {
-        return {
-          currentVersion,
-          ok: false,
-          reason: "stale-version",
-        };
-      }
+      await this.#persist(checkpoint, run);
+      return { ok: true, version: checkpoint.version };
+    });
+  }
 
-      await writeJsonFile(
-        await this.#fileForCheckpoint(checkpoint.runId, checkpoint.version),
-        checkpoint
+  async appendFenced(
+    checkpoint: Checkpoint,
+    options: LeaseFencedCheckpointWriteOptions
+  ): Promise<LeaseFencedCheckpointWriteResult> {
+    return await this.#lock(async () => {
+      const decision = decideLeaseFencedCheckpointWrite(
+        await this.#turns.getUnlocked(checkpoint.runId),
+        checkpoint,
+        options
       );
-      await this.#turns.updateCheckpointVersion(
-        checkpoint.runId,
-        checkpoint.version
-      );
+      if (!decision.ok) {
+        return decision;
+      }
+      await this.#persist(checkpoint, decision.run);
       return { ok: true, version: checkpoint.version };
     });
   }
@@ -69,37 +90,36 @@ export class FileCheckpointStore implements CheckpointStore {
   }
 
   async latestUnlocked(runId: string): Promise<Checkpoint | null> {
-    const directory = join(
-      await this.#directory(),
-      "checkpoints",
-      encodeKey(runId)
-    );
-    let entries: readonly string[];
-    try {
-      entries = await readdir(directory);
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
-
-    const versions = entries
-      .filter((entry) => entry.endsWith(".json"))
-      .map((entry) => Number(entry.slice(0, -".json".length)))
-      .filter((version) => Number.isSafeInteger(version) && version > 0)
-      .sort((left, right) => right - left);
-
-    const [latestVersion] = versions;
-    if (latestVersion === undefined) {
+    const checkpointVersion =
+      (await this.#turns.getUnlocked(runId))?.checkpointVersion ?? 0;
+    if (checkpointVersion === 0) {
       return null;
     }
-
-    return await readJsonFile(
-      await this.#fileForCheckpoint(runId, latestVersion),
+    const checkpoint = await readJsonFile(
+      await this.#fileForCheckpoint(runId, checkpointVersion),
       parseRunCheckpoint,
       "checkpoint file"
     );
+    if (!checkpoint) {
+      throw new FileCheckpointCorruptionError(runId, checkpointVersion);
+    }
+    return checkpoint;
+  }
+
+  async #persist(
+    checkpoint: Checkpoint,
+    run: TurnRecord | null | undefined
+  ): Promise<void> {
+    await writeJsonFile(
+      await this.#fileForCheckpoint(checkpoint.runId, checkpoint.version),
+      checkpoint
+    );
+    if (run) {
+      await this.#turns.updateCheckpointVersion(
+        checkpoint.runId,
+        checkpoint.version
+      );
+    }
   }
 
   async #fileForCheckpoint(runId: string, version: number): Promise<string> {

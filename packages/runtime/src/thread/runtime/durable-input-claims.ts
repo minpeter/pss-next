@@ -70,6 +70,22 @@ export async function recoverDurableThreadInputs({
   }
 }
 
+export async function releasePendingDurableThreadInputClaim({
+  executionHost,
+  onReleased,
+  record,
+}: {
+  readonly executionHost: AgentHost | undefined;
+  readonly onReleased?: () => void;
+  readonly record: ClaimedThreadInput | undefined;
+}): Promise<undefined> {
+  if (record) {
+    await releaseDurableThreadInputClaim({ executionHost, record });
+  }
+  onReleased?.();
+  return;
+}
+
 export async function releaseDurableThreadInputClaim({
   executionHost,
   record,

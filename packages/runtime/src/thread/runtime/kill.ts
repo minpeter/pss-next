@@ -6,7 +6,10 @@ import {
 } from "../input/runtime-input";
 import type { BufferedAgentTurn } from "../protocol/turn";
 import { cancelQueuedDurableThreadInputs } from "./durable-input-cancellation";
-import { cancelThreadExecutionRun } from "./execution";
+import {
+  cancellationForExecutionRun,
+  cancelThreadExecutionRun,
+} from "./execution";
 
 interface CloseKilledRuntimeInputsOptions {
   readonly activeRuntimeInput: RuntimeInputState | undefined;
@@ -51,14 +54,21 @@ export async function closeKilledRuntimeInputs({
 
   await Promise.all([
     cancelThreadExecutionRun({
+      cancellation: runToClose?.executionOwnership
+        ? { kind: "owned", ...runToClose.executionOwnership }
+        : undefined,
       executionHost,
-      runId: runToClose?.runId,
     }),
-    ...nonDurableRuns.map((item) =>
-      cancelThreadExecutionRun({
-        executionHost,
-        executionRun: item.executionRun,
-      })
-    ),
+    ...nonDurableRuns.map((item) => {
+      const executionCancellation = cancellationForExecutionRun(
+        item.executionRun
+      );
+      const cancellation =
+        executionCancellation ??
+        (item.run.runId
+          ? { kind: "unleased" as const, runId: item.run.runId }
+          : undefined);
+      return cancelThreadExecutionRun({ cancellation, executionHost });
+    }),
   ]);
 }

@@ -1,6 +1,10 @@
 import { noopRuntimeDiagnostics } from "../../../diagnostics";
 import type { ResumeThreadOptions } from "../../../execution/host/scheduler-options";
-import type { AgentHost, HostScheduler } from "../../../execution/host/types";
+import type {
+  AgentHost,
+  HostScheduler,
+  ThreadEventLog,
+} from "../../../execution/host/types";
 import {
   applyListLimit,
   type ScheduledThreadPrompt,
@@ -18,6 +22,9 @@ export interface MemoryScheduledWorkListOptions {
 
 export interface InMemoryHost extends AgentHost {
   readonly scheduler: InMemoryExecutionScheduler;
+  readonly store: AgentHost["store"] & {
+    readonly threadEvents: ThreadEventLog;
+  };
 }
 
 export function createInMemoryHost(): InMemoryHost {

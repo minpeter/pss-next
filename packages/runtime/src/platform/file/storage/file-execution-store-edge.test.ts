@@ -135,13 +135,19 @@ describe("FileExecutionStore edge cases", () => {
     const directory = await tempDir();
     const store = new FileExecutionStore(directory);
     await expect(store.turns.get("run:missing")).resolves.toBeNull();
+    await store.turns.create(
+      runRecord("checkpoint:bad", { checkpointVersion: 1 })
+    );
     const dataDirectory = await currentDataDirectory(directory);
 
     await mkdir(join(dataDirectory, "runs"), { recursive: true });
     await mkdir(join(dataDirectory, "events"), { recursive: true });
-    await mkdir(join(dataDirectory, "checkpoints", base64Url("run:bad")), {
-      recursive: true,
-    });
+    await mkdir(
+      join(dataDirectory, "checkpoints", base64Url("checkpoint:bad")),
+      {
+        recursive: true,
+      }
+    );
     await mkdir(join(dataDirectory, "notifications"), { recursive: true });
     await mkdir(join(dataDirectory, "threads"), { recursive: true });
     await writeFile(
@@ -155,7 +161,7 @@ describe("FileExecutionStore edge cases", () => {
       "utf8"
     );
     await writeFile(
-      join(dataDirectory, "checkpoints", base64Url("run:bad"), "1.json"),
+      join(dataDirectory, "checkpoints", base64Url("checkpoint:bad"), "1.json"),
       "{ nope",
       "utf8"
     );
@@ -176,7 +182,7 @@ describe("FileExecutionStore edge cases", () => {
     await expect(collectEvents(store.events.read("run:bad"))).rejects.toThrow(
       malformedEventPattern
     );
-    await expect(store.checkpoints.latest("run:bad")).rejects.toThrow(
+    await expect(store.checkpoints.latest("checkpoint:bad")).rejects.toThrow(
       malformedCheckpointPattern
     );
     await expect(

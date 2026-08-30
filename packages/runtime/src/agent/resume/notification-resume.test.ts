@@ -217,13 +217,15 @@ describe("host notification resume", () => {
     expect(calls).toBe(1);
   });
 
-  it("does not complete durable notification run when payload is unavailable", async () => {
+  it("requeues the claimed run when its notification payload is unavailable", async () => {
     const host = createInMemoryHost();
+    let calls = 0;
     const agent = new Agent({
       host,
-      model: createCallbackModel(() =>
-        Promise.resolve([assistantMessage("UNREACHABLE")])
-      ),
+      model: createCallbackModel(() => {
+        calls += 1;
+        return Promise.resolve([assistantMessage("UNREACHABLE")]);
+      }),
       namespace: "notify-owner",
     });
     const idempotencyKey = "background-complete:bg_missing";
@@ -233,8 +235,9 @@ describe("host notification resume", () => {
     );
 
     await expect(agent.resume(runId)).resolves.toBeNull();
-    await expect(host.store.turns.get(runId)).resolves.toEqual(
-      expect.objectContaining({ status: "leased" })
-    );
+    const storedRun = await host.store.turns.get(runId);
+    expect(storedRun).toEqual(expect.objectContaining({ status: "queued" }));
+    expect(storedRun?.lease).toBeUndefined();
+    expect(calls).toBe(0);
   });
 });

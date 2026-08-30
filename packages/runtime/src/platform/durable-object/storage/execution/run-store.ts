@@ -6,8 +6,10 @@ import type {
   TurnStore,
   TurnTransitionExpected,
   TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "../../../../execution";
 import {
+  applyTurnTransitionUpdate,
   decideTurnClaim,
   decideTurnTransition,
 } from "../../../../execution/host/turn-status";
@@ -108,14 +110,18 @@ export class DurableObjectRunStore implements TurnStore {
   async transition(
     runId: string,
     expected: TurnTransitionExpected,
-    record: TurnRecord
+    update: TurnTransitionUpdate
   ): Promise<TurnTransitionResult> {
     return await withTransaction(this.#storage, async (storage) => {
       const current = await getRun(storage, this.#prefix, runId);
+      if (!current) {
+        return { ok: false, reason: "not-found" };
+      }
       const conflict = decideTurnTransition(current, expected);
       if (conflict) {
         return conflict;
       }
+      const record = applyTurnTransitionUpdate(current, update);
       await putRun(storage, this.#prefix, record, {
         maxPayloadBytes: this.#maxPayloadBytes,
       });

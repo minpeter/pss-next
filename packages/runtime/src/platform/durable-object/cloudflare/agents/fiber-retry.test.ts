@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentHost } from "../../../../execution";
 import {
+  captureRetryOwnership,
   createRetryHost,
   expectActiveLeasedNotification,
   expectCompletedNotification,
@@ -16,7 +17,10 @@ import { createFakeCloudflareAgent, runWithText } from "./test-support";
 describe("Cloudflare Agents fiber retries", () => {
   it("does not reschedule active leased notifications when resume cannot claim a run", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
-    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    const host = createRetryHost(cloudflareAgent, (payload) => {
+      captureRetryOwnership(payload, null);
+      return Promise.resolve(null);
+    });
     const runId = "background:bg_active_lease_not_claimable";
     const leaseUntilMs = Date.now() + 60_000;
 
@@ -37,7 +41,10 @@ describe("Cloudflare Agents fiber retries", () => {
 
   it("does not reschedule completed notifications when resume cannot claim a run", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
-    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    const host = createRetryHost(cloudflareAgent, (payload) => {
+      captureRetryOwnership(payload, null);
+      return Promise.resolve(null);
+    });
     const runId = "background:bg_completed_not_claimable";
 
     await seedRetryableNotification(host, runId, { status: "completed" });
@@ -53,11 +60,17 @@ describe("Cloudflare Agents fiber retries", () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     const host = createRetryHost(
       cloudflareAgent,
-      (payload) => Promise.resolve(runWithText(payload.runId)),
+      (payload) => {
+        captureRetryOwnership(payload, null);
+        return Promise.resolve(runWithText(payload.runId));
+      },
       { maxEvents: 0 }
     );
 
-    await seedRetryableNotification(host, "background:bg_event_budget");
+    await seedRetryableNotification(host, "background:bg_event_budget", {
+      leaseUntilMs: null,
+      status: "running",
+    });
     await host.scheduler.enqueueRun("background:bg_event_budget");
 
     await expectRetryScheduled({
@@ -74,6 +87,7 @@ describe("Cloudflare Agents fiber retries", () => {
     host = createRetryHost(
       cloudflareAgent,
       async (payload) => {
+        captureRetryOwnership(payload, null);
         await host.store.turns.create({
           checkpointVersion: 0,
           kind: "user-turn",
@@ -106,12 +120,13 @@ describe("Cloudflare Agents fiber retries", () => {
     ]);
   });
 
-  it("reschedules notifications completed before drain when draining hits the event budget", async () => {
+  it("does not resurrect notifications completed before an event-budget retry", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     let host: AgentHost;
     host = createRetryHost(
       cloudflareAgent,
       async (payload) => {
+        captureRetryOwnership(payload, `lease:${payload.runId}`);
         const run = await host.store.turns.get(payload.runId);
         if (!run) {
           throw new Error(`missing run: ${payload.runId}`);
@@ -126,28 +141,38 @@ describe("Cloudflare Agents fiber retries", () => {
       { maxEvents: 0 }
     );
 
-    await seedRetryableNotification(
-      host,
-      "background:bg_completed_event_budget"
-    );
-    await host.scheduler.enqueueRun("background:bg_completed_event_budget");
+    const runId = "background:bg_completed_event_budget";
+    await seedRetryableNotification(host, runId);
 
-    await expectRetryScheduled({
-      cloudflareAgent,
-      host,
-      runId: "background:bg_completed_event_budget",
-    });
+    await expect(host.scheduler.enqueueRun(runId)).rejects.toThrow(
+      "PSS Runtime fiber interrupted: event-budget"
+    );
+
+    expect(cloudflareAgent.scheduled).toEqual([]);
+    await expect(
+      listScheduledCloudflareAgentsRuns(
+        cloudflareAgent.durableObjectContext.storage,
+        { prefix: "tenant-a" }
+      )
+    ).resolves.toEqual([]);
+    await expectCompletedNotification(host, runId);
   });
 
   it("uses a fresh fiber idempotency key when a scheduled retry starts", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     const host = createRetryHost(
       cloudflareAgent,
-      (payload) => Promise.resolve(runWithText(payload.runId)),
+      (payload) => {
+        captureRetryOwnership(payload, null);
+        return Promise.resolve(runWithText(payload.runId));
+      },
       { maxEvents: 0 }
     );
 
-    await seedRetryableNotification(host, "background:bg_retry_key");
+    await seedRetryableNotification(host, "background:bg_retry_key", {
+      leaseUntilMs: null,
+      status: "running",
+    });
     await host.scheduler.enqueueRun("background:bg_retry_key");
 
     const firstFiberKey = cloudflareAgent.started[0]?.idempotencyKey;
@@ -170,26 +195,20 @@ describe("Cloudflare Agents fiber retries", () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     cloudflareAgent.schedule = () =>
       Promise.reject(new Error("schedule failed"));
-    let host: AgentHost;
-    host = createRetryHost(
+    const host = createRetryHost(
       cloudflareAgent,
-      async (payload) => {
-        const run = await host.store.turns.get(payload.runId);
-        if (!run) {
-          throw new Error(`missing run: ${payload.runId}`);
-        }
-        const { lease: _lease, ...runWithoutLease } = run;
-        await host.store.turns.update({
-          ...runWithoutLease,
-          status: "completed",
-        });
-        return runWithText(payload.runId);
+      (payload) => {
+        captureRetryOwnership(payload, null);
+        return Promise.resolve(runWithText(payload.runId));
       },
       { maxEvents: 0 }
     );
     const runId = "background:bg_schedule_failure";
 
-    await seedRetryableNotification(host, runId);
+    await seedRetryableNotification(host, runId, {
+      leaseUntilMs: null,
+      status: "running",
+    });
 
     await expect(host.scheduler.enqueueRun(runId)).rejects.toThrow(
       "schedule failed"
@@ -200,14 +219,22 @@ describe("Cloudflare Agents fiber retries", () => {
         { prefix: "tenant-a" }
       )
     ).resolves.toEqual([]);
-    await expectCompletedNotification(host, runId);
+    await expect(host.store.turns.get(runId)).resolves.toEqual(
+      expect.objectContaining({ runId, status: "running" })
+    );
+    await expect(
+      host.store.notifications.getByIdempotencyKey(`dedupe:${runId}`)
+    ).resolves.toMatchObject({ runId, status: "acked" });
   });
 
   it("does not clear expired leases before not-claimable retry scheduling succeeds", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
     cloudflareAgent.schedule = () =>
       Promise.reject(new Error("schedule failed"));
-    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    const host = createRetryHost(cloudflareAgent, (payload) => {
+      captureRetryOwnership(payload, null);
+      return Promise.resolve(null);
+    });
     const runId = "background:bg_not_claimable_schedule_failure";
     const leaseUntilMs = Date.now() - 1000;
 
@@ -228,12 +255,16 @@ describe("Cloudflare Agents fiber retries", () => {
 
   it("reschedules retryable notifications when resume work throws", async () => {
     const cloudflareAgent = createFakeCloudflareAgent();
-    const host = createRetryHost(cloudflareAgent, async () => {
+    const host = createRetryHost(cloudflareAgent, async (payload) => {
+      captureRetryOwnership(payload, null);
       await Promise.resolve();
       throw new Error("resume failed");
     });
 
-    await seedRetryableNotification(host, "background:bg_throw");
+    await seedRetryableNotification(host, "background:bg_throw", {
+      leaseUntilMs: null,
+      status: "running",
+    });
     await host.scheduler.enqueueRun("background:bg_throw");
 
     await expectRetryScheduled({

@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  applyTurnTransitionUpdate,
   decideTurnClaim,
   decideTurnTransition,
 } from "../../../../execution/host/turn-status";
@@ -13,6 +14,7 @@ import type {
   TurnStore,
   TurnTransitionExpected,
   TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "../../../../execution/host/types";
 import { isNodeError } from "../../../../internal/guards";
 import { readJsonFile, writeJsonFile } from "./json";
@@ -103,14 +105,18 @@ export class FileRunStore implements TurnStore {
   async transition(
     runId: string,
     expected: TurnTransitionExpected,
-    record: TurnRecord
+    update: TurnTransitionUpdate
   ): Promise<TurnTransitionResult> {
     return await this.#lock(async () => {
       const current = await this.#getUnlocked(runId);
+      if (!current) {
+        return { ok: false, reason: "not-found" };
+      }
       const conflict = decideTurnTransition(current, expected);
       if (conflict) {
         return conflict;
       }
+      const record = applyTurnTransitionUpdate(current, update);
       await this.#writeUnlocked(record);
       return { ok: true, record: structuredClone(record) };
     });

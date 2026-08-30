@@ -1,10 +1,12 @@
 import { expect } from "vitest";
 import type { AgentHost, TurnStatus } from "../../../../execution";
 import {
+  type CloudflareAgentsFiberPayload,
   type CloudflareAgentsResumeRun,
   createCloudflareHost,
   listScheduledCloudflareAgentsRuns,
 } from "./index";
+import { captureCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import type { FakeCloudflareAgent } from "./test-support";
 
 export function createRetryHost(
@@ -21,8 +23,15 @@ export function createRetryHost(
   });
 }
 
+export function captureRetryOwnership(
+  payload: CloudflareAgentsFiberPayload,
+  leaseId: string | null
+): void {
+  captureCloudflareAgentsRetryLeaseId(payload, leaseId);
+}
+
 export interface SeedRetryableNotificationOptions {
-  readonly leaseUntilMs?: number;
+  readonly leaseUntilMs?: number | null;
   readonly status?: TurnStatus;
 }
 
@@ -37,11 +46,15 @@ export async function seedRetryableNotification(
     checkpointVersion: 0,
     dedupeKey,
     kind: "notification",
-    lease: {
-      attempt: 1,
-      leaseId: `lease:${runId}`,
-      leaseUntilMs,
-    },
+    ...(leaseUntilMs === null
+      ? {}
+      : {
+          lease: {
+            attempt: 1,
+            leaseId: `lease:${runId}`,
+            leaseUntilMs,
+          },
+        }),
     rootRunId: runId,
     runId,
     status,

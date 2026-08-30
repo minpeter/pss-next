@@ -28,13 +28,15 @@ export async function resumeRun(
     return { status: "suspended", steps: 0 };
   }
 
+  const resumedRun = await options.host.store.turns.get(options.runId);
+  const leaseId = resumedRun?.lease?.leaseId ?? null;
+  const attempt = resumedRun?.lease?.attempt ?? 1;
   const initialCheckpoint = await options.host.store.checkpoints.latest(
     options.runId
   );
   throwIfManualToolRecoveryRequired(initialCheckpoint);
   let nextStep = resumeStepFromCheckpoint(initialCheckpoint);
   let steps = 0;
-  const resumedRun = await options.host.store.turns.get(options.runId);
 
   while (steps < options.budget.maxSteps) {
     if (signal.aborted) {
@@ -48,6 +50,7 @@ export async function resumeRun(
       const state = await options.loadState();
       await appendCheckpoint({
         host: options.host,
+        leaseId,
         phase: "before-model",
         runId: options.runId,
         runtimeState: { step: nextStep.stepNumber },
@@ -56,8 +59,10 @@ export async function resumeRun(
     }
 
     const stateBeforeModel = await options.loadState();
-    const toolExecution = await createResumeToolExecution({
+    const toolExecution = createResumeToolExecution({
+      attempt,
       host: options.host,
+      leaseId,
       runId: options.runId,
       threadSnapshot: stateBeforeModel,
       stepNumber: nextStep.stepNumber,
@@ -81,6 +86,7 @@ export async function resumeRun(
     await options.saveState(stateAfterModel);
     await appendCheckpoint({
       host: options.host,
+      leaseId,
       phase: "after-model",
       runId: options.runId,
       runtimeState: { step: nextStep.stepNumber },
@@ -104,6 +110,7 @@ export async function resumeRun(
     if (steps >= options.budget.maxSteps) {
       await appendCheckpoint({
         host: options.host,
+        leaseId,
         phase: "suspended",
         runId: options.runId,
         runtimeState: { step: nextStep.stepNumber },

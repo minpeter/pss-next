@@ -1,8 +1,10 @@
 import type {
   TurnRecord,
   TurnStatus,
+  TurnStore,
   TurnTransitionExpected,
   TurnTransitionResult,
+  TurnTransitionUpdate,
 } from "./types";
 
 const CLAIMABLE_TURN_STATUSES = new Set<TurnStatus>([
@@ -25,27 +27,67 @@ export function decideTurnClaim(
   return { ok: true };
 }
 
+export function applyTurnTransitionUpdate(
+  current: TurnRecord,
+  update: TurnTransitionUpdate
+): TurnRecord {
+  if (update.lease === undefined) {
+    return { ...current, status: update.status };
+  }
+  if (update.lease !== null) {
+    return { ...current, lease: update.lease, status: update.status };
+  }
+  const { lease: _lease, ...withoutLease } = current;
+  return { ...withoutLease, status: update.status };
+}
+
 export function decideTurnTransition(
-  record: TurnRecord | null,
+  current: TurnRecord,
   expected: TurnTransitionExpected
 ): Exclude<TurnTransitionResult, { ok: true }> | null {
-  if (!record) {
-    return { ok: false, reason: "not-found" };
-  }
-  if (expected.status !== undefined && record.status !== expected.status) {
+  if (expected.status !== undefined && current.status !== expected.status) {
     return { ok: false, reason: "status-conflict" };
   }
   if (
     expected.leaseId !== undefined &&
-    (record.lease?.leaseId ?? null) !== expected.leaseId
+    (current.lease?.leaseId ?? null) !== expected.leaseId
   ) {
     return { ok: false, reason: "lease-conflict" };
   }
   if (
     expected.checkpointVersion !== undefined &&
-    record.checkpointVersion !== expected.checkpointVersion
+    current.checkpointVersion !== expected.checkpointVersion
   ) {
     return { ok: false, reason: "checkpoint-conflict" };
   }
   return null;
+}
+
+export async function transitionTurn(
+  turns: TurnStore,
+  transition: {
+    readonly expected: TurnTransitionExpected;
+    readonly runId: string;
+    readonly update: TurnTransitionUpdate;
+  }
+): Promise<TurnTransitionResult> {
+  if (turns.transition) {
+    return await turns.transition(
+      transition.runId,
+      transition.expected,
+      transition.update
+    );
+  }
+  const current = await turns.get(transition.runId);
+  if (!current) {
+    return { ok: false, reason: "not-found" };
+  }
+  const conflict = decideTurnTransition(current, transition.expected);
+  if (conflict) {
+    return conflict;
+  }
+  const record = await turns.update(
+    applyTurnTransitionUpdate(current, transition.update)
+  );
+  return { ok: true, record };
 }
