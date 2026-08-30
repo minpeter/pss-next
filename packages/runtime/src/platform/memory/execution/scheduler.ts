@@ -147,7 +147,7 @@ function listDueScheduledWork<T>(
         left.workId.localeCompare(right.workId)
     );
   return applyListLimit(
-    due.map((row) => row.payload),
+    due.map((row) => structuredClone(row.payload)),
     options.limit
   );
 }
