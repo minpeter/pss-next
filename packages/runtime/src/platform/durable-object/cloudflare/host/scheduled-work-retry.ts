@@ -1,6 +1,7 @@
 import {
   type TurnRecord,
   type TurnStatus,
+  type TurnStore,
   transitionTurn,
 } from "../../../../execution";
 import { createDurableObjectStorageHost as createCloudflareStorageHost } from "../../host/storage-host";
@@ -36,8 +37,13 @@ export async function prepareScheduledNotificationRetry({
       prefix,
       storage: transactionStorage,
     }).store;
-    const run = await tx.turns.get(runId);
-    if (!isOwnedRetryableRun(run, leaseId, allowNonNotification)) {
+    const run = await captureRetryOwnership({
+      allowNonNotification,
+      leaseId,
+      runId,
+      turns: tx.turns,
+    });
+    if (!run) {
       return false;
     }
 
@@ -79,6 +85,33 @@ export async function prepareScheduledNotificationRetry({
   });
 }
 
+async function captureRetryOwnership({
+  allowNonNotification,
+  leaseId,
+  runId,
+  turns,
+}: {
+  readonly allowNonNotification: boolean;
+  readonly leaseId: string;
+  readonly runId: string;
+  readonly turns: TurnStore;
+}): Promise<TurnRecord | null> {
+  const run = await turns.get(runId);
+  if (isOwnedRetryableRun(run, leaseId, allowNonNotification)) {
+    return run;
+  }
+  if (!isUnleasedRetryableRun(run, allowNonNotification)) {
+    return null;
+  }
+  const claim = await turns.claim(runId, {
+    attempt: 1,
+    leaseId,
+    leaseMs: 300_000,
+    nowMs: Date.now(),
+  });
+  return claim.ok ? claim.record : null;
+}
+
 function isOwnedRetryableRun(
   run: TurnRecord | null,
   leaseId: string,
@@ -88,6 +121,18 @@ function isOwnedRetryableRun(
     !(run && isRetryableRunStatus(run.status)) ||
     (run.lease?.leaseId ?? null) !== leaseId
   ) {
+    return false;
+  }
+  return run.kind === "notification"
+    ? run.dedupeKey !== undefined
+    : allowNonNotification;
+}
+
+function isUnleasedRetryableRun(
+  run: TurnRecord | null,
+  allowNonNotification: boolean
+): run is TurnRecord {
+  if (!(run && isRetryableRunStatus(run.status)) || run.lease !== undefined) {
     return false;
   }
   return run.kind === "notification"

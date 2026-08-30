@@ -1,4 +1,8 @@
-import { createResumeRetryAttempt } from "../../../../agent/resume/retry-authority";
+import {
+  adoptResumeRetryLease,
+  createResumeRetryAttempt,
+} from "../../../../agent/resume/retry-authority";
+import { turnExecutionOwnership } from "../../../../thread/protocol/turn";
 import type { DurableObjectStorage as CloudflareDurableObjectStorage } from "../../storage/durable-object/durable-object-storage";
 import { drainAgentTurnWithBudget } from "../turn-drain";
 import { cloudflareAgentsDrainOptionsForPayload } from "./drain-options";
@@ -7,7 +11,9 @@ import {
   cloudflareAgentsFiberIdempotencyKey,
   cloudflareAgentsFiberMetadata,
   cloudflareAgentsFiberName,
+  cloudflareAgentsFiberRetryScope,
   parseCloudflareAgentsFiberPayload,
+  snapshotCloudflareAgentsFiberPayload,
 } from "./payload";
 import {
   areCloudflareAgentsPayloadsEquivalent,
@@ -49,14 +55,15 @@ export async function startCloudflareAgentsResumeFiber({
   resume,
   storage,
 }: StartCloudflareAgentsResumeFiberOptions): Promise<CloudflareAgentsStartFiberResult> {
-  const idempotencyKey = cloudflareAgentsFiberIdempotencyKey(payload);
+  const stablePayload = snapshotCloudflareAgentsFiberPayload(payload);
+  const idempotencyKey = cloudflareAgentsFiberIdempotencyKey(stablePayload);
   return await cloudflareAgent.startFiber(
-    cloudflareAgentsFiberName(payload),
+    cloudflareAgentsFiberName(stablePayload),
     async (ctx) => {
-      ctx.stash(payload);
+      ctx.stash(stablePayload);
       const result = await resumeAndDrain({
         drain,
-        payload,
+        payload: stablePayload,
         retry,
         resume,
         storage,
@@ -67,7 +74,7 @@ export async function startCloudflareAgentsResumeFiber({
     },
     {
       idempotencyKey,
-      metadata: cloudflareAgentsFiberMetadata(payload),
+      metadata: cloudflareAgentsFiberMetadata(stablePayload),
     }
   );
 }
@@ -100,15 +107,16 @@ export async function recoverCloudflareAgentsFiber({
   if (!(await isCloudflareAgentsPayloadTrusted(payload, trust))) {
     return false;
   }
+  const stablePayload = snapshotCloudflareAgentsFiberPayload(payload);
   const result = await resumeAndDrain({
     drain,
-    payload,
+    payload: stablePayload,
     retry,
     resume,
     storage,
   });
   const snapshot = {
-    ...cloudflareAgentsFiberMetadata(payload),
+    ...cloudflareAgentsFiberMetadata(stablePayload),
     resumed: result.resumed,
     rescheduled: result.rescheduled,
     retryReason: result.reason,
@@ -152,8 +160,8 @@ async function resumeAndDrain({
   readonly storage?: CloudflareDurableObjectStorage;
 }): Promise<ResumeAndDrainResult> {
   const attempt = createResumeRetryAttempt({
-    prefix: payload.prefix,
     runId: payload.runId,
+    scope: cloudflareAgentsFiberRetryScope(payload),
   });
   let resumed = false;
   try {
@@ -166,6 +174,14 @@ async function resumeAndDrain({
         retry,
         resumed,
       });
+    }
+    const ownership = turnExecutionOwnership(turn);
+    if (ownership?.runId === payload.runId && ownership.leaseId !== null) {
+      adoptResumeRetryLease(
+        attempt.authority,
+        ownership.leaseId,
+        payload.runId
+      );
     }
     resumed = true;
     const drainResult = await drainAgentTurnWithBudget(

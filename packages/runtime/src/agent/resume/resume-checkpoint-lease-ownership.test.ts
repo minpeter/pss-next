@@ -34,13 +34,13 @@ describe("resume checkpoint lease ownership", () => {
       threadKey: "default",
     });
     const attempt = createResumeRetryAttempt({
-      prefix: "test",
       runId,
+      scope: "test",
     });
     const claimLeaseId = leaseIdForRetryAuthority(
       attempt.authority,
-      "test",
-      runId
+      runId,
+      "test"
     );
     if (!claimLeaseId) {
       throw new TypeError("Expected retry attempt authority.");

@@ -1,7 +1,7 @@
 interface ResumeRetryAttemptState {
-  readonly leaseId: string;
-  readonly prefix: string;
+  leaseId: string;
   readonly runId: string;
+  readonly scope: string;
 }
 
 export interface ResumeRetryAttempt {
@@ -13,13 +13,13 @@ const claims = new WeakMap<object, ResumeRetryAttemptState>();
 const authorities = new WeakMap<object, ResumeRetryAttemptState>();
 
 export function createResumeRetryAttempt({
-  prefix,
   runId,
+  scope,
 }: {
-  readonly prefix: string;
   readonly runId: string;
+  readonly scope: string;
 }): ResumeRetryAttempt {
-  const state = { leaseId: crypto.randomUUID(), prefix, runId };
+  const state = { leaseId: crypto.randomUUID(), runId, scope };
   const claim = Object.freeze({});
   const authority = Object.freeze({});
   claims.set(claim, state);
@@ -38,16 +38,29 @@ export function leaseIdForResumeClaim(
   return state?.runId === runId ? state.leaseId : undefined;
 }
 
+export function adoptResumeRetryLease(
+  authority: object,
+  leaseId: string,
+  runId: string
+): boolean {
+  const state = authorities.get(authority);
+  if (!state || state.runId !== runId) {
+    return false;
+  }
+  state.leaseId = leaseId;
+  return true;
+}
+
 export function leaseIdForRetryAuthority(
   authority: object | undefined,
-  prefix: string,
-  runId: string
+  runId: string,
+  scope: string
 ): string | undefined {
   const state = authority && authorities.get(authority);
   if (authority) {
     authorities.delete(authority);
   }
-  return state?.prefix === prefix && state.runId === runId
+  return state?.runId === runId && state.scope === scope
     ? state.leaseId
     : undefined;
 }

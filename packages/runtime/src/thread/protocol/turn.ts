@@ -12,12 +12,12 @@ export interface TurnExecutionOwnership {
 }
 
 const executionOwnershipByTurn = new WeakMap<
-  BufferedAgentTurn,
+  AgentTurn,
   TurnExecutionOwnership
 >();
 
 export function bindTurnExecutionRun(
-  turn: BufferedAgentTurn,
+  turn: AgentTurn,
   runId: string,
   leaseId: string | null = null
 ): void {
@@ -29,6 +29,12 @@ export function bindTurnExecutionRun(
   if (existing.runId !== runId || existing.leaseId !== leaseId) {
     throw new Error(`AgentTurn is already bound to run id ${existing.runId}`);
   }
+}
+
+export function turnExecutionOwnership(
+  turn: AgentTurn
+): TurnExecutionOwnership | undefined {
+  return executionOwnershipByTurn.get(turn);
 }
 
 interface QueuedEvent {

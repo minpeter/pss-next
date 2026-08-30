@@ -18,8 +18,8 @@ describe("resume claim consumption", () => {
     const runId = "notification-run-retry-claim";
     const idempotencyKey = "background-complete:retry-claim";
     const attempt = createResumeRetryAttempt({
-      prefix: "tenant-a",
       runId,
+      scope: "tenant-a",
     });
     await host.store.turns.create(
       notificationRunRecord({ idempotencyKey, ownerNamespace, runId })
@@ -63,8 +63,8 @@ describe("resume claim consumption", () => {
     // Then: the stale public claim cannot recover the paired retry authority.
     const retryLeaseId = leaseIdForRetryAuthority(
       attempt.authority,
-      "tenant-a",
-      runId
+      runId,
+      "tenant-a"
     );
     expect(claimedLeaseId).toBeTypeOf("string");
     expect(claimedLeaseId).not.toBe(retryLeaseId);

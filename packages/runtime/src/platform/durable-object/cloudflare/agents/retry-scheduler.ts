@@ -6,6 +6,7 @@ import {
   assertNeverPayload,
   type CloudflareAgentsFiberPayload,
   type CloudflareAgentsThreadFiberPayload,
+  cloudflareAgentsFiberRetryScope,
   cloudflareAgentsRunPayload,
   cloudflareAgentsThreadPayload,
 } from "./payload";
@@ -50,8 +51,8 @@ export function createCloudflareAgentsFiberRetryScheduler<
   return async (payload, reason, authority) => {
     const leaseId = leaseIdForRetryAuthority(
       authority,
-      payload.prefix,
-      payload.runId
+      payload.runId,
+      cloudflareAgentsFiberRetryScope(payload)
     );
     if (leaseId === undefined) {
       return false;

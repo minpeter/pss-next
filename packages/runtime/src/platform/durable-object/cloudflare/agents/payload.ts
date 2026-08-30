@@ -40,6 +40,40 @@ export type CloudflareAgentsFiberPayload =
   | CloudflareAgentsRunFiberPayload
   | CloudflareAgentsThreadFiberPayload;
 
+export function snapshotCloudflareAgentsFiberPayload(
+  payload: CloudflareAgentsFiberPayload
+): CloudflareAgentsFiberPayload {
+  switch (payload.kind) {
+    case "run":
+      return Object.freeze(
+        cloudflareAgentsRunPayload({
+          attempt: payload.attempt,
+          prefix: payload.prefix,
+          runId: payload.runId,
+        })
+      );
+    case "thread":
+      return Object.freeze(
+        cloudflareAgentsThreadPayload({
+          attempt: payload.attempt,
+          idempotencyKey: payload.idempotencyKey,
+          notificationId: payload.notificationId,
+          prefix: payload.prefix,
+          runId: payload.runId,
+          threadKey: payload.threadKey,
+        })
+      );
+    default:
+      return assertNeverPayload(payload);
+  }
+}
+
+export function cloudflareAgentsFiberRetryScope(
+  payload: CloudflareAgentsFiberPayload
+): string {
+  return JSON.stringify(cloudflareAgentsFiberMetadata(payload));
+}
+
 export function cloudflareAgentsRunPayload({
   attempt,
   prefix,

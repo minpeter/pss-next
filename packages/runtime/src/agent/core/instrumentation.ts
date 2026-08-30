@@ -1,5 +1,10 @@
 import type { AgentEvent } from "../../thread/protocol/events";
-import type { AgentTurn } from "../../thread/protocol/turn";
+import {
+  type AgentTurn,
+  bindTurnExecutionRun,
+  type TurnExecutionOwnership,
+  turnExecutionOwnership,
+} from "../../thread/protocol/turn";
 
 export type AgentInstrumentationOperation =
   | "follow-up"
@@ -40,12 +45,14 @@ export function applyAgentInstrumentations(
   instrumentations: readonly AgentInstrumentation[],
   context: AgentInstrumentationContext
 ): AgentTurn {
-  const runId = turn.runId;
-  let wrapped = createPublicAgentTurn(turn, runId);
+  const ownership = turnExecutionOwnership(turn);
+  const runId = ownership?.runId ?? turn.runId;
+  let wrapped = createPublicAgentTurn(turn, runId, ownership);
   for (const instrumentation of instrumentations) {
     wrapped = createPublicAgentTurn(
       instrumentation.wrapTurn(wrapped, context),
-      runId
+      runId,
+      ownership
     );
   }
   return wrapped;
@@ -67,7 +74,8 @@ function assertAgentInstrumentation(
 
 function createPublicAgentTurn(
   turn: unknown,
-  runId: string | undefined
+  runId: string | undefined,
+  ownership: TurnExecutionOwnership | undefined
 ): AgentTurn {
   if (turn === null || typeof turn !== "object") {
     throw new TypeError(
@@ -80,7 +88,7 @@ function createPublicAgentTurn(
       "Agent: options.instrumentations entry wrapTurn() must return an AgentTurn."
     );
   }
-  return Object.freeze({
+  const publicTurn = Object.freeze({
     events: () => {
       const iterable = Reflect.apply(events, turn, []);
       if (!isAgentEventIterable(iterable)) {
@@ -92,6 +100,10 @@ function createPublicAgentTurn(
     },
     ...(runId === undefined ? {} : { runId }),
   });
+  if (ownership) {
+    bindTurnExecutionRun(publicTurn, ownership.runId, ownership.leaseId);
+  }
+  return publicTurn;
 }
 
 function isAgentEventIterable(

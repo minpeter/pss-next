@@ -11,6 +11,7 @@ import {
   createCloudflareHost,
   listScheduledCloudflareAgentsRuns,
 } from "./index";
+import { cloudflareAgentsFiberRetryScope } from "./payload";
 import type { FakeCloudflareAgent } from "./test-support";
 
 export function createRetryHost(
@@ -40,8 +41,8 @@ export async function prepareRetryAuthority(
   payload: CloudflareAgentsFiberPayload
 ): Promise<object> {
   const attempt = createResumeRetryAttempt({
-    prefix: payload.prefix,
     runId: payload.runId,
+    scope: cloudflareAgentsFiberRetryScope(payload),
   });
   await claimRetryAttempt(host, payload, { claim: attempt.claim });
   return attempt.authority;
