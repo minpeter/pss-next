@@ -104,6 +104,11 @@ export function createDurableObjectStorageHost({
   storage,
   scheduler = createDurableObjectScheduledWorkScheduler({ prefix, storage }),
 }: DurableObjectStorageHostOptions): AgentHost {
+  if (threadStore !== undefined) {
+    throw new TypeError(
+      "Durable Object storage host external threadStore cannot join its atomic transactions."
+    );
+  }
   const store = new ExecutionStoreImplementation({
     maxPayloadBytes,
     prefix,
@@ -116,7 +121,7 @@ export function createDurableObjectStorageHost({
     }),
     diagnostics: noopRuntimeDiagnostics,
     scheduler,
-    store: threadStore ? executionStoreWithThreads(store, threadStore) : store,
+    store,
   };
 }
 
@@ -174,31 +179,4 @@ export async function ackScheduledDurableObjectThreadPrompt(
   options: { readonly prefix?: string } = {}
 ): Promise<void> {
   await ackScheduledThreadPrompt(storage, prompt, options, defaultPrefix);
-}
-
-function executionStoreWithThreads(
-  store: AgentHost["store"],
-  threads: ThreadStore
-): AgentHost["store"] {
-  return {
-    events: store.events,
-    inputs: store.inputs,
-    leaseFencedCheckpoints: store.leaseFencedCheckpoints,
-    notifications: store.notifications,
-    checkpoints: store.checkpoints,
-    threads,
-    turns: store.turns,
-    transaction: (fn) =>
-      store.transaction((tx) =>
-        fn({
-          events: tx.events,
-          inputs: tx.inputs,
-          leaseFencedCheckpoints: tx.leaseFencedCheckpoints,
-          notifications: tx.notifications,
-          checkpoints: tx.checkpoints,
-          threads,
-          turns: tx.turns,
-        })
-      ),
-  };
 }
