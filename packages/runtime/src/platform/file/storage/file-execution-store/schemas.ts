@@ -174,7 +174,6 @@ function isRunStatus(value: unknown): value is TurnStatus {
     value === "leased" ||
     value === "needs-recovery" ||
     value === "queued" ||
-    value === "retrying" ||
     value === "running" ||
     value === "suspended"
   );

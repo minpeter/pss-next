@@ -12,7 +12,6 @@ export function describeExecutionLeaseContract(
       ["leased", true],
       ["running", true],
       ["suspended", true],
-      ["retrying", false],
       ["needs-recovery", false],
       ["completed", false],
       ["cancelled", false],
@@ -30,8 +29,11 @@ export function describeExecutionLeaseContract(
           claimOptions("owner", 10)
         );
         expect(result.ok).toBe(claimable);
-        if (!claimable && !result.ok) {
-          expect(result.reason).toBe("not-claimable");
+        if (!claimable) {
+          expect(result).toEqual({
+            ok: false,
+            reason: "not-claimable",
+          });
         }
       }
     );
@@ -62,7 +64,6 @@ export function describeExecutionLeaseContract(
       "completed",
       "error",
       "needs-recovery",
-      "retrying",
     ] satisfies readonly TurnStatus[])(
       "reports non-claimable %s before considering stale lease data",
       async (status) => {
