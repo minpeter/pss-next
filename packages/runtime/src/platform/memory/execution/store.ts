@@ -22,6 +22,10 @@ import { InMemoryThreadInputInbox } from "./inputs";
 import { InMemoryNotificationInbox } from "./notifications";
 import { InMemoryRunStore } from "./runs";
 import {
+  createBoundInMemoryExecutionScheduler,
+  type InMemoryExecutionScheduler,
+} from "./scheduler";
+import {
   type MutationTransaction,
   serializeCheckpointMutations,
   serializeEventMutations,
@@ -42,6 +46,7 @@ export class InMemoryExecutionStore implements HostStore {
   readonly inputs: ThreadInputInbox;
   readonly leaseFencedCheckpoints: LeaseFencedCheckpointStore;
   readonly notifications: NotificationInbox;
+  readonly scheduler: InMemoryExecutionScheduler;
   readonly threadEvents: ThreadEventLog;
   readonly turns: TurnStore;
   readonly threads: ThreadStore;
@@ -71,6 +76,13 @@ export class InMemoryExecutionStore implements HostStore {
       new InMemoryExecutionThreadStore(state),
       run
     );
+    this.scheduler = createBoundInMemoryExecutionScheduler({
+      mutate: async (operation) =>
+        await this.#enqueueState((next) =>
+          Promise.resolve(operation(next.scheduledWork))
+        ),
+      read: () => this.#state.scheduledWork,
+    });
   }
   get sessions(): ThreadStore {
     return this.threads;
@@ -91,6 +103,15 @@ export class InMemoryExecutionStore implements HostStore {
   async #enqueue<T>(
     mutation: (tx: MutationTransaction) => Promise<T>
   ): Promise<T> {
+    return await this.#enqueueState(async (state) => {
+      const transactionStore = new InMemoryTransactionStore(state);
+      return await mutation(transactionStore);
+    });
+  }
+
+  async #enqueueState<T>(
+    mutation: (state: ExecutionState) => Promise<T>
+  ): Promise<T> {
     const previousTransaction = this.#transactionChain;
     let releaseTransaction: () => void = () => undefined;
     this.#transactionChain = new Promise<void>((resolve) => {
@@ -98,9 +119,8 @@ export class InMemoryExecutionStore implements HostStore {
     });
     await previousTransaction;
     const transactionState = cloneState(this.#state);
-    const transactionStore = new InMemoryTransactionStore(transactionState);
     try {
-      const result = await mutation(transactionStore);
+      const result = await mutation(transactionState);
       this.#state = transactionState;
       return result;
     } finally {
@@ -156,6 +176,7 @@ function deleteThreadFromState(state: ExecutionState, threadKey: string): void {
     state.turns.delete(runId);
     state.events.delete(runId);
     state.checkpoints.delete(runId);
+    state.scheduledWork.runs.delete(runId);
   }
   for (const [key, notification] of state.notificationsByKey) {
     if (
@@ -163,6 +184,14 @@ function deleteThreadFromState(state: ExecutionState, threadKey: string): void {
       runIdSet.has(notification.runId)
     ) {
       state.notificationsByKey.delete(key);
+    }
+  }
+  for (const [key, work] of state.scheduledWork.threadPrompts) {
+    if (
+      work.payload.threadKey === threadKey ||
+      (work.payload.runId !== undefined && runIdSet.has(work.payload.runId))
+    ) {
+      state.scheduledWork.threadPrompts.delete(key);
     }
   }
 }

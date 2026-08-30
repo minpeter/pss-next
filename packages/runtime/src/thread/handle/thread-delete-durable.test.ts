@@ -79,6 +79,45 @@ describe("public durable thread deletion", () => {
       await rm(directory, { force: true, recursive: true });
     }
   });
+
+  it("removes memory scheduled work while preserving unrelated work", async () => {
+    // Given: memory scheduling contains victim and survivor aggregates.
+    const host = createInMemoryHost();
+    await seedThreadData(host);
+    await host.scheduler.enqueueRun("run-victim");
+    await host.scheduler.enqueueRun("run-survivor");
+    await host.scheduler.resumeThread("victim", {
+      idempotencyKey: "delete-notification",
+      notificationId: "delete-notification",
+      runId: "run-victim",
+    });
+    await host.scheduler.resumeThread("survivor", {
+      idempotencyKey: "keep-notification",
+      notificationId: "keep-notification",
+      runId: "run-survivor",
+    });
+
+    // When: the victim thread is deleted through the public API.
+    await new Agent({
+      host,
+      model: createCallbackModel(() => Promise.resolve([])),
+    })
+      .thread("victim")
+      .delete();
+
+    // Then: only unrelated scheduled work remains reachable.
+    await expect(host.scheduler.listScheduledRuns()).resolves.toEqual([
+      "run-survivor",
+    ]);
+    await expect(host.scheduler.listScheduledThreadPrompts()).resolves.toEqual([
+      {
+        idempotencyKey: "keep-notification",
+        notificationId: "keep-notification",
+        runId: "run-survivor",
+        threadKey: "survivor",
+      },
+    ]);
+  });
 });
 
 async function seedThreadData(host: AgentHost): Promise<void> {

@@ -1,5 +1,5 @@
 import { describeExecutionSchedulerContract } from "../../../contracts/execution-scheduler/contract";
-import { InMemoryExecutionScheduler } from "./execution-host";
+import { InMemoryExecutionScheduler } from "./scheduler";
 
 describeExecutionSchedulerContract({
   createHarness: () => {
