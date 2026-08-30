@@ -409,6 +409,7 @@
       "type CloudflareAgentsPrefixGuard",
       "type CloudflareAgentsPrefixGuardOptions",
       "type CloudflareAgentsResumableAgent",
+      "type CloudflareAgentsResumeOptions",
       "type CloudflareAgentsResumeRun",
       "type CloudflareAgentsRetryFiber",
       "type CloudflareAgentsRetryReason",

@@ -155,11 +155,17 @@ async function resumeAndDrain({
   readonly resume: CloudflareAgentsResumeRun;
   readonly storage?: CloudflareDurableObjectStorage;
 }): Promise<ResumeAndDrainResult> {
+  let retryLeaseId: string | null | undefined;
   let resumed = false;
   try {
-    const turn = await resume(payload);
+    const turn = await resume(payload, {
+      captureLeaseId: (leaseId) => {
+        retryLeaseId = leaseId;
+      },
+    });
     if (!turn) {
       return await retryInterrupted({
+        leaseId: retryLeaseId,
         payload,
         reason: "not-claimable",
         retry,
@@ -167,9 +173,8 @@ async function resumeAndDrain({
       });
     }
     resumed = true;
-    const resumedLeaseId = capturedResumedTurnLeaseId(turn);
-    if (resumedLeaseId !== undefined) {
-      captureCloudflareAgentsRetryLeaseId(payload, resumedLeaseId);
+    if (retryLeaseId === undefined) {
+      retryLeaseId = capturedResumedTurnLeaseId(turn);
     }
     const drainResult = await drainAgentTurnWithBudget(
       turn,
@@ -177,6 +182,7 @@ async function resumeAndDrain({
     );
     if (drainResult.stoppedReason) {
       return await retryInterrupted({
+        leaseId: retryLeaseId,
         payload,
         reason: drainResult.stoppedReason,
         retry,
@@ -189,11 +195,11 @@ async function resumeAndDrain({
       resumed,
     };
   } catch (error) {
-    const resumedLeaseId = capturedResumeErrorLeaseId(error);
-    if (resumedLeaseId !== undefined) {
-      captureCloudflareAgentsRetryLeaseId(payload, resumedLeaseId);
+    if (retryLeaseId === undefined) {
+      retryLeaseId = capturedResumeErrorLeaseId(error);
     }
     const result = await retryInterrupted({
+      leaseId: retryLeaseId,
       payload,
       reason: "error",
       retry,
@@ -206,16 +212,21 @@ async function resumeAndDrain({
   }
 }
 async function retryInterrupted({
+  leaseId,
   payload,
   reason,
   retry,
   resumed,
 }: {
+  readonly leaseId: string | null | undefined;
   readonly payload: CloudflareAgentsFiberPayload;
   readonly reason: CloudflareAgentsRetryReason;
   readonly retry?: CloudflareAgentsRetryFiber;
   readonly resumed: boolean;
 }): Promise<ResumeAndDrainResult> {
+  if (leaseId !== undefined) {
+    captureCloudflareAgentsRetryLeaseId(payload, leaseId);
+  }
   return {
     completed: false,
     reason,

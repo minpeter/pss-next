@@ -1,8 +1,4 @@
-import type {
-  AgentHost,
-  NotificationRecord,
-  TurnRecord,
-} from "../../execution/host/types";
+import type { AgentHost, NotificationRecord } from "../../execution/host/types";
 import {
   ContextTokenCalibrationRegistry,
   ContextTokenMeter,
@@ -18,7 +14,7 @@ import {
 } from "../../thread/state/migrations";
 import type { ThreadStore } from "../../thread/store/types";
 import { stableAgentNamespace } from "../identity/namespace";
-import { resumeAgentTurn } from "../resume/resume";
+import { type ClaimedTurnRecord, resumeAgentTurn } from "../resume/resume";
 import { AgentHookRuntime } from "./hook-runtime";
 import { threadStoreForHost } from "./host-thread-store";
 import {
@@ -148,8 +144,14 @@ export class Agent {
    * `supportsResume` first when you need to distinguish unsupported from
    * not-found.
    */
-  async resume(runId: string): Promise<AgentTurn | null> {
+  async resume(
+    runId: string,
+    options: {
+      readonly captureLeaseId?: (leaseId: string) => void;
+    } = {}
+  ): Promise<AgentTurn | null> {
     return await resumeAgentTurn({
+      captureLeaseId: options.captureLeaseId,
       host: this.#host,
       ownerNamespace: this.#ownerNamespace,
       resumeNotification: (notification, run) =>
@@ -225,14 +227,14 @@ export class Agent {
 
   async #resumeNotification(
     notification: NotificationRecord,
-    run: TurnRecord
+    run: ClaimedTurnRecord
   ): Promise<AgentTurn> {
     const turn = await this.#threadEntry(notification.threadKey).notify(
       notification.input,
       {
         executionRun: {
           kind: "notification",
-          leaseId: run.lease?.leaseId,
+          leaseId: run.lease.leaseId,
           runId: notification.runId,
         },
         observerEvents: notification.observerEvents,

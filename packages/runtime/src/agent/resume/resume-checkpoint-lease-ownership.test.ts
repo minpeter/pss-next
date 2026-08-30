@@ -11,6 +11,82 @@ import { notificationRunRecord } from "./notification-resume.test-support";
 import { resumeAgentTurn } from "./resume";
 
 describe("resume checkpoint lease ownership", () => {
+  it("captures claimed ownership before a primitive resume failure", async () => {
+    // Given: notification resume claims one durable lease.
+    const host = createInMemoryHost();
+    const runId = "resume-primitive-failure";
+    const idempotencyKey = "resume-primitive-failure-key";
+    const ownerNamespace = agentNamespace("checkpoint-owner");
+    await host.store.turns.create(
+      notificationRunRecord({ idempotencyKey, ownerNamespace, runId })
+    );
+    await host.store.notifications.enqueue({
+      idempotencyKey,
+      input: userText("resume primitive failure"),
+      notificationId: "resume-primitive-failure-notification",
+      ownerNamespace,
+      runId,
+      status: "pending",
+      threadKey: "default",
+    });
+    let capturedLeaseId: string | undefined;
+
+    // When: work rejects with a value that cannot key a WeakMap.
+    const resumed = resumeAgentTurn({
+      captureLeaseId: (leaseId) => {
+        capturedLeaseId = leaseId;
+      },
+      host,
+      ownerNamespace,
+      resumeNotification: () => Promise.reject("primitive failure"),
+      runId,
+    });
+
+    // Then: retry ownership is available independently of the rejection.
+    await expect(resumed).rejects.toBe("primitive failure");
+    expect(capturedLeaseId).toBeTypeOf("string");
+  });
+
+  it("preserves the successful claim lease when its record omits the duplicate lease", async () => {
+    // Given: a conforming store returns claim authority separately from a
+    // general TurnRecord whose optional duplicate lease is absent.
+    const base = createInMemoryHost();
+    const runId = "resume-claim-authority";
+    const idempotencyKey = "resume-claim-authority-key";
+    const ownerNamespace = agentNamespace("checkpoint-owner");
+    await base.store.turns.create(
+      notificationRunRecord({ idempotencyKey, ownerNamespace, runId })
+    );
+    await base.store.notifications.enqueue({
+      idempotencyKey,
+      input: userText("resume claim authority"),
+      notificationId: "resume-claim-authority-notification",
+      ownerNamespace,
+      runId,
+      status: "pending",
+      threadKey: "default",
+    });
+    const host = hostWithClaimRecordWithoutLease(base);
+    let claimedLeaseId: string | undefined;
+    const turn = new BufferedAgentTurn();
+    turn.close();
+
+    // When: notification resume receives the successful claim.
+    const resumed = await resumeAgentTurn({
+      host,
+      ownerNamespace,
+      resumeNotification: (_notification, claimed) => {
+        claimedLeaseId = claimed.lease?.leaseId;
+        return Promise.resolve(turn);
+      },
+      runId,
+    });
+
+    // Then: mandatory claim authority survives the broader record shape.
+    expect(resumed).toBe(turn);
+    expect(claimedLeaseId).toBeTypeOf("string");
+  });
+
   it("does not checkpoint with a lease acquired after resume began", async () => {
     // Given: a queued notification owned by the resuming agent.
     const base = createInMemoryHost();
@@ -71,6 +147,43 @@ describe("resume checkpoint lease ownership", () => {
     await expect(base.store.checkpoints.latest(runId)).resolves.toBeNull();
   });
 });
+
+function hostWithClaimRecordWithoutLease(base: AgentHost): AgentHost {
+  return {
+    ...base,
+    store: {
+      ...base.store,
+      transaction: (callback) =>
+        base.store.transaction((transaction) =>
+          callback({
+            ...transaction,
+            turns: turnsWithClaimRecordWithoutLease(transaction.turns),
+          })
+        ),
+    },
+  };
+}
+
+function turnsWithClaimRecordWithoutLease(turns: TurnStore): TurnStore {
+  return new Proxy(turns, {
+    get(target, property) {
+      if (property !== "claim") {
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async (
+        ...parameters: Parameters<TurnStore["claim"]>
+      ): ReturnType<TurnStore["claim"]> => {
+        const claim = await target.claim(...parameters);
+        if (!claim.ok) {
+          return claim;
+        }
+        const { lease: _lease, ...record } = claim.record;
+        return { ...claim, record };
+      };
+    },
+  });
+}
 
 function hostWithLeaseHandoff(base: AgentHost): AgentHost {
   return {

@@ -53,12 +53,8 @@ describe("thread execution cancellation races", () => {
       threadKey: "thread",
     });
 
-    // Then: cancellation cannot borrow owner B's lease.
-    await expect(cancellation).rejects.toMatchObject({
-      name: "TurnTransitionConflictError",
-      reason: "lease-conflict",
-      runId,
-    });
+    // Then: local teardown accepts lost ownership without borrowing owner B.
+    await expect(cancellation).resolves.toBeUndefined();
     await expect(host.store.turns.get(runId)).resolves.toEqual(ownerB.record);
   });
 

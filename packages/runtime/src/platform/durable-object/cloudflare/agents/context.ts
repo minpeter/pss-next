@@ -16,6 +16,7 @@ import type {
   CloudflareAgentsFiberRecoveryContext,
   CloudflareAgentsFiberRecoveryResult,
   CloudflareAgentsPlatformAgent,
+  CloudflareAgentsResumeOptions,
   CloudflareAgentsResumeRun,
   CloudflareAgentsStartFiberResult,
   CloudflareAgentsTurnDrainOptions,
@@ -79,7 +80,10 @@ export interface CloudflarePlatformContext<
 }
 
 export interface CloudflareAgentsResumableAgent {
-  resume(runId: string): ReturnType<CloudflareAgentsResumeRun>;
+  resume(
+    runId: string,
+    options?: CloudflareAgentsResumeOptions
+  ): ReturnType<CloudflareAgentsResumeRun>;
 }
 
 export type CloudflarePlatformPrefixGuard<Env> = (
@@ -134,8 +138,11 @@ export function createCloudflarePlatformContext<
       retryMaxAttempts,
       retryMaxRunAfterMs,
       retryRunAfterMs,
-      resume: async (payload): ReturnType<CloudflareAgentsResumeRun> =>
-        await (await createContextAgent(payload.prefix)).resume(payload.runId),
+      resume: async (payload, options): ReturnType<CloudflareAgentsResumeRun> =>
+        await (await createContextAgent(payload.prefix)).resume(
+          payload.runId,
+          options
+        ),
     });
   const createContextAgent = async (
     prefix = contextDefaultPrefix
@@ -169,9 +176,13 @@ export function createCloudflarePlatformContext<
         ctx,
         drain,
         retry,
-        resume: async (payload): ReturnType<CloudflareAgentsResumeRun> =>
+        resume: async (
+          payload,
+          options
+        ): ReturnType<CloudflareAgentsResumeRun> =>
           await (await createContextAgent(payload.prefix)).resume(
-            payload.runId
+            payload.runId,
+            options
           ),
         storage: durableObjectContext.storage,
         ...trust,
@@ -182,9 +193,13 @@ export function createCloudflarePlatformContext<
         drain,
         payload,
         retry,
-        resume: async (payload): ReturnType<CloudflareAgentsResumeRun> =>
+        resume: async (
+          payload,
+          options
+        ): ReturnType<CloudflareAgentsResumeRun> =>
           await (await createContextAgent(payload.prefix)).resume(
-            payload.runId
+            payload.runId,
+            options
           ),
         storage: durableObjectContext.storage,
         ...trust,

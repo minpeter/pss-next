@@ -15,9 +15,15 @@ const CLAIMABLE_TURN_STATUSES = new Set<TurnStatus>([
 ]);
 
 export function decideTurnClaim(
+  runId: string,
   record: TurnRecord,
   nowMs: number
-): { ok: true } | { ok: false; reason: "leased" | "not-claimable" } {
+):
+  | { ok: true }
+  | { ok: false; reason: "leased" | "not-claimable" | "not-found" } {
+  if (record.runId !== runId) {
+    return { ok: false, reason: "not-found" };
+  }
   if (!CLAIMABLE_TURN_STATUSES.has(record.status)) {
     return { ok: false, reason: "not-claimable" };
   }
@@ -42,9 +48,13 @@ export function applyTurnTransitionUpdate(
 }
 
 export function decideTurnTransition(
+  runId: string,
   current: TurnRecord,
   expected: TurnTransitionExpected
 ): Exclude<TurnTransitionResult, { ok: true }> | null {
+  if (current.runId !== runId) {
+    return { ok: false, reason: "not-found" };
+  }
   if (expected.status !== undefined && current.status !== expected.status) {
     return { ok: false, reason: "status-conflict" };
   }
@@ -82,7 +92,11 @@ export async function transitionTurn(
   if (!current) {
     return { ok: false, reason: "not-found" };
   }
-  const conflict = decideTurnTransition(current, transition.expected);
+  const conflict = decideTurnTransition(
+    transition.runId,
+    current,
+    transition.expected
+  );
   if (conflict) {
     return conflict;
   }

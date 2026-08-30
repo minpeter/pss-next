@@ -68,7 +68,7 @@ export class InMemoryRunStore implements TurnStore {
     if (!current) {
       return Promise.resolve({ ok: false, reason: "not-found" });
     }
-    const conflict = decideTurnTransition(current, expected);
+    const conflict = decideTurnTransition(runId, current, expected);
     if (conflict) {
       return Promise.resolve(conflict);
     }
@@ -89,7 +89,7 @@ export class InMemoryRunStore implements TurnStore {
       return Promise.resolve({ ok: false, reason: "not-found" });
     }
 
-    const decision = decideTurnClaim(record, options.nowMs);
+    const decision = decideTurnClaim(runId, record, options.nowMs);
     if (!decision.ok) {
       return Promise.resolve(decision);
     }

@@ -218,6 +218,9 @@ export async function cancelThreadExecutionRun({
     update: { status: "cancelled" },
   });
   if (!transition.ok) {
+    if (transition.reason === "lease-conflict") {
+      return;
+    }
     const current =
       transition.reason === "status-conflict"
         ? await executionHost.store.turns.get(cancellation.runId)

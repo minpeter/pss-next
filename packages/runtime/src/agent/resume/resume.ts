@@ -4,6 +4,7 @@ import type {
   AgentHost,
   NotificationInbox,
   NotificationRecord,
+  TurnLease,
   TurnRecord,
   TurnStore,
 } from "../../execution/host/types";
@@ -12,6 +13,10 @@ import { ownsAgentNamespace } from "../identity/namespace";
 
 const resumeErrorLeaseIds = new WeakMap<object, string | null>();
 const resumedTurnLeaseIds = new WeakMap<AgentTurn, string | null>();
+
+export type ClaimedTurnRecord = TurnRecord & {
+  readonly lease: TurnLease;
+};
 
 export function capturedResumeErrorLeaseId(
   error: unknown
@@ -26,16 +31,18 @@ export function capturedResumedTurnLeaseId(
 }
 
 interface ResumeAgentTurnInput {
+  readonly captureLeaseId?: (leaseId: string) => void;
   readonly host: AgentHost;
   readonly ownerNamespace: string;
   resumeNotification(
     notification: NotificationRecord,
-    run: TurnRecord
+    run: ClaimedTurnRecord
   ): Promise<AgentTurn>;
   readonly runId: string;
 }
 
 export async function resumeAgentTurn({
+  captureLeaseId,
   host,
   ownerNamespace,
   resumeNotification,
@@ -93,19 +100,20 @@ export async function resumeAgentTurn({
     const { notification, run: claimed } = claimedTuple;
 
     try {
+      captureLeaseId?.(claimed.lease.leaseId);
       const notificationRun = await resumeNotification(notification, claimed);
-      resumedTurnLeaseIds.set(notificationRun, claimed.lease?.leaseId ?? null);
+      resumedTurnLeaseIds.set(notificationRun, claimed.lease.leaseId);
       if (notificationRun.runId !== claimed.runId) {
         await completeNotificationRun(
           host,
           claimed.runId,
-          claimed.lease?.leaseId ?? null
+          claimed.lease.leaseId
         );
       }
       return notificationRun;
     } catch (error) {
       if (isWeakKey(error)) {
-        resumeErrorLeaseIds.set(error, claimed.lease?.leaseId ?? null);
+        resumeErrorLeaseIds.set(error, claimed.lease.leaseId);
       }
       await host.store.notifications.releaseByIdempotencyKey(idempotencyKey);
       throw error;
@@ -200,12 +208,12 @@ export async function completeNotificationRun(
 async function claimRun(
   turns: TurnStore,
   run: TurnRecord
-): Promise<TurnRecord | null> {
+): Promise<ClaimedTurnRecord | null> {
   const claim = await turns.claim(run.runId, {
     attempt: (run.lease?.attempt ?? 0) + 1,
     leaseId: crypto.randomUUID(),
     leaseMs: 300_000,
     nowMs: Date.now(),
   });
-  return claim.ok ? claim.record : null;
+  return claim.ok ? { ...claim.record, lease: claim.lease } : null;
 }

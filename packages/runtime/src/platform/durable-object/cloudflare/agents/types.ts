@@ -172,8 +172,13 @@ export interface CloudflareAgentsTurnDrainOptions {
   readonly onEvent?: CloudflareAgentsEventHandler;
 }
 
+export interface CloudflareAgentsResumeOptions {
+  readonly captureLeaseId?: (leaseId: string) => void;
+}
+
 export type CloudflareAgentsResumeRun = (
-  payload: CloudflareAgentsFiberPayload
+  payload: CloudflareAgentsFiberPayload,
+  options?: CloudflareAgentsResumeOptions
 ) => Promise<AgentTurn | null>;
 
 export type CloudflareAgentsRetryReason =

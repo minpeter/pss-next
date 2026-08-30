@@ -51,7 +51,7 @@ export class DurableObjectRunStore implements TurnStore {
       if (!run) {
         return { ok: false, reason: "not-found" };
       }
-      const decision = decideTurnClaim(run, options.nowMs);
+      const decision = decideTurnClaim(runId, run, options.nowMs);
       if (!decision.ok) {
         return decision;
       }
@@ -117,7 +117,7 @@ export class DurableObjectRunStore implements TurnStore {
       if (!current) {
         return { ok: false, reason: "not-found" };
       }
-      const conflict = decideTurnTransition(current, expected);
+      const conflict = decideTurnTransition(runId, current, expected);
       if (conflict) {
         return conflict;
       }
