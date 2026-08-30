@@ -198,7 +198,13 @@ export class AgentThread {
 
   async #deleteThread(): Promise<void> {
     await this.#shutdown();
-    await this.#context.state.delete();
+    const hostStore = this.#context.execution.executionHost?.store;
+    const deleteThread = hostStore?.deleteThread?.bind(hostStore);
+    await this.#context.state.delete(
+      deleteThread
+        ? async () => await deleteThread(this.#context.threadKey)
+        : undefined
+    );
   }
 
   async #shutdown(): Promise<void> {

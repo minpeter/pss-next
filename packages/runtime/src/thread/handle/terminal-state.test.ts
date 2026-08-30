@@ -129,9 +129,7 @@ describe("Agent thread terminal state", () => {
     await deletedRun;
     await expect(
       host.store.turns.get(deletedTurn.runId ?? "")
-    ).resolves.toMatchObject({
-      status: "cancelled",
-    });
+    ).resolves.toBeNull();
     await collect(await agent.thread("delete-active").send("fresh"));
 
     expect(seenHistory.at(-1)).toEqual([

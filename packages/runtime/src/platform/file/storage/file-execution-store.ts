@@ -14,10 +14,12 @@ import type {
   TurnStore,
 } from "../../../execution/host/types";
 import type { ThreadStore } from "../../../thread/store/types";
+import { deleteFileExecutionThread } from "./file-execution-store/delete-thread";
 import {
   copyDataDirectories,
   currentDataDirectory,
   GENERATIONS_DIRECTORY,
+  migrateLegacyScheduledWork,
   writeCurrentGeneration,
 } from "./file-execution-store/generation";
 import {
@@ -74,8 +76,26 @@ export class FileExecutionStore implements HostStore {
     this.threads = ports.threads;
   }
 
+  async deleteThread(threadKey: string): Promise<void> {
+    await this.#commitGeneration(async (directory) => {
+      await deleteFileExecutionThread(directory, threadKey);
+    });
+  }
+
   async transaction<T>(
     fn: (tx: HostStoreTransaction) => Promise<T>
+  ): Promise<T> {
+    return await this.#commitGeneration(async (directory) => {
+      const tx = createFileExecutionStorePorts(
+        () => Promise.resolve(directory),
+        createFileExecutionLock(this.#lockDirectory, "held")
+      );
+      return await fn(tx);
+    });
+  }
+
+  async #commitGeneration<T>(
+    operation: (directory: string) => Promise<T>
   ): Promise<T> {
     return await withFileLock(
       this.#lockDirectory,
@@ -92,15 +112,10 @@ export class FileExecutionStore implements HostStore {
 
         let committed = false;
         try {
-          await copyDataDirectories(
-            await currentDataDirectory(this.#directory),
-            transactionDirectory
-          );
-          const tx = createFileExecutionStorePorts(
-            () => Promise.resolve(transactionDirectory),
-            createFileExecutionLock(this.#lockDirectory, "held")
-          );
-          const result = await fn(tx);
+          const currentDirectory = await currentDataDirectory(this.#directory);
+          await migrateLegacyScheduledWork(this.#directory, currentDirectory);
+          await copyDataDirectories(currentDirectory, transactionDirectory);
+          const result = await operation(transactionDirectory);
           await writeCurrentGeneration(this.#directory, generationId);
           committed = true;
           return result;

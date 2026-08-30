@@ -212,7 +212,7 @@ export class ThreadState {
     }, options.signal);
   }
 
-  async delete(): Promise<void> {
+  async delete(remove = () => this.#persistence.delete()): Promise<void> {
     const current = this.#machine.state;
     if (current.tag === "deleted") {
       return;
@@ -236,7 +236,7 @@ export class ThreadState {
           persistence: this.#persistence.captureMetadata(),
         };
         try {
-          await this.#persistence.delete();
+          await remove();
         } catch (error) {
           if (this.#machine.toIf("deleting", { tag: rollbackTag })) {
             this.#persistence.restoreMetadata(previous.persistence);

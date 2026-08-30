@@ -5,6 +5,10 @@ import {
   threadPromptScheduledWorkId,
 } from "../../../execution/scheduled-work";
 import {
+  currentDataDirectory,
+  migrateLegacyScheduledWork,
+} from "../storage/file-execution-store/generation";
+import {
   fileForScheduledWork,
   parseStoredScheduledRunWork,
   parseStoredScheduledThreadPromptWork,
@@ -26,7 +30,13 @@ export async function appendScheduledNodeRun(
   runId: string,
   options: NodeScheduledWorkAppendOptions = {}
 ): Promise<void> {
-  await insertScheduledWork(directory, "run", runId, runId, options);
+  await insertScheduledWork(
+    await scheduledDataDirectory(directory),
+    "run",
+    runId,
+    runId,
+    options
+  );
 }
 
 export async function appendScheduledNodeThreadPrompt(
@@ -34,7 +44,7 @@ export async function appendScheduledNodeThreadPrompt(
   prompt: NodeScheduledThreadPrompt
 ): Promise<void> {
   await insertScheduledWork(
-    directory,
+    await scheduledDataDirectory(directory),
     "thread-prompt",
     threadPromptScheduledWorkId(prompt),
     prompt
@@ -53,7 +63,11 @@ export async function ackScheduledNodeRun(
   directory: string,
   runId: string
 ): Promise<void> {
-  await deleteScheduledWork(directory, "run", runId);
+  await deleteScheduledWork(
+    await scheduledDataDirectory(directory),
+    "run",
+    runId
+  );
 }
 
 export async function listScheduledNodeThreadPrompts(
@@ -69,7 +83,7 @@ export async function ackScheduledNodeThreadPrompt(
   prompt: NodeScheduledThreadPrompt
 ): Promise<void> {
   await deleteScheduledWork(
-    directory,
+    await scheduledDataDirectory(directory),
     "thread-prompt",
     threadPromptScheduledWorkId(prompt)
   );
@@ -106,7 +120,7 @@ async function selectScheduledRunWork(
   options: NodeScheduledWorkListOptions
 ): Promise<readonly StoredScheduledRunWork[]> {
   return await selectScheduledWork(
-    directory,
+    await scheduledDataDirectory(directory),
     "run",
     options,
     parseStoredScheduledRunWork
@@ -118,7 +132,7 @@ async function selectScheduledThreadPromptWork(
   options: NodeScheduledWorkListOptions
 ): Promise<readonly StoredScheduledThreadPromptWork[]> {
   return await selectScheduledWork(
-    directory,
+    await scheduledDataDirectory(directory),
     "thread-prompt",
     options,
     parseStoredScheduledThreadPromptWork
@@ -174,6 +188,12 @@ async function deleteScheduledWork(
   workId: string
 ): Promise<void> {
   await rm(fileForScheduledWork(directory, kind, workId), { force: true });
+}
+
+async function scheduledDataDirectory(directory: string): Promise<string> {
+  const current = await currentDataDirectory(directory);
+  await migrateLegacyScheduledWork(directory, current);
+  return current;
 }
 
 import { isNodeError } from "../../../internal/guards";
