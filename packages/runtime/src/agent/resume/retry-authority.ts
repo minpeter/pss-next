@@ -32,6 +32,9 @@ export function leaseIdForResumeClaim(
   runId: string
 ): string | undefined {
   const state = claim && claims.get(claim);
+  if (claim) {
+    claims.delete(claim);
+  }
   return state?.runId === runId ? state.leaseId : undefined;
 }
 
@@ -41,6 +44,9 @@ export function leaseIdForRetryAuthority(
   runId: string
 ): string | undefined {
   const state = authority && authorities.get(authority);
+  if (authority) {
+    authorities.delete(authority);
+  }
   return state?.prefix === prefix && state.runId === runId
     ? state.leaseId
     : undefined;

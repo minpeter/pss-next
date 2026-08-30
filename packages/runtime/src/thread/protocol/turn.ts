@@ -102,6 +102,7 @@ export class BufferedAgentTurn implements AgentTurn {
     if (runId !== undefined) {
       bindTurnExecutionRun(this, runId);
     }
+    Object.preventExtensions(this);
   }
 
   get runId(): string | undefined {

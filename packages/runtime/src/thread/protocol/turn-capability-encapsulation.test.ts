@@ -25,10 +25,16 @@ describe("public AgentTurn capability boundary", () => {
     const turn = await thread.send("inspect public turn");
     const exposedOwnership = Reflect.get(turn, "executionOwnership");
     const exposedBinder = Reflect.get(turn, "bindRunId");
+    const canonicalRunId = turn.runId;
+    const shadowed = Reflect.defineProperty(turn, "runId", {
+      value: "victim-run",
+    });
     await collect(turn);
 
     // Then: only the public runId value remains observable.
-    expect(turn.runId).toBeTypeOf("string");
+    expect(canonicalRunId).toBeTypeOf("string");
+    expect(shadowed).toBe(false);
+    expect(turn.runId).toBe(canonicalRunId);
     expect(exposedOwnership).toBeUndefined();
     expect(exposedBinder).toBeUndefined();
   });

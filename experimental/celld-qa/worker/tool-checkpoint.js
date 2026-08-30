@@ -4,7 +4,10 @@ import { createScenarioAgent, numeric } from "./agent.js";
 /** @typedef {import("@minpeter/pss-runtime").AgentEvent} AgentEvent */
 /** @typedef {import("@minpeter/pss-runtime").AgentTurn} AgentTurn */
 /** @typedef {import("@minpeter/pss-runtime/execution").AgentHost} AgentHost */
+/** @typedef {import("@minpeter/pss-runtime/execution").Checkpoint} Checkpoint */
+/** @typedef {import("@minpeter/pss-runtime/execution").LeaseFencedCheckpointWriteOptions} LeaseFencedCheckpointWriteOptions */
 /** @typedef {import("@minpeter/pss-runtime/platform/durable-object/celld").CelldDurableObjectState} CelldState */
+/** @typedef {{ checkpoint: Checkpoint, options: LeaseFencedCheckpointWriteOptions }} InterceptedCheckpoint */
 
 /** @param {CelldState} state @param {string} phase @param {string} token */
 export async function toolCheckpoint(state, phase, token) {
@@ -27,8 +30,7 @@ export async function toolCheckpoint(state, phase, token) {
 /** @param {CelldState} state @param {string} runKey @param {string} token */
 async function interruptCheckpointedRun(state, runKey, token) {
   const { agent, host } = await createScenarioAgent(state);
-  const checkpointed = deferred();
-  freezeAfterToolCheckpoint(host, checkpointed.resolve);
+  const interceptedCheckpoint = interceptAfterToolCheckpoint(host);
   const dispatched = await dispatchAgentNotification({
     host,
     idempotencyKey: `tool-checkpoint:${token}`,
@@ -42,7 +44,7 @@ async function interruptCheckpointedRun(state, runKey, token) {
     throw new TypeError("Durable tool run was not admitted.");
   }
   collect(turn).catch(() => undefined);
-  await checkpointed.promise;
+  await interceptedCheckpoint;
   throw new Error("simulated response loss after tool checkpoint");
 }
 
@@ -76,21 +78,22 @@ async function resumeCheckpointedRun(state, runId, token) {
   });
 }
 
-/** @param {AgentHost} host @param {() => void} onCheckpoint */
-function freezeAfterToolCheckpoint(host, onCheckpoint) {
+/** @param {AgentHost} host */
+function interceptAfterToolCheckpoint(host) {
   const checkpoints = host.store.leaseFencedCheckpoints;
   if (checkpoints === undefined) {
     throw new TypeError("Lease-fenced checkpoint capability is required.");
   }
   const appendFenced = checkpoints.appendFenced.bind(checkpoints);
+  const intercepted = checkpointDeferred();
   checkpoints.appendFenced = async (checkpoint, options) => {
-    const written = await appendFenced(checkpoint, options);
-    if (written.ok && checkpoint.phase === "after-tool") {
-      onCheckpoint();
+    if (checkpoint.phase === "after-tool") {
+      intercepted.resolve({ checkpoint, options });
       await new Promise(() => undefined);
     }
-    return written;
+    return await appendFenced(checkpoint, options);
   };
+  return intercepted.promise;
 }
 
 /** @param {AgentHost} host @param {string} runId */
@@ -100,7 +103,7 @@ async function releaseInterruptedLease(host, runId) {
     host.store.turns.get(runId),
   ]);
   if (
-    checkpoint?.phase !== "after-tool" ||
+    checkpoint?.phase !== "before-tool" ||
     run?.kind !== "notification" ||
     (run.status !== "leased" && run.status !== "running")
   ) {
@@ -153,12 +156,12 @@ async function result(state, record, runId) {
   };
 }
 
-function deferred() {
-  /** @type {() => void} */
+function checkpointDeferred() {
+  /** @type {(value: InterceptedCheckpoint) => void} */
   let resolve = () => undefined;
-  /** @type {Promise<void>} */
+  /** @type {Promise<InterceptedCheckpoint>} */
   const promise = new Promise((fulfill) => {
-    resolve = () => fulfill();
+    resolve = fulfill;
   });
   return { promise, resolve };
 }

@@ -39,12 +39,16 @@ export function applyAgentInstrumentations(
   instrumentations: readonly AgentInstrumentation[],
   context: AgentInstrumentationContext
 ): AgentTurn {
+  const runId = turn.runId;
   let wrapped = turn;
   for (const instrumentation of instrumentations) {
     wrapped = instrumentation.wrapTurn(wrapped, context);
     assertAgentTurn(wrapped);
   }
-  return wrapped;
+  return Object.freeze({
+    events: () => wrapped.events(),
+    ...(runId === undefined ? {} : { runId }),
+  });
 }
 
 function assertAgentInstrumentation(

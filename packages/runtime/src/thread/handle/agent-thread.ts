@@ -149,6 +149,10 @@ export class AgentThread {
     const deletePromise = settled.promise;
     const remove = async (): Promise<void> => {
       await killPromise;
+      const drainState = this.#context.drain.state;
+      if (drainState.tag === "draining") {
+        await drainState.promise;
+      }
       const afterKill = terminal.state;
       if (afterKill.tag === "deleting" || afterKill.tag === "deleted") {
         return await afterKill.deletePromise;
