@@ -34,6 +34,7 @@ export async function resumeAgentTurn({
   resumeNotification,
   runId,
 }: ResumeAgentTurnInput): Promise<AgentTurn | null> {
+  const retryLeaseId = leaseIdForResumeClaim(claim, runId);
   const run = await host.store.turns.get(runId);
   if (!run) {
     return null;
@@ -45,7 +46,7 @@ export async function resumeAgentTurn({
   if (run.kind === "notification" && run.dedupeKey) {
     const idempotencyKey = run.dedupeKey;
     const claimedTuple = await host.store.transaction(async (transaction) => {
-      const claimed = await claimRun(transaction.turns, run, claim);
+      const claimed = await claimRun(transaction.turns, run, retryLeaseId);
       if (!claimed) {
         return null;
       }
@@ -183,11 +184,11 @@ export async function completeNotificationRun(
 async function claimRun(
   turns: TurnStore,
   run: TurnRecord,
-  claim: object | undefined
+  retryLeaseId: string | undefined
 ): Promise<ClaimedTurnRecord | null> {
   const result = await turns.claim(run.runId, {
     attempt: (run.lease?.attempt ?? 0) + 1,
-    leaseId: leaseIdForResumeClaim(claim, run.runId) ?? crypto.randomUUID(),
+    leaseId: retryLeaseId ?? crypto.randomUUID(),
     leaseMs: 300_000,
     nowMs: Date.now(),
   });
