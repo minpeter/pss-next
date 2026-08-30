@@ -5,6 +5,7 @@ import {
   createRetryHost,
   expectActiveLeasedNotification,
   expectRetryScheduled,
+  prepareRetryAuthority,
   seedRetryableNotification,
 } from "./fiber-retry-test-support";
 import {
@@ -12,7 +13,6 @@ import {
   cloudflareAgentsRunPayload,
   createCloudflareAgentsFiberRetryScheduler,
 } from "./index";
-import { captureCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import { createFakeCloudflareAgent } from "./test-support";
 
 const retryReasons = [
@@ -50,12 +50,6 @@ describe("Cloudflare Agents scheduled notification retry races", () => {
       );
       const runId = `background:bg_eligible_${reason}`;
       await seedRetryableNotification(host, runId);
-      const run = await host.store.turns.get(runId);
-      if (!run) {
-        throw new TypeError("Test run disappeared before retry.");
-      }
-      const { lease: _lease, ...runWithoutLease } = run;
-      await host.store.turns.update({ ...runWithoutLease, status: "running" });
       const retry = createCloudflareAgentsFiberRetryScheduler({
         cloudflareAgent,
         storage: cloudflareAgent.durableObjectContext.storage,
@@ -65,10 +59,10 @@ describe("Cloudflare Agents scheduled notification retry races", () => {
         prefix: "tenant-a",
         runId,
       });
-      captureCloudflareAgentsRetryLeaseId(payload, null);
+      const authority = await prepareRetryAuthority(host, payload);
 
       // When: any supported interruption reason requests retry.
-      const retried = await retry(payload, reason);
+      const retried = await retry(payload, reason, authority);
 
       // Then: exact work is queued and the notification is released for replay.
       expect(retried).toBe(true);
@@ -87,7 +81,10 @@ describe("Cloudflare Agents scheduled notification retry races", () => {
       );
       const runId = `background:bg_preowned_${reason}`;
       const leaseUntilMs = Number.MAX_SAFE_INTEGER;
-      await seedRetryableNotification(host, runId, { leaseUntilMs });
+      await seedRetryableNotification(host, runId, {
+        leaseUntilMs,
+        status: "leased",
+      });
       const retry = createCloudflareAgentsFiberRetryScheduler({
         cloudflareAgent,
         storage: cloudflareAgent.durableObjectContext.storage,
@@ -175,13 +172,10 @@ describe("Cloudflare Agents scheduled notification retry races", () => {
         prefix: "tenant-a",
         runId,
       });
-      captureCloudflareAgentsRetryLeaseId(
-        payload,
-        status === "leased" ? "lease:original" : null
-      );
+      const authority = await prepareRetryAuthority(host, payload);
 
       // When: the stale attempt requests a retry for any retry reason.
-      const retried = await retry(payload, reason);
+      const retried = await retry(payload, reason, authority);
 
       // Then: refusal is side-effect free for schedule, run, and notification.
       const racedRun = await host.store.turns.get(runId);

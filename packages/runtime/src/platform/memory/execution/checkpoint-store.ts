@@ -45,6 +45,7 @@ export class InMemoryCheckpointStore
   ): Promise<LeaseFencedCheckpointWriteResult> {
     const state = this.#state();
     const decision = decideLeaseFencedCheckpointWrite(
+      checkpoint.runId,
       state.turns.get(checkpoint.runId) ?? null,
       checkpoint,
       options
@@ -57,8 +58,15 @@ export class InMemoryCheckpointStore
   }
 
   latest(runId: string): Promise<Checkpoint | null> {
-    const checkpoints = this.#state().checkpoints.get(runId) ?? [];
-    const checkpoint = checkpoints.at(-1);
+    const state = this.#state();
+    const run = state.turns.get(runId);
+    if (!(run && run.runId === runId && run.checkpointVersion > 0)) {
+      return Promise.resolve(null);
+    }
+    const checkpoints = state.checkpoints.get(runId) ?? [];
+    const checkpoint = checkpoints.find(
+      (candidate) => candidate.version === run.checkpointVersion
+    );
     return Promise.resolve(checkpoint ? structuredClone(checkpoint) : null);
   }
 

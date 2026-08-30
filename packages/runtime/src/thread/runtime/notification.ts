@@ -15,7 +15,11 @@ import {
   type RuntimeInputState,
 } from "../input/runtime-input";
 import type { AgentEvent } from "../protocol/events";
-import { type AgentTurn, BufferedAgentTurn } from "../protocol/turn";
+import {
+  type AgentTurn,
+  BufferedAgentTurn,
+  bindTurnExecutionRun,
+} from "../protocol/turn";
 import { errorMessage } from "../state/thread-errors";
 import {
   cancellationForExecutionRun,
@@ -125,7 +129,11 @@ export async function queueThreadNotification(
       }
     : undefined;
   if (queuedExecutionRun) {
-    run.bindRunId(queuedExecutionRun.runId, queuedExecutionRun.leaseId ?? null);
+    bindTurnExecutionRun(
+      run,
+      queuedExecutionRun.runId,
+      queuedExecutionRun.leaseId ?? null
+    );
   }
   try {
     state.throwIfTerminal();

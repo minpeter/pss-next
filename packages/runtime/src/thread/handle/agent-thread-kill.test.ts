@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryHost } from "../../platform/memory";
 import { createCallbackModel } from "../../testing/test-fixtures";
 import { createRuntimeInputState } from "../input/runtime-input";
-import { BufferedAgentTurn } from "../protocol/turn";
+import { BufferedAgentTurn, bindTurnExecutionRun } from "../protocol/turn";
 import { createAgentThreadContext } from "./agent-thread-context";
 import { killAgentThread } from "./agent-thread-kill";
 import { SpyStore } from "./test-support";
@@ -52,7 +52,7 @@ describe("killAgentThread", () => {
       { executionHost: host }
     );
     const run = new BufferedAgentTurn();
-    run.bindRunId(runId, "owner-a");
+    bindTurnExecutionRun(run, runId, "owner-a");
     context.turn.to({
       abort: new AbortController(),
       run,

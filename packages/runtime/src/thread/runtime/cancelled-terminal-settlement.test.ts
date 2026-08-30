@@ -4,7 +4,7 @@ import { ThreadState } from "../state/thread-state";
 import { startThreadExecutionRun } from "./execution";
 
 describe("cancelled terminal settlement", () => {
-  it("does not persist completion effects after cancellation wins", async () => {
+  it("does not persist terminal effects after cancellation already wins", async () => {
     // Given: an owned execution whose durable run is already cancelled.
     const host = createInMemoryHost();
     const runId = "cancelled-before-completion";
@@ -40,15 +40,14 @@ describe("cancelled terminal settlement", () => {
       Promise.resolve({ ok: true, version: "forged" } as const)
     );
 
-    // When: stale completion attempts terminal persistence.
-    const settlement = execution.settle("completed", persist);
-
-    // Then: completion conflicts without invoking persistence.
-    await expect(settlement).rejects.toMatchObject({
-      name: "TurnTransitionConflictError",
-      reason: "status-conflict",
-      runId,
-    });
+    // When/Then: neither completion nor a split cancellation can persist.
+    for (const status of ["completed", "cancelled"] as const) {
+      await expect(execution.settle(status, persist)).rejects.toMatchObject({
+        name: "TurnTransitionConflictError",
+        reason: "status-conflict",
+        runId,
+      });
+    }
     expect(persist).not.toHaveBeenCalled();
   });
 });

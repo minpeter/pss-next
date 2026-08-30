@@ -1,3 +1,4 @@
+import { leaseIdForRetryAuthority } from "../../../../agent/resume/retry-authority";
 import type { DurableObjectStorage as CloudflareDurableObjectStorage } from "../../storage/durable-object/durable-object-storage";
 import { prepareScheduledNotificationRetry } from "../host/scheduled-work-retry";
 import { scheduleCloudflareAgentsDelayedPayload } from "./delayed-schedule";
@@ -8,7 +9,6 @@ import {
   cloudflareAgentsRunPayload,
   cloudflareAgentsThreadPayload,
 } from "./payload";
-import { capturedCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import {
   type CloudflareAgentsDelayedCallbackOption,
   delayedCallbackName,
@@ -47,8 +47,12 @@ export function createCloudflareAgentsFiberRetryScheduler<
     retryRunAfterMs = defaultRetryRunAfterMs,
     storage,
   } = options;
-  return async (payload, reason) => {
-    const leaseId = capturedCloudflareAgentsRetryLeaseId(payload);
+  return async (payload, reason, authority) => {
+    const leaseId = leaseIdForRetryAuthority(
+      authority,
+      payload.prefix,
+      payload.runId
+    );
     if (leaseId === undefined) {
       return false;
     }
@@ -62,7 +66,6 @@ export function createCloudflareAgentsFiberRetryScheduler<
       runAfterMs: retryRunAfterMs,
     });
     return await prepareScheduledNotificationRetry({
-      allowActiveLease: reason !== "not-claimable",
       allowNonNotification: reason !== "not-claimable",
       leaseId,
       prefix: payload.prefix,

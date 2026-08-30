@@ -10,28 +10,14 @@ import type {
 } from "../../execution/host/types";
 import type { AgentTurn } from "../../thread/protocol/turn";
 import { ownsAgentNamespace } from "../identity/namespace";
-
-const resumeErrorLeaseIds = new WeakMap<object, string | null>();
-const resumedTurnLeaseIds = new WeakMap<AgentTurn, string | null>();
+import { leaseIdForResumeClaim } from "./retry-authority";
 
 export type ClaimedTurnRecord = TurnRecord & {
   readonly lease: TurnLease;
 };
 
-export function capturedResumeErrorLeaseId(
-  error: unknown
-): string | null | undefined {
-  return isWeakKey(error) ? resumeErrorLeaseIds.get(error) : undefined;
-}
-
-export function capturedResumedTurnLeaseId(
-  turn: AgentTurn
-): string | null | undefined {
-  return resumedTurnLeaseIds.get(turn);
-}
-
 interface ResumeAgentTurnInput {
-  readonly captureLeaseId?: (leaseId: string) => void;
+  readonly claim?: object;
   readonly host: AgentHost;
   readonly ownerNamespace: string;
   resumeNotification(
@@ -42,7 +28,7 @@ interface ResumeAgentTurnInput {
 }
 
 export async function resumeAgentTurn({
-  captureLeaseId,
+  claim,
   host,
   ownerNamespace,
   resumeNotification,
@@ -59,7 +45,7 @@ export async function resumeAgentTurn({
   if (run.kind === "notification" && run.dedupeKey) {
     const idempotencyKey = run.dedupeKey;
     const claimedTuple = await host.store.transaction(async (transaction) => {
-      const claimed = await claimRun(transaction.turns, run);
+      const claimed = await claimRun(transaction.turns, run, claim);
       if (!claimed) {
         return null;
       }
@@ -100,9 +86,7 @@ export async function resumeAgentTurn({
     const { notification, run: claimed } = claimedTuple;
 
     try {
-      captureLeaseId?.(claimed.lease.leaseId);
       const notificationRun = await resumeNotification(notification, claimed);
-      resumedTurnLeaseIds.set(notificationRun, claimed.lease.leaseId);
       if (notificationRun.runId !== claimed.runId) {
         await completeNotificationRun(
           host,
@@ -112,9 +96,6 @@ export async function resumeAgentTurn({
       }
       return notificationRun;
     } catch (error) {
-      if (isWeakKey(error)) {
-        resumeErrorLeaseIds.set(error, claimed.lease.leaseId);
-      }
       await host.store.notifications.releaseByIdempotencyKey(idempotencyKey);
       throw error;
     }
@@ -163,12 +144,6 @@ async function requeueClaimedRun(
   }
 }
 
-function isWeakKey(value: unknown): value is object {
-  return (
-    (typeof value === "object" && value !== null) || typeof value === "function"
-  );
-}
-
 function canAccessRun(run: TurnRecord, ownerNamespace: string): boolean {
   // Owner-less runs are denied: ownsAgentNamespace(undefined, …) is false,
   // and there is no parent-threadKey fallback.
@@ -207,13 +182,14 @@ export async function completeNotificationRun(
 
 async function claimRun(
   turns: TurnStore,
-  run: TurnRecord
+  run: TurnRecord,
+  claim: object | undefined
 ): Promise<ClaimedTurnRecord | null> {
-  const claim = await turns.claim(run.runId, {
+  const result = await turns.claim(run.runId, {
     attempt: (run.lease?.attempt ?? 0) + 1,
-    leaseId: crypto.randomUUID(),
+    leaseId: leaseIdForResumeClaim(claim, run.runId) ?? crypto.randomUUID(),
     leaseMs: 300_000,
     nowMs: Date.now(),
   });
-  return claim.ok ? { ...claim.record, lease: claim.lease } : null;
+  return result.ok ? { ...result.record, lease: result.lease } : null;
 }

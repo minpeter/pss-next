@@ -147,11 +147,11 @@ export class Agent {
   async resume(
     runId: string,
     options: {
-      readonly captureLeaseId?: (leaseId: string) => void;
+      readonly claim?: object;
     } = {}
   ): Promise<AgentTurn | null> {
     return await resumeAgentTurn({
-      captureLeaseId: options.captureLeaseId,
+      claim: options.claim,
       host: this.#host,
       ownerNamespace: this.#ownerNamespace,
       resumeNotification: (notification, run) =>

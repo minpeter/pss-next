@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { captureRetryOwnership } from "./fiber-retry-test-support";
+import {
+  claimRetryAttempt,
+  createRetryHost,
+  prepareRetryAuthority,
+  seedRetryableRun,
+} from "./fiber-retry-test-support";
 import type {
   CloudflareAgentsFiberPayload,
   CloudflareAgentsStartFiberOptions,
@@ -32,10 +37,15 @@ describe("Cloudflare Agents scheduled lifecycle", () => {
     const scheduler = createCloudflareAgentsFiberScheduler({
       cloudflareAgent,
       prefix: "tenant-a",
-      resume: (payload) => Promise.resolve(runWithText(payload.runId)),
+      resume: async (payload, options) => {
+        await claimRetryAttempt(host, payload, options);
+        return runWithText(payload.runId);
+      },
       retry,
       storage,
     });
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableRun(host, "background:bg_retry_from_callback");
 
     await scheduler.enqueueRun("background:bg_retry_from_callback", {
       runAfterMs: 1000,
@@ -45,9 +55,9 @@ describe("Cloudflare Agents scheduled lifecycle", () => {
       cloudflareAgent,
       drain: { maxEvents: 0 },
       payload: cloudflareAgent.scheduled[0]?.payload,
-      resume: (payload: CloudflareAgentsFiberPayload) => {
-        captureRetryOwnership(payload, null);
-        return Promise.resolve(runWithText(payload.runId));
+      resume: async (payload: CloudflareAgentsFiberPayload, options) => {
+        await claimRetryAttempt(host, payload, options);
+        return runWithText(payload.runId);
       },
       retry,
       storage,
@@ -124,11 +134,14 @@ describe("Cloudflare Agents scheduled lifecycle", () => {
       prefix: "tenant-a",
       runId: "background:bg_retry_cap",
     });
-    captureRetryOwnership(eligiblePayload, null);
-    captureRetryOwnership(cappedPayload, null);
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableRun(host, eligiblePayload.runId);
+    const authority = await prepareRetryAuthority(host, eligiblePayload);
 
-    await expect(retry(eligiblePayload, "error")).resolves.toBe(true);
-    await expect(retry(cappedPayload, "error")).resolves.toBe(false);
+    await expect(retry(eligiblePayload, "error", authority)).resolves.toBe(
+      true
+    );
+    await expect(retry(cappedPayload, "error", authority)).resolves.toBe(false);
 
     expect(cloudflareAgent.scheduled).toMatchObject([
       {

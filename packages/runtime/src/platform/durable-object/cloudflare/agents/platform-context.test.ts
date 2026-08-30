@@ -132,8 +132,9 @@ describe("Cloudflare Agents platform context", () => {
       cloudflareAgent,
       createAgent: ({ host, prefix }) => ({
         prefix,
-        resume: (runId) =>
+        resume: (runId, options) =>
           resumeAgentTurn({
+            ...(options?.claim ? { claim: options.claim } : {}),
             host,
             ownerNamespace: prefix,
             resumeNotification: (_notification, run) =>

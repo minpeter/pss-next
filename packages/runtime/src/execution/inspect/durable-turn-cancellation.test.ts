@@ -55,7 +55,7 @@ describe("durable turn cancellation inspection", () => {
     ).resolves.toBeNull();
   });
 
-  it("awaits durable active-run cancellation from kill", async () => {
+  it("lets the active processor settle cancellation after kill returns", async () => {
     const host = createInMemoryHost();
     const modelStarted = createDeferred();
     const modelGate = createDeferred();
@@ -75,8 +75,16 @@ describe("durable turn cancellation inspection", () => {
     await modelStarted.promise;
 
     const killed = thread.kill();
-    modelGate.resolve();
     await killed;
+    await expect(
+      inspectDurableTurn(host, turn.runId ?? "")
+    ).resolves.toMatchObject({
+      runId: turn.runId,
+      status: "running",
+    });
+
+    modelGate.resolve();
+    await thread.dispose();
     await drain;
 
     await expect(

@@ -38,8 +38,8 @@ export async function closeKilledRuntimeInputs({
   );
 
   // Durable cancellation must succeed before queued callers are terminalized.
-  // Active callers close promptly on abort, while queued ownership remains
-  // protective and retryable if cancellation fails.
+  // The active run settles its abort status, thread state, and terminal event
+  // atomically in its processor; only queued runs cancel directly here.
   await cancelQueuedDurableThreadInputs({
     executionHost,
     items: queuedItems,
@@ -52,14 +52,8 @@ export async function closeKilledRuntimeInputs({
     item.run.close();
   }
 
-  await Promise.all([
-    cancelThreadExecutionRun({
-      cancellation: runToClose?.executionOwnership
-        ? { kind: "owned", ...runToClose.executionOwnership }
-        : undefined,
-      executionHost,
-    }),
-    ...nonDurableRuns.map((item) => {
+  await Promise.all(
+    nonDurableRuns.map((item) => {
       const executionCancellation = cancellationForExecutionRun(
         item.executionRun
       );
@@ -69,6 +63,6 @@ export async function closeKilledRuntimeInputs({
           ? { kind: "unleased" as const, runId: item.run.runId }
           : undefined);
       return cancelThreadExecutionRun({ cancellation, executionHost });
-    }),
-  ]);
+    })
+  );
 }

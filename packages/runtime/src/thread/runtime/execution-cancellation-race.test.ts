@@ -7,7 +7,7 @@ import type {
 } from "../../execution/host/types";
 import { createInMemoryHost } from "../../platform/memory";
 import { createRuntimeInputState } from "../input/runtime-input";
-import { BufferedAgentTurn } from "../protocol/turn";
+import { BufferedAgentTurn, bindTurnExecutionRun } from "../protocol/turn";
 import { cancelThreadExecutionRun } from "./execution";
 import { closeKilledRuntimeInputs } from "./kill";
 
@@ -58,7 +58,7 @@ describe("thread execution cancellation races", () => {
     await expect(host.store.turns.get(runId)).resolves.toEqual(ownerB.record);
   });
 
-  it("cancels the active run with its captured lease", async () => {
+  it("leaves active cancellation to the processor's atomic settlement", async () => {
     // Given: an active turn retains the lease captured when it was claimed.
     const host = createInMemoryHost();
     const runId = "owned-active-cancellation";
@@ -80,9 +80,9 @@ describe("thread execution cancellation races", () => {
       throw new TypeError("Expected owner A to claim the run.");
     }
     const run = new BufferedAgentTurn();
-    run.bindRunId(runId, "owner-a");
+    bindTurnExecutionRun(run, runId, "owner-a");
 
-    // When: explicit kill cancels the active turn.
+    // When: explicit kill closes the local active turn.
     await closeKilledRuntimeInputs({
       activeRuntimeInput: createRuntimeInputState([]),
       executionHost: host,
@@ -92,10 +92,10 @@ describe("thread execution cancellation races", () => {
       threadKey: "thread",
     });
 
-    // Then: cancellation uses owner A's authority.
+    // Then: owner A remains nonterminal until its processor settles atomically.
     await expect(host.store.turns.get(runId)).resolves.toMatchObject({
       lease: { leaseId: "owner-a" },
-      status: "cancelled",
+      status: "leased",
     });
   });
 

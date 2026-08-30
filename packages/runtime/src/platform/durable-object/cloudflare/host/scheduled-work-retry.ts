@@ -1,4 +1,8 @@
-import { type TurnStatus, transitionTurn } from "../../../../execution";
+import {
+  type TurnRecord,
+  type TurnStatus,
+  transitionTurn,
+} from "../../../../execution";
 import { createDurableObjectStorageHost as createCloudflareStorageHost } from "../../host/storage-host";
 import {
   type DurableObjectStorage as CloudflareDurableObjectStorage,
@@ -7,9 +11,8 @@ import {
 import { withTransaction } from "../../storage/durable-object/sql-access";
 
 interface ScheduledNotificationRetry {
-  readonly allowActiveLease: boolean;
   readonly allowNonNotification: boolean;
-  readonly leaseId: string | null;
+  readonly leaseId: string;
   readonly prefix: string;
   readonly runId: string;
   readonly schedule: (storage: CloudflareDurableObjectStorage) => Promise<void>;
@@ -17,7 +20,6 @@ interface ScheduledNotificationRetry {
 }
 
 export async function prepareScheduledNotificationRetry({
-  allowActiveLease,
   allowNonNotification,
   leaseId,
   prefix,
@@ -25,8 +27,7 @@ export async function prepareScheduledNotificationRetry({
   schedule,
   storage,
 }: ScheduledNotificationRetry): Promise<boolean> {
-  let prepared = false;
-  await withTransaction(storage, async (txStorage) => {
+  return await withTransaction(storage, async (txStorage) => {
     const transactionStorage = withSqlStorage(
       txStorage,
       txStorage.sql ?? storage.sql
@@ -36,50 +37,62 @@ export async function prepareScheduledNotificationRetry({
       storage: transactionStorage,
     }).store;
     const run = await tx.turns.get(runId);
-    if (run?.kind !== "notification") {
-      if (allowNonNotification) {
-        await schedule(transactionStorage);
-        prepared = true;
-      }
-      return;
-    }
-    const currentLeaseId = run.lease?.leaseId ?? null;
-    const recoversExpiredLease =
-      !allowActiveLease &&
-      leaseId === null &&
-      run.lease !== undefined &&
-      run.lease.leaseUntilMs <= Date.now();
-    if (
-      !(run.dedupeKey && isRetryableRunStatus(run.status)) ||
-      (!allowActiveLease &&
-        run.lease !== undefined &&
-        run.lease.leaseUntilMs > Date.now()) ||
-      (currentLeaseId !== leaseId && !recoversExpiredLease)
-    ) {
-      return;
+    if (!isOwnedRetryableRun(run, leaseId, allowNonNotification)) {
+      return false;
     }
 
     const transition = await transitionTurn(tx.turns, {
       expected: {
-        leaseId: recoversExpiredLease ? currentLeaseId : leaseId,
+        leaseId,
         status: run.status,
       },
       runId,
       update: { lease: null, status: "queued" },
     });
     if (!transition.ok) {
-      return;
+      return false;
     }
+    const dedupeKey = run.kind === "notification" ? run.dedupeKey : undefined;
     try {
       await schedule(transactionStorage);
     } catch (error) {
-      await tx.turns.update(run);
+      const rollback = await transitionTurn(tx.turns, {
+        expected: { leaseId: null, status: "queued" },
+        runId,
+        update: {
+          lease: run.lease ?? null,
+          status: run.status,
+        },
+      });
+      if (!rollback.ok) {
+        throw new Error(
+          `Retry schedule rollback failed for ${runId}: ${rollback.reason}.`,
+          { cause: error }
+        );
+      }
       throw error;
     }
-    await tx.notifications.releaseByIdempotencyKey(run.dedupeKey);
-    prepared = true;
+    if (dedupeKey) {
+      await tx.notifications.releaseByIdempotencyKey(dedupeKey);
+    }
+    return true;
   });
-  return prepared;
+}
+
+function isOwnedRetryableRun(
+  run: TurnRecord | null,
+  leaseId: string,
+  allowNonNotification: boolean
+): run is TurnRecord {
+  if (
+    !(run && isRetryableRunStatus(run.status)) ||
+    (run.lease?.leaseId ?? null) !== leaseId
+  ) {
+    return false;
+  }
+  return run.kind === "notification"
+    ? run.dedupeKey !== undefined
+    : allowNonNotification;
 }
 
 function isRetryableRunStatus(status: TurnStatus): boolean {

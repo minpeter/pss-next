@@ -12,16 +12,18 @@ describe("Cloudflare Agents primitive retry ownership", () => {
     // Given: a real notification resume claim whose work rejects primitively.
     const cloudflareAgent = createFakeCloudflareAgent();
     let host: AgentHost;
-    host = createRetryHost(cloudflareAgent, (payload, options) =>
-      resumeAgentTurn({
-        ...(options?.captureLeaseId
-          ? { captureLeaseId: options.captureLeaseId }
-          : {}),
-        host,
-        ownerNamespace: "tenant-a",
-        resumeNotification: primitiveResumeFailure,
-        runId: payload.runId,
-      })
+    host = createRetryHost(
+      cloudflareAgent,
+      (payload, options) =>
+        resumeAgentTurn({
+          ...(options?.claim ? { claim: options.claim } : {}),
+          host,
+          ownerNamespace: "tenant-a",
+          resumeNotification: primitiveResumeFailure,
+          runId: payload.runId,
+        }),
+      undefined,
+      { claimBeforeResume: false }
     );
     const runId = "background:bg_primitive_resume_failure";
     await seedOwnedNotification(host, runId);
@@ -37,16 +39,18 @@ describe("Cloudflare Agents primitive retry ownership", () => {
     // Given: resume claims a lease, then work and notification release fail.
     const cloudflareAgent = createFakeCloudflareAgent();
     let host: AgentHost;
-    const base = createRetryHost(cloudflareAgent, (payload, options) =>
-      resumeAgentTurn({
-        ...(options?.captureLeaseId
-          ? { captureLeaseId: options.captureLeaseId }
-          : {}),
-        host,
-        ownerNamespace: "tenant-a",
-        resumeNotification: () => Promise.reject(new Error("resume failed")),
-        runId: payload.runId,
-      })
+    const base = createRetryHost(
+      cloudflareAgent,
+      (payload, options) =>
+        resumeAgentTurn({
+          ...(options?.claim ? { claim: options.claim } : {}),
+          host,
+          ownerNamespace: "tenant-a",
+          resumeNotification: () => Promise.reject(new Error("resume failed")),
+          runId: payload.runId,
+        }),
+      undefined,
+      { claimBeforeResume: false }
     );
     host = hostWithReleaseFailure(base);
     const runId = "background:bg_release_failure";

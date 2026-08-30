@@ -9,9 +9,13 @@ import { ThreadState } from "../../thread/state/thread-state";
 import { agentNamespace } from "../identity/namespace";
 import { notificationRunRecord } from "./notification-resume.test-support";
 import { resumeAgentTurn } from "./resume";
+import {
+  createResumeRetryAttempt,
+  leaseIdForRetryAuthority,
+} from "./retry-authority";
 
 describe("resume checkpoint lease ownership", () => {
-  it("captures claimed ownership before a primitive resume failure", async () => {
+  it("persists the requested claim identity before a primitive resume failure", async () => {
     // Given: notification resume claims one durable lease.
     const host = createInMemoryHost();
     const runId = "resume-primitive-failure";
@@ -29,22 +33,34 @@ describe("resume checkpoint lease ownership", () => {
       status: "pending",
       threadKey: "default",
     });
-    let capturedLeaseId: string | undefined;
+    const attempt = createResumeRetryAttempt({
+      prefix: "test",
+      runId,
+    });
+    const claimLeaseId = leaseIdForRetryAuthority(
+      attempt.authority,
+      "test",
+      runId
+    );
+    if (!claimLeaseId) {
+      throw new TypeError("Expected retry attempt authority.");
+    }
 
     // When: work rejects with a value that cannot key a WeakMap.
     const resumed = resumeAgentTurn({
-      captureLeaseId: (leaseId) => {
-        capturedLeaseId = leaseId;
-      },
+      claim: attempt.claim,
       host,
       ownerNamespace,
       resumeNotification: () => Promise.reject("primitive failure"),
       runId,
     });
 
-    // Then: retry ownership is available independently of the rejection.
+    // Then: storage, not the rejection value, proves retry ownership.
     await expect(resumed).rejects.toBe("primitive failure");
-    expect(capturedLeaseId).toBeTypeOf("string");
+    await expect(host.store.turns.get(runId)).resolves.toMatchObject({
+      lease: { leaseId: claimLeaseId },
+      status: "leased",
+    });
   });
 
   it("preserves the successful claim lease when its record omits the duplicate lease", async () => {

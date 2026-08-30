@@ -73,6 +73,7 @@ export class FileCheckpointStore
   ): Promise<LeaseFencedCheckpointWriteResult> {
     return await this.#lock(async () => {
       const decision = decideLeaseFencedCheckpointWrite(
+        checkpoint.runId,
         await this.#turns.getUnlocked(checkpoint.runId),
         checkpoint,
         options
@@ -90,11 +91,11 @@ export class FileCheckpointStore
   }
 
   async latestUnlocked(runId: string): Promise<Checkpoint | null> {
-    const checkpointVersion =
-      (await this.#turns.getUnlocked(runId))?.checkpointVersion ?? 0;
-    if (checkpointVersion === 0) {
+    const run = await this.#turns.getUnlocked(runId);
+    if (!(run && run.runId === runId && run.checkpointVersion > 0)) {
       return null;
     }
+    const checkpointVersion = run.checkpointVersion;
     const checkpoint = await readJsonFile(
       await this.#fileForCheckpoint(runId, checkpointVersion),
       parseRunCheckpoint,

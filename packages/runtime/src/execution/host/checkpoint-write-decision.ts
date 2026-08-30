@@ -21,13 +21,14 @@ export function decideCheckpointVersionWrite(
 }
 
 export function decideLeaseFencedCheckpointWrite(
+  addressedRunId: string,
   run: TurnRecord | null,
   checkpoint: Checkpoint,
   options: LeaseFencedCheckpointWriteOptions
 ):
   | { readonly ok: true; readonly run: TurnRecord }
   | Exclude<LeaseFencedCheckpointWriteResult, { readonly ok: true }> {
-  if (!run) {
+  if (!run || run.runId !== addressedRunId) {
     return { ok: false, reason: "not-found" };
   }
   if (isTerminalStatus(run.status)) {

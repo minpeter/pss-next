@@ -30,6 +30,41 @@ const CHECKPOINT_APPENDERS = [
 ] as const;
 
 describe("FileExecutionStore checkpoint authority", () => {
+  it("rejects a fenced append when the addressed run file has foreign identity", async () => {
+    // Given: the addressed file contains a valid record for another run.
+    const directory = await tempDir();
+    const store = new FileExecutionStore(directory);
+    const addressedRunId = "addressed-run";
+    const foreignRunId = "foreign-run";
+    await store.turns.create(runRecord(addressedRunId));
+    const dataDirectory = await currentDataDirectory(directory);
+    await writeFile(
+      join(dataDirectory, "runs", `${base64Url(addressedRunId)}.json`),
+      `${JSON.stringify(runRecord(foreignRunId))}\n`,
+      "utf8"
+    );
+
+    // When: a fenced write addresses the corrupted file key.
+    const result = await store.leaseFencedCheckpoints.appendFenced(
+      checkpointRecord(addressedRunId, 1),
+      { expectedLeaseId: null, expectedVersion: 0 }
+    );
+
+    // Then: no addressed payload or foreign authority write escapes.
+    expect(result).toEqual({ ok: false, reason: "not-found" });
+    await expect(store.checkpoints.latest(addressedRunId)).resolves.toBeNull();
+    await expect(store.turns.get(foreignRunId)).resolves.toBeNull();
+    await expect(
+      readdir(
+        join(
+          await currentDataDirectory(directory),
+          "checkpoints",
+          base64Url(addressedRunId)
+        )
+      )
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it.each(CHECKPOINT_APPENDERS)(
     "discards staged payload when %s cannot publish run authority",
     async (_caseName, append) => {

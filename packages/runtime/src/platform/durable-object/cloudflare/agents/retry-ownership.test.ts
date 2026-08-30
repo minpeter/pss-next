@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createRetryHost,
   expectRetryScheduled,
+  prepareRetryAuthority,
   seedRetryableNotification,
 } from "./fiber-retry-test-support";
 import {
@@ -10,7 +11,6 @@ import {
   createCloudflareAgentsFiberRetryScheduler,
   listScheduledCloudflareAgentsRuns,
 } from "./index";
-import { captureCloudflareAgentsRetryLeaseId } from "./retry-ownership";
 import { createFakeCloudflareAgent } from "./test-support";
 
 const retryReasons: readonly CloudflareAgentsRetryReason[] = [
@@ -65,7 +65,7 @@ describe("Cloudflare Agents retry ownership", () => {
   );
 
   it.each(activeLeaseRetryReasons)(
-    "retains explicitly captured string ownership after %s",
+    "retains genuine opaque ownership after %s",
     async (reason) => {
       const cloudflareAgent = createFakeCloudflareAgent();
       const host = createRetryHost(cloudflareAgent, () =>
@@ -78,9 +78,9 @@ describe("Cloudflare Agents retry ownership", () => {
         storage: cloudflareAgent.durableObjectContext.storage,
       });
       const payload = cloudflareAgentsRunPayload({ prefix: "tenant-a", runId });
-      captureCloudflareAgentsRetryLeaseId(payload, `lease:${runId}`);
+      const authority = await prepareRetryAuthority(host, payload);
 
-      await expect(retry(payload, reason)).resolves.toBe(true);
+      await expect(retry(payload, reason, authority)).resolves.toBe(true);
       await expectRetryScheduled({ cloudflareAgent, host, runId });
     }
   );

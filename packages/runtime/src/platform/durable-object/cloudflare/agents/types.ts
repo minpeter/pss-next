@@ -173,7 +173,7 @@ export interface CloudflareAgentsTurnDrainOptions {
 }
 
 export interface CloudflareAgentsResumeOptions {
-  readonly captureLeaseId?: (leaseId: string) => void;
+  readonly claim?: object;
 }
 
 export type CloudflareAgentsResumeRun = (
@@ -189,5 +189,6 @@ export type CloudflareAgentsRetryReason =
 
 export type CloudflareAgentsRetryFiber = (
   payload: CloudflareAgentsFiberPayload,
-  reason: CloudflareAgentsRetryReason
+  reason: CloudflareAgentsRetryReason,
+  authority?: object
 ) => Promise<boolean>;

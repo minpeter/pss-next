@@ -6,9 +6,10 @@ import {
   withSqlStorage,
 } from "../../storage/durable-object/durable-object-storage";
 import {
-  captureRetryOwnership,
   createRetryHost,
+  prepareRetryAuthority,
   seedRetryableNotification,
+  seedRetryableRun,
 } from "./fiber-retry-test-support";
 import {
   ackScheduledCloudflareAgentsRun,
@@ -34,11 +35,13 @@ describe("Cloudflare Agents scheduled ack parity", () => {
       retryRunAfterMs: 1000,
       storage,
     });
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableRun(host, runId);
 
     const payload = cloudflareAgentsRunPayload({ prefix, runId });
-    captureRetryOwnership(payload, null);
+    const authority = await prepareRetryAuthority(host, payload);
 
-    await expect(retry(payload, "event-budget")).resolves.toBe(true);
+    await expect(retry(payload, "event-budget", authority)).resolves.toBe(true);
     await expect(
       listScheduledCloudflareAgentsRuns(storage, { prefix })
     ).resolves.toEqual([runId]);
@@ -64,15 +67,19 @@ describe("Cloudflare Agents scheduled ack parity", () => {
       retryRunAfterMs: 1000,
       storage,
     });
-
     const payload = cloudflareAgentsThreadPayload({
       ...prompt,
       prefix,
       runId: "background:bg_thread_retry_ack",
     });
-    captureRetryOwnership(payload, null);
+    const host = createRetryHost(cloudflareAgent, () => Promise.resolve(null));
+    await seedRetryableNotification(host, payload.runId, {
+      leaseUntilMs: null,
+      status: "running",
+    });
+    const authority = await prepareRetryAuthority(host, payload);
 
-    await expect(retry(payload, "event-budget")).resolves.toBe(true);
+    await expect(retry(payload, "event-budget", authority)).resolves.toBe(true);
     const listed = await listScheduledCloudflareAgentsThreadPrompts(storage, {
       prefix,
     });
@@ -163,10 +170,10 @@ describe("Cloudflare Agents scheduled ack parity", () => {
     });
 
     const payload = cloudflareAgentsRunPayload({ prefix, runId });
-    captureRetryOwnership(payload, null);
+    const authority = await prepareRetryAuthority(host, payload);
 
     // When: retry loses its owned transition after eligibility passed.
-    const retried = await retry(payload, "event-budget");
+    const retried = await retry(payload, "event-budget", authority);
 
     // Then: the winner remains terminal and no schedule or release escapes.
     expect(retried).toBe(false);

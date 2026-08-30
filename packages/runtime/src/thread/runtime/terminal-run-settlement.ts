@@ -94,13 +94,6 @@ export async function settleThreadExecutionRun({
       return;
     }
     if (isTerminalTurnStatus(run.status)) {
-      if (
-        run.status === "cancelled" &&
-        status === "cancelled" &&
-        (run.lease?.leaseId ?? null) === leaseId
-      ) {
-        return await persist?.(tx);
-      }
       if (persist) {
         throw new TurnTransitionConflictError(
           runId,

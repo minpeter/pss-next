@@ -1407,9 +1407,12 @@ themselves. Edge hosts still need durable scheduling, leases, resume workers,
 and notification resume handling; externally visible side-effect tools still need
 idempotent execution or a manual recovery flow.
 
-Cancellation is persisted before aborting active work. `delete()` and `dispose()`
-stop the current session's in-process work; durable hosts remain responsible for
-any app-owned background run cancellation, cleanup, and notification policy.
+Active work is aborted locally first, then its processor settles cancellation,
+thread state, and the terminal event in one host transaction. Queued runs cancel
+directly because they have no active thread state to settle. `delete()` and
+`dispose()` stop the current session's in-process work; durable hosts remain
+responsible for app-owned background cancellation, cleanup, and notification
+policy.
 
 
 

@@ -97,6 +97,7 @@ export class DurableObjectSqliteCheckpointStore
     this.#ensureSchema();
     return await withTransaction(this.#storage, async (storage) => {
       const decision = decideLeaseFencedCheckpointWrite(
+        checkpoint.runId,
         await getRun(storage, this.#prefix, checkpoint.runId),
         checkpoint,
         options
@@ -109,12 +110,17 @@ export class DurableObjectSqliteCheckpointStore
     });
   }
 
-  latest(runId: string): Promise<Checkpoint | null> {
+  async latest(runId: string): Promise<Checkpoint | null> {
     this.#ensureSchema();
+    const run = await getRun(this.#storage, this.#prefix, runId);
+    if (!(run && run.runId === runId && run.checkpointVersion > 0)) {
+      return null;
+    }
     const rows = this.#sql
       .exec<CheckpointRow>(
-        "SELECT version, checkpoint FROM pss_checkpoint WHERE run_key = ? ORDER BY version DESC LIMIT 1",
-        this.#rowKey(runId)
+        "SELECT version, checkpoint FROM pss_checkpoint WHERE run_key = ? AND version = ? LIMIT 1",
+        this.#rowKey(runId),
+        run.checkpointVersion
       )
       .toArray();
     const row = rows[0];
@@ -125,9 +131,7 @@ export class DurableObjectSqliteCheckpointStore
           row.checkpoint
         )
       : null;
-    return Promise.resolve(
-      checkpoint ? (JSON.parse(checkpoint) as Checkpoint) : null
-    );
+    return checkpoint ? (JSON.parse(checkpoint) as Checkpoint) : null;
   }
 
   async #persist(
