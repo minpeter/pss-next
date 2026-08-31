@@ -21,12 +21,14 @@ import {
   type AgentInstrumentation,
   normalizeAgentInstrumentations,
 } from "./instrumentation";
+import { snapshotAgentContextGate } from "./options-context-gate-validation";
 import { assertThreadStateMigrationList } from "./options-thread-migration-validation";
 
 export interface AgentOptions {
   readonly alwaysActiveTools?: readonly string[];
   readonly attachmentStore?: HostAttachmentStore;
   readonly compaction?: AgentCompaction;
+  readonly contextGate?: ContextBudgetSource;
   readonly contextTokens?: ContextTokenOptions;
   readonly hooks?: AgentHooks;
   readonly host?: AgentHost;
@@ -85,6 +87,7 @@ export function assertAgentOptions(
   const toolOrder: unknown = Reflect.get(options, "toolOrder");
   const prepareModelStep: unknown = Reflect.get(options, "prepareModelStep");
   const compaction: unknown = Reflect.get(options, "compaction");
+  const contextGate: unknown = Reflect.get(options, "contextGate");
   const instrumentations: unknown = Reflect.get(options, "instrumentations");
   const threadMigrations: unknown = Reflect.get(options, "threadMigrations");
 
@@ -100,6 +103,9 @@ export function assertAgentOptions(
   if (compaction !== undefined) {
     snapshotAgentCompaction(compaction);
   }
+  if (contextGate !== undefined) {
+    snapshotAgentContextGate(contextGate);
+  }
   normalizeAgentInstrumentations(instrumentations);
   assertThreadStateMigrationList(threadMigrations);
   normalizeThreadStateMigrations(threadMigrations);
@@ -113,6 +119,7 @@ export function snapshotAgentOptions(options: AgentOptions): AgentOptions {
     throw new TypeError("Agent options must be a non-null object.");
   }
   const compaction: unknown = options.compaction;
+  const contextGate: unknown = options.contextGate;
   const tools: unknown = options.tools;
   const snapshot: AgentOptions = {
     alwaysActiveTools: options.alwaysActiveTools,
@@ -121,6 +128,10 @@ export function snapshotAgentOptions(options: AgentOptions): AgentOptions {
       compaction === undefined
         ? undefined
         : snapshotAgentCompaction(compaction),
+    contextGate:
+      contextGate === undefined
+        ? undefined
+        : snapshotAgentContextGate(contextGate),
     contextTokens: options.contextTokens,
     hooks: options.hooks,
     host: options.host,

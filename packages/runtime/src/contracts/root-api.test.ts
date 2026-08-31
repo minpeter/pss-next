@@ -26,6 +26,7 @@ import type {
   AgentOptions,
   CompactionContextMessage,
   CompactionSummaryOptions,
+  ContextBudgetSource,
   HostAttachmentStore,
   ModelToolCacheFingerprintMetadata,
   PrepareModelStep,
@@ -183,9 +184,11 @@ describe("runtime public exports", () => {
         return turn;
       },
     } satisfies AgentInstrumentation;
+    const contextGate = { maxInputTokens: () => 128_000 };
     const enabledOptions = {
       attachmentStore,
       compaction,
+      contextGate,
       instrumentations: [instrumentation],
       model,
       notificationOverlays: ["runtime context"],
@@ -230,7 +233,11 @@ describe("runtime public exports", () => {
       ReturnType<typeof runtimeThreadStoreKey>
     >().toEqualTypeOf<string>();
     expect(enabledOptions.compaction).toBe(compaction);
+    expect(enabledOptions.contextGate).toBe(contextGate);
     expect(enabledOptions.attachmentStore).toBe(attachmentStore);
+    expectTypeOf<
+      NonNullable<AgentOptions["contextGate"]>
+    >().toEqualTypeOf<ContextBudgetSource>();
     expect(enabledOptions.instrumentations).toEqual([instrumentation]);
     expect(enabledOptions.notificationOverlays).toEqual(["runtime context"]);
     expect(compactionInput.startSeq).toBe(0);

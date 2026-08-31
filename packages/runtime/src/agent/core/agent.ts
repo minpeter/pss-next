@@ -15,6 +15,7 @@ import {
 import type { ThreadStore } from "../../thread/store/types";
 import { stableAgentNamespace } from "../identity/namespace";
 import { type ClaimedTurnRecord, resumeAgentTurn } from "../resume/resume";
+import { createAgentModelOptions } from "./agent-model-options";
 import { AgentHookRuntime } from "./hook-runtime";
 import { threadStoreForHost } from "./host-thread-store";
 import {
@@ -94,26 +95,7 @@ export class Agent {
     this.#notificationOverlays = validatedOptions.notificationOverlays;
     this.#compaction = validatedOptions.compaction;
     this.#contextTokens = validatedOptions.contextTokens;
-    this.#modelOptions = {
-      alwaysActiveTools: validatedOptions.alwaysActiveTools,
-      attachmentStore:
-        providedHost?.attachmentStore ??
-        validatedOptions.attachmentStore ??
-        this.#host.attachmentStore,
-      contextGate: validatedOptions.compaction?.maxInputTokens
-        ? {
-            ...validatedOptions.compaction,
-            maxInputTokens: validatedOptions.compaction.maxInputTokens,
-          }
-        : false,
-      diagnostics: this.#host.diagnostics,
-      instructions: validatedOptions.instructions,
-      model: validatedOptions.model,
-      prepareModelStep: validatedOptions.prepareModelStep,
-      toolChoice: validatedOptions.toolChoice,
-      toolOrder: validatedOptions.toolOrder,
-      tools: validatedOptions.tools,
-    };
+    this.#modelOptions = createAgentModelOptions(validatedOptions, this.#host);
   }
 
   /**
