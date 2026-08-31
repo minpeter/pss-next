@@ -62,6 +62,34 @@ const historyWithToolExchange = (): readonly ModelMessage[] => [
 ];
 
 describe("selectAutoCompactionRange forward progress", () => {
+  it("advances on a first compaction when backward selection collapses", () => {
+    // Given: no covered prefix and a tool-heavy history with no safe boundary before the target.
+    const history = [
+      userMessage("u0"),
+      assistantToolCallMessage("call-1"),
+      toolResultMessage("call-1"),
+      assistantToolCallMessage("call-2"),
+      toolResultMessage("call-2"),
+      assistantMessage("a5"),
+      userMessage("u6"),
+      assistantMessage("a7"),
+    ];
+
+    // When: the first compaction target lands inside the tool-heavy prefix.
+    const range = selectAutoCompactionRange({
+      compactions: [],
+      history,
+      policy: {
+        estimateTokens: tenTokensPerMessage,
+        retainTokens: 30,
+        triggerTokens: 1,
+      },
+    });
+
+    // Then: selection advances to the first safe boundary after the complete exchanges.
+    expect(range).toEqual({ endSeqExclusive: 6, startSeq: 0 });
+  });
+
   it("advances to the next safe boundary when backward selection collapses", () => {
     // Given: a covered prefix followed by a tool exchange around the target.
     const history = historyWithToolExchange();
@@ -211,28 +239,35 @@ describe("selectAutoCompactionRange forward progress", () => {
   });
 
   it("keeps the compressibility floor after advancing", () => {
-    // Given: a tiny source whose only safe boundary is after a tool exchange.
+    // Given: a covered prefix and a tiny source whose next safe boundary follows a tool exchange.
     const history = [
-      userMessage("u"),
+      userMessage("u0"),
+      assistantMessage("a1"),
+      userMessage("u2"),
       assistantToolCallMessage("call-1"),
       toolResultMessage("call-1"),
-      assistantMessage("a"),
+      assistantMessage("a5"),
+      userMessage("u6"),
+      assistantMessage("a7"),
     ];
-    const contentLengthEstimator = (messages: readonly ModelMessage[]) =>
+    const floorDecidingEstimator = (messages: readonly ModelMessage[]) =>
       messages.reduce(
         (total, message) =>
           total +
-          (typeof message.content === "string" ? message.content.length : 0),
+          (typeof message.content === "string" &&
+          message.content.includes("<summary>\n\n</summary>")
+            ? 10
+            : 1),
         0
       );
 
-    // When: forward selection finds the end-of-history boundary.
+    // When: backward selection collapses and forward selection finds boundary 6.
     const range = selectAutoCompactionRange({
-      compactions: [],
+      compactions: [compactionRecord(2, "old")],
       history,
       policy: {
-        estimateTokens: contentLengthEstimator,
-        retainTokens: 20,
+        estimateTokens: floorDecidingEstimator,
+        retainTokens: 3,
         triggerTokens: 1,
       },
     });

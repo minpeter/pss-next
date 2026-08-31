@@ -131,9 +131,6 @@ function selectSafeCompactionBoundary(
   if (end > coveredEnd) {
     return end;
   }
-  if (coveredEnd === 0) {
-    return;
-  }
   for (end = targetEnd + 1; end <= history.length; end += 1) {
     if (isSafeCompactionBoundary(history, end)) {
       return end;
