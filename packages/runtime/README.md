@@ -1193,6 +1193,10 @@ For store/alarm-only DO tooling use `createDurableObjectStorageHost` from
 `@minpeter/pss-runtime/platform/durable-object`.
 
 Speculative compaction prepares a summary in the background before promoting it.
+Prepared candidates are process-local and bounded to 32 entries per policy. A
+candidate is reused when the same Agent reconstructs a thread handle, while a
+policy shared by multiple Agents keeps each owner's candidates isolated. A new
+Agent or process starts cold; speculative candidates are not persisted.
 Each episode has one absolute pre-commit deadline:
 `DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds), unless the policy supplies
 `deadlineMs`. The deadline covers preparation, summaries, retries, transforms,

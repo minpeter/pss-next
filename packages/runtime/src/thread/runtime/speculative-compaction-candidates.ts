@@ -15,7 +15,9 @@ import type {
   AutoCompactionRange,
   ThreadTokenEstimator,
 } from "./auto-compaction-types";
+import { SpeculativeCandidateCache } from "./speculative-candidate-cache";
 import {
+  type DetachedSummaryInstallation,
   type DetachedSummaryJob,
   DetachedSummaryJobs,
 } from "./speculative-compaction-detached";
@@ -42,7 +44,7 @@ interface CandidateStoreOptions {
  * happen after the originating episode settled.
  */
 export class SpeculativeCompactionCandidates {
-  readonly #candidates = new WeakMap<object, SpeculativeCandidate>();
+  readonly #candidates = new SpeculativeCandidateCache<SpeculativeCandidate>();
   readonly #estimate: ThreadTokenEstimator;
   readonly #jobs = new DetachedSummaryJobs();
   readonly #max: number;
@@ -58,7 +60,6 @@ export class SpeculativeCompactionCandidates {
     if (context.modelContextProvenance !== "standard") {
       return;
     }
-    const expectedCurrent = this.#candidates.get(context.threadIdentity);
     const expectedInstallation = this.#getFresh(context);
     if (expectedInstallation?.replacementConsumed) {
       return;
@@ -74,12 +75,7 @@ export class SpeculativeCompactionCandidates {
     await this.#jobs.startOrJoin(
       context,
       range,
-      this.#installDetached(
-        context,
-        range,
-        expectedCurrent,
-        expectedInstallation !== undefined
-      )
+      this.#installDetached(context, range, expectedInstallation !== undefined)
     ).promise;
     context.signal.throwIfAborted();
   }
@@ -96,11 +92,10 @@ export class SpeculativeCompactionCandidates {
     if (range === undefined) {
       return;
     }
-    const expectedCurrent = this.#candidates.get(context.threadIdentity);
     const job = this.#jobs.startOrJoin(
       context,
       range,
-      this.#installDetached(context, range, expectedCurrent)
+      this.#installDetached(context, range)
     );
     const summary = await job.promise;
     context.signal.throwIfAborted();
@@ -145,27 +140,30 @@ export class SpeculativeCompactionCandidates {
   #installDetached(
     context: AgentCompactionContext,
     range: AutoCompactionRange,
-    expectedCurrent: SpeculativeCandidate | undefined,
-    replacedFresh: boolean = expectedCurrent !== undefined
-  ): (summary: string) => void {
-    const compactions = structuredClone(context.compactions);
-    const hydratedPrefix = structuredClone(
-      context.estimatedHistory.slice(0, range.endSeqExclusive)
-    );
-    const prefix = structuredClone(
-      context.history.slice(0, range.endSeqExclusive)
-    );
-    return (summary) => {
-      if (this.#candidates.get(context.threadIdentity) !== expectedCurrent) {
-        return;
-      }
-      this.#candidates.set(context.threadIdentity, {
-        compactions,
-        hydratedPrefix,
-        input: { ...range, summary },
-        prefix,
-        replacementConsumed: replacedFresh,
-      });
+    replacedFresh = false
+  ): () => DetachedSummaryInstallation {
+    return () => {
+      const reservation = this.#candidates.reserve(context.threadIdentity);
+      const compactions = structuredClone(context.compactions);
+      const hydratedPrefix = structuredClone(
+        context.estimatedHistory.slice(0, range.endSeqExclusive)
+      );
+      const prefix = structuredClone(
+        context.history.slice(0, range.endSeqExclusive)
+      );
+      return {
+        install: (summary) => {
+          this.#candidates.install(reservation, {
+            compactions,
+            hydratedPrefix,
+            input: { ...range, summary },
+            prefix,
+            replacementConsumed:
+              replacedFresh || reservation.expectedCandidate !== undefined,
+          });
+        },
+        release: () => this.#candidates.release(reservation),
+      };
     };
   }
 

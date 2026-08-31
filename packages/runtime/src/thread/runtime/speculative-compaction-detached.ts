@@ -5,6 +5,7 @@ import type {
   AgentCompactionContext,
   AutoCompactionRange,
 } from "./auto-compaction-types";
+import { compactionThreadIdentityParts } from "./compaction-thread-identity";
 
 export interface DetachedSummaryJob {
   readonly compactions: readonly ThreadCompactionRecord[];
@@ -15,6 +16,11 @@ export interface DetachedSummaryJob {
   readonly token: Readonly<object>;
 }
 
+export interface DetachedSummaryInstallation {
+  readonly install: (summary: string) => void;
+  readonly release: () => void;
+}
+
 /**
  * Process-local, single-flight registry for summary provider calls that
  * outlive their originating compaction episode. The episode deadline bounds
@@ -22,28 +28,54 @@ export interface DetachedSummaryJob {
  * in-flight call instead of starting another.
  */
 export class DetachedSummaryJobs {
-  readonly #jobs = new WeakMap<object, DetachedSummaryJob>();
+  readonly #jobs = new WeakMap<
+    Readonly<object>,
+    Map<string, DetachedSummaryJob>
+  >();
 
   startOrJoin(
     context: AgentCompactionContext,
     range: AutoCompactionRange,
-    install: (summary: string) => void
+    installationFactory: () => DetachedSummaryInstallation
   ): DetachedSummaryJob {
-    const existing = this.#jobs.get(context.threadIdentity);
+    const { owner, threadKey } = compactionThreadIdentityParts(
+      context.threadIdentity
+    );
+    let ownerJobs = this.#jobs.get(owner);
+    const existing = ownerJobs?.get(threadKey);
     if (existing !== undefined && matchesContext(existing, context)) {
       return existing;
     }
+
+    const installation = installationFactory();
     const token = Object.freeze({});
-    const promise = context
-      .summarize(range, { lifetime: "detached" })
+    let pending: Promise<string>;
+    try {
+      pending = context.summarize(range, { lifetime: "detached" });
+    } catch (error) {
+      installation.release();
+      throw error;
+    }
+    let job: DetachedSummaryJob;
+    const promise = pending
       .then((summary) => {
-        const current = this.#jobs.get(context.threadIdentity);
+        const current = this.#jobs.get(owner)?.get(threadKey);
         if (summary.trim() && current?.token === token) {
-          install(summary);
+          installation.install(summary);
         }
         return summary;
+      })
+      .finally(() => {
+        installation.release();
+        const currentJobs = this.#jobs.get(owner);
+        if (currentJobs?.get(threadKey) === job) {
+          currentJobs.delete(threadKey);
+          if (currentJobs.size === 0) {
+            this.#jobs.delete(owner);
+          }
+        }
       });
-    const job: DetachedSummaryJob = {
+    job = {
       compactions: context.compactions,
       hydratedPrefix: context.estimatedHistory.slice(0, range.endSeqExclusive),
       prefix: context.history.slice(0, range.endSeqExclusive),
@@ -51,13 +83,11 @@ export class DetachedSummaryJobs {
       range,
       token,
     };
-    this.#jobs.set(context.threadIdentity, job);
-    const release = (): void => {
-      if (this.#jobs.get(context.threadIdentity) === job) {
-        this.#jobs.delete(context.threadIdentity);
-      }
-    };
-    promise.then(release, release);
+    if (ownerJobs === undefined) {
+      ownerJobs = new Map();
+      this.#jobs.set(owner, ownerJobs);
+    }
+    ownerJobs.set(threadKey, job);
     return job;
   }
 }

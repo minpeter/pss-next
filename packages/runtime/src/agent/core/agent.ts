@@ -61,6 +61,7 @@ export type AgentConstructorOptions = AgentOptions;
 
 export class Agent {
   readonly #modelOptions: AgentModelOptions;
+  readonly #compactionOwner = Object.freeze({});
   readonly #threads = new Map<string, AgentThreadEntry>();
   readonly #contextTokenRegistry = new ContextTokenCalibrationRegistry();
   readonly #contextTokens?: AgentOptions["contextTokens"];
@@ -181,7 +182,12 @@ export class Agent {
         ),
         contextTokens: this.#contextTokens,
       },
-      { key, migrations: this.#threadMigrations, store: this.#store },
+      {
+        compactionOwner: this.#compactionOwner,
+        key,
+        migrations: this.#threadMigrations,
+        store: this.#store,
+      },
       {
         compaction: this.#compaction,
         executionHost: this.#host,

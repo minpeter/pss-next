@@ -55,8 +55,12 @@ export function policy(): AgentCompaction {
   });
 }
 
-export async function stateWithHistory(key: string): Promise<ThreadState> {
+export async function stateWithHistory(
+  key: string,
+  compactionOwner?: Readonly<object>
+): Promise<ThreadState> {
   const state = new ThreadState({
+    ...(compactionOwner === undefined ? {} : { compactionOwner }),
     key,
     store: new MemoryThreadStore(),
   });
