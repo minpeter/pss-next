@@ -40,6 +40,60 @@ describe("model prompt measurement", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("distinguishes Japanese prompt density from equal-length ASCII", () => {
+    // Given
+    const ascii = { content: "a".repeat(372), role: "user" } as const;
+    const japanese = { content: "日".repeat(372), role: "user" } as const;
+
+    // When
+    const measured = defaultModelPromptMeasurementProfile.measureMessages([
+      ascii,
+      japanese,
+    ]);
+
+    // Then
+    expect(measured).toEqual([100, 286]);
+  });
+
+  it.each([
+    ["ascii", { content: "hello world", role: "user" }],
+    ["japanese", { content: "日本語のテキスト", role: "user" }],
+    ["korean", { content: "한국어 텍스트", role: "user" }],
+    ["emoji surrogate pair", { content: "😀😀😀", role: "user" }],
+    ["lone high surrogate", { content: "\uD800", role: "user" }],
+    ["lone low surrogate", { content: "\uDC00", role: "user" }],
+    ["mixed scripts", { content: "ab日😀", role: "user" }],
+    ["empty", { content: "", role: "user" }],
+  ] as const)(
+    "never measures below the legacy unit basis (%s)",
+    (_name, message) => {
+      // Given
+      const legacy = JSON.stringify(message).length / 4;
+
+      // When
+      const [measured] = defaultModelPromptMeasurementProfile.measureMessages([
+        message,
+      ]);
+
+      // Then
+      expect(measured).toBeGreaterThanOrEqual(legacy);
+    }
+  );
+
+  it("leaves pure-ASCII measurement exactly unchanged", () => {
+    // Given
+    const message = { content: "hello world", role: "user" } as const;
+    const legacy = JSON.stringify(message).length / 4;
+
+    // When
+    const measured = defaultModelPromptMeasurementProfile.measureMessages([
+      message,
+    ]);
+
+    // Then
+    expect(measured).toEqual([legacy]);
+  });
+
   it("projects the complete function-tool surface sent by the AI SDK", async () => {
     const description = vi.fn(() => "Dynamic search");
     const tools = await modelPromptTools({
