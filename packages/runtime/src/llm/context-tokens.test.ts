@@ -1,4 +1,6 @@
+import type { ModelMessage } from "ai";
 import { describe, expect, it } from "vitest";
+import { defaultModelPromptMeasurementProfile } from "./context-gate";
 import {
   ContextTokenCalibrationRegistry,
   ContextTokenMeter,
@@ -229,6 +231,111 @@ describe("ContextTokenMeter", () => {
     });
 
     expect(meter.inputUpperBound()).toBeGreaterThanOrEqual(1050);
+  });
+
+  it("does not broadcast CJK calibration density to ASCII and tool results", () => {
+    // Given
+    const registry = new ContextTokenCalibrationRegistry();
+    const meter = new ContextTokenMeter(registry);
+    const instructions = "i".repeat(400);
+    const scope = "prov\0mod";
+    const begin = (attemptId: string, messages: readonly ModelMessage[]) => {
+      const prompt = defaultModelPromptMeasurementProfile.measurePrompt({
+        instructions,
+        messages,
+      });
+      meter.begin({
+        attemptId,
+        fixedFingerprint: prompt.fixedFingerprint,
+        measurement: prompt,
+        scope,
+      });
+    };
+    const asciiTraining: readonly ModelMessage[] = [
+      { content: "a".repeat(372), role: "user" },
+    ];
+    const cjkTraining: readonly ModelMessage[] = [
+      ...asciiTraining,
+      { content: "日".repeat(372), role: "user" },
+    ];
+    const current: readonly ModelMessage[] = [
+      { content: "a".repeat(332), role: "user" },
+      { content: "a".repeat(332), role: "user" },
+      { content: "a".repeat(332), role: "user" },
+      {
+        content: [
+          {
+            output: { type: "text", value: "x".repeat(400) },
+            toolCallId: "call-1",
+            toolName: "read_file",
+            type: "tool-result",
+          },
+        ],
+        role: "tool",
+      },
+      { content: "日".repeat(252), role: "user" },
+    ];
+    begin("train-ascii", asciiTraining);
+    meter.report("train-ascii", {
+      attemptId: "train-ascii",
+      inputTokens: 200,
+      type: "model-usage",
+    });
+    begin("train-cjk", cjkTraining);
+    meter.report("train-cjk", {
+      attemptId: "train-cjk",
+      inputTokens: 400,
+      type: "model-usage",
+    });
+    begin("current", current);
+
+    // When
+    const snapshot = meter.snapshot();
+    const upperBound = meter.inputUpperBound();
+
+    // Then
+    expect(snapshot.calibration.observations).toBe(2);
+    expect.soft(snapshot.currentRequest.input).toEqual({
+      basis: "calibrated",
+      marginTokens: 143,
+      tokens: 711,
+    });
+    expect.soft(upperBound).toBe(854);
+  });
+
+  it("keeps a repeated CJK prompt above its reported provider input", () => {
+    // Given
+    const meter = new ContextTokenMeter(new ContextTokenCalibrationRegistry());
+    const messages: readonly ModelMessage[] = [
+      { content: "日".repeat(372), role: "user" },
+    ];
+    const prompt = defaultModelPromptMeasurementProfile.measurePrompt({
+      instructions: "i".repeat(400),
+      messages,
+    });
+    meter.begin({
+      attemptId: "reported",
+      fixedFingerprint: prompt.fixedFingerprint,
+      measurement: prompt,
+      scope: "prov\0cjk-repeat",
+    });
+    meter.report("reported", {
+      attemptId: "reported",
+      inputTokens: 900,
+      type: "model-usage",
+    });
+    meter.begin({
+      attemptId: "repeat",
+      fixedFingerprint: prompt.fixedFingerprint,
+      measurement: prompt,
+      scope: "prov\0cjk-repeat",
+    });
+
+    // When
+    const upperBound = meter.inputUpperBound();
+
+    // Then
+    expect(upperBound).toBeGreaterThanOrEqual(900);
   });
 
   it("pins calibration values in an immutable view", () => {

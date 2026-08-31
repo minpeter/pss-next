@@ -1,6 +1,8 @@
 import { asSchema, jsonSchema, type ModelMessage, type ToolSet } from "ai";
 import type { PreparedModelToolChoice } from "./model-step-preparation";
 
+const promptUnitEncoder = new TextEncoder();
+
 export interface ModelContextTokenEstimateInput {
   readonly instructions?: string;
   readonly messages: readonly ModelMessage[];
@@ -72,13 +74,16 @@ export const defaultModelPromptMeasurementProfile = Object.freeze({
 export function estimateModelMessagesTokens(
   messages: readonly ModelMessage[]
 ): number {
-  return Math.ceil(
-    JSON.stringify(messages, promptTokenEstimateReplacer).length / 4
-  );
+  return Math.ceil(serializedPromptUnits(messages));
 }
 
 function countJsonUnits(value: unknown): number {
-  return JSON.stringify(value, promptTokenEstimateReplacer).length / 4;
+  return serializedPromptUnits(value);
+}
+
+function serializedPromptUnits(value: unknown): number {
+  const json = JSON.stringify(value, promptTokenEstimateReplacer);
+  return promptUnitEncoder.encode(json).length / 4;
 }
 
 function measureDefaultMessageUnits(
