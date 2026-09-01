@@ -5,13 +5,14 @@ export const SPECULATIVE_CANDIDATE_CACHE_MAX = 32;
 interface CandidateSlot<Value extends object> {
   candidate?: Value;
   readonly owner: Readonly<object>;
-  reservations: number;
+  readonly reservations: Set<CandidateReservation<Value>>;
   readonly threadKey: string;
   version: Readonly<object>;
 }
 
 export interface CandidateReservation<Value extends object> {
   readonly expectedCandidate: Value | undefined;
+  readonly onEvict: (() => void) | undefined;
   readonly owner: Readonly<object>;
   released: boolean;
   readonly slot: CandidateSlot<Value>;
@@ -40,7 +41,18 @@ export class SpeculativeCandidateCache<Value extends object> {
     return slot.candidate;
   }
 
-  reserve(identity: Readonly<object>): CandidateReservation<Value> {
+  touch(identity: Readonly<object>): void {
+    const { owner, threadKey } = compactionThreadIdentityParts(identity);
+    const slot = this.#owners.get(owner)?.get(threadKey);
+    if (slot !== undefined) {
+      this.#touch(slot);
+    }
+  }
+
+  reserve(
+    identity: Readonly<object>,
+    onEvict?: () => void
+  ): CandidateReservation<Value> {
     const { owner, threadKey } = compactionThreadIdentityParts(identity);
     let ownerSlots = this.#owners.get(owner);
     if (ownerSlots === undefined) {
@@ -51,21 +63,25 @@ export class SpeculativeCandidateCache<Value extends object> {
     if (slot === undefined) {
       slot = {
         owner,
-        reservations: 0,
+        reservations: new Set(),
         threadKey,
         version: Object.freeze({}),
       };
       ownerSlots.set(threadKey, slot);
     }
-    slot.reservations += 1;
-    return {
+    const reservation = {
       expectedCandidate: slot.candidate,
+      onEvict,
       owner,
       released: false,
       slot,
       threadKey,
       version: slot.version,
     };
+    slot.reservations.add(reservation);
+    this.#touch(slot);
+    this.#evict();
+    return reservation;
   }
 
   install(reservation: CandidateReservation<Value>, next: Value): boolean {
@@ -81,20 +97,17 @@ export class SpeculativeCandidateCache<Value extends object> {
     slot.candidate = next;
     slot.version = Object.freeze({});
     this.#touch(slot);
-    this.#evict();
     return true;
   }
 
   release(reservation: CandidateReservation<Value>): void {
     if (reservation.released) {
-      throw new TypeError(
-        "Speculative candidate reservation was already released."
-      );
+      return;
     }
     reservation.released = true;
     const slot = reservation.slot;
-    slot.reservations -= 1;
-    if (slot.candidate === undefined && slot.reservations === 0) {
+    slot.reservations.delete(reservation);
+    if (slot.candidate === undefined && slot.reservations.size === 0) {
       this.#removeSlot(slot);
     }
   }
@@ -108,8 +121,9 @@ export class SpeculativeCandidateCache<Value extends object> {
       this.#lru.delete(oldest);
       oldest.candidate = undefined;
       oldest.version = Object.freeze({});
-      if (oldest.reservations === 0) {
-        this.#removeSlot(oldest);
+      this.#removeSlot(oldest);
+      for (const reservation of [...oldest.reservations]) {
+        reservation.onEvict?.();
       }
     }
   }
@@ -119,6 +133,7 @@ export class SpeculativeCandidateCache<Value extends object> {
     if (ownerSlots?.get(slot.threadKey) !== slot) {
       return;
     }
+    this.#lru.delete(slot);
     ownerSlots.delete(slot.threadKey);
     if (ownerSlots.size === 0) {
       this.#owners.delete(slot.owner);

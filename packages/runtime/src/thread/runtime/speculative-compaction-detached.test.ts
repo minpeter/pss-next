@@ -189,4 +189,56 @@ describe("speculativeCompaction detached summaries", () => {
 
     await expect(Promise.resolve(pending)).resolves.toBeUndefined();
   });
+
+  it("does not join a detached summary from another transformed model context", async () => {
+    const history = Array.from({ length: 6 }, (_, index) =>
+      message(String(index), index % 2 === 0 ? "user" : "assistant")
+    );
+    let resolveA: (summary: string) => void = () => {
+      throw new TypeError("summary A promise was not initialized");
+    };
+    let resolveB: (summary: string) => void = () => {
+      throw new TypeError("summary B promise was not initialized");
+    };
+    const summaryA = new Promise<string>((resolve) => {
+      resolveA = resolve;
+    });
+    const summaryB = new Promise<string>((resolve) => {
+      resolveB = resolve;
+    });
+    const summarizeA = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockReturnValue(summaryA);
+    const summarizeB = vi
+      .fn<AgentCompactionContext["summarize"]>()
+      .mockReturnValue(summaryB);
+    const compaction = policy();
+
+    const pendingA = compaction(
+      context(history, summarizeA, {
+        modelContext: [{ content: "CONTEXT_A", role: "system" }, ...history],
+        modelContextProvenance: "transformed",
+        reason: "overflow",
+      })
+    );
+    const pendingB = compaction(
+      context(history, summarizeB, {
+        modelContext: [{ content: "CONTEXT_B", role: "system" }, ...history],
+        modelContextProvenance: "transformed",
+        reason: "overflow",
+      })
+    );
+
+    expect(summarizeA).toHaveBeenCalledTimes(1);
+    expect(summarizeB).toHaveBeenCalledTimes(1);
+    resolveA("SUMMARY_A");
+    resolveB("SUMMARY_B");
+
+    await expect(Promise.resolve(pendingA)).resolves.toMatchObject({
+      summary: "SUMMARY_A",
+    });
+    await expect(Promise.resolve(pendingB)).resolves.toMatchObject({
+      summary: "SUMMARY_B",
+    });
+  });
 });

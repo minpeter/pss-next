@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCompactionThreadIdentity } from "./compaction-thread-identity";
 import {
   SPECULATIVE_CANDIDATE_CACHE_MAX,
@@ -88,15 +88,58 @@ describe("SpeculativeCandidateCache", () => {
     expect(cache.get(key)?.value).toBe("current");
   });
 
-  it("rejects releasing one reservation twice", () => {
+  it("counts installed candidates and pending reservations in one bound", () => {
+    // Given: 31 installed candidates followed by one unresolved reservation.
+    const cache = new SpeculativeCandidateCache<Candidate>();
+    for (
+      let index = 0;
+      index < SPECULATIVE_CANDIDATE_CACHE_MAX - 1;
+      index += 1
+    ) {
+      install(cache, String(index), String(index));
+    }
+    const pending = cache.reserve(identity("pending"));
+
+    // When: one more candidate consumes the 33rd aggregate slot.
+    install(cache, "overflow", "overflow");
+
+    // Then: the installed LRU is evicted and the unresolved slot remains counted.
+    expect(cache.get(identity("0"))).toBeUndefined();
+    expect(cache.size).toBe(SPECULATIVE_CANDIDATE_CACHE_MAX);
+    cache.release(pending);
+  });
+
+  it("retains a touched unresolved reservation over an older installed slot", () => {
+    // Given: the oldest slot is unresolved before 31 candidates are installed.
+    const cache = new SpeculativeCandidateCache<Candidate>();
+    const evicted = vi.fn();
+    const pending = cache.reserve(identity("pending"), evicted);
+    for (
+      let index = 0;
+      index < SPECULATIVE_CANDIDATE_CACHE_MAX - 1;
+      index += 1
+    ) {
+      install(cache, String(index), String(index));
+    }
+    cache.touch(identity("pending"));
+
+    // When: a 33rd slot is reserved.
+    const overflow = cache.reserve(identity("overflow"));
+
+    // Then: the oldest installed slot leaves while the joined job remains.
+    expect(cache.get(identity("0"))).toBeUndefined();
+    expect(evicted).not.toHaveBeenCalled();
+    cache.release(pending);
+    cache.release(overflow);
+  });
+
+  it("makes reservation release idempotent", () => {
     // Given: a released absent reservation.
     const cache = new SpeculativeCandidateCache<Candidate>();
     const reservation = cache.reserve(identity("release"));
     cache.release(reservation);
 
-    // When/Then: a second release is rejected.
-    expect(() => cache.release(reservation)).toThrow(
-      "Speculative candidate reservation was already released."
-    );
+    // When/Then: a racing second cleanup is harmless.
+    expect(() => cache.release(reservation)).not.toThrow();
   });
 });

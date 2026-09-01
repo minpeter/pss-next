@@ -125,6 +125,8 @@ export class SpeculativeCompactionCandidates {
     return (
       job.range.startSeq === range.startSeq &&
       job.range.endSeqExclusive === range.endSeqExclusive &&
+      job.modelContextProvenance === context.modelContextProvenance &&
+      equalSnapshot(job.modelContext, context.modelContext) &&
       equalSnapshot(job.compactions, context.compactions) &&
       equalSnapshot(
         job.prefix,
@@ -141,9 +143,12 @@ export class SpeculativeCompactionCandidates {
     context: AgentCompactionContext,
     range: AutoCompactionRange,
     replacedFresh = false
-  ): () => DetachedSummaryInstallation {
-    return () => {
-      const reservation = this.#candidates.reserve(context.threadIdentity);
+  ): (onEvict: () => void) => DetachedSummaryInstallation {
+    return (onEvict) => {
+      const reservation = this.#candidates.reserve(
+        context.threadIdentity,
+        onEvict
+      );
       const compactions = structuredClone(context.compactions);
       const hydratedPrefix = structuredClone(
         context.estimatedHistory.slice(0, range.endSeqExclusive)
@@ -163,6 +168,7 @@ export class SpeculativeCompactionCandidates {
           });
         },
         release: () => this.#candidates.release(reservation),
+        touch: () => this.#candidates.touch(context.threadIdentity),
       };
     };
   }
