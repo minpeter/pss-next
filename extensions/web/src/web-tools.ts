@@ -3,6 +3,7 @@ import {
   type FetchOptions,
   type FetchResult,
   type OpenSearchOptions,
+  type SearchCallOptions,
   type SearchResult,
 } from "@minpeter/opensearch/node";
 import type { ToolSet } from "ai";
@@ -17,7 +18,11 @@ export interface CodingAgentOpenSearchClient {
     urls: readonly string[],
     options?: FetchOptions
   ): Promise<readonly FetchResult[]>;
-  search(query: string, maxResults?: number): Promise<readonly SearchResult[]>;
+  search(
+    query: string,
+    maxResults?: number,
+    options?: SearchCallOptions
+  ): Promise<readonly SearchResult[]>;
 }
 
 export interface CreateCodingAgentToolsOptions {

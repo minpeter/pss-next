@@ -28,7 +28,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@minpeter/opensearch": "0.1.1",
+    "@minpeter/opensearch": "0.1.3",
     "ai": "7.0.51",
     "zod": "^4.4.3"
   },

@@ -41,7 +41,10 @@ export function createWebFetchTool(
       "Read one or more webpages as clean markdown with source metadata. Use after web_search when a result needs full-page content, or call directly with known URLs.",
     execute: async (input, options) => {
       abortIfRequested(options.abortSignal, "web_fetch");
-      return await client.fetch(input.urls, getFetchOptions(input));
+      return await client.fetch(
+        input.urls,
+        getFetchOptions(input, options.abortSignal)
+      );
     },
     inputSchema,
     outputSchema: jsonSchema<readonly FetchResult[]>({
@@ -61,10 +64,18 @@ export function createWebFetchTool(
   });
 }
 
-function getFetchOptions(input: WebFetchInput): FetchOptions | undefined {
-  if (input.maxCharacters === undefined) {
+function getFetchOptions(
+  input: WebFetchInput,
+  signal: AbortSignal | undefined
+): FetchOptions | undefined {
+  if (input.maxCharacters === undefined && signal === undefined) {
     return;
   }
 
-  return { maxCharacters: input.maxCharacters };
+  return {
+    ...(input.maxCharacters === undefined
+      ? {}
+      : { maxCharacters: input.maxCharacters }),
+    ...(signal === undefined ? {} : { signal }),
+  };
 }
