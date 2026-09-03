@@ -37,7 +37,7 @@
     "test:cross-platform-smoke": "pnpm turbo run build --filter=@minpeter/pss-coding-agent... && pnpm --filter @minpeter/pss-runtime exec vitest run src/platform/file/storage/file-lock.test.ts src/platform/file/storage/file-execution-store-edge.test.ts && pnpm --filter @minpeter/pss-coding-agent exec vitest run src/cli.test.ts src/cli-exec-home.test.ts src/context/context-resources.test.ts src/extensions/manager/paths.test.ts src/tui/terminal-safety.test.ts && node apps/coding-agent/bin/pss.js --help",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
     "verify:edge": "pnpm --filter @minpeter/pss-worker-agent build",
-    "verify:package-apis": "publint packages/runtime && publint apps/coding-agent && node scripts/packed-consumer-smoke.mjs",
+    "verify:package-apis": "publint packages/runtime && publint apps/coding-agent && publint extensions/latex && publint extensions/mermaid && publint extensions/web && node scripts/packed-consumer-smoke.mjs",
     "verify:release": "node scripts/verify-release-artifacts.mjs && pnpm verify:package-apis"
   },
   "devDependencies": {

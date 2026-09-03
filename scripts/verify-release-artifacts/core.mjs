@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { findRuntimePublicApiSnapshotErrors } from "../runtime-public-api-snapshot.mjs";
+import { findExtensionArtifactErrors } from "./extension-checks.mjs";
 import {
   findBundledExtensionImportLeaks,
   findExtensionlessRelativeImports,
@@ -54,6 +55,7 @@ export function verifyReleaseArtifacts(options) {
       ? findRuntimePublicApiSnapshotErrors(options)
       : []),
     ...requirePackageDists(options),
+    ...findExtensionArtifactErrors(options),
     ...findPackageBinEntrypointErrors(options),
     ...findExtensionlessRelativeImports(options),
     ...findPublishedTestArtifacts(options),

@@ -30,7 +30,13 @@ export function createTrackedTempRoot(prefix) {
 export function createFixture() {
   const cwd = createTrackedTempRoot("pss-release-artifacts-");
 
-  for (const packageName of ["runtime", "extension-latex", "coding-agent"]) {
+  for (const packageName of [
+    "runtime",
+    "extension-latex",
+    "extension-mermaid",
+    "extension-web",
+    "coding-agent",
+  ]) {
     const packageRoot = fixturePackageRoot(cwd, packageName);
     mkdirSync(join(packageRoot, "dist"), { recursive: true });
     writeFileSync(
@@ -66,15 +72,24 @@ function packageMetadata(packageName) {
       },
     };
   }
-  return {};
+  return {
+    exports: {
+      ".": {
+        import: "./dist/index.js",
+        types: "./dist/index.d.ts",
+      },
+    },
+    files: ["dist", "README.md"],
+    name: `@minpeter/pss-${packageName}`,
+  };
 }
 
 function fixturePackageRoot(cwd, packageName) {
   if (packageName === "coding-agent") {
     return join(cwd, "apps", "coding-agent");
   }
-  if (packageName === "extension-latex") {
-    return join(cwd, "extensions", "latex");
+  if (packageName.startsWith("extension-")) {
+    return join(cwd, "extensions", packageName.slice("extension-".length));
   }
   return join(cwd, "packages", packageName);
 }
@@ -94,6 +109,20 @@ function writePackageDeclarationFixtures(cwd, packageName, packageRoot) {
       { mode: 0o755 }
     );
     writeRuntimeDeclarationFixtures(cwd, packageName);
+    return;
+  }
+  if (packageName === "extension-latex") {
+    writeFileSync(
+      join(packageRoot, "dist", "mathjax-worker.js"),
+      "export const ok = true;\n"
+    );
+    return;
+  }
+  if (packageName === "extension-mermaid") {
+    writeFileSync(
+      join(packageRoot, "dist", "mermaid-art-worker.js"),
+      "export const ok = true;\n"
+    );
     return;
   }
   if (packageName !== "coding-agent") {
