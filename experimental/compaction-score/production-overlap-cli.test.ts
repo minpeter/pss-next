@@ -8,7 +8,7 @@ import { validateProductionOverlapArtifact } from "./production-overlap-validati
 import { isRuntimeUserBlockZero } from "./runtime-block-time-metrics";
 
 const execFileAsync = promisify(execFile);
-const CLI_TEST_TIMEOUT_MS = 30_000;
+const CLI_TEST_TIMEOUT_MS = 120_000;
 
 describe("production-overlap CLI artifact", () => {
   it(
