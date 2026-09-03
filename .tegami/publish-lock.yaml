@@ -1,6 +1,21 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Reorganize Durable Object platforms\n\nMove shared Durable Object storage, SQLite, and scheduled-work primitives into\na neutral platform core, with Cloudflare and Celld as sibling implementations.\nReplace the former Cloudflare and Celld package paths with the new hierarchy.\n"
-    filename: 2026-08-30-durable-object-hierarchy.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Fence durable run ownership\n\nUnify claim semantics across execution stores and reject run transitions or\ncheckpoint writes from stale lease owners.\n"
+    filename: 2026-08-30-runtime-v3-hardening.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Measure prompt tokens in serialized UTF-8 bytes\n\nDefault prompt measurement counted UTF-16 code units, so CJK text cost the\nsame units as ASCII of equal length. Adaptive calibration learned an inflated\nmarginal scale from CJK requests and applied it to every later request,\nincluding ASCII prose and tool results, which could reject prompts that fit.\nMeasurement now divides serialized UTF-8 byte length by four. ASCII estimates\nare unchanged; non-ASCII estimates increase and never decrease relative to the\nprevious basis.\n"
+    filename: 2026-08-31-cjk-context-token-units.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Configure the context gate independently\n\n`createAgent` now accepts an explicit `contextGate` that takes whole-object precedence over compaction budget metadata without changing speculative compaction thresholds.\n"
+    filename: 2026-08-31-context-gate-option.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Advance overflow compaction past tool-heavy turns\n\nWhen backward range selection collapses inside a tool exchange, compaction now advances to the next valid boundary without weakening tool-exchange integrity.\n"
+    filename: 2026-08-31-overflow-compaction-progress.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Reuse speculative summaries across thread reconstruction\n\nProcess-local speculative candidates now survive same-Agent thread reconstruction in a bounded cache while remaining isolated when a compaction policy is shared by multiple Agents.\n"
+    filename: 2026-08-31-stable-compaction-identity.md
+    v: 0.0.0
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Isolate detached compaction summaries\n\nPrevent summaries produced from transformed or unknown model context from becoming reusable by later standard-context compaction episodes.\n"
+    filename: 2026-09-03-detached-compaction-provenance.md
     v: 0.0.0
 core:packages:
   - id: npm:@minpeter/pss-coding-agent
@@ -12,7 +27,12 @@ core:packages:
   - id: npm:@minpeter/pss-extension-web
     updated: false
   - changelogIds:
-      - 2026-08-30-durable-object-hierarchy.md
+      - 2026-08-30-runtime-v3-hardening.md
+      - 2026-08-31-cjk-context-token-units.md
+      - 2026-08-31-context-gate-option.md
+      - 2026-08-31-overflow-compaction-progress.md
+      - 2026-08-31-stable-compaction-identity.md
+      - 2026-09-03-detached-compaction-provenance.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:

@@ -1,3 +1,36 @@
+## @minpeter/pss-runtime@0.3.0-next.16 (next)
+
+### Fence durable run ownership
+
+Unify claim semantics across execution stores and reject run transitions or
+checkpoint writes from stale lease owners.
+
+### Measure prompt tokens in serialized UTF-8 bytes
+
+Default prompt measurement counted UTF-16 code units, so CJK text cost the
+same units as ASCII of equal length. Adaptive calibration learned an inflated
+marginal scale from CJK requests and applied it to every later request,
+including ASCII prose and tool results, which could reject prompts that fit.
+Measurement now divides serialized UTF-8 byte length by four. ASCII estimates
+are unchanged; non-ASCII estimates increase and never decrease relative to the
+previous basis.
+
+### Configure the context gate independently
+
+`createAgent` now accepts an explicit `contextGate` that takes whole-object precedence over compaction budget metadata without changing speculative compaction thresholds.
+
+### Advance overflow compaction past tool-heavy turns
+
+When backward range selection collapses inside a tool exchange, compaction now advances to the next valid boundary without weakening tool-exchange integrity.
+
+### Reuse speculative summaries across thread reconstruction
+
+Process-local speculative candidates now survive same-Agent thread reconstruction in a bounded cache while remaining isolated when a compaction policy is shared by multiple Agents.
+
+### Isolate detached compaction summaries
+
+Prevent summaries produced from transformed or unknown model context from becoming reusable by later standard-context compaction episodes.
+
 ## @minpeter/pss-runtime@0.3.0-next.15 (next)
 
 ### Reorganize Durable Object platforms
