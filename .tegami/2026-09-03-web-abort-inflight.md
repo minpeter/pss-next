@@ -2,6 +2,8 @@
 packages:
   npm:@minpeter/pss-coding-agent:
     type: patch
+  npm:@minpeter/pss-extension-web:
+    type: patch
 ---
 
 ## Cancel in-flight web tool requests
