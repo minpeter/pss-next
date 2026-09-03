@@ -51,6 +51,23 @@ describe("workspace containment at mutation time", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("creates nothing outside the workspace when a new-file path is swapped before writing", async () => {
+    const resolved = await resolveWorkspacePath(
+      workspace,
+      "sub/new/deep/target.txt"
+    );
+    await swapSubForOutsideLink();
+
+    await expect(
+      atomicWrite(resolved.root, resolved.path, "pwned")
+    ).rejects.toThrow(OUTSIDE_WORKSPACE_MESSAGE);
+    await expect(
+      readFile(join(outside, "new", "deep", "target.txt"), "utf8")
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    const { readdir } = await import("node:fs/promises");
+    expect(await readdir(outside)).toStrictEqual([]);
+  });
+
   it("passes for an untouched resolved path", async () => {
     await writeFile(join(workspace, "sub", "ok.txt"), "data");
     const resolved = await resolveWorkspacePath(workspace, "sub/ok.txt");

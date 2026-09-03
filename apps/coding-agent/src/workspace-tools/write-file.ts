@@ -74,6 +74,12 @@ export async function atomicWrite(
   content: string,
   expectedHash?: string
 ): Promise<void> {
+  // Fail closed before ANY filesystem mutation: when an intermediate
+  // directory was swapped for an escaping symlink after resolution, neither
+  // parent directories nor the temp file may be created outside the
+  // workspace. Node offers no fd-relative rename, so containment is asserted
+  // immediately before each mutation phase instead.
+  await assertWorkspacePathContained(root, path);
   await mkdir(dirname(path), { recursive: true });
   const mode = await existingMode(path);
   const permissions = mode === undefined ? undefined : mode % 0o1000;
