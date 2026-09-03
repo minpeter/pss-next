@@ -36,13 +36,9 @@ interface CandidateStoreOptions {
   readonly retain: number;
 }
 
-/**
- * Candidates are installed by detached summary jobs, never synchronously by an
- * episode, so a deadline that bounds the caller's wait cannot destroy finished
- * provider work. Freshness is enforced at consumption by #getFresh and #fits;
- * there is deliberately no abort-rollback listener because detached installs
- * happen after the originating episode settled.
- */
+// Candidates are installed by detached summary jobs, never synchronously by an
+// episode, so a deadline cannot destroy finished provider work. Freshness is
+// enforced at consumption; detached installs can follow episode settlement.
 export class SpeculativeCompactionCandidates {
   readonly #candidates = new SpeculativeCandidateCache<SpeculativeCandidate>();
   readonly #estimate: ThreadTokenEstimator;
@@ -158,6 +154,9 @@ export class SpeculativeCompactionCandidates {
       );
       return {
         install: (summary) => {
+          if (context.modelContextProvenance !== "standard") {
+            return;
+          }
           this.#candidates.install(reservation, {
             compactions,
             hydratedPrefix,

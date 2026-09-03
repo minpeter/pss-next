@@ -106,7 +106,7 @@ describe("speculativeCompaction", () => {
     expect(summarize).toHaveBeenCalledTimes(2);
   });
 
-  it("installs a completed promotion fallback after its episode aborts", async () => {
+  it("does not replace a standard candidate with a transformed fallback after abort", async () => {
     const controller = new AbortController();
     let resolveFallback: (summary: string) => void = () => {
       throw new TypeError("fallback promise was not initialized");
@@ -146,7 +146,7 @@ describe("speculativeCompaction", () => {
       context(promotedHistory, summarize, { reason: "overflow" })
     );
 
-    expect(promoted?.summary).toBe("late fallback");
+    expect(promoted?.summary).toBe("prepared");
     expect(summarize).toHaveBeenCalledTimes(2);
   });
 });
