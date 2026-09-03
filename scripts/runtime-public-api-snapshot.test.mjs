@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-  declarationExportsFromText,
-  diffPublicApi,
-} from "./runtime-public-api-snapshot.mjs";
+import { declarationExportsFromText } from "./runtime-public-api-collect.mjs";
+import { diffPublicApi } from "./runtime-public-api-snapshot.mjs";
 
 describe("runtime public API snapshot", () => {
   it("reports additions, removals, and entrypoint changes", () => {

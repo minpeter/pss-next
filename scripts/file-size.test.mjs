@@ -1,23 +1,11 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const sourceFilesWithCurrentEdits = [
-  "scripts/cloudflare-example.test.mjs",
-  "scripts/examples.fixture.mjs",
-  "scripts/examples.test.mjs",
-  "scripts/file-size.test.mjs",
-  "scripts/release-workflow.test.mjs",
-  "scripts/verify-release-artifacts.mjs",
-  "scripts/verify-release-artifacts.fixture.mjs",
-  "scripts/verify-release-artifacts/core.mjs",
-  "scripts/verify-release-artifacts/package-checks.mjs",
-  "scripts/verify-release-artifacts/runtime-checks.mjs",
-  "scripts/verify-release-artifacts/runtime-public-surface.mjs",
-  "scripts/verify-release-artifacts/shared.mjs",
-  "scripts/verify-release-artifacts-package.test.mjs",
-  "scripts/verify-release-artifacts-runtime.test.mjs",
-  "scripts/verify-release-artifacts-runtime-subpaths.test.mjs",
-];
+const scriptSourceFilePattern = /\.(?:mjs|mts)$/;
+
+const scriptSourceFiles = readdirSync("scripts", { recursive: true })
+  .filter((path) => scriptSourceFilePattern.test(path))
+  .map((path) => `scripts/${path}`);
 
 function pureLineCount(path) {
   return readFileSync(path, "utf8")
@@ -33,8 +21,8 @@ function pureLineCount(path) {
 }
 
 describe("source file size", () => {
-  it("keeps changed script files below the reviewable pure LOC ceiling", () => {
-    for (const path of sourceFilesWithCurrentEdits) {
+  it("keeps every script source file below the reviewable pure LOC ceiling", () => {
+    for (const path of scriptSourceFiles) {
       expect(pureLineCount(path), path).toBeLessThanOrEqual(250);
     }
   });
