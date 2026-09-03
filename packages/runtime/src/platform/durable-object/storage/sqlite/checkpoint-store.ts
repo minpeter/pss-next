@@ -7,6 +7,7 @@ import type {
   LeaseFencedCheckpointWriteResult,
   TurnRecord,
 } from "../../../../execution";
+import { CheckpointCorruptionError } from "../../../../execution/host/checkpoint-corruption";
 import {
   decideCheckpointVersionWrite,
   decideLeaseFencedCheckpointWrite,
@@ -131,7 +132,10 @@ export class DurableObjectSqliteCheckpointStore
           row.checkpoint
         )
       : null;
-    return checkpoint ? (JSON.parse(checkpoint) as Checkpoint) : null;
+    if (!checkpoint) {
+      throw new CheckpointCorruptionError(runId, run.checkpointVersion);
+    }
+    return JSON.parse(checkpoint) as Checkpoint;
   }
 
   async #persist(

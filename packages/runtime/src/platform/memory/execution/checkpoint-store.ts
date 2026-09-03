@@ -1,3 +1,4 @@
+import { CheckpointCorruptionError } from "../../../execution/host/checkpoint-corruption";
 import {
   decideCheckpointVersionWrite,
   decideLeaseFencedCheckpointWrite,
@@ -67,7 +68,10 @@ export class InMemoryCheckpointStore
     const checkpoint = checkpoints.find(
       (candidate) => candidate.version === run.checkpointVersion
     );
-    return Promise.resolve(checkpoint ? structuredClone(checkpoint) : null);
+    if (!checkpoint) {
+      throw new CheckpointCorruptionError(runId, run.checkpointVersion);
+    }
+    return Promise.resolve(structuredClone(checkpoint));
   }
 
   #persist(

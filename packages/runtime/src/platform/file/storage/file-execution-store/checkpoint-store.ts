@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { CheckpointCorruptionError } from "../../../../execution/host/checkpoint-corruption";
 import {
   decideCheckpointVersionWrite,
   decideLeaseFencedCheckpointWrite,
@@ -18,17 +19,10 @@ import { parseRunCheckpoint } from "./schemas";
 import type { DataDirectoryResolver } from "./types";
 import { encodeKey } from "./utils";
 
-export class FileCheckpointCorruptionError extends Error {
-  readonly checkpointVersion: number;
-  readonly runId: string;
-
+export class FileCheckpointCorruptionError extends CheckpointCorruptionError {
   constructor(runId: string, checkpointVersion: number) {
-    super(
-      `File checkpoint authority for run ${runId} references missing version ${checkpointVersion}.`
-    );
+    super(runId, checkpointVersion);
     this.name = "FileCheckpointCorruptionError";
-    this.checkpointVersion = checkpointVersion;
-    this.runId = runId;
   }
 }
 

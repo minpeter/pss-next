@@ -11,6 +11,7 @@ export type {
   DispatchedAgentNotification,
 } from "./dispatch/notification-dispatch";
 export { dispatchAgentNotification } from "./dispatch/notification-dispatch";
+export { CheckpointCorruptionError } from "./host/checkpoint-corruption";
 export { UnsupportedCheckpointFencingError } from "./host/checkpoint-fencing";
 export {
   createEventCursor,

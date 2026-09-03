@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  Checkpoint,
-  HostStore,
-  LeaseFencedCheckpointStore,
-  TurnStatus,
+import {
+  type Checkpoint,
+  CheckpointCorruptionError,
+  type HostStore,
+  type LeaseFencedCheckpointStore,
+  type TurnStatus,
 } from "../../execution";
 import { createQueuedRun } from "./fixtures";
 
@@ -21,6 +22,22 @@ const TERMINAL_STATUSES = [
 export function describeCheckpointStoreContract({
   createStore,
 }: CheckpointContractOptions): void {
+  describe("checkpoint reads", () => {
+    it("fails closed when authority references a missing checkpoint", async () => {
+      // Given: a run whose authoritative version has no checkpoint payload.
+      const store = createStore();
+      const run = createQueuedRun();
+      await store.turns.create(run);
+      await store.turns.update({ ...run, checkpointVersion: 1 });
+
+      // When: the authoritative checkpoint is requested.
+      const read = store.checkpoints.latest(run.runId);
+
+      // Then: corruption is surfaced instead of becoming a new run.
+      await expect(read).rejects.toBeInstanceOf(CheckpointCorruptionError);
+    });
+  });
+
   describe("checkpoint writes", () => {
     it("preserves the released legacy append result", async () => {
       // Given: a run at checkpoint version zero.
