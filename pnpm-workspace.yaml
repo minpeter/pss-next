@@ -25,6 +25,7 @@ allowBuilds:
   ssh2: false
   workerd: true
 minimumReleaseAgeExclude:
+  - '@minpeter/opensearch@0.1.2'
   - typescript
   - '@typescript/*'
   - rolldown-plugin-dts

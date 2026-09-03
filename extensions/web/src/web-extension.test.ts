@@ -17,6 +17,17 @@ const toolExecutionOptions: ToolExecutionOptions<Record<string, unknown>> = {
   toolCallId: "tool-call-test",
 };
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 const rejectWhenAborted = (signal: AbortSignal | undefined): Promise<never> => {
   if (signal === undefined) {
     return Promise.reject(new Error("Expected client abort signal"));
@@ -151,6 +162,85 @@ describe("web extension tools", () => {
     expect(client.fetch).toHaveBeenCalledWith(["https://example.com/"], {
       signal: controller.signal,
     });
+  });
+
+  it("aborts the default search client's underlying request", async () => {
+    const started = deferred<void>();
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        started.resolve();
+        return await new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener(
+            "abort",
+            () => reject(requestSignal?.reason),
+            { once: true }
+          );
+        });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const reason = new Error("stop default search");
+    const search = createCodingAgentTools({
+      openSearchOptions: {
+        env: { TAVILY_API_KEY: "test-key" },
+        search: { cache: { enabled: false } },
+      },
+    }).web_search.execute;
+    if (typeof search !== "function") {
+      throw new TypeError("Expected executable web_search tool");
+    }
+
+    const result = search(
+      { query: "abort default search" },
+      { ...toolExecutionOptions, abortSignal: controller.signal }
+    );
+    await started.promise;
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts the default fetch client's underlying request", async () => {
+    const started = deferred<void>();
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        started.resolve();
+        return await new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener(
+            "abort",
+            () => reject(requestSignal?.reason),
+            { once: true }
+          );
+        });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const reason = new Error("stop default fetch");
+    const fetch = createCodingAgentTools({
+      openSearchOptions: { fetch: { cache: { enabled: false } } },
+    }).web_fetch.execute;
+    if (typeof fetch !== "function") {
+      throw new TypeError("Expected executable web_fetch tool");
+    }
+
+    const result = fetch(
+      { urls: ["https://news.ycombinator.com/item?id=123"] },
+      { ...toolExecutionOptions, abortSignal: controller.signal }
+    );
+    await started.promise;
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects invalid model inputs before calling the client", async () => {

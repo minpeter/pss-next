@@ -3,6 +3,7 @@ import {
   type FetchOptions,
   type FetchResult,
   type OpenSearchOptions,
+  type SearchCallOptions,
   type SearchResult,
 } from "@minpeter/opensearch/node";
 import type { ToolSet } from "ai";
@@ -12,20 +13,15 @@ import { createWebSearchTool, type WebSearchTool } from "./web-search";
 
 export type WebToolsAvailability = "disabled" | "optional" | "required";
 
-interface CodingAgentOpenSearchCallOptions {
-  readonly cache?: "bypass";
-  readonly signal?: AbortSignal;
-}
-
 export interface CodingAgentOpenSearchClient {
   fetch(
     urls: readonly string[],
-    options?: FetchOptions & CodingAgentOpenSearchCallOptions
+    options?: FetchOptions
   ): Promise<readonly FetchResult[]>;
   search(
     query: string,
     maxResults?: number,
-    options?: CodingAgentOpenSearchCallOptions
+    options?: SearchCallOptions
   ): Promise<readonly SearchResult[]>;
 }
 

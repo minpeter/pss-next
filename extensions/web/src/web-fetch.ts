@@ -67,7 +67,7 @@ export function createWebFetchTool(
 function getFetchOptions(
   input: WebFetchInput,
   signal: AbortSignal | undefined
-): (FetchOptions & { readonly signal?: AbortSignal }) | undefined {
+): FetchOptions | undefined {
   if (input.maxCharacters === undefined && signal === undefined) {
     return;
   }
