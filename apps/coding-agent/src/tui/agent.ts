@@ -1280,6 +1280,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           return;
         }
         settled = true;
+        extensionUiController.signal.removeEventListener("abort", abort);
         commandInputListenerActive = false;
         if (activeModelSelector === selector) {
           activeModelSelector = undefined;
@@ -1292,11 +1293,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // Exit must settle the selector through the same idempotent path as
       // Escape; otherwise it stays mounted with input capture still active
       // after the TUI has stopped.
-      extensionUiController.signal.addEventListener(
-        "abort",
-        () => settle(undefined),
-        { once: true }
-      );
+      const abort = () => settle(undefined);
+      extensionUiController.signal.addEventListener("abort", abort, {
+        once: true,
+      });
       const layout = getModelSelectorLayout();
       selector = new ModelSelectorComponent({
         compact: layout.compact,
@@ -1374,6 +1374,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           return;
         }
         settled = true;
+        extensionUiController.signal.removeEventListener("abort", abort);
         commandInputListenerActive = false;
         if (activeSessionSelector === selector) {
           activeSessionSelector = undefined;
@@ -1386,11 +1387,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // Exit must settle the selector through the same idempotent path as
       // Escape; otherwise it stays mounted with input capture still active
       // after the TUI has stopped.
-      extensionUiController.signal.addEventListener(
-        "abort",
-        () => settle(undefined),
-        { once: true }
-      );
+      const abort = () => settle(undefined);
+      extensionUiController.signal.addEventListener("abort", abort, {
+        once: true,
+      });
       const layout = getModelSelectorLayout();
       selector = new SessionSelectorComponent({
         compact: layout.compact,

@@ -161,4 +161,52 @@ describe.sequential("TUI selector exit", () => {
     terminalHarness.send?.("\r");
     expect(switchModel).not.toHaveBeenCalled();
   });
+
+  it("removes the selector abort listener after normal cancellation", async () => {
+    const addEventListener = vi.spyOn(
+      AbortSignal.prototype,
+      "addEventListener"
+    );
+    const removeEventListener = vi.spyOn(
+      AbortSignal.prototype,
+      "removeEventListener"
+    );
+    const opened = deferred<void>();
+    let listenersBeforeCommand = 0;
+    const run = createAgentTUI({
+      ...baseConfig(),
+      onSetup: () => {
+        listenersBeforeCommand = addEventListener.mock.calls.length;
+        submitModelCommandAfterSetup();
+      },
+      modelSelector: {
+        currentModelId: () => {
+          opened.resolve();
+          return "model-a";
+        },
+        listModelIds: () => Promise.resolve(["model-a"]),
+        switchModel: vi.fn(),
+      },
+    });
+
+    try {
+      await opened.promise;
+      const selectorAbortListeners = addEventListener.mock.calls
+        .slice(listenersBeforeCommand)
+        .filter(([type]) => type === "abort");
+      expect(selectorAbortListeners).toHaveLength(1);
+      const selectorAbortListener = selectorAbortListeners[0]?.[1];
+      terminalHarness.send?.("\u001b");
+
+      expect(removeEventListener).toHaveBeenCalledWith(
+        "abort",
+        selectorAbortListener
+      );
+    } finally {
+      requestExit();
+      await expectExitBefore(run, () => undefined);
+      addEventListener.mockRestore();
+      removeEventListener.mockRestore();
+    }
+  });
 });
