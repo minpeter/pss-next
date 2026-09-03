@@ -9,6 +9,7 @@ import type {
 import { DETACHED_SUMMARY_BACKSTOP_MS } from "./auto-compaction-types";
 import { compactionThreadIdentityParts } from "./compaction-thread-identity";
 import { SPECULATIVE_CANDIDATE_CACHE_MAX } from "./speculative-candidate-cache";
+import { unrefTimer } from "./unref-timer";
 
 export interface DetachedSummaryJob {
   readonly cancel: () => void;
@@ -134,7 +135,7 @@ export class DetachedSummaryJobs {
     ownerJobs.set(threadKey, job);
     this.#touch(job);
     timer = setTimeout(() => finalize(true), DETACHED_SUMMARY_BACKSTOP_MS);
-    timer.unref();
+    unrefTimer(timer);
     this.#evict();
     return job;
   }
