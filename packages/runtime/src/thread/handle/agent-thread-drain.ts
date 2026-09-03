@@ -81,11 +81,15 @@ export async function drainAgentThreadInputQueue(
       });
     }
   );
-  loop.then(loopSettled.resolve, loopSettled.reject);
 
+  let loopFailure: { readonly error: unknown } | undefined;
   try {
     await loop;
-  } finally {
+  } catch (error) {
+    loopFailure = { error };
+  }
+
+  try {
     const state = drain.state;
     const shouldRestart =
       state.tag === "draining" &&
@@ -95,8 +99,16 @@ export async function drainAgentThreadInputQueue(
     // The loop has settled: every activated turn must have been released.
     assertThreadMachineInvariants(context);
     if (shouldRestart) {
+      // Joiners queued work for the next pass, so their shared promise follows
+      // that restart rather than a failure from the pass they did not join.
       await drainAgentThreadInputQueue(context);
+    } else if (loopFailure) {
+      throw loopFailure.error;
     }
+    loopSettled.resolve();
+  } catch (error) {
+    loopSettled.reject(error);
+    throw error;
   }
 }
 

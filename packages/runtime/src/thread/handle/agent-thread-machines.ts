@@ -83,7 +83,12 @@ export type ThreadDrainState =
   | { readonly tag: "idle" }
   | {
       readonly tag: "draining";
-      /** Settles when the current drain loop ends (before any restart). */
+      /**
+       * Settles when the drain chain settles: when a restart is requested,
+       * the promise stays pending until the restarted loop (and any further
+       * restarts) ends, so joiners never observe a superseded pass failure
+       * while their queued turn still executes.
+       */
       readonly promise: Promise<void>;
       /** A concurrent drain request arrived; restart the loop after this one ends. */
       readonly restartRequested: boolean;
