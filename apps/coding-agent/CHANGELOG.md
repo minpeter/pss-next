@@ -1,3 +1,16 @@
+## @minpeter/pss-coding-agent@0.0.14-next.18 (next)
+
+### Cancel in-flight web tool requests
+
+Forward coding-agent abort signals to web search and page fetch clients so active network work can stop promptly.
+
+### Re-verify workspace containment at mutation time
+
+Workspace mutations re-canonicalize the nearest existing ancestor immediately
+before writing or deleting, so an intermediate directory swapped for an
+escaping symlink between resolution and mutation now fails closed instead of
+writing or deleting outside the workspace.
+
 ## @minpeter/pss-coding-agent@0.0.14-next.17 (next)
 
 ### Bound automatic compaction blocking

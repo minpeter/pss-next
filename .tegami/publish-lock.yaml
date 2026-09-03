@@ -1,38 +1,41 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Fence durable run ownership\n\nUnify claim semantics across execution stores and reject run transitions or\ncheckpoint writes from stale lease owners.\n"
-    filename: 2026-08-30-runtime-v3-hardening.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Cancel in-flight web tool requests\n\nForward coding-agent abort signals to web search and page fetch clients so active network work can stop promptly.\n"
+    filename: 2026-09-03-web-abort-inflight.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Measure prompt tokens in serialized UTF-8 bytes\n\nDefault prompt measurement counted UTF-16 code units, so CJK text cost the\nsame units as ASCII of equal length. Adaptive calibration learned an inflated\nmarginal scale from CJK requests and applied it to every later request,\nincluding ASCII prose and tool results, which could reject prompts that fit.\nMeasurement now divides serialized UTF-8 byte length by four. ASCII estimates\nare unchanged; non-ASCII estimates increase and never decrease relative to the\nprevious basis.\n"
-    filename: 2026-08-31-cjk-context-token-units.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Re-verify workspace containment at mutation time\n\nWorkspace mutations re-canonicalize the nearest existing ancestor immediately\nbefore writing or deleting, so an intermediate directory swapped for an\nescaping symlink between resolution and mutation now fails closed instead of\nwriting or deleting outside the workspace.\n"
+    filename: 2026-09-03-workspace-symlink-swap.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Configure the context gate independently\n\n`createAgent` now accepts an explicit `contextGate` that takes whole-object precedence over compaction budget metadata without changing speculative compaction thresholds.\n"
-    filename: 2026-08-31-context-gate-option.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Fail closed on missing checkpoints\n\nCheckpoint adapters now surface checkpoint corruption when authoritative run metadata references a missing checkpoint, preventing resume from silently restarting at step one.\n"
+    filename: 2026-09-03-checkpoint-fail-closed.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Advance overflow compaction past tool-heavy turns\n\nWhen backward range selection collapses inside a tool exchange, compaction now advances to the next valid boundary without weakening tool-exchange integrity.\n"
-    filename: 2026-08-31-overflow-compaction-progress.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Keep restarted drain turns successful\n\nWait for a requested queue-drain restart before settling joined callers, so a\nqueued turn cannot receive a failure and then execute anyway.\n"
+    filename: 2026-09-03-drain-restart-race.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Reuse speculative summaries across thread reconstruction\n\nProcess-local speculative candidates now survive same-Agent thread reconstruction in a bounded cache while remaining isolated when a compaction policy is shared by multiple Agents.\n"
-    filename: 2026-08-31-stable-compaction-identity.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Support web and edge runtime timers\n\nGuard detached compaction timer `unref` calls so numeric web timer handles do not crash summary startup or cleanup.\n"
+    filename: 2026-09-03-edge-timer-unref.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Isolate detached compaction summaries\n\nPrevent summaries produced from transformed or unknown model context from becoming reusable by later standard-context compaction episodes.\n"
-    filename: 2026-09-03-detached-compaction-provenance.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Let the TUI exit while selectors are pending\n\nCancel pending model and session selector waits when exit is requested so catalog loading or an open picker cannot keep the process alive.\n"
+    filename: 2026-09-03-tui-exit-hang.md
     v: 0.0.0
 core:packages:
-  - id: npm:@minpeter/pss-coding-agent
-    updated: false
+  - changelogIds:
+      - 2026-09-03-web-abort-inflight.md
+      - 2026-09-03-workspace-symlink-swap.md
+    id: npm:@minpeter/pss-coding-agent
+    updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
   - id: npm:@minpeter/pss-extension-mermaid
     updated: false
-  - id: npm:@minpeter/pss-extension-web
-    updated: false
   - changelogIds:
-      - 2026-08-30-runtime-v3-hardening.md
-      - 2026-08-31-cjk-context-token-units.md
-      - 2026-08-31-context-gate-option.md
-      - 2026-08-31-overflow-compaction-progress.md
-      - 2026-08-31-stable-compaction-identity.md
-      - 2026-09-03-detached-compaction-provenance.md
+      - 2026-09-03-web-abort-inflight.md
+    id: npm:@minpeter/pss-extension-web
+    updated: true
+  - changelogIds:
+      - 2026-09-03-checkpoint-fail-closed.md
+      - 2026-09-03-drain-restart-race.md
+      - 2026-09-03-edge-timer-unref.md
+      - 2026-09-03-tui-exit-hang.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:
