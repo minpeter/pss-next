@@ -61,6 +61,7 @@ const createStubClient = () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("web extension tools", () => {
