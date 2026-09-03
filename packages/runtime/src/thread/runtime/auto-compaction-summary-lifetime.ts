@@ -2,6 +2,7 @@ import {
   type CompactionSummaryOptions,
   DETACHED_SUMMARY_BACKSTOP_MS,
 } from "./auto-compaction-types";
+import { unrefTimer } from "./unref-timer";
 
 export interface SummaryLifetimeSignal {
   readonly release: () => void;
@@ -35,7 +36,7 @@ export function resolveSummaryLifetimeSignal({
       new Error("Detached compaction summary exceeded the safety backstop.")
     );
   }, DETACHED_SUMMARY_BACKSTOP_MS);
-  timer.unref();
+  unrefTimer(timer);
   return {
     release: () => clearTimeout(timer),
     signal: options.signal
