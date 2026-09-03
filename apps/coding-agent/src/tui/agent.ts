@@ -1274,7 +1274,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // Let the selector own ctrl+c/escape while it is mounted.
       commandInputListenerActive = true;
       let selector: ModelSelectorComponent | undefined;
+      let settled = false;
       const settle = (modelId: string | undefined): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         commandInputListenerActive = false;
         if (activeModelSelector === selector) {
           activeModelSelector = undefined;
@@ -1284,6 +1289,14 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         tui.requestRender();
         resolve(modelId);
       };
+      // Exit must settle the selector through the same idempotent path as
+      // Escape; otherwise it stays mounted with input capture still active
+      // after the TUI has stopped.
+      extensionUiController.signal.addEventListener(
+        "abort",
+        () => settle(undefined),
+        { once: true }
+      );
       const layout = getModelSelectorLayout();
       selector = new ModelSelectorComponent({
         compact: layout.compact,
@@ -1355,7 +1368,12 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const pendingSelection = new Promise<string | undefined>((resolve) => {
       commandInputListenerActive = true;
       let selector: SessionSelectorComponent | undefined;
+      let settled = false;
       const settle = (sessionKey: string | undefined): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         commandInputListenerActive = false;
         if (activeSessionSelector === selector) {
           activeSessionSelector = undefined;
@@ -1365,6 +1383,14 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         tui.requestRender();
         resolve(sessionKey);
       };
+      // Exit must settle the selector through the same idempotent path as
+      // Escape; otherwise it stays mounted with input capture still active
+      // after the TUI has stopped.
+      extensionUiController.signal.addEventListener(
+        "abort",
+        () => settle(undefined),
+        { once: true }
+      );
       const layout = getModelSelectorLayout();
       selector = new SessionSelectorComponent({
         compact: layout.compact,

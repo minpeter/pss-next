@@ -1,5 +1,5 @@
 import type { Terminal } from "@earendil-works/pi-tui";
-import { describe, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const terminalHarness = vi.hoisted(() => ({
   send: undefined as ((data: string) => void) | undefined,
@@ -136,8 +136,9 @@ describe.sequential("TUI selector exit", () => {
     await expectExitBefore(run, () => catalog.resolve([]));
   });
 
-  it("exits while the model selector is open", async () => {
+  it("exits while the model selector is open and settles the selector itself", async () => {
     const opened = deferred<void>();
+    const switchModel = vi.fn();
     const run = createAgentTUI({
       ...baseConfig(),
       modelSelector: {
@@ -146,13 +147,18 @@ describe.sequential("TUI selector exit", () => {
           return "model-a";
         },
         listModelIds: () => Promise.resolve(["model-a"]),
-        switchModel: vi.fn(),
+        switchModel,
       },
     });
 
     await opened.promise;
     requestExit();
 
-    await expectExitBefore(run, () => terminalHarness.send?.("\u001b"));
+    // No manual Escape: exit must settle the selector through its own
+    // cancellation path. A stale selection key sent after the TUI stopped
+    // must not reach a leaked selector and switch the model.
+    await expectExitBefore(run, () => undefined);
+    terminalHarness.send?.("\r");
+    expect(switchModel).not.toHaveBeenCalled();
   });
 });
