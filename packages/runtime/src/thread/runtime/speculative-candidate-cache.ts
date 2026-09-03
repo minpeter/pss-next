@@ -28,7 +28,7 @@ export class SpeculativeCandidateCache<Value extends object> {
   readonly #lru = new Map<CandidateSlot<Value>, true>();
 
   get size(): number {
-    return this.#lru.size;
+    return this.#entryCount();
   }
 
   get(identity: Readonly<object>): Value | undefined {
@@ -80,7 +80,7 @@ export class SpeculativeCandidateCache<Value extends object> {
     };
     slot.reservations.add(reservation);
     this.#touch(slot);
-    this.#evict();
+    this.#evict(slot, reservation);
     return reservation;
   }
 
@@ -88,12 +88,15 @@ export class SpeculativeCandidateCache<Value extends object> {
     const ownerSlots = this.#owners.get(reservation.owner);
     const slot = reservation.slot;
     if (
+      reservation.released ||
+      !slot.reservations.has(reservation) ||
       ownerSlots?.get(reservation.threadKey) !== slot ||
       slot.version !== reservation.version ||
       slot.candidate !== reservation.expectedCandidate
     ) {
       return false;
     }
+    slot.reservations.delete(reservation);
     slot.candidate = next;
     slot.version = Object.freeze({});
     this.#touch(slot);
@@ -112,19 +115,60 @@ export class SpeculativeCandidateCache<Value extends object> {
     }
   }
 
-  #evict(): void {
-    while (this.#lru.size > SPECULATIVE_CANDIDATE_CACHE_MAX) {
-      const oldest = this.#lru.keys().next().value;
-      if (oldest === undefined) {
+  #entryCount(): number {
+    let count = 0;
+    for (const slot of this.#lru.keys()) {
+      count += slot.reservations.size;
+      if (slot.candidate !== undefined) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  #evict(
+    protectedSlot: CandidateSlot<Value>,
+    protectedReservation: CandidateReservation<Value>
+  ): void {
+    while (this.#entryCount() > SPECULATIVE_CANDIDATE_CACHE_MAX) {
+      let oldest: CandidateSlot<Value> | undefined;
+      for (const slot of this.#lru.keys()) {
+        if (slot !== protectedSlot) {
+          oldest = slot;
+          break;
+        }
+      }
+      if (oldest !== undefined) {
+        this.#evictSlot(oldest);
+        continue;
+      }
+      let oldestReservation: CandidateReservation<Value> | undefined;
+      for (const reservation of protectedSlot.reservations) {
+        if (reservation !== protectedReservation) {
+          oldestReservation = reservation;
+          break;
+        }
+      }
+      if (oldestReservation === undefined) {
         return;
       }
-      this.#lru.delete(oldest);
-      oldest.candidate = undefined;
-      oldest.version = Object.freeze({});
-      this.#removeSlot(oldest);
-      for (const reservation of [...oldest.reservations]) {
-        reservation.onEvict?.();
-      }
+      this.#evictReservation(oldestReservation);
+    }
+  }
+
+  #evictReservation(reservation: CandidateReservation<Value>): void {
+    reservation.slot.reservations.delete(reservation);
+    reservation.onEvict?.();
+  }
+
+  #evictSlot(slot: CandidateSlot<Value>): void {
+    const reservations = [...slot.reservations];
+    slot.candidate = undefined;
+    slot.version = Object.freeze({});
+    slot.reservations.clear();
+    this.#removeSlot(slot);
+    for (const reservation of reservations) {
+      reservation.onEvict?.();
     }
   }
 

@@ -88,25 +88,42 @@ describe("SpeculativeCandidateCache", () => {
     expect(cache.get(key)?.value).toBe("current");
   });
 
-  it("counts installed candidates and pending reservations in one bound", () => {
-    // Given: 31 installed candidates followed by one unresolved reservation.
+  it("hard-caps installed candidates plus pending reservations", () => {
+    // Given: every cache slot has an installed candidate.
     const cache = new SpeculativeCandidateCache<Candidate>();
-    for (
-      let index = 0;
-      index < SPECULATIVE_CANDIDATE_CACHE_MAX - 1;
-      index += 1
-    ) {
-      install(cache, String(index), String(index));
+    const keys = Array.from(
+      { length: SPECULATIVE_CANDIDATE_CACHE_MAX },
+      (_, index) => String(index)
+    );
+    for (const key of keys) {
+      install(cache, key, key);
     }
-    const pending = cache.reserve(identity("pending"));
 
-    // When: one more candidate consumes the 33rd aggregate slot.
-    install(cache, "overflow", "overflow");
+    // When: replacement work reserves once against every installed candidate.
+    const evictions = keys.map(() => vi.fn());
+    const pending = keys.map((key, index) =>
+      cache.reserve(identity(key), evictions[index])
+    );
 
-    // Then: the installed LRU is evicted and the unresolved slot remains counted.
-    expect(cache.get(identity("0"))).toBeUndefined();
-    expect(cache.size).toBe(SPECULATIVE_CANDIDATE_CACHE_MAX);
-    cache.release(pending);
+    // Then: LRU eviction keeps the aggregate bounded and invalidates pending work.
+    const installedCount = keys.filter(
+      (key) => cache.get(identity(key)) !== undefined
+    ).length;
+    const liveReservationCount = evictions.filter(
+      (onEvict) => !onEvict.mock.calls.length
+    ).length;
+    expect(installedCount + liveReservationCount).toBeLessThanOrEqual(
+      SPECULATIVE_CANDIDATE_CACHE_MAX
+    );
+    const installResults = pending.map((reservation) =>
+      cache.install(reservation, { value: "replacement" })
+    );
+    expect(installResults).toContain(false);
+    for (const [index, installed] of installResults.entries()) {
+      if (!installed) {
+        expect(evictions[index]).toHaveBeenCalledOnce();
+      }
+    }
   });
 
   it("retains a touched unresolved reservation over an older installed slot", () => {
