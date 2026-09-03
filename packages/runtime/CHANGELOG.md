@@ -1,3 +1,22 @@
+## @minpeter/pss-runtime@0.3.0-next.17 (next)
+
+### Fail closed on missing checkpoints
+
+Checkpoint adapters now surface checkpoint corruption when authoritative run metadata references a missing checkpoint, preventing resume from silently restarting at step one.
+
+### Keep restarted drain turns successful
+
+Wait for a requested queue-drain restart before settling joined callers, so a
+queued turn cannot receive a failure and then execute anyway.
+
+### Support web and edge runtime timers
+
+Guard detached compaction timer `unref` calls so numeric web timer handles do not crash summary startup or cleanup.
+
+### Let the TUI exit while selectors are pending
+
+Cancel pending model and session selector waits when exit is requested so catalog loading or an open picker cannot keep the process alive.
+
 ## @minpeter/pss-runtime@0.3.0-next.16 (next)
 
 ### Fence durable run ownership

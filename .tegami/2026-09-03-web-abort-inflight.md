@@ -1,9 +1,11 @@
 ---
 packages:
   npm:@minpeter/pss-coding-agent:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-coding-agent)
   npm:@minpeter/pss-extension-web:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-extension-web)
 ---
 
 ## Cancel in-flight web tool requests

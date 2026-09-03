@@ -1,3 +1,9 @@
+## @minpeter/pss-extension-web@0.0.1-next.5
+
+### Cancel in-flight web tool requests
+
+Forward coding-agent abort signals to web search and page fetch clients so active network work can stop promptly.
+
 ## @minpeter/pss-extension-web@0.0.1-next.4
 
 ### Publish built-in extensions to the latest dist-tag

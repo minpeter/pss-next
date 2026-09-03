@@ -1,7 +1,8 @@
 ---
 packages:
   npm:@minpeter/pss-runtime:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-runtime)
 ---
 
 ## Support web and edge runtime timers
