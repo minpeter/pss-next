@@ -1,0 +1,207 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { parse } from "@babel/parser";
+
+const DECLARATION_EXTENSION_RE = /\.d\.ts$/;
+
+export function compareCodeUnits(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  return left > right ? 1 : 0;
+}
+
+function declarationPath(packageDirectory, target) {
+  const typesTarget = typeof target === "string" ? target : target.types;
+  if (typeof typesTarget !== "string") {
+    throw new Error("Runtime export does not have a types target");
+  }
+  return resolve(packageDirectory, typesTarget);
+}
+
+function exportedName(node) {
+  if (node.type === "Identifier") {
+    return node.name;
+  }
+  if (node.type === "StringLiteral") {
+    return node.value;
+  }
+  throw new Error(`Unsupported exported name node: ${node.type}`);
+}
+
+function directDeclarationExports(declaration) {
+  if (
+    declaration.type === "TSInterfaceDeclaration" ||
+    declaration.type === "TSTypeAliasDeclaration"
+  ) {
+    return [`type ${declaration.id.name}`];
+  }
+  if (declaration.type === "VariableDeclaration") {
+    return declaration.declarations.map(({ id }) => {
+      if (id.type !== "Identifier") {
+        throw new Error(
+          "Destructured public variable declarations are unsupported"
+        );
+      }
+      return `value ${id.name}`;
+    });
+  }
+  if (
+    declaration.type === "ClassDeclaration" ||
+    declaration.type === "FunctionDeclaration" ||
+    declaration.type === "TSDeclareFunction" ||
+    declaration.type === "TSEnumDeclaration" ||
+    declaration.type === "TSModuleDeclaration"
+  ) {
+    if (declaration.id?.type !== "Identifier") {
+      throw new Error(`Unnamed public ${declaration.type} is unsupported`);
+    }
+    return [`value ${declaration.id.name}`];
+  }
+  throw new Error(`Unsupported public declaration node: ${declaration.type}`);
+}
+
+export function runtimeExportsFromText(text, sourceName = "runtime module") {
+  const program = parse(text, {
+    sourceFilename: sourceName,
+    sourceType: "module",
+  }).program;
+  const exports = new Set();
+  for (const statement of program.body) {
+    if (statement.type === "ExportDefaultDeclaration") {
+      throw new Error(`${sourceName}: default exports are not supported`);
+    }
+    if (statement.type === "ExportAllDeclaration") {
+      throw new Error(
+        `${sourceName}: export star declarations are not supported`
+      );
+    }
+    if (statement.type !== "ExportNamedDeclaration") {
+      continue;
+    }
+    for (const specifier of statement.specifiers) {
+      if (specifier.type !== "ExportSpecifier") {
+        throw new Error(
+          `${sourceName}: ${specifier.type} declarations are not supported`
+        );
+      }
+      exports.add(exportedName(specifier.exported));
+    }
+    if (statement.declaration) {
+      for (const entry of directDeclarationExports(statement.declaration)) {
+        exports.add(entry.slice(entry.indexOf(" ") + 1));
+      }
+    }
+  }
+  return exports;
+}
+
+function addStatementExports(exports, statement, sourceName, runtimeNames) {
+  if (statement.type === "ExportDefaultDeclaration") {
+    throw new Error(`${sourceName}: default exports are not supported`);
+  }
+  if (statement.type === "ExportAllDeclaration") {
+    throw new Error(
+      `${sourceName}: export star declarations are not supported`
+    );
+  }
+  if (statement.type !== "ExportNamedDeclaration") {
+    return;
+  }
+  if (statement.declaration) {
+    for (const entry of directDeclarationExports(statement.declaration)) {
+      if (entry.startsWith("value ") && !runtimeNames.has(entry.slice(6))) {
+        throw new Error(
+          `${sourceName}: ${entry.slice(6)} has no runtime export`
+        );
+      }
+      exports.add(entry);
+    }
+  }
+  for (const specifier of statement.specifiers) {
+    if (specifier.type !== "ExportSpecifier") {
+      throw new Error(
+        `${sourceName}: ${specifier.type} declarations are not supported`
+      );
+    }
+    const typeOnly =
+      statement.exportKind === "type" || specifier.exportKind === "type";
+    const name = exportedName(specifier.exported);
+    const kind = typeOnly || !runtimeNames.has(name) ? "type" : "value";
+    exports.add(`${kind} ${name}`);
+  }
+}
+
+export function declarationExportsFromText(
+  text,
+  sourceName = "declaration",
+  runtimeNames = new Set()
+) {
+  const program = parse(text, {
+    allowUndeclaredExports: true,
+    plugins: ["typescript"],
+    sourceFilename: sourceName,
+    sourceType: "module",
+  }).program;
+  const exports = new Set();
+  for (const statement of program.body) {
+    addStatementExports(exports, statement, sourceName, runtimeNames);
+  }
+  return [...exports].sort(compareCodeUnits);
+}
+
+function declarationExports(file) {
+  const runtimeFile = file.replace(DECLARATION_EXTENSION_RE, ".js");
+  if (!existsSync(runtimeFile)) {
+    throw new Error(`Missing runtime entrypoint for ${file}: ${runtimeFile}`);
+  }
+  const runtimeNames = runtimeExportsFromText(
+    readFileSync(runtimeFile, "utf8"),
+    runtimeFile
+  );
+  return declarationExportsFromText(
+    readFileSync(file, "utf8"),
+    file,
+    runtimeNames
+  );
+}
+
+export function collectRuntimePublicApi(cwd = process.cwd()) {
+  const packageDirectory = join(cwd, "packages", "runtime");
+  const manifest = JSON.parse(
+    readFileSync(join(packageDirectory, "package.json"), "utf8")
+  );
+  const entrypoints = Object.entries(manifest.exports)
+    .filter(([, target]) =>
+      typeof target === "string" ? target.endsWith(".d.ts") : target.types
+    )
+    .map(([subpath, target]) => [
+      subpath,
+      declarationPath(packageDirectory, target),
+    ]);
+
+  const missing = entrypoints
+    .map(([, file]) => file)
+    .filter((file) => !existsSync(file));
+  if (missing.length > 0) {
+    throw new Error(
+      `Build @minpeter/pss-runtime before checking its public API; missing ${missing.join(
+        ", "
+      )}`
+    );
+  }
+
+  const surfaces = Object.fromEntries(
+    entrypoints.map(([subpath, file]) => [subpath, declarationExports(file)])
+  );
+
+  return {
+    schemaVersion: 1,
+    package: manifest.name,
+    surfaces: Object.fromEntries(
+      Object.entries(surfaces).sort(([left], [right]) =>
+        compareCodeUnits(left, right)
+      )
+    ),
+  };
+}

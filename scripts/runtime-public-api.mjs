@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import process from "node:process";
+import { collectRuntimePublicApi } from "./runtime-public-api-collect.mjs";
 import {
-  collectRuntimePublicApi,
   diffPublicApi,
   RUNTIME_API_SNAPSHOT_PATH,
   writeRuntimePublicApiSnapshot,
