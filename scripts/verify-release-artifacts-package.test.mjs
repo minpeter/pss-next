@@ -6,6 +6,7 @@ import {
   isMainModule,
   verifyReleaseArtifacts,
 } from "./verify-release-artifacts/core.mjs";
+import { DEFAULT_PACKAGES } from "./verify-release-artifacts/shared.mjs";
 import {
   cleanupFixtures,
   cliBinReadFailurePattern,
@@ -33,6 +34,29 @@ describe("verifyReleaseArtifacts package checks", () => {
         packages: ["extension-latex"],
       })
     ).toEqual([]);
+  });
+
+  it("selects the independently published Mermaid and web extensions by default", () => {
+    const cwd = createFixture();
+    rmSync(resolve(cwd, "extensions/mermaid/dist"), {
+      force: true,
+      recursive: true,
+    });
+    rmSync(resolve(cwd, "extensions/web/dist"), {
+      force: true,
+      recursive: true,
+    });
+
+    expect(
+      verifyReleaseArtifacts({
+        checkPublicApiSnapshot: false,
+        cwd,
+        packages: DEFAULT_PACKAGES,
+      })
+    ).toEqual([
+      "extensions/mermaid/dist is missing; run the package build first",
+      "extensions/web/dist is missing; run the package build first",
+    ]);
   });
 
   it("resolves the LaTeX extension from the extensions workspace", () => {

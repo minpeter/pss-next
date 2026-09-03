@@ -15,7 +15,13 @@ try {
     `${JSON.stringify({ name: "pss-packed-consumer", private: true })}\n`,
     "utf8"
   );
-  const tarballs = [pack("packages/runtime"), pack("apps/coding-agent")];
+  const tarballs = [
+    pack("packages/runtime"),
+    pack("apps/coding-agent"),
+    pack("extensions/latex"),
+    pack("extensions/mermaid"),
+    pack("extensions/web"),
+  ];
   run(
     "npm",
     [
@@ -36,12 +42,18 @@ import { createInMemoryHost } from "@minpeter/pss-runtime/platform/memory";
 import { createCodingAgent, createCodingAgentTools } from "@minpeter/pss-coding-agent";
 import { resolveStartTuiTools } from "@minpeter/pss-coding-agent/tools";
 import { createWorkspaceTools } from "@minpeter/pss-coding-agent/workspace-tools";
+import createLatexExtension from "@minpeter/pss-extension-latex";
+import createMermaidExtension from "@minpeter/pss-extension-mermaid";
+import createWebExtension from "@minpeter/pss-extension-web";
 
 for (const [name, value] of Object.entries({
   createAgent,
   createCodingAgent,
   createCodingAgentTools,
   createInMemoryHost,
+  createLatexExtension,
+  createMermaidExtension,
+  createWebExtension,
   createWorkspaceTools,
   resolveStartTuiTools,
 })) {
