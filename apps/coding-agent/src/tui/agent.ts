@@ -87,6 +87,7 @@ const CTRL_C_ETX = "\u0003";
 const MODEL_SELECTOR_COMPACT_ROWS = 16;
 const MODEL_SELECTOR_COMPACT_CHROME_ROWS = 4;
 const MODEL_SELECTOR_STANDARD_CHROME_ROWS = 10;
+const EXIT_REQUESTED = Symbol("exit-requested");
 
 const style = (prefix: string, text: string): string =>
   `${prefix}${text}${ANSI_RESET}`;
@@ -780,6 +781,17 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   let activeSessionSelector: SessionSelectorComponent | undefined;
   let commandInputListenerActive = false;
   const extensionUiController = new AbortController();
+  const exitRequested = new Promise<typeof EXIT_REQUESTED>((resolve) => {
+    extensionUiController.signal.addEventListener(
+      "abort",
+      () => resolve(EXIT_REQUESTED),
+      { once: true }
+    );
+  });
+  const untilExit = <T>(
+    operation: Promise<T>
+  ): Promise<T | typeof EXIT_REQUESTED> =>
+    Promise.race([operation, exitRequested]);
 
   const clearStatus = (): void => {
     foregroundStatusMessage = null;
@@ -1234,7 +1246,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     showLoader("Loading model catalog...");
     let modelIds: string[];
     try {
-      modelIds = await selectorConfig.listModelIds();
+      const result = await untilExit(selectorConfig.listModelIds());
+      if (result === EXIT_REQUESTED) {
+        return;
+      }
+      modelIds = result;
     } catch (error) {
       clearStatus();
       addSystemMessage(
@@ -1254,7 +1270,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
-    const selection = await new Promise<string | undefined>((resolve) => {
+    const pendingSelection = new Promise<string | undefined>((resolve) => {
       // Let the selector own ctrl+c/escape while it is mounted.
       commandInputListenerActive = true;
       let selector: ModelSelectorComponent | undefined;
@@ -1283,8 +1299,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       tui.setFocus(composerLayer);
       tui.requestRender();
     });
+    const selection = await untilExit(pendingSelection);
 
-    if (selection === undefined) {
+    if (selection === undefined || selection === EXIT_REQUESTED) {
       return;
     }
     try {
@@ -1314,7 +1331,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     showLoader("Loading sessions...");
     let sessions: readonly SessionIndexEntry[];
     try {
-      sessions = await selectorConfig.listSessions();
+      const result = await untilExit(selectorConfig.listSessions());
+      if (result === EXIT_REQUESTED) {
+        return;
+      }
+      sessions = result;
     } catch (error) {
       clearStatus();
       addSystemMessage(
@@ -1331,7 +1352,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
-    const selection = await new Promise<string | undefined>((resolve) => {
+    const pendingSelection = new Promise<string | undefined>((resolve) => {
       commandInputListenerActive = true;
       let selector: SessionSelectorComponent | undefined;
       const settle = (sessionKey: string | undefined): void => {
@@ -1359,9 +1380,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       tui.setFocus(composerLayer);
       tui.requestRender();
     });
+    const selection = await untilExit(pendingSelection);
 
     if (
       selection === undefined ||
+      selection === EXIT_REQUESTED ||
       selection === selectorConfig.currentSessionKey()
     ) {
       return;
