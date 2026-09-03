@@ -299,6 +299,7 @@
       "type TurnTransitionExpected",
       "type TurnTransitionResult",
       "type TurnTransitionUpdate",
+      "value CheckpointCorruptionError",
       "value ThreadInputDuplicateConflictError",
       "value ToolExecutionNeedsRecoveryError",
       "value UnsupportedCheckpointFencingError",
