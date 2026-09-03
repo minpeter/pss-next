@@ -100,6 +100,47 @@ export async function resolveWorkspacePath(
   return { path, root };
 }
 
+export interface AssertWorkspacePathOptions {
+  /**
+   * Match resolveWorkspacePath: mutating tools keep this enabled; tools that
+   * act on the link node itself (delete_file) disable it so only the parent
+   * directory is re-canonicalized.
+   */
+  readonly followFinalSymlink?: boolean;
+}
+
+/**
+ * Re-verify that a path returned by resolveWorkspacePath is still contained.
+ * resolveWorkspacePath returns a checked string, but the filesystem mutation
+ * happens later, and an intermediate directory can be swapped for an escaping
+ * symlink in between; this re-canonicalizes the nearest existing ancestor and
+ * requires the canonical form to be unchanged, closing the check-then-use gap.
+ */
+export async function assertWorkspacePathContained(
+  root: string,
+  path: string,
+  options: AssertWorkspacePathOptions = {}
+): Promise<void> {
+  const { followFinalSymlink = true } = options;
+  let existingPath = await nearestExistingPath(path);
+  if (!followFinalSymlink && existingPath === path) {
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink()) {
+      existingPath = dirname(path);
+    }
+  }
+  const resolvedExisting = await realpath(existingPath);
+  const canonical =
+    existingPath === path
+      ? resolvedExisting
+      : resolve(resolvedExisting, relative(existingPath, path));
+  if (!isInsideWorkspace(root, canonical) || canonical !== path) {
+    throw new Error(
+      `Path moved outside the workspace after its containment check: ${path}`
+    );
+  }
+}
+
 /** Root must be the canonical root returned by resolveWorkspacePath. */
 export function workspaceRelativePath(root: string, path: string): string {
   const relativePath = relative(root, path);

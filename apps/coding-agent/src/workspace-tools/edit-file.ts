@@ -303,7 +303,7 @@ export function createEditFileTool(
       assertNoIntersectingInsertions(resolvedEdits);
       const outputLines = applyEdits(sourceLines, resolvedEdits);
       const output = `${outputLines.join(eol)}${trailingNewline && outputLines.length > 0 ? eol : ""}`;
-      await atomicWrite(absolutePath, output, originalHash);
+      await atomicWrite(resolved.root, absolutePath, output, originalHash);
 
       const diffLines = buildDiffSectionLines(resolvedEdits, sourceLines);
 

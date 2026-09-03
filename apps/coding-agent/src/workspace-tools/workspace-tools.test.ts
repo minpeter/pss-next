@@ -454,7 +454,9 @@ describe("workspace coding tools", () => {
   it("cleans up the temp file when an atomic write fails", async () => {
     const directory = join(workspace, "src", "blocking-dir");
     await mkdir(directory);
-    await expect(atomicWrite(directory, "payload")).rejects.toThrow();
+    await expect(
+      atomicWrite(workspace, directory, "payload")
+    ).rejects.toThrow();
     const leftovers = (await readdir(join(workspace, "src"))).filter((entry) =>
       entry.includes(".pss-")
     );
