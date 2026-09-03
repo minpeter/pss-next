@@ -12,7 +12,11 @@ import { dirname } from "node:path";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
 import { computeFileHash } from "./hashline";
-import { resolveWorkspacePath, workspaceRelativePath } from "./path-safety";
+import {
+  assertWorkspacePathContained,
+  resolveWorkspacePath,
+  workspaceRelativePath,
+} from "./path-safety";
 
 const inputSchema = z
   .object({
@@ -65,6 +69,7 @@ async function existingMode(path: string): Promise<number | undefined> {
 }
 
 export async function atomicWrite(
+  root: string,
   path: string,
   content: string,
   expectedHash?: string
@@ -86,6 +91,7 @@ export async function atomicWrite(
     // Re-verify immediately before the rename; the earlier caller-side check
     // is separated from the swap by real I/O.
     await assertExpectedHash(path, expectedHash);
+    await assertWorkspacePathContained(root, path);
     await rename(temporaryPath, path);
   } finally {
     await rm(temporaryPath, { force: true }).catch(() => undefined);
@@ -102,7 +108,7 @@ export function createWriteFileTool(
     execute: async ({ path, content, expected_file_hash: expectedHash }) => {
       const resolved = await resolveWorkspacePath(workspace, path);
       await assertExpectedHash(resolved.path, expectedHash);
-      await atomicWrite(resolved.path, content, expectedHash);
+      await atomicWrite(resolved.root, resolved.path, content, expectedHash);
       return [
         "OK - wrote file",
         `path: ${workspaceRelativePath(resolved.root, resolved.path)}`,

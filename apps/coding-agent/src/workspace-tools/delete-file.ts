@@ -3,6 +3,7 @@ import { type Tool, tool } from "ai";
 import { z } from "zod";
 import { computeFileHash } from "./hashline";
 import {
+  assertWorkspacePathContained,
   isInsideWorkspace,
   resolveWorkspacePath,
   workspaceRelativePath,
@@ -94,6 +95,9 @@ export function createDeleteFileTool(
           expectedHash
         );
       }
+      await assertWorkspacePathContained(resolved.root, absolutePath, {
+        followFinalSymlink: false,
+      });
       await rm(absolutePath, { recursive, force: false });
       return `OK - deleted\npath: ${workspaceRelativePath(resolved.root, absolutePath)}`;
     },
