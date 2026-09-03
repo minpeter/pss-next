@@ -12,12 +12,21 @@ import { createWebSearchTool, type WebSearchTool } from "./web-search";
 
 export type WebToolsAvailability = "disabled" | "optional" | "required";
 
+interface CodingAgentOpenSearchCallOptions {
+  readonly cache?: "bypass";
+  readonly signal?: AbortSignal;
+}
+
 export interface CodingAgentOpenSearchClient {
   fetch(
     urls: readonly string[],
-    options?: FetchOptions
+    options?: FetchOptions & CodingAgentOpenSearchCallOptions
   ): Promise<readonly FetchResult[]>;
-  search(query: string, maxResults?: number): Promise<readonly SearchResult[]>;
+  search(
+    query: string,
+    maxResults?: number,
+    options?: CodingAgentOpenSearchCallOptions
+  ): Promise<readonly SearchResult[]>;
 }
 
 export interface CreateCodingAgentToolsOptions {

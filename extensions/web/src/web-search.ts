@@ -45,10 +45,13 @@ export function createWebSearchTool(
         "Search the web for current facts, documentation, news, people, companies, and other external information. Follow promising URLs with web_fetch when full page content is needed.",
       execute: async (input, options) => {
         abortIfRequested(options.abortSignal, "web_search");
-        return await client.search(
-          input.query,
-          input.numResults ?? DEFAULT_SEARCH_RESULT_COUNT
-        );
+        const maxResults = input.numResults ?? DEFAULT_SEARCH_RESULT_COUNT;
+        if (options.abortSignal === undefined) {
+          return await client.search(input.query, maxResults);
+        }
+        return await client.search(input.query, maxResults, {
+          signal: options.abortSignal,
+        });
       },
       inputSchema,
       outputSchema: jsonSchema<readonly SearchResult[]>({

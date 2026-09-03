@@ -17,6 +17,18 @@ const toolExecutionOptions: ToolExecutionOptions<Record<string, unknown>> = {
   toolCallId: "tool-call-test",
 };
 
+const rejectWhenAborted = (signal: AbortSignal | undefined): Promise<never> => {
+  if (signal === undefined) {
+    return Promise.reject(new Error("Expected client abort signal"));
+  }
+
+  return new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), {
+      once: true,
+    });
+  });
+};
+
 const createStubClient = () => ({
   fetch: vi.fn().mockResolvedValue([
     {
@@ -90,6 +102,54 @@ describe("web extension tools", () => {
     expect(client.search).toHaveBeenCalledWith("typescript docs", 3);
     expect(client.fetch).toHaveBeenCalledWith(["https://example.com/"], {
       maxCharacters: 8000,
+    });
+  });
+
+  it("aborts an in-flight web_search client call", async () => {
+    const client = createStubClient();
+    client.search.mockImplementation((_query, _maxResults, options) =>
+      rejectWhenAborted(options?.signal)
+    );
+    const search = createCodingAgentTools({ client }).web_search.execute;
+    if (typeof search !== "function") {
+      throw new TypeError("Expected executable web_search tool");
+    }
+    const controller = new AbortController();
+    const reason = new Error("stop search");
+
+    const execution = search(
+      { query: "typescript docs" },
+      { ...toolExecutionOptions, abortSignal: controller.signal }
+    );
+    controller.abort(reason);
+
+    await expect(execution).rejects.toBe(reason);
+    expect(client.search).toHaveBeenCalledWith("typescript docs", 5, {
+      signal: controller.signal,
+    });
+  });
+
+  it("aborts an in-flight web_fetch client call", async () => {
+    const client = createStubClient();
+    client.fetch.mockImplementation((_urls, options) =>
+      rejectWhenAborted(options?.signal)
+    );
+    const fetch = createCodingAgentTools({ client }).web_fetch.execute;
+    if (typeof fetch !== "function") {
+      throw new TypeError("Expected executable web_fetch tool");
+    }
+    const controller = new AbortController();
+    const reason = new Error("stop fetch");
+
+    const execution = fetch(
+      { urls: ["https://example.com/"] },
+      { ...toolExecutionOptions, abortSignal: controller.signal }
+    );
+    controller.abort(reason);
+
+    await expect(execution).rejects.toBe(reason);
+    expect(client.fetch).toHaveBeenCalledWith(["https://example.com/"], {
+      signal: controller.signal,
     });
   });
 
