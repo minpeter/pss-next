@@ -52,7 +52,8 @@ export const createScriptedModel = (
   outputs: readonly ModelStepOutput[]
 ): LanguageModel => createScriptedModelOptions(outputs).model;
 
-export interface ScriptedModelOptions extends ModelGenerationOptions {
+export interface ScriptedModelOptions
+  extends Omit<ModelGenerationOptions, "contextGate"> {
   readonly model: MockLanguageModelV4;
 }
 

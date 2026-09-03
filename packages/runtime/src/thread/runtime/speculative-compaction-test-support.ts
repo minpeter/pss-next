@@ -5,12 +5,16 @@ import {
 } from "../state/context";
 import type { ThreadCompactionRecord } from "../state/snapshot";
 import type { AgentCompactionContext } from "./auto-compaction-types";
+import { createCompactionThreadIdentity } from "./compaction-thread-identity";
 
 export const message = (
   content: string,
   role: "user" | "assistant" = "user"
 ): ModelMessage => ({ content, role });
-const threadIdentity = Object.freeze({});
+const threadIdentity = createCompactionThreadIdentity(
+  Object.freeze({}),
+  "thread"
+);
 
 export function context(
   history: readonly ModelMessage[],

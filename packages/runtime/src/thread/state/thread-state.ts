@@ -1,14 +1,9 @@
 import type { ModelMessage } from "ai";
 import { deferred } from "../../internal/deferred";
-import type {
-  CommitResult,
-  ExpectedThreadVersion,
-  ThreadStore,
-  ThreadStoreCommit,
-} from "../store/types";
+import { createCompactionThreadIdentity } from "../runtime/compaction-thread-identity";
+import type { CommitResult } from "../store/types";
 import type { ThreadContextMessage } from "./context";
 import { ModelMessageHistory, recordCompactionForCommit } from "./history";
-import type { ThreadStateMigration } from "./migrations";
 import type { ThreadCompactionRecord } from "./snapshot";
 import {
   createThreadPersistenceMachine,
@@ -17,21 +12,22 @@ import {
   ThreadStatePersistence,
   ThreadWriteQueue,
 } from "./thread-state-persistence";
+import type {
+  PreparedThreadCommit,
+  ThreadCheckpointReference,
+  ThreadCompactionInput,
+  ThreadPersistenceOptions,
+} from "./thread-state-types";
+
+export type {
+  PreparedThreadCommit,
+  ThreadCheckpointReference,
+  ThreadCompactionInput,
+  ThreadPersistenceOptions,
+} from "./thread-state-types";
 
 /** @internal exported for unit tests of special-key seeding */
 export const seedAppliedMigrations = seedAppliedMigrationMarkers;
-
-export interface ThreadPersistenceOptions {
-  readonly key: string;
-  readonly migrations?: readonly ThreadStateMigration[];
-  readonly store: ThreadStore;
-}
-
-export interface PreparedThreadCommit {
-  readonly expectedVersion: ExpectedThreadVersion;
-  readonly key: string;
-  readonly next: ThreadStoreCommit;
-}
 
 export class ThreadCommitConflictError extends Error {
   constructor(key: string) {
@@ -39,30 +35,21 @@ export class ThreadCommitConflictError extends Error {
   }
 }
 
-export interface ThreadCheckpointReference {
-  readonly kind: "thread-reference";
-  readonly schemaVersion: 1;
-  readonly threadKey: string;
-  readonly threadVersion: string | null;
-}
-
-export interface ThreadCompactionInput {
-  readonly endSeqExclusive: number;
-  readonly startSeq: number;
-  readonly summary: string;
-}
-
 type HistoryUserInput = Parameters<ModelMessageHistory["appendUserInput"]>[0];
 
 export class ThreadState {
   /** Opaque identity for runtime-owned per-thread caches. */
-  readonly compactionIdentity: object = Object.freeze({});
+  readonly compactionIdentity: Readonly<object>;
   readonly #machine = createThreadPersistenceMachine();
   readonly #persistence: ThreadStatePersistence;
   #history = new ModelMessageHistory();
   readonly #writes = new ThreadWriteQueue();
 
   constructor(persistence: ThreadPersistenceOptions) {
+    this.compactionIdentity = createCompactionThreadIdentity(
+      persistence.compactionOwner ?? Object.freeze({}),
+      persistence.key
+    );
     this.#persistence = new ThreadStatePersistence(
       persistence,
       ThreadCommitConflictError

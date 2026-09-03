@@ -15,6 +15,7 @@ import {
 import type { ThreadStore } from "../../thread/store/types";
 import { stableAgentNamespace } from "../identity/namespace";
 import { type ClaimedTurnRecord, resumeAgentTurn } from "../resume/resume";
+import { createAgentModelOptions } from "./agent-model-options";
 import { AgentHookRuntime } from "./hook-runtime";
 import { threadStoreForHost } from "./host-thread-store";
 import {
@@ -60,6 +61,7 @@ export type AgentConstructorOptions = AgentOptions;
 
 export class Agent {
   readonly #modelOptions: AgentModelOptions;
+  readonly #compactionOwner = Object.freeze({});
   readonly #threads = new Map<string, AgentThreadEntry>();
   readonly #contextTokenRegistry = new ContextTokenCalibrationRegistry();
   readonly #contextTokens?: AgentOptions["contextTokens"];
@@ -94,26 +96,7 @@ export class Agent {
     this.#notificationOverlays = validatedOptions.notificationOverlays;
     this.#compaction = validatedOptions.compaction;
     this.#contextTokens = validatedOptions.contextTokens;
-    this.#modelOptions = {
-      alwaysActiveTools: validatedOptions.alwaysActiveTools,
-      attachmentStore:
-        providedHost?.attachmentStore ??
-        validatedOptions.attachmentStore ??
-        this.#host.attachmentStore,
-      contextGate: validatedOptions.compaction?.maxInputTokens
-        ? {
-            ...validatedOptions.compaction,
-            maxInputTokens: validatedOptions.compaction.maxInputTokens,
-          }
-        : false,
-      diagnostics: this.#host.diagnostics,
-      instructions: validatedOptions.instructions,
-      model: validatedOptions.model,
-      prepareModelStep: validatedOptions.prepareModelStep,
-      toolChoice: validatedOptions.toolChoice,
-      toolOrder: validatedOptions.toolOrder,
-      tools: validatedOptions.tools,
-    };
+    this.#modelOptions = createAgentModelOptions(validatedOptions, this.#host);
   }
 
   /**
@@ -199,7 +182,12 @@ export class Agent {
         ),
         contextTokens: this.#contextTokens,
       },
-      { key, migrations: this.#threadMigrations, store: this.#store },
+      {
+        compactionOwner: this.#compactionOwner,
+        key,
+        migrations: this.#threadMigrations,
+        store: this.#store,
+      },
       {
         compaction: this.#compaction,
         executionHost: this.#host,

@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentCompactionContext } from "./auto-compaction-types";
+import { createCompactionThreadIdentity } from "./compaction-thread-identity";
 import { speculativeCompaction } from "./speculative-compaction";
 import { context, message } from "./speculative-compaction-test-support";
 
@@ -8,7 +9,10 @@ describe("speculativeCompaction", () => {
   it("isolates candidates by runtime thread identity even when keys match", async () => {
     const summarizeA = vi.fn(async () => "summary A");
     const summarizeB = vi.fn(async () => "summary B");
-    const identityB = Object.freeze({});
+    const identityB = createCompactionThreadIdentity(
+      Object.freeze({}),
+      "thread"
+    );
     const compaction = speculativeCompaction({
       estimateTokens: (messages) => messages.length * 10,
       maxInputTokens: 100,

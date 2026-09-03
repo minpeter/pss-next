@@ -71,15 +71,17 @@ export function selectAutoCompactionRange({
     tailStart -= 1;
   }
 
-  let endSeqExclusive = coveredEnd + tailStart;
-  while (
-    endSeqExclusive > coveredEnd &&
-    !isSafeCompactionBoundary(history, endSeqExclusive)
-  ) {
-    endSeqExclusive -= 1;
+  const targetEndSeqExclusive = coveredEnd + tailStart;
+  if (targetEndSeqExclusive <= coveredEnd) {
+    return;
   }
 
-  if (endSeqExclusive <= coveredEnd) {
+  const endSeqExclusive = selectSafeCompactionBoundary(
+    history,
+    coveredEnd,
+    targetEndSeqExclusive
+  );
+  if (endSeqExclusive === undefined) {
     return;
   }
 
@@ -112,6 +114,26 @@ export function latestPrefixCompaction(
     const record = compactions[index];
     if (record?.startSeq === 0) {
       return record;
+    }
+  }
+  return;
+}
+
+function selectSafeCompactionBoundary(
+  history: readonly ModelMessage[],
+  coveredEnd: number,
+  targetEnd: number
+): number | undefined {
+  let end = targetEnd;
+  while (end > coveredEnd && !isSafeCompactionBoundary(history, end)) {
+    end -= 1;
+  }
+  if (end > coveredEnd) {
+    return end;
+  }
+  for (end = targetEnd + 1; end <= history.length; end += 1) {
+    if (isSafeCompactionBoundary(history, end)) {
+      return end;
     }
   }
   return;

@@ -25,8 +25,10 @@ describe("Agent thread automatic compaction resilience", () => {
     const model = createScriptedModelOptions([
       [assistantMessage([toolCall]), toolResultFor(toolCall)],
       [assistantMessage("tool turn complete")],
-      [assistantMessage("follow-up complete")],
+      // First-compaction forward progress prepares immediately after the tool turn,
+      // so its summary response deliberately precedes the next user-turn response.
       [assistantMessage("tool turn summarized")],
+      [assistantMessage("follow-up complete")],
       [assistantMessage("after summary complete")],
     ]);
     const agent = agentWithCompaction({

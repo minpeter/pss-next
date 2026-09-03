@@ -1193,6 +1193,10 @@ For store/alarm-only DO tooling use `createDurableObjectStorageHost` from
 `@minpeter/pss-runtime/platform/durable-object`.
 
 Speculative compaction prepares a summary in the background before promoting it.
+Prepared candidates are process-local and bounded to 32 entries per policy. A
+candidate is reused when the same Agent reconstructs a thread handle, while a
+policy shared by multiple Agents keeps each owner's candidates isolated. A new
+Agent or process starts cold; speculative candidates are not persisted.
 Each episode has one absolute pre-commit deadline:
 `DEFAULT_COMPACTION_DEADLINE_MS` (15 seconds), unless the policy supplies
 `deadlineMs`. The deadline covers preparation, summaries, retries, transforms,
@@ -1243,6 +1247,23 @@ over-budget turns without rewriting history. A bare function without budget
 properties runs with the local gate off and compaction reacts to
 provider-thrown context-window errors only.
 
+Use `contextGate` to enforce a budget with a custom compaction policy or no
+compaction at all. The explicit gate takes precedence as a whole object over
+budget properties carried by `compaction`; fields are never merged. It does not
+move `speculativeCompaction`'s prepare or promote thresholds, which remain
+scaled to that policy's own budget:
+
+```ts
+const agent = await createAgent({
+  contextGate: {
+    bufferTokens: 8_000,
+    maxInputTokens: () => 200_000,
+    onOverflow: "error",
+  },
+  model,
+});
+```
+
 Force runtime-owned compaction on an idle thread with `thread.compact()`. The
 manual path shares automatic compaction's attachment hydration, model-context
 transforms, prior-summary handling, hooks, single-flight, and freshness checks.
@@ -1262,7 +1283,7 @@ race from empty history. It inherits the configured compaction policy's
 validated summary and returns the hook dispatcher's boolean commit decision.
 
 The context gate estimates the prompt immediately before `generateText`, calling
-the compaction's `maxInputTokens` property on every request. With `onOverflow: "error"`,
+the resolved gate's `maxInputTokens()` on every request. With `onOverflow: "error"`,
 the turn fails before the provider is called. With `onOverflow: "compact"` (the
 default), the runtime runs blocking compaction and retries once.
 Provider-thrown context-window errors still use the same blocking

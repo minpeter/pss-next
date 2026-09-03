@@ -258,7 +258,7 @@ describe("selectAutoCompactionRange", () => {
     ).toBeUndefined();
   });
 
-  it("returns undefined when the safe boundary collapses onto the covered prefix", () => {
+  it("advances past the covered prefix when the backward boundary collapses", () => {
     const history = [
       userMessage("u0"),
       assistantMessage("a1"),
@@ -274,7 +274,7 @@ describe("selectAutoCompactionRange", () => {
         history,
         policy: policy({ retainTokens: 10, triggerTokens: 30 }),
       })
-    ).toBeUndefined();
+    ).toEqual({ endSeqExclusive: 6, startSeq: 0 });
   });
 
   it("counts static instruction tokens toward the trigger", () => {
