@@ -28,12 +28,12 @@ export function createThreadPublicHandle({
   const publicHandle: ThreadHandle = {
     compact: thread.compact.bind(thread),
     delete: async () => {
-      evict(key);
       await thread.delete();
+      evict(key);
     },
     dispose: async () => {
-      evict(key);
       await thread.dispose();
+      evict(key);
     },
     events: (options) => thread.events(options),
     followUp: async (input) =>

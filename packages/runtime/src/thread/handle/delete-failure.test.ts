@@ -66,4 +66,40 @@ describe("Agent thread delete failure", () => {
     expect(store.threads.has("delete-retry")).toBe(false);
     await expect(thread.send("after")).rejects.toThrow("Thread killed");
   });
+
+  it("retains the cached handle when durable deletion fails", async () => {
+    // Given
+    const store = new RecoveringDeleteStore();
+    const agent = new Agent({
+      host: hostWithThreads(store),
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    });
+    const thread = agent.thread("delete-owner");
+    await collect(await thread.send("before"));
+
+    // When
+    await expect(thread.delete()).rejects.toThrow("delete failed");
+
+    // Then
+    expect(agent.thread("delete-owner")).toBe(thread);
+  });
+
+  it("evicts the cached handle after durable deletion succeeds", async () => {
+    // Given
+    const agent = new Agent({
+      model: createCallbackModel(() =>
+        Promise.resolve([assistantMessage("DONE")])
+      ),
+    });
+    const thread = agent.thread("deleted-owner");
+    await collect(await thread.send("before"));
+
+    // When
+    await thread.delete();
+
+    // Then
+    expect(agent.thread("deleted-owner")).not.toBe(thread);
+  });
 });
