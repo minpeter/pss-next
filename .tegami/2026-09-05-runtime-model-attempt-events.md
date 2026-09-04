@@ -16,7 +16,10 @@ measurable, the duration of that provider call excluding retry backoff. Failed
 attempts also report a normalized provider error when it can be classified,
 including failures that the AI SDK subsequently retries. Hosts that already
 consume stream events receive these automatically; the committed `model-usage`
-event remains the durable successful-step record.
+event remains the durable successful-step record. Object models and string ids
+resolved by a configured `AI_SDK_DEFAULT_PROVIDER` are observed. String ids
+resolved through the SDK's implicit gateway emit no attempt events because its
+resolved model and individual retry failures are not exposed.
 
 Extensions can subscribe to the new event through
 `pss.on("model-attempt", ...)`, which previously threw for this event id, and

@@ -170,6 +170,9 @@ function streamingModelStep(
     model,
     onAttemptEnd: notifyAttemptEnd,
     onAttemptStart: notifyAttemptStart,
+    onProviderStreamError: (error) => {
+      streamFailure ??= { error };
+    },
   });
   const result = streamText({
     ...streamOptions,
@@ -177,12 +180,14 @@ function streamingModelStep(
     onError: ({ error }) => {
       streamFailure ??= { error };
     },
-    ...attemptCallbacksForStringModel({
-      model,
-      onAttemptStart: notifyAttemptStart,
-    }),
     onLanguageModelCallEnd: ({ modelId, provider }) => {
       finishedOrigin = { modelId, provider };
+      if (attemptOpen && !streamFailure) {
+        notifyAttemptEnd({
+          origin: finishedOrigin,
+          outcome: "succeeded",
+        });
+      }
     },
   });
   let finalization: Promise<ModelStepStreamFinalResult> | undefined;
@@ -238,7 +243,6 @@ function generatedModelStep(
   const result = generateText({
     ...generateOptions,
     model: observedModel,
-    ...attemptCallbacksForStringModel({ model, onAttemptStart }),
   });
   let finalization: Promise<ModelStepStreamFinalResult> | undefined;
   return {
@@ -353,51 +357,73 @@ function modelWithAttemptObserver({
   model,
   onAttemptEnd,
   onAttemptStart,
-}: Pick<
-  ModelStepStreamOptions,
-  "model" | "onAttemptEnd" | "onAttemptStart"
->): LanguageModel {
-  if (typeof model === "string") {
+  onProviderStreamError,
+}: Pick<ModelStepStreamOptions, "model" | "onAttemptEnd" | "onAttemptStart"> & {
+  readonly onProviderStreamError?: (error: unknown) => void;
+}): LanguageModel {
+  const resolvedModel =
+    typeof model === "string"
+      ? globalThis.AI_SDK_DEFAULT_PROVIDER?.languageModel(model)
+      : model;
+  if (resolvedModel === undefined || typeof resolvedModel === "string") {
     return model;
   }
-  const observedModel = Object.create(model);
   const origin = {
-    modelId: configuredModelId(model),
-    provider: configuredProvider(model),
+    modelId: configuredModelId(resolvedModel),
+    provider: configuredProvider(resolvedModel),
   };
-  for (const property of ["doGenerate", "doStream"] as const) {
-    const original = Reflect.get(model, property);
-    if (typeof original !== "function") {
-      continue;
-    }
-    Object.defineProperty(observedModel, property, {
-      configurable: true,
-      value: (...args: unknown[]) =>
-        observeProviderCall({
-          execute: () => Promise.resolve(Reflect.apply(original, model, args)),
-          origin,
-          onAttemptEnd,
-          onAttemptStart,
-          settleOnReturn: property === "doGenerate",
-        }),
-      writable: true,
-    });
-  }
-  return observedModel;
+  const target = Object.create(resolvedModel) as Exclude<LanguageModel, string>;
+  return new Proxy(target, {
+    get: (_target, property) => {
+      const original = Reflect.get(resolvedModel, property, resolvedModel);
+      if (
+        (property === "doGenerate" || property === "doStream") &&
+        typeof original === "function"
+      ) {
+        return (...args: unknown[]) =>
+          observeProviderCall({
+            execute: async () => {
+              const result = await Reflect.apply(original, resolvedModel, args);
+              return property === "doStream" && onProviderStreamError
+                ? observeProviderStreamErrors(result, onProviderStreamError)
+                : result;
+            },
+            origin,
+            onAttemptEnd,
+            onAttemptStart,
+            settleOnReturn: property === "doGenerate",
+          });
+      }
+      return typeof original === "function"
+        ? original.bind(resolvedModel)
+        : original;
+    },
+  });
 }
 
-function attemptCallbacksForStringModel({
-  model,
-  onAttemptStart,
-}: Pick<ModelStepStreamOptions, "model" | "onAttemptStart">) {
-  return typeof model === "string"
-    ? {
-        onLanguageModelCallStart: ({
-          modelId,
-          provider,
-        }: ModelAttemptOriginSignal) => onAttemptStart?.({ modelId, provider }),
-      }
-    : {};
+function observeProviderStreamErrors(
+  value: unknown,
+  onError: (error: unknown) => void
+): unknown {
+  const result = value as {
+    readonly stream: ReadableStream<{
+      readonly error?: unknown;
+      readonly type: string;
+    }>;
+  };
+  return {
+    ...result,
+    stream: result.stream.pipeThrough(
+      new TransformStream({
+        transform(part, controller) {
+          if (part.type === "error") {
+            onError(part.error);
+          }
+          controller.enqueue(part);
+        },
+      })
+    ),
+  };
 }
 
 async function observeProviderCall<T>({

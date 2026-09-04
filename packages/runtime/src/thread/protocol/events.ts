@@ -122,7 +122,10 @@ export interface ContextUsageEvent extends ContextUsageSnapshot {
  * provider requests. These events expose that otherwise invisible fan-out:
  * `attempt` counts from 1 per physical call, while `attemptId` stays fixed for
  * the whole step. End-event duration covers only that provider call and
- * excludes retry backoff.
+ * excludes retry backoff. Object models are observed directly. String model
+ * ids are observed when an `AI_SDK_DEFAULT_PROVIDER` is configured; calls
+ * resolved through the SDK's implicit gateway emit no attempt events because
+ * the SDK does not expose that resolved model or per-retry failures.
  */
 export type ModelAttempt = {
   /** 1-based provider call counter within this model step. */

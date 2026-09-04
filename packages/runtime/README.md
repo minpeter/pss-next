@@ -102,9 +102,13 @@ record.
 Live consumers also receive `model-attempt` start/end pairs for each physical
 provider call, including AI SDK retries beneath streaming and non-streaming
 steps. An end event includes its outcome, duration when measurable, and
-normalized provider error when a failure can be classified. These events are
-likewise ephemeral and excluded from durable replay and result payloads;
-`model-usage` remains the durable successful-step record.
+normalized provider error when a failure can be classified. Object models are
+observed directly; string model ids are observed when `AI_SDK_DEFAULT_PROVIDER`
+is configured. String ids resolved through the SDK's implicit gateway emit no
+attempt events because the SDK exposes neither that resolved model nor failures
+inside its retry loop. These events are likewise ephemeral and excluded from
+durable replay and result payloads; `model-usage` remains the durable
+successful-step record.
 
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text

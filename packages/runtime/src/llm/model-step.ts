@@ -153,7 +153,9 @@ export async function generateModelStepResult({
       }
     },
     onAttemptStart: (origin) => {
-      onStreamEvent?.(attemptTracker.begin(origin));
+      for (const event of attemptTracker.begin(origin)) {
+        onStreamEvent?.(event);
+      }
     },
     seed,
     temperature,

@@ -185,8 +185,10 @@ and staged before one atomic publication; unknown capability kinds fail
 closed. Event handlers run serially in extension and registration order.
 Naming a stream event such as `assistant-output-delta` explicitly opts into
 ephemeral events. This also includes live-only `model-attempt` start/end pairs
-for physical provider calls and SDK retries; they are excluded from durable
-replay and result payloads. Handler failures are attributed to the owning
+for physical provider calls and SDK retries. Object models and string ids backed
+by a configured `AI_SDK_DEFAULT_PROVIDER` are observed; implicit-gateway string
+ids emit no attempt events. Attempt events are excluded from durable replay and
+result payloads. Handler failures are attributed to the owning
 extension and surfaced after the original events.
 
 Install an extension globally or for one project:

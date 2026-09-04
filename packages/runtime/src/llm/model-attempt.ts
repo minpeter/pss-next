@@ -10,8 +10,8 @@ export interface ModelAttemptOrigin {
 
 export interface ModelAttemptTracker {
   readonly attempts: number;
-  /** Records one physical provider call start. */
-  begin(origin?: ModelAttemptOrigin): ModelAttempt;
+  /** Records one physical provider call start and closes any displaced call. */
+  begin(origin?: ModelAttemptOrigin): readonly ModelAttempt[];
   /** Resolves the open attempt as failed, if one exists. */
   fail(error: unknown): ModelAttempt | undefined;
   /** Resolves the open attempt as succeeded, if one exists. */
@@ -78,6 +78,7 @@ export function createModelAttemptTracker({
     },
 
     begin(origin) {
+      const displaced = closeOpen();
       attempts += 1;
       const attemptIdentity = identity(origin);
       open = {
@@ -85,13 +86,30 @@ export function createModelAttemptTracker({
         identity: attemptIdentity,
         startedAt: now(),
       };
-      return {
-        attempt: attempts,
-        attemptId,
-        ...attemptIdentity,
-        phase: "start",
-        type: "model-attempt",
-      };
+      return [
+        ...(displaced
+          ? [
+              {
+                attempt: displaced.attempt,
+                attemptId,
+                ...(displaced.durationMs === undefined
+                  ? {}
+                  : { durationMs: displaced.durationMs }),
+                ...displaced.identity,
+                outcome: "failed" as const,
+                phase: "end" as const,
+                type: "model-attempt" as const,
+              },
+            ]
+          : []),
+        {
+          attempt: attempts,
+          attemptId,
+          ...attemptIdentity,
+          phase: "start",
+          type: "model-attempt",
+        },
+      ];
     },
 
     fail(error) {
