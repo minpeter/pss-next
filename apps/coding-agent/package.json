@@ -11,63 +11,63 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "@minpeter/pss-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./env": {
-      "types": "./dist/env.d.ts",
       "@minpeter/pss-source": "./src/env.ts",
+      "types": "./dist/env.d.ts",
       "import": "./dist/env.js"
     },
     "./model": {
-      "types": "./dist/model.d.ts",
       "@minpeter/pss-source": "./src/model.ts",
+      "types": "./dist/model.d.ts",
       "import": "./dist/model.js"
     },
     "./thread-config": {
-      "types": "./dist/thread-config.d.ts",
       "@minpeter/pss-source": "./src/thread-config.ts",
+      "types": "./dist/thread-config.d.ts",
       "import": "./dist/thread-config.js"
     },
     "./thread-inspect": {
-      "types": "./dist/thread-inspect.d.ts",
       "@minpeter/pss-source": "./src/thread-inspect.ts",
+      "types": "./dist/thread-inspect.d.ts",
       "import": "./dist/thread-inspect.js"
     },
     "./tools": {
-      "types": "./dist/tools.d.ts",
       "@minpeter/pss-source": "./src/tools.ts",
+      "types": "./dist/tools.d.ts",
       "import": "./dist/tools.js"
     },
     "./instructions": {
-      "types": "./dist/instructions.d.ts",
       "@minpeter/pss-source": "./src/instructions.ts",
+      "types": "./dist/instructions.d.ts",
       "import": "./dist/instructions.js"
     },
     "./workspace-tools": {
-      "types": "./dist/workspace-tools/index.d.ts",
       "@minpeter/pss-source": "./src/workspace-tools/index.ts",
+      "types": "./dist/workspace-tools/index.d.ts",
       "import": "./dist/workspace-tools/index.js"
     },
     "./tui": {
-      "types": "./dist/tui/app.d.ts",
       "@minpeter/pss-source": "./src/tui/app.ts",
+      "types": "./dist/tui/app.d.ts",
       "import": "./dist/tui/app.js"
     },
     "./extension": {
-      "types": "./dist/extensions/index.d.ts",
       "@minpeter/pss-source": "./src/extensions/index.ts",
+      "types": "./dist/extensions/index.d.ts",
       "import": "./dist/extensions/index.js"
     },
     "./providers": {
-      "types": "./dist/provider-registry.d.ts",
       "@minpeter/pss-source": "./src/provider-registry.ts",
+      "types": "./dist/provider-registry.d.ts",
       "import": "./dist/provider-registry.js"
     },
     "./extension/legacy": {
-      "types": "./dist/extensions/legacy.d.ts",
       "@minpeter/pss-source": "./src/extensions/legacy.ts",
+      "types": "./dist/extensions/legacy.d.ts",
       "import": "./dist/extensions/legacy.js"
     }
   },

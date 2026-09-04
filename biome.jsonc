@@ -8,7 +8,8 @@
   "assist": {
     "actions": {
       "source": {
-        "useSortedKeys": "off"
+        "useSortedKeys": "off",
+        "useSortedPackageJson": "off"
       }
     }
   },

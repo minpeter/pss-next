@@ -11,88 +11,88 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "@minpeter/pss-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./otel": {
-      "types": "./dist/otel/index.d.ts",
       "@minpeter/pss-source": "./src/otel/index.ts",
+      "types": "./dist/otel/index.d.ts",
       "import": "./dist/otel/index.js"
     },
     "./platform/memory": {
-      "types": "./dist/platform/memory/index.d.ts",
       "@minpeter/pss-source": "./src/platform/memory/index.ts",
+      "types": "./dist/platform/memory/index.d.ts",
       "import": "./dist/platform/memory/index.js"
     },
     "./platform/durable-object": {
-      "types": "./dist/platform/durable-object/host/storage-host.d.ts",
       "@minpeter/pss-source": "./src/platform/durable-object/host/storage-host.ts",
+      "types": "./dist/platform/durable-object/host/storage-host.d.ts",
       "import": "./dist/platform/durable-object/host/storage-host.js"
     },
     "./platform/durable-object/cloudflare": {
-      "types": "./dist/platform/durable-object/cloudflare/agents/index.d.ts",
       "@minpeter/pss-source": "./src/platform/durable-object/cloudflare/agents/index.ts",
+      "types": "./dist/platform/durable-object/cloudflare/agents/index.d.ts",
       "import": "./dist/platform/durable-object/cloudflare/agents/index.js"
     },
     "./platform/durable-object/cloudflare/image-codecs": {
-      "types": "./dist/platform/durable-object/cloudflare/image-codecs-edge.d.ts",
       "@minpeter/pss-source": "./src/platform/durable-object/cloudflare/image-codecs-edge.ts",
+      "types": "./dist/platform/durable-object/cloudflare/image-codecs-edge.d.ts",
       "import": "./dist/platform/durable-object/cloudflare/image-codecs-edge.js"
     },
     "./platform/durable-object/celld": {
-      "types": "./dist/platform/durable-object/celld/host.d.ts",
       "@minpeter/pss-source": "./src/platform/durable-object/celld/host.ts",
+      "types": "./dist/platform/durable-object/celld/host.d.ts",
       "import": "./dist/platform/durable-object/celld/host.js"
     },
     "./platform/file": {
-      "types": "./dist/platform/file/index.d.ts",
       "@minpeter/pss-source": "./src/platform/file/index.ts",
+      "types": "./dist/platform/file/index.d.ts",
       "import": "./dist/platform/file/index.js"
     },
     "./execution": {
-      "types": "./dist/execution/index.d.ts",
       "@minpeter/pss-source": "./src/execution/index.ts",
+      "types": "./dist/execution/index.d.ts",
       "import": "./dist/execution/index.js"
     },
     "./namespace": {
-      "types": "./dist/namespace.d.ts",
       "@minpeter/pss-source": "./src/namespace.ts",
+      "types": "./dist/namespace.d.ts",
       "import": "./dist/namespace.js"
     },
     "./evals": {
-      "types": "./dist/evals/index.d.ts",
       "@minpeter/pss-source": "./src/evals/index.ts",
+      "types": "./dist/evals/index.d.ts",
       "import": "./dist/evals/index.js"
     },
     "./fsm": {
-      "types": "./dist/fsm/index.d.ts",
       "@minpeter/pss-source": "./src/fsm/index.ts",
+      "types": "./dist/fsm/index.d.ts",
       "import": "./dist/fsm/index.js"
     },
     "./channel": {
-      "types": "./dist/channel/index.d.ts",
       "@minpeter/pss-source": "./src/channel/index.ts",
+      "types": "./dist/channel/index.d.ts",
       "import": "./dist/channel/index.js"
     },
     "./testing": {
-      "types": "./dist/testing/index.d.ts",
       "@minpeter/pss-source": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js"
     },
     "./platform/sql-queue": {
-      "types": "./dist/platform/sql-queue/index.d.ts",
       "@minpeter/pss-source": "./src/platform/sql-queue/index.ts",
+      "types": "./dist/platform/sql-queue/index.d.ts",
       "import": "./dist/platform/sql-queue/index.js"
     },
     "./protocol": {
-      "types": "./dist/protocol/index.d.ts",
       "@minpeter/pss-source": "./src/protocol/index.ts",
+      "types": "./dist/protocol/index.d.ts",
       "import": "./dist/protocol/index.js"
     },
     "./protocol/node": {
-      "types": "./dist/protocol/node/index.d.ts",
       "@minpeter/pss-source": "./src/protocol/node/index.ts",
+      "types": "./dist/protocol/node/index.d.ts",
       "import": "./dist/protocol/node/index.js"
     }
   },
