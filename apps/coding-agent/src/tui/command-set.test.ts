@@ -9,7 +9,10 @@ describe("buildTuiCommandSet", () => {
         name: "new",
         aliases: ["clear", "reset"],
         description: "Start a new session",
-        execute: () => ({ success: true }),
+        execute: () => ({
+          success: true,
+          action: { type: "new-session" },
+        }),
       },
     ];
 

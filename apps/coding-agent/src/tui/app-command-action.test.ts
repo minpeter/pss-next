@@ -42,9 +42,7 @@ describe("TUI command actions", () => {
         { model },
         {
           createTui: async (config) => {
-            await config.onCommandAction?.(
-              JSON.parse('{"type":"new-session"}')
-            );
+            await config.onCommandAction?.({ type: "new-session" });
           },
         }
       );

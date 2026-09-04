@@ -165,6 +165,11 @@ The existing `toolRenderer()` capability is the renderer boundary. Extensions
 cannot register arbitrary raw TUI components or persisted message/entry
 renderers because those have no extension-owned runtime domain.
 
+The legacy command action `{ type: "new-session" }` is deprecated and ignored.
+Extension commands that need a new session must not mutate thread lifecycle
+directly; the built-in `/new` and `/clear` commands own the guarded,
+non-destructive session switch.
+
 Extensions configure sequentially, use stable IDs, and cannot register new
 contributions after the factory resolves. The old registry-object shape remains
 supported for compatibility, but is deprecated and documented separately at

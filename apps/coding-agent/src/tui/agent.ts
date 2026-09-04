@@ -1422,6 +1422,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    if (commandResult.action.type === "new-session") {
+      showActionlessCommandResult(commandResult);
+      return;
+    }
+
     if (commandResult.action.type === "reload") {
       await handleReloadAction(commandResult);
       return;

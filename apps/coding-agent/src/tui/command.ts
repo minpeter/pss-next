@@ -9,6 +9,10 @@ import type {
  * contract plugsuits used, scoped down to what the interactive session needs.
  */
 export type TuiCommandAction =
+  | {
+      /** @deprecated Legacy action ignored by current hosts. */
+      type: "new-session";
+    }
   | { type: "refresh-header" }
   | { type: "reload" }
   | { clear: boolean; type: "session" }
