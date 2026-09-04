@@ -26,6 +26,8 @@ describe("Agent.dispose", () => {
 
       expect(outcome).toEqual({ rejection: reason, resolved: false });
       expect(laterDispose).toHaveBeenCalledOnce();
+      expect(agent.thread("first-rejecting-disposal")).toBe(first);
+      expect(agent.thread("later-rejecting-disposal")).toBe(later);
     }
   );
 });
