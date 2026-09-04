@@ -549,6 +549,10 @@ export async function startTui(
           try {
             await stale.dispose();
           } catch (disposeError) {
+            const authoritative = agent.thread(currentSession.key);
+            if (authoritative !== stale) {
+              thread = authoritative;
+            }
             throw new AggregateError(
               [error, disposeError],
               "Extension reload and thread refresh failed"
