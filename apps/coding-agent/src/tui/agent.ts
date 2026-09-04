@@ -449,13 +449,6 @@ const addErrorMessage = (chatContainer: Container, error: unknown): void => {
   addChatComponent(chatContainer, new Text(lines.join("\n"), 1, 0));
 };
 
-const addNewSessionMessage = (chatContainer: Container): void => {
-  addChatComponent(
-    chatContainer,
-    new Text(style(ANSI_BRIGHT_CYAN, "✓ New session started"), 1, 0)
-  );
-};
-
 interface StreamViewFactories {
   activeToolInputs: Map<string, ToolInputRenderState>;
   ensureAssistantView: () => AssistantStreamView;
@@ -1210,25 +1203,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     });
   };
 
-  const handleNewSessionAction = async (
-    commandResult: TuiCommandResult
-  ): Promise<void> => {
-    if (!commandResult.action) {
-      return;
-    }
-
-    clearStatus();
-    clearChat();
-    addNewSessionMessage(chatContainer);
-    await config.onCommandAction?.(commandResult.action);
-    updateHeader();
-
-    if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
-    }
-    tui.requestRender();
-  };
-
   /**
    * pi-style model picker: swap the editor out of its slot for the selector
    * and focus it, so input flows through the TUI's focused-component path
@@ -1445,11 +1419,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   ): Promise<void> => {
     if (!(commandResult?.success && commandResult.action)) {
       showActionlessCommandResult(commandResult);
-      return;
-    }
-
-    if (commandResult.action.type === "new-session") {
-      await handleNewSessionAction(commandResult);
       return;
     }
 

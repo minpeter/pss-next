@@ -442,7 +442,7 @@ export async function startTui(
       const previous = thread;
       previous.interrupt();
       // Best-effort: a failing disposal of the outgoing handle must not
-      // strand the switch half-way (disposal evicts it from the agent).
+      // strand the switch half-way; failed disposal keeps its retryable handle.
       await previous.dispose().catch(() => undefined);
       thread = agent.thread(entry.key);
       currentSession = entry;
@@ -536,37 +536,21 @@ export async function startTui(
         resumedExplicitly: options.sessionKey !== undefined,
       }),
       onCommandAction: async (action) => {
-        if (action.type === "reload") {
-          try {
-            await reloadExtensionRuntime();
-          } catch (error) {
-            // A failed reload may have touched the durable thread; dispose
-            // the cached handle first (disposal evicts it from the agent),
-            // then request a fresh one that re-reads the store instead of
-            // committing on a stale revision.
-            const stale = thread;
-            stale.interrupt();
-            await stale.dispose().catch(() => undefined);
-            thread = agent.thread(currentSession.key);
-            throw error;
-          }
+        if (action.type !== "reload") {
           return;
         }
-        if (action.type !== "new-session") {
-          return;
+        try {
+          await reloadExtensionRuntime();
+        } catch (error) {
+          // A failed reload may have touched the durable thread. Successful
+          // disposal evicts the cached handle so this request re-reads the
+          // store; failed disposal leaves the retryable handle authoritative.
+          const stale = thread;
+          stale.interrupt();
+          await stale.dispose().catch(() => undefined);
+          thread = agent.thread(currentSession.key);
+          throw error;
         }
-
-        const previous = thread;
-        previous.interrupt();
-        await previous.delete();
-        await previous.dispose();
-        thread = agent.thread(currentSession.key);
-        resetUsageTotals();
-        sessionManager.touchSession(currentSession.key).catch(() => undefined);
-        emitSessionEvent("host:session-start", {
-          key: currentSession.key,
-          reason: "clear",
-        });
       },
       setupMessages: noticeLines,
       toolRenderers: mergeToolRenderers(

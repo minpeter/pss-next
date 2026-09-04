@@ -26,10 +26,7 @@ describe("CodingAgentExtensionHost", () => {
           configured.push("first");
           registry.commands.register({
             description: "Inspect extension state",
-            execute: () => ({
-              action: { type: "new-session" },
-              success: true,
-            }),
+            execute: () => ({ success: true }),
             name: "extension",
           });
           registry.instructions.append("First instruction");
