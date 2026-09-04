@@ -101,8 +101,10 @@ record.
 
 Live consumers also receive `model-attempt` start/end pairs for each physical
 provider call, including AI SDK retries beneath streaming and non-streaming
-steps. These events are likewise ephemeral and excluded from durable replay and
-result payloads; `model-usage` remains the durable successful-step record.
+steps. An end event includes its outcome, duration when measurable, and
+normalized provider error when a failure can be classified. These events are
+likewise ephemeral and excluded from durable replay and result payloads;
+`model-usage` remains the durable successful-step record.
 
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text
@@ -129,10 +131,11 @@ for await (const event of turn.events()) {
 On a mid-stream abort, a prefix of deltas can remain in the in-memory stream
 before `turn-abort`. Consumers must tolerate deltas without committed output.
 
-`isStreamAgentEvent` classifies the five kinds, and `streamAgentEventTypes`
-and the `StreamAgentEvent` type are exported alongside it from the package
-root. Delta kinds are their own class: not visible, lifecycle, tool, or
-telemetry events. Filter them when accumulating a transcript:
+`isStreamAgentEvent` classifies the five delta kinds plus `context-usage` and
+`model-attempt`. `streamAgentEventTypes` and the `StreamAgentEvent` type are
+exported alongside it from the package root. Stream events are their own class:
+not visible, lifecycle, tool, or telemetry events. Filter them when
+accumulating a transcript:
 
 ```ts
 if (!isStreamAgentEvent(event)) {
@@ -698,7 +701,7 @@ attempt whose generated state later fails to commit and is retried. Each retry
 invokes a new runtime model step and therefore receives a new `attemptId`.
 
 `model-usage` is operational telemetry, not an exactly-once billing ledger.
-SDK/provider retries are exposed as live-only `model-attempt` events, but there
+AI SDK retries are exposed as live-only `model-attempt` events, but there
 can still be no durable usage record when an adapter cannot parse the response,
 tool-call ID post-processing fails after a billed response, the process stops
 between the provider response and local event emission, or durable persistence

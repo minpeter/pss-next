@@ -543,12 +543,13 @@ pss exec --workspace . --stdin --timeout-seconds 900 --result-file result.json
 ```
 
 `pss exec` streams JSONL events (`metadata`, `agent_event`, `result`) to stdout
-and exits 0 only when the task completes. Streaming deltas
-(`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`)
-appear as `agent_event` lines alongside the committed events, but are excluded
-from the accumulated `result.events` payload, which stays committed-only.
-Structured `turn-error` metadata appears in both the live `agent_event` and
-committed result without raw provider diagnostics. Flags: `--workspace`; exactly one of
+and exits 0 only when the task completes. Ephemeral events
+(`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`,
+`context-usage`, and `model-attempt`) appear as `agent_event` lines alongside
+the committed events, but are excluded from the accumulated `result.events`
+payload, which stays committed-only. Structured `turn-error` metadata appears
+in both the live `agent_event` and committed result without raw provider
+diagnostics. Flags: `--workspace`; exactly one of
 `--prompt`, `--prompt-file`, or `--stdin`; plus `--model`, `--base-url`,
 `--timeout-seconds` (1-1200), `--web-tools`, and `--result-file`. A `.env` next
 to the working directory is loaded automatically.
