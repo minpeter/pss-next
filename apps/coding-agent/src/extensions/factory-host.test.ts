@@ -255,7 +255,7 @@ describe("default-export coding agent extensions", () => {
     });
   });
 
-  it("accepts every runtime agent event name", async () => {
+  it("accepts the model-attempt runtime event name", async () => {
     const registered: string[] = [];
     await createCodingAgentExtensionHost([
       {
