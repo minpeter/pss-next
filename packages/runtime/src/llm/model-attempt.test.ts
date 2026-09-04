@@ -121,12 +121,14 @@ describe("model-attempt stream events", () => {
 			outcome: "failed",
 			phase: "end",
 		});
+		expect(failedEnd).not.toHaveProperty("durationMs");
 
 		const succeededEnd = attempts.find(
 			(event) => event.phase === "end" && event.outcome === "succeeded",
 		);
 		expect(succeededEnd).toMatchObject({
 			attempt: 2,
+			durationMs: expect.any(Number),
 			outcome: "succeeded",
 		});
 	});

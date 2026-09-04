@@ -152,20 +152,22 @@ export function createModelAttemptTracker({
 	};
 }
 
+/**
+ * Closes an attempt the SDK abandoned by retrying. `durationMs` is omitted on
+ * purpose: the retry only becomes observable when the next call starts, which
+ * is after the SDK's backoff delay, so any elapsed time measured here would
+ * report the wait rather than the provider call.
+ */
 function retriedFailureEvent(
 	attemptId: string,
 	closed: {
 		readonly attempt: number;
-		readonly durationMs?: number;
 		readonly retryReason?: TurnErrorMetadataV1;
 	},
 ): ModelAttempt {
 	return {
 		attempt: closed.attempt,
 		attemptId,
-		...(closed.durationMs === undefined
-			? {}
-			: { durationMs: closed.durationMs }),
 		...(closed.retryReason === undefined
 			? {}
 			: { error: closed.retryReason }),
