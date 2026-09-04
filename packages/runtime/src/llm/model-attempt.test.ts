@@ -8,6 +8,7 @@ import {
   mockLanguageModelV4Text,
 } from "../testing/mock-language-model-v4-test-utils";
 import type { ModelAttempt, StreamAgentEvent } from "../thread/protocol/events";
+import { normalizeTurnError } from "../thread/runtime/turn-error-metadata";
 import { createModelAttemptTracker } from "./model-attempt";
 import { generateModelStepResult } from "./model-step";
 
@@ -133,8 +134,10 @@ describe("model-attempt stream events", () => {
     expect(failedEnd).toMatchObject({
       attempt: 1,
       error: { category: "rate-limit", status: 429 },
+      modelId: "mock-model-id",
       outcome: "failed",
       phase: "end",
+      provider: "mock-provider",
     });
 
     const succeededEnd = attempts.find(
@@ -198,8 +201,10 @@ describe("model-attempt stream events", () => {
           category: "rate-limit",
           status: 429,
         }),
+        modelId: "mock-model-id",
         outcome: "failed",
         phase: "end",
+        provider: "mock-provider",
       }),
       expect.objectContaining({ attempt: 2, phase: "start" }),
       expect.objectContaining({
@@ -208,6 +213,32 @@ describe("model-attempt stream events", () => {
         phase: "end",
       }),
     ]);
+  });
+
+  it("matches turn-error transport classification and retains failed identity", () => {
+    const providerError = new APICallError({
+      cause: Object.assign(new Error("transport failure"), {
+        code: "ENOTFOUND",
+      }),
+      isRetryable: true,
+      message: "provider request failed",
+      requestBodyValues: {},
+      url: "https://provider.test/v1/chat",
+    });
+    const tracker = createModelAttemptTracker({ attemptId: "attempt-network" });
+    tracker.begin({ modelId: "model-network", provider: "provider-network" });
+
+    const failed = tracker.fail(providerError);
+    const turnErrorCategory = normalizeTurnError(providerError).error?.category;
+
+    expect(turnErrorCategory).toBe("network");
+    expect(failed).toMatchObject({
+      error: { category: turnErrorCategory, code: "ENOTFOUND" },
+      modelId: "model-network",
+      outcome: "failed",
+      phase: "end",
+      provider: "provider-network",
+    });
   });
 
   it("measures only the physical call with an injected clock", () => {

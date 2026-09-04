@@ -1,12 +1,5 @@
-import { APICallError } from "ai";
-import type {
-  ModelAttempt,
-  TurnErrorMetadataV1,
-} from "../thread/protocol/events";
-import {
-  normalizeApiCallError,
-  PROVIDER_METADATA_FAILED,
-} from "../thread/runtime/turn-error-provider-metadata";
+import type { ModelAttempt } from "../thread/protocol/events";
+import { normalizeTurnError } from "../thread/runtime/turn-error-metadata";
 import { safeTelemetryIdentifier } from "./model-usage";
 
 /** Provider call identity reported by the AI SDK for one attempt. */
@@ -41,7 +34,11 @@ export function createModelAttemptTracker({
 }): ModelAttemptTracker {
   let attempts = 0;
   let open:
-    | { readonly attempt: number; readonly startedAt: number }
+    | {
+        readonly attempt: number;
+        readonly identity: ReturnType<typeof identity>;
+        readonly startedAt: number;
+      }
     | undefined;
 
   const identity = (origin?: ModelAttemptOrigin) => {
@@ -54,19 +51,24 @@ export function createModelAttemptTracker({
   };
 
   const closeOpen = ():
-    | { attempt: number; durationMs?: number }
+    | {
+        attempt: number;
+        durationMs?: number;
+        identity: ReturnType<typeof identity>;
+      }
     | undefined => {
     if (!open) {
-      return undefined;
+      return;
     }
     const elapsed = now() - open.startedAt;
-    const attempt = open.attempt;
+    const { attempt, identity: attemptIdentity } = open;
     open = undefined;
     return {
       attempt,
       ...(Number.isFinite(elapsed) && elapsed >= 0
         ? { durationMs: Math.round(elapsed) }
         : {}),
+      identity: attemptIdentity,
     };
   };
 
@@ -77,11 +79,16 @@ export function createModelAttemptTracker({
 
     begin(origin) {
       attempts += 1;
-      open = { attempt: attempts, startedAt: now() };
+      const attemptIdentity = identity(origin);
+      open = {
+        attempt: attempts,
+        identity: attemptIdentity,
+        startedAt: now(),
+      };
       return {
         attempt: attempts,
         attemptId,
-        ...identity(origin),
+        ...attemptIdentity,
         phase: "start",
         type: "model-attempt",
       };
@@ -100,6 +107,7 @@ export function createModelAttemptTracker({
           ? {}
           : { durationMs: closed.durationMs }),
         ...(metadata === undefined ? {} : { error: metadata }),
+        ...closed.identity,
         outcome: "failed",
         phase: "end",
         type: "model-attempt",
@@ -130,52 +138,6 @@ export function createModelAttemptTracker({
  * Classifies an attempt failure with the same hardened normalization the turn
  * error path uses, so attempt events and `turn-error` agree on the category.
  */
-function normalizeAttemptError(
-  error: unknown
-): TurnErrorMetadataV1 | undefined {
-  const apiCallError = firstApiCallError(error);
-  if (!apiCallError) {
-    return undefined;
-  }
-  const metadata = normalizeApiCallError(apiCallError);
-  return metadata === PROVIDER_METADATA_FAILED ? undefined : metadata;
-}
-
-const MAX_ERROR_DEPTH = 8;
-
-function firstApiCallError(error: unknown): APICallError | undefined {
-  let node = error;
-  for (let depth = 0; depth < MAX_ERROR_DEPTH; depth += 1) {
-    if (APICallError.isInstance(node)) {
-      return node;
-    }
-    if (typeof node !== "object" || node === null) {
-      return undefined;
-    }
-    const nested = readErrors(node) ?? readCause(node);
-    if (nested === undefined) {
-      return undefined;
-    }
-    node = nested;
-  }
-  return undefined;
-}
-
-function readErrors(node: object): unknown {
-  try {
-    const errors: unknown = Reflect.get(node, "errors");
-    return Array.isArray(errors) && errors.length > 0
-      ? errors.at(-1)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function readCause(node: object): unknown {
-  try {
-    return Reflect.get(node, "cause");
-  } catch {
-    return undefined;
-  }
+function normalizeAttemptError(error: unknown) {
+  return normalizeTurnError(error).error;
 }
