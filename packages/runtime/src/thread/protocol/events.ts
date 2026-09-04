@@ -2,45 +2,45 @@ import type { ContextUsageSnapshot } from "../../llm/context-tokens";
 import type { UserInput, UserMessage, UserText } from "../input/input";
 import type { InputEventMeta } from "../input/input-meta-types";
 import {
-  controlAgentEventTypes,
-  lifecycleAgentEventTypes,
-  streamAgentEventTypes as streamAgentEventTypeTable,
-  telemetryAgentEventTypes,
-  toolAgentEventTypes,
-  visibleAgentEventTypes,
+	controlAgentEventTypes,
+	lifecycleAgentEventTypes,
+	streamAgentEventTypes as streamAgentEventTypeTable,
+	telemetryAgentEventTypes,
+	toolAgentEventTypes,
+	visibleAgentEventTypes,
 } from "./event-classifiers";
 
 export type {
-  UserInput,
-  UserMessage,
-  UserMessageContent,
-  UserMessageContentPart,
-  UserMessageFileData,
-  UserMessageFilePart,
-  UserMessageTextPart,
-  UserText,
-  UserTextContent,
+	UserInput,
+	UserMessage,
+	UserMessageContent,
+	UserMessageContentPart,
+	UserMessageFileData,
+	UserMessageFilePart,
+	UserMessageTextPart,
+	UserText,
+	UserTextContent,
 } from "../input/input";
 export type { InputEventMeta, InputSource } from "../input/input-meta-types";
 
 export interface RuntimeInput {
-  /**
-   * Runtime/API-originated model input inserted into the current turn.
-   * This is distinct from human-originated user-input.
-   */
-  input: UserInput;
-  meta?: InputEventMeta;
-  placement: "turn-start" | "step-start" | "step-end";
-  type: "runtime-input";
+	/**
+	 * Runtime/API-originated model input inserted into the current turn.
+	 * This is distinct from human-originated user-input.
+	 */
+	input: UserInput;
+	meta?: InputEventMeta;
+	placement: "turn-start" | "step-start" | "step-end";
+	type: "runtime-input";
 }
 
 export interface AssistantOutput {
-  text: string;
-  type: "assistant-output";
+	text: string;
+	type: "assistant-output";
 }
 export interface AssistantReasoning {
-  text: string;
-  type: "assistant-reasoning";
+	text: string;
+	type: "assistant-reasoning";
 }
 
 /**
@@ -48,218 +48,257 @@ export interface AssistantReasoning {
  * counts stay optional because not every provider reports every field.
  */
 export interface ModelUsage {
-  /** Opaque identifier for this runtime model-step invocation. */
-  attemptId: string;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  /** AI SDK response wait time in milliseconds, excluding client tool execution. */
-  durationMs?: number;
-  /** Unified finish reason reported by the AI SDK. */
-  finishReason?:
-    | "content-filter"
-    | "error"
-    | "length"
-    | "other"
-    | "stop"
-    | "tool-calls";
-  inputTokens?: number;
-  /** Response model identifier reported by the AI SDK. */
-  modelId?: string;
-  noCacheTokens?: number;
-  outputTokens?: number;
-  /** Provider identifier reported by the AI SDK, when available. */
-  provider?: string;
-  reasoningTokens?: number;
-  totalTokens?: number;
-  type: "model-usage";
+	/** Opaque identifier for this runtime model-step invocation. */
+	attemptId: string;
+	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
+	/** AI SDK response wait time in milliseconds, excluding client tool execution. */
+	durationMs?: number;
+	/** Unified finish reason reported by the AI SDK. */
+	finishReason?:
+		| "content-filter"
+		| "error"
+		| "length"
+		| "other"
+		| "stop"
+		| "tool-calls";
+	inputTokens?: number;
+	/** Response model identifier reported by the AI SDK. */
+	modelId?: string;
+	noCacheTokens?: number;
+	outputTokens?: number;
+	/** Provider identifier reported by the AI SDK, when available. */
+	provider?: string;
+	reasoningTokens?: number;
+	totalTokens?: number;
+	type: "model-usage";
 }
 
 export interface ToolCall {
-  input: unknown;
-  toolCallId: string;
-  toolName: string;
-  type: "tool-call";
+	input: unknown;
+	toolCallId: string;
+	toolName: string;
+	type: "tool-call";
 }
 export interface ToolResult {
-  output: unknown;
-  toolCallId: string;
-  toolName: string;
-  type: "tool-result";
+	output: unknown;
+	toolCallId: string;
+	toolName: string;
+	type: "tool-result";
 }
 
 export interface AssistantOutputDelta {
-  text: string;
-  type: "assistant-output-delta";
+	text: string;
+	type: "assistant-output-delta";
 }
 export interface AssistantReasoningDelta {
-  text: string;
-  type: "assistant-reasoning-delta";
+	text: string;
+	type: "assistant-reasoning-delta";
 }
 export interface ToolCallInputStart {
-  toolCallId: string;
-  toolName: string;
-  type: "tool-call-input-start";
+	toolCallId: string;
+	toolName: string;
+	type: "tool-call-input-start";
 }
 export interface ToolCallInputDelta {
-  inputTextDelta: string;
-  toolCallId: string;
-  type: "tool-call-input-delta";
+	inputTextDelta: string;
+	toolCallId: string;
+	type: "tool-call-input-delta";
 }
 export interface ToolCallInputEnd {
-  toolCallId: string;
-  type: "tool-call-input-end";
+	toolCallId: string;
+	type: "tool-call-input-end";
 }
 
 export interface ContextUsageEvent extends ContextUsageSnapshot {
-  type: "context-usage";
+	type: "context-usage";
 }
 
+/**
+ * One physical provider call attempt inside a single runtime model step.
+ *
+ * The AI SDK retries a failed call beneath `streamText`, so a step's
+ * `attemptId` can cover several provider requests. These events expose that
+ * otherwise invisible fan-out: `attempt` counts from 1 and increments per
+ * retry, while `attemptId` stays fixed for the whole step.
+ */
+export type ModelAttempt =
+	& {
+		/** 1-based provider call counter within this model step. */
+		readonly attempt: number;
+		/** Model-step identifier shared with the step's `model-usage` event. */
+		readonly attemptId: string;
+		readonly modelId?: string;
+		readonly provider?: string;
+		readonly type: "model-attempt";
+	}
+	& (
+		| { readonly phase: "start" }
+		| {
+			readonly durationMs?: number;
+			readonly outcome: "succeeded";
+			readonly phase: "end";
+		}
+		| {
+			readonly durationMs?: number;
+			/** Normalized provider failure, absent when it cannot be classified. */
+			readonly error?: TurnErrorMetadataV1;
+			readonly outcome: "failed";
+			readonly phase: "end";
+		}
+	);
+
 export type TurnErrorCategory =
-  | "authentication"
-  | "bad-request"
-  | "cancelled"
-  | "context-overflow"
-  | "network"
-  | "permission"
-  | "quota"
-  | "rate-limit"
-  | "stream"
-  | "timeout"
-  | "unknown"
-  | "upstream";
+	| "authentication"
+	| "bad-request"
+	| "cancelled"
+	| "context-overflow"
+	| "network"
+	| "permission"
+	| "quota"
+	| "rate-limit"
+	| "stream"
+	| "timeout"
+	| "unknown"
+	| "upstream";
 
 export interface TurnErrorCorrelationId {
-  readonly source: string;
-  readonly value: string;
+	readonly source: string;
+	readonly value: string;
 }
 
 export interface TurnErrorMetadataV1 {
-  readonly category: TurnErrorCategory;
-  readonly code?: string;
-  readonly correlationIds?: readonly TurnErrorCorrelationId[];
-  readonly observedRetryable?: boolean;
-  readonly providerType?: string;
-  readonly retryAfterMs?: number;
-  readonly status?: number;
-  readonly version: 1;
+	readonly category: TurnErrorCategory;
+	readonly code?: string;
+	readonly correlationIds?: readonly TurnErrorCorrelationId[];
+	readonly observedRetryable?: boolean;
+	readonly providerType?: string;
+	readonly retryAfterMs?: number;
+	readonly status?: number;
+	readonly version: 1;
 }
 
 export type AgentEvent =
-  /** User input was accepted into the thread queue. */
-  | UserText
-  /** User multipart input was accepted into the thread queue. */
-  | UserMessage
-  /** Runtime/API-originated input inserted into the current turn, not human input. */
-  | RuntimeInput
-  /** A queued user input started running as a turn. */
-  | { type: "turn-start" }
-  /** The active turn was interrupted before normal completion. */
-  | { type: "turn-abort" }
-  /** The active turn hit an unrecoverable runtime failure. */
-  | {
-      type: "turn-error";
-      message: string;
-      error?: TurnErrorMetadataV1;
-    }
-  /** The active turn completed normally. */
-  | { type: "turn-end" }
-  /** One model/tool-loop iteration started within the active turn. */
-  | { type: "step-start" }
-  /** The model produced reasoning content. */
-  | AssistantReasoning
-  /** Normalized metadata and provider usage for one successful model attempt. */
-  | ModelUsage
-  /** The model produced visible assistant text. */
-  | AssistantOutput
-  /** The model requested a tool call. */
-  | ToolCall
-  /** A tool call returned a result. */
-  | ToolResult
-  /** One model/tool-loop iteration finished within the active turn. */
-  | { type: "step-end" }
-  /**
-   * Ephemeral assistant text delta; never persisted. The committed
-   * assistant-output event remains the durable record.
-   */
-  | AssistantOutputDelta
-  /**
-   * Ephemeral assistant reasoning delta; never persisted. Advisory only;
-   * assistant-reasoning remains the durable record.
-   */
-  | AssistantReasoningDelta
-  /**
-   * Ephemeral signal that tool-call input streaming started; never persisted.
-   * The committed tool-call event remains the durable record.
-   */
-  | ToolCallInputStart
-  /**
-   * Ephemeral tool-call input text delta; never persisted. Advisory only;
-   * the committed tool-call event remains the durable record.
-   */
-  | ToolCallInputDelta
-  /**
-   * Ephemeral signal that tool-call input streaming finished; never persisted.
-   * The committed tool-call event remains the durable record.
-   */
-  | ToolCallInputEnd
-  | ContextUsageEvent;
+	/** User input was accepted into the thread queue. */
+	| UserText
+	/** User multipart input was accepted into the thread queue. */
+	| UserMessage
+	/** Runtime/API-originated input inserted into the current turn, not human input. */
+	| RuntimeInput
+	/** A queued user input started running as a turn. */
+	| { type: "turn-start" }
+	/** The active turn was interrupted before normal completion. */
+	| { type: "turn-abort" }
+	/** The active turn hit an unrecoverable runtime failure. */
+	| {
+		type: "turn-error";
+		message: string;
+		error?: TurnErrorMetadataV1;
+	}
+	/** The active turn completed normally. */
+	| { type: "turn-end" }
+	/** One model/tool-loop iteration started within the active turn. */
+	| { type: "step-start" }
+	/** The model produced reasoning content. */
+	| AssistantReasoning
+	/** Normalized metadata and provider usage for one successful model attempt. */
+	| ModelUsage
+	/** The model produced visible assistant text. */
+	| AssistantOutput
+	/** The model requested a tool call. */
+	| ToolCall
+	/** A tool call returned a result. */
+	| ToolResult
+	/** One model/tool-loop iteration finished within the active turn. */
+	| { type: "step-end" }
+	/**
+	 * Ephemeral assistant text delta; never persisted. The committed
+	 * assistant-output event remains the durable record.
+	 */
+	| AssistantOutputDelta
+	/**
+	 * Ephemeral assistant reasoning delta; never persisted. Advisory only;
+	 * assistant-reasoning remains the durable record.
+	 */
+	| AssistantReasoningDelta
+	/**
+	 * Ephemeral signal that tool-call input streaming started; never persisted.
+	 * The committed tool-call event remains the durable record.
+	 */
+	| ToolCallInputStart
+	/**
+	 * Ephemeral tool-call input text delta; never persisted. Advisory only;
+	 * the committed tool-call event remains the durable record.
+	 */
+	| ToolCallInputDelta
+	/**
+	 * Ephemeral signal that tool-call input streaming finished; never persisted.
+	 * The committed tool-call event remains the durable record.
+	 */
+	| ToolCallInputEnd
+	| ContextUsageEvent
+	/**
+	 * Ephemeral per-provider-call attempt signal, including SDK retries; never
+	 * persisted. The committed model-usage event remains the durable record.
+	 */
+	| ModelAttempt;
 
 export type AgentEventListener = (event: AgentEvent) => void;
 
 export const streamAgentEventTypes = streamAgentEventTypeTable;
 
 export type VisibleAgentEvent = Extract<
-  AgentEvent,
-  { type: keyof typeof visibleAgentEventTypes }
+	AgentEvent,
+	{ type: keyof typeof visibleAgentEventTypes }
 >;
 export type LifecycleAgentEvent = Extract<
-  AgentEvent,
-  { type: keyof typeof lifecycleAgentEventTypes }
+	AgentEvent,
+	{ type: keyof typeof lifecycleAgentEventTypes }
 >;
 export type ToolAgentEvent = Extract<
-  AgentEvent,
-  { type: keyof typeof toolAgentEventTypes }
+	AgentEvent,
+	{ type: keyof typeof toolAgentEventTypes }
 >;
 export type TelemetryAgentEvent = Extract<
-  AgentEvent,
-  { type: keyof typeof telemetryAgentEventTypes }
+	AgentEvent,
+	{ type: keyof typeof telemetryAgentEventTypes }
 >;
 export type StreamAgentEvent = Extract<
-  AgentEvent,
-  { type: keyof typeof streamAgentEventTypes }
+	AgentEvent,
+	{ type: keyof typeof streamAgentEventTypes }
 >;
 export type ControlAgentEvent = Exclude<AgentEvent, VisibleAgentEvent>;
 
 export function isVisibleAgentEvent(
-  event: AgentEvent
+	event: AgentEvent,
 ): event is VisibleAgentEvent {
-  return Object.hasOwn(visibleAgentEventTypes, event.type);
+	return Object.hasOwn(visibleAgentEventTypes, event.type);
 }
 
 export function isLifecycleAgentEvent(
-  event: AgentEvent
+	event: AgentEvent,
 ): event is LifecycleAgentEvent {
-  return Object.hasOwn(lifecycleAgentEventTypes, event.type);
+	return Object.hasOwn(lifecycleAgentEventTypes, event.type);
 }
 
 export function isToolAgentEvent(event: AgentEvent): event is ToolAgentEvent {
-  return Object.hasOwn(toolAgentEventTypes, event.type);
+	return Object.hasOwn(toolAgentEventTypes, event.type);
 }
 
 export function isTelemetryAgentEvent(
-  event: AgentEvent
+	event: AgentEvent,
 ): event is TelemetryAgentEvent {
-  return Object.hasOwn(telemetryAgentEventTypes, event.type);
+	return Object.hasOwn(telemetryAgentEventTypes, event.type);
 }
 
 export function isStreamAgentEvent(
-  event: AgentEvent
+	event: AgentEvent,
 ): event is StreamAgentEvent {
-  return Object.hasOwn(streamAgentEventTypes, event.type);
+	return Object.hasOwn(streamAgentEventTypes, event.type);
 }
 
 export function isControlAgentEvent(
-  event: AgentEvent
+	event: AgentEvent,
 ): event is ControlAgentEvent {
-  return Object.hasOwn(controlAgentEventTypes, event.type);
+	return Object.hasOwn(controlAgentEventTypes, event.type);
 }
