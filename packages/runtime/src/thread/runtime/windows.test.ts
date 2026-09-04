@@ -145,11 +145,11 @@ describe("Agent thread runtime input windows", () => {
     );
     expect(seenHistory).toEqual([firstStepHistory, secondStepHistory]);
     expect(
-			trace.filter(
-				(entry) =>
-					entry !== "event:context-usage" && entry !== "event:model-attempt",
-			),
-		).toEqual([
+      trace.filter(
+        (entry) =>
+          entry !== "event:context-usage" && entry !== "event:model-attempt"
+      )
+    ).toEqual([
       "hook:user-input",
       "event:user-input",
       "hook:turn-start",

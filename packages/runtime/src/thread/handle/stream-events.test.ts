@@ -125,8 +125,10 @@ describe("thread stream events", () => {
 
     expect(
       live
-        .filter((event) =>
-					event.type !== "context-usage" && event.type !== "model-attempt")
+        .filter(
+          (event) =>
+            event.type !== "context-usage" && event.type !== "model-attempt"
+        )
         .map((event) => event.type)
     ).toEqual(expectedLiveTypes);
   });
