@@ -23,20 +23,21 @@ describe("TUI command actions", () => {
     const previousHome = process.env.HOME;
     const previousThreadDirectory = process.env.PSS_THREAD_DIR;
     const previousThreadKey = process.env.PSS_THREAD_KEY;
-    process.chdir(directory);
-    process.env.HOME = directory;
-    process.env.PSS_THREAD_DIR = join(directory, "threads");
-    process.env.PSS_THREAD_KEY = "app-command-action-test";
-    const store = createFileHost({
-      directory: process.env.PSS_THREAD_DIR,
-    }).store.threads;
-    await store.commit(
-      "app-command-action-test",
-      { state: { compactions: [], history: [], version: 2 } },
-      { expectedVersion: null }
-    );
 
     try {
+      process.chdir(directory);
+      process.env.HOME = directory;
+      process.env.PSS_THREAD_DIR = join(directory, "threads");
+      process.env.PSS_THREAD_KEY = "app-command-action-test";
+      const store = createFileHost({
+        directory: process.env.PSS_THREAD_DIR,
+      }).store.threads;
+      await store.commit(
+        "app-command-action-test",
+        { state: { compactions: [], history: [], version: 2 } },
+        { expectedVersion: null }
+      );
+
       // When
       const exitCode = await startTui(
         { model },

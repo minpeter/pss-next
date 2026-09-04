@@ -542,12 +542,18 @@ export async function startTui(
         try {
           await reloadExtensionRuntime();
         } catch (error) {
-          // A failed reload may have touched the durable thread. Successful
-          // disposal evicts the cached handle so this request re-reads the
-          // store; failed disposal leaves the retryable handle authoritative.
+          // A failed reload may have touched the durable thread. Rebind only
+          // after disposal succeeds so the replacement re-reads the store.
           const stale = thread;
           stale.interrupt();
-          await stale.dispose().catch(() => undefined);
+          try {
+            await stale.dispose();
+          } catch (disposeError) {
+            throw new AggregateError(
+              [error, disposeError],
+              "Extension reload and thread refresh failed"
+            );
+          }
           thread = agent.thread(currentSession.key);
           throw error;
         }
