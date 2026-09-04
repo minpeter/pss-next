@@ -33,6 +33,7 @@ const EXTENSION_EVENT_TYPES = Object.freeze({
   "assistant-reasoning": true,
   "assistant-reasoning-delta": true,
   "context-usage": true,
+  "model-attempt": true,
   "model-usage": true,
   "runtime-input": true,
   "step-end": true,
