@@ -144,7 +144,12 @@ describe("Agent thread runtime input windows", () => {
       steerRuntimeInput("step-end runtime", "step-end")
     );
     expect(seenHistory).toEqual([firstStepHistory, secondStepHistory]);
-    expect(trace.filter((entry) => entry !== "event:context-usage")).toEqual([
+    expect(
+			trace.filter(
+				(entry) =>
+					entry !== "event:context-usage" && entry !== "event:model-attempt",
+			),
+		).toEqual([
       "hook:user-input",
       "event:user-input",
       "hook:turn-start",
