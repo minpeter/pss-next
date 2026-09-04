@@ -160,7 +160,6 @@ export class Agent {
         failure = outcome.error;
       }
     }
-    this.#threads.clear();
     if (failed) {
       throw failure;
     }
@@ -195,7 +194,8 @@ export class Agent {
       }
     );
     const publicHandle = createThreadPublicHandle({
-      evict: (evictedKey) => this.#evictThreadHandle(evictedKey),
+      evict: (evictedKey, evictedHandle) =>
+        this.#evictThreadHandle(evictedKey, evictedHandle),
       instrumentations: this.#instrumentations,
       key,
       namespace: this.namespace,
@@ -209,8 +209,11 @@ export class Agent {
     return entry;
   }
 
-  #evictThreadHandle(key: string): void {
-    this.#threads.delete(key);
+  #evictThreadHandle(key: string, handle: ThreadHandle): void {
+    const entry = this.#threads.get(key);
+    if (entry?.publicHandle === handle) {
+      this.#threads.delete(key);
+    }
   }
 
   async #resumeNotification(

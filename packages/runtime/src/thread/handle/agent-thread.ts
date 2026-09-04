@@ -136,6 +136,10 @@ export class AgentThread {
     turnAbort(this.#context.turn)?.abort();
   }
 
+  isOpen(): boolean {
+    return this.#context.terminal.state.tag === "open";
+  }
+
   delete(): Promise<void> {
     const terminal = this.#context.terminal;
     const current = terminal.state;
