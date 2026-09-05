@@ -1,41 +1,30 @@
 core:changelogs:
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n  npm:@minpeter/pss-extension-web:\n    type: patch\n---\n\n## Cancel in-flight web tool requests\n\nForward coding-agent abort signals to web search and page fetch clients so active network work can stop promptly.\n"
-    filename: 2026-09-03-web-abort-inflight.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Harden thread and session lifecycle ownership\n\nRetain the authoritative thread handle when deletion fails, and remove the\ndestructive behavior of the deprecated `new-session` extension action. Existing\nextensions remain source-compatible, but hosts now ignore that action; use the\nbuilt-in `/new` or `/clear` command for guarded session replacement.\n"
+    filename: 2026-09-04-harden-thread-session-lifecycle.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Re-verify workspace containment at mutation time\n\nWorkspace mutations re-canonicalize the nearest existing ancestor immediately\nbefore writing or deleting, so an intermediate directory swapped for an\nescaping symlink between resolution and mutation now fails closed instead of\nwriting or deleting outside the workspace.\n"
-    filename: 2026-09-03-workspace-symlink-swap.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Surface provider call attempts as runtime events\n\nEmit an ephemeral `model-attempt` agent event for every physical provider call\nin a model step, including retries performed beneath both `streamText` and\n`generateText`. Each event carries the step's `attemptId`, a 1-based `attempt`\ncounter, and a start/end phase. The end event reports the outcome and, when\nmeasurable, the duration of that provider call excluding retry backoff. Failed\nattempts also report a normalized provider error when it can be classified,\nincluding failures that the AI SDK subsequently retries. Hosts that already\nconsume stream events receive these automatically; the committed `model-usage`\nevent remains the durable successful-step record. Object models and string ids\nresolved by a configured `AI_SDK_DEFAULT_PROVIDER` are observed. String ids\nresolved through the SDK's implicit gateway emit no attempt events because its\nresolved model and individual retry failures are not exposed.\n\nExtensions can subscribe to the new event through\n`pss.on(\"model-attempt\", ...)`, which previously threw for this event id, and\nheadless coding-agent runs forward it on their live NDJSON stream. The event is\nlive-only and never lands in durable history or headless result payloads.\n"
+    filename: 2026-09-05-runtime-model-attempt-events.md
     v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Fail closed on missing checkpoints\n\nCheckpoint adapters now surface checkpoint corruption when authoritative run metadata references a missing checkpoint, preventing resume from silently restarting at step one.\n"
-    filename: 2026-09-03-checkpoint-fail-closed.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Keep restarted drain turns successful\n\nWait for a requested queue-drain restart before settling joined callers, so a\nqueued turn cannot receive a failure and then execute anyway.\n"
-    filename: 2026-09-03-drain-restart-race.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Support web and edge runtime timers\n\nGuard detached compaction timer `unref` calls so numeric web timer handles do not crash summary startup or cleanup.\n"
-    filename: 2026-09-03-edge-timer-unref.md
-    v: 0.0.0
-  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n---\n\n## Let the TUI exit while selectors are pending\n\nCancel pending model and session selector waits when exit is requested so catalog loading or an open picker cannot keep the process alive.\n"
-    filename: 2026-09-03-tui-exit-hang.md
+  - content: "---\npackages:\n  npm:@minpeter/pss-runtime:\n    type: patch\n  npm:@minpeter/pss-coding-agent:\n    type: patch\n---\n\n## Workspace source exports\n\nPlace the opt-in `@minpeter/pss-source` workspace source condition before `types` in package exports.\nDefault published consumers continue to resolve declarations and JavaScript from `dist`.\n"
+    filename: 2026-09-05-workspace-source-exports.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-03-web-abort-inflight.md
-      - 2026-09-03-workspace-symlink-swap.md
+      - 2026-09-04-harden-thread-session-lifecycle.md
+      - 2026-09-05-runtime-model-attempt-events.md
+      - 2026-09-05-workspace-source-exports.md
     id: npm:@minpeter/pss-coding-agent
     updated: true
   - id: npm:@minpeter/pss-extension-latex
     updated: false
   - id: npm:@minpeter/pss-extension-mermaid
     updated: false
+  - id: npm:@minpeter/pss-extension-web
+    updated: false
   - changelogIds:
-      - 2026-09-03-web-abort-inflight.md
-    id: npm:@minpeter/pss-extension-web
-    updated: true
-  - changelogIds:
-      - 2026-09-03-checkpoint-fail-closed.md
-      - 2026-09-03-drain-restart-race.md
-      - 2026-09-03-edge-timer-unref.md
-      - 2026-09-03-tui-exit-hang.md
+      - 2026-09-04-harden-thread-session-lifecycle.md
+      - 2026-09-05-runtime-model-attempt-events.md
+      - 2026-09-05-workspace-source-exports.md
     id: npm:@minpeter/pss-runtime
     updated: true
 npm:packages:

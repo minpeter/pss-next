@@ -1,3 +1,37 @@
+## @minpeter/pss-runtime@0.3.0-next.18 (next)
+
+### Harden thread and session lifecycle ownership
+
+Retain the authoritative thread handle when deletion fails, and remove the
+destructive behavior of the deprecated `new-session` extension action. Existing
+extensions remain source-compatible, but hosts now ignore that action; use the
+built-in `/new` or `/clear` command for guarded session replacement.
+
+### Surface provider call attempts as runtime events
+
+Emit an ephemeral `model-attempt` agent event for every physical provider call
+in a model step, including retries performed beneath both `streamText` and
+`generateText`. Each event carries the step's `attemptId`, a 1-based `attempt`
+counter, and a start/end phase. The end event reports the outcome and, when
+measurable, the duration of that provider call excluding retry backoff. Failed
+attempts also report a normalized provider error when it can be classified,
+including failures that the AI SDK subsequently retries. Hosts that already
+consume stream events receive these automatically; the committed `model-usage`
+event remains the durable successful-step record. Object models and string ids
+resolved by a configured `AI_SDK_DEFAULT_PROVIDER` are observed. String ids
+resolved through the SDK's implicit gateway emit no attempt events because its
+resolved model and individual retry failures are not exposed.
+
+Extensions can subscribe to the new event through
+`pss.on("model-attempt", ...)`, which previously threw for this event id, and
+headless coding-agent runs forward it on their live NDJSON stream. The event is
+live-only and never lands in durable history or headless result payloads.
+
+### Workspace source exports
+
+Place the opt-in `@minpeter/pss-source` workspace source condition before `types` in package exports.
+Default published consumers continue to resolve declarations and JavaScript from `dist`.
+
 ## @minpeter/pss-runtime@0.3.0-next.17 (next)
 
 ### Fail closed on missing checkpoints
