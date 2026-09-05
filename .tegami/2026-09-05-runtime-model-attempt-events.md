@@ -1,9 +1,11 @@
 ---
 packages:
   npm:@minpeter/pss-runtime:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-runtime)
   npm:@minpeter/pss-coding-agent:
-    type: patch
+    replay:
+      - exit-prerelease(npm:@minpeter/pss-coding-agent)
 ---
 
 ## Surface provider call attempts as runtime events
