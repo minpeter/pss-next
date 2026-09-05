@@ -133,6 +133,7 @@ export type {
   InputEventMeta,
   InputSource,
   LifecycleAgentEvent,
+  ModelAttempt,
   ModelUsage,
   RuntimeInput,
   StreamAgentEvent,

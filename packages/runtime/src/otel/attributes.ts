@@ -1,6 +1,7 @@
 import type { Attributes } from "@opentelemetry/api";
 import type {
   AgentEvent,
+  ModelAttempt,
   ModelUsage,
   UserInput,
   UserMessageContentPart,
@@ -11,12 +12,17 @@ export function defaultAgentEventAttributes(event: AgentEvent): Attributes {
 
   switch (event.type) {
     case "assistant-output":
-      return { ...base, "pss.assistant_output.text_length": event.text.length };
+      return {
+        ...base,
+        "pss.assistant_output.text_length": event.text.length,
+      };
     case "assistant-reasoning":
       return {
         ...base,
         "pss.assistant_reasoning.text_length": event.text.length,
       };
+    case "model-attempt":
+      return { ...base, ...modelAttemptAttributes(event) };
     case "model-usage":
       return { ...base, ...modelUsageAttributes(event) };
     case "runtime-input":
@@ -137,6 +143,30 @@ function messageContentSummary(content: readonly UserMessageContentPart[]) {
   }
 
   return { fileCount, textLength, textPartCount };
+}
+
+function modelAttemptAttributes(attempt: ModelAttempt): Attributes {
+  return (
+    cleanAttributes({
+      "pss.model_attempt.attempt": attempt.attempt,
+      "pss.model_attempt.attempt_id": attempt.attemptId,
+      "pss.model_attempt.model_id": attempt.modelId,
+      "pss.model_attempt.phase": attempt.phase,
+      "pss.model_attempt.provider": attempt.provider,
+      ...(attempt.phase === "end"
+        ? {
+            "pss.model_attempt.duration_ms": attempt.durationMs,
+            "pss.model_attempt.outcome": attempt.outcome,
+          }
+        : {}),
+      ...(attempt.phase === "end" && attempt.outcome === "failed"
+        ? {
+            "pss.model_attempt.error_category": attempt.error?.category,
+            "pss.model_attempt.error_status": attempt.error?.status,
+          }
+        : {}),
+    }) ?? {}
+  );
 }
 
 function modelUsageAttributes(usage: ModelUsage): Attributes {

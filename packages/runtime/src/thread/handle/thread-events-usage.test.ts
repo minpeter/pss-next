@@ -45,7 +45,10 @@ describe("AgentThread durable event replay", () => {
 
     expect(
       live
-        .filter((event) => event.type !== "context-usage")
+        .filter(
+          (event) =>
+            event.type !== "context-usage" && event.type !== "model-attempt"
+        )
         .map((event) => event.type)
     ).toEqual([
       "user-input",
@@ -101,7 +104,10 @@ describe("AgentThread durable event replay", () => {
     expect(modelStepHookCalls).toBe(0);
     expect(
       live
-        .filter((event) => event.type !== "context-usage")
+        .filter(
+          (event) =>
+            event.type !== "context-usage" && event.type !== "model-attempt"
+        )
         .map((event) => event.type)
     ).toEqual([
       "user-input",

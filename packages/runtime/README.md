@@ -99,6 +99,17 @@ instrumentation can still observe them. The committed `assistant-output`,
 `assistant-reasoning`, and `tool-call` events remain the durable per-step
 record.
 
+Live consumers also receive `model-attempt` start/end pairs for each physical
+provider call, including AI SDK retries beneath streaming and non-streaming
+steps. An end event includes its outcome, duration when measurable, and
+normalized provider error when a failure can be classified. Object models are
+observed directly; string model ids are observed when `AI_SDK_DEFAULT_PROVIDER`
+is configured. String ids resolved through the SDK's implicit gateway emit no
+attempt events because the SDK exposes neither that resolved model nor failures
+inside its retry loop. These events are likewise ephemeral and excluded from
+durable replay and result payloads; `model-usage` remains the durable
+successful-step record.
+
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text
 only when no deltas arrived in that step:
@@ -124,10 +135,11 @@ for await (const event of turn.events()) {
 On a mid-stream abort, a prefix of deltas can remain in the in-memory stream
 before `turn-abort`. Consumers must tolerate deltas without committed output.
 
-`isStreamAgentEvent` classifies the five kinds, and `streamAgentEventTypes`
-and the `StreamAgentEvent` type are exported alongside it from the package
-root. Delta kinds are their own class: not visible, lifecycle, tool, or
-telemetry events. Filter them when accumulating a transcript:
+`isStreamAgentEvent` classifies the five delta kinds plus `context-usage` and
+`model-attempt`. `streamAgentEventTypes` and the `StreamAgentEvent` type are
+exported alongside it from the package root. Stream events are their own class:
+not visible, lifecycle, tool, or telemetry events. Filter them when
+accumulating a transcript:
 
 ```ts
 if (!isStreamAgentEvent(event)) {
@@ -693,12 +705,13 @@ attempt whose generated state later fails to commit and is retried. Each retry
 invokes a new runtime model step and therefore receives a new `attemptId`.
 
 `model-usage` is operational telemetry, not an exactly-once billing ledger.
-There can be no local record when an SDK/provider retry is hidden from PSS, an
-adapter cannot parse the response, tool-call ID post-processing fails after a
-billed response, the process stops between the provider response and local
-event emission, or durable persistence fails permanently. Internal automatic
-compaction model calls are also outside this stream. Reconcile authoritative
-billing against provider invoices or provider request IDs.
+AI SDK retries are exposed as live-only `model-attempt` events, but there
+can still be no durable usage record when an adapter cannot parse the response,
+tool-call ID post-processing fails after a billed response, the process stops
+between the provider response and local event emission, or durable persistence
+fails permanently. Internal automatic compaction model calls are also outside
+this stream. Reconcile authoritative billing against provider invoices or
+provider request IDs.
 
 Eval cache summaries reject malformed token counts, impossible
 read/write/input envelopes, and unsafe aggregate overflow instead of clamping

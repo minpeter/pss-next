@@ -6,8 +6,14 @@ import {
   type ToolChoice,
   type ToolSet,
 } from "ai";
+import { configuredModelId, configuredProvider } from "./model-usage";
 
 type GenerateTextResult = Awaited<ReturnType<typeof generateText>>;
+
+export interface ModelAttemptOriginSignal {
+  readonly modelId?: string;
+  readonly provider?: string;
+}
 
 export interface ModelStepStreamOptions {
   readonly abortSignal?: AbortSignal;
@@ -16,6 +22,17 @@ export interface ModelStepStreamOptions {
   readonly maxOutputTokens?: number;
   readonly messages: ModelMessage[];
   readonly model: LanguageModel;
+  /** Notified when one physical provider call settles inside SDK retries. */
+  readonly onAttemptEnd?: (
+    result:
+      | {
+          readonly origin: ModelAttemptOriginSignal;
+          readonly outcome: "succeeded";
+        }
+      | { readonly error: unknown; readonly outcome: "failed" }
+  ) => void;
+  /** Notified when one physical provider call starts inside SDK retries. */
+  readonly onAttemptStart?: (origin: ModelAttemptOriginSignal) => void;
   readonly seed?: number;
   readonly temperature?: number;
   readonly toolChoice?: ToolChoice<ToolSet>;
@@ -136,17 +153,79 @@ function streamingModelStep(
   options: ModelStepStreamOptions
 ): ModelStepStreamHandle {
   let streamFailure: { readonly error: unknown } | undefined;
+  let finishedOrigin: ModelAttemptOriginSignal | undefined;
+  let attemptOpen = false;
+  const { model, onAttemptEnd, onAttemptStart, ...streamOptions } = options;
+  const notifyAttemptStart = (origin: ModelAttemptOriginSignal) => {
+    attemptOpen = true;
+    onAttemptStart?.(origin);
+  };
+  const notifyAttemptEnd: NonNullable<
+    ModelStepStreamOptions["onAttemptEnd"]
+  > = (attempt) => {
+    attemptOpen = false;
+    onAttemptEnd?.(attempt);
+  };
+  const observedModel = modelWithAttemptObserver({
+    model,
+    onAttemptEnd: notifyAttemptEnd,
+    onAttemptStart: notifyAttemptStart,
+    onProviderStreamError: (error) => {
+      streamFailure ??= { error };
+    },
+  });
   const result = streamText({
-    ...options,
+    ...streamOptions,
+    model: observedModel,
     onError: ({ error }) => {
       streamFailure ??= { error };
+    },
+    onLanguageModelCallEnd: ({ modelId, provider }) => {
+      finishedOrigin = { modelId, provider };
+      if (attemptOpen && !streamFailure) {
+        notifyAttemptEnd({
+          origin: finishedOrigin,
+          outcome: "succeeded",
+        });
+      }
     },
   });
   let finalization: Promise<ModelStepStreamFinalResult> | undefined;
   return {
-    parts: result.stream as AsyncIterable<ModelStepStreamPart>,
+    parts: observeStreamFailures(
+      result.stream as AsyncIterable<ModelStepStreamPart>,
+      (error) => {
+        streamFailure ??= { error };
+      }
+    ),
     finalize() {
-      finalization ??= finalizeStreamingModelStep(result, () => streamFailure);
+      finalization ??= finalizeStreamingModelStep(
+        result,
+        () => streamFailure,
+        () => {
+          if (!attemptOpen) {
+            return;
+          }
+          if (streamFailure) {
+            notifyAttemptEnd({
+              error: streamFailure.error,
+              outcome: "failed",
+            });
+            return;
+          }
+          if (finishedOrigin) {
+            notifyAttemptEnd({
+              origin: finishedOrigin,
+              outcome: "succeeded",
+            });
+            return;
+          }
+          notifyAttemptEnd({
+            error: new Error("Model stream ended without a finish event."),
+            outcome: "failed",
+          });
+        }
+      );
       return finalization;
     },
   };
@@ -155,7 +234,16 @@ function streamingModelStep(
 function generatedModelStep(
   options: ModelStepStreamOptions
 ): ModelStepStreamHandle {
-  const result = generateText(options);
+  const { model, onAttemptEnd, onAttemptStart, ...generateOptions } = options;
+  const observedModel = modelWithAttemptObserver({
+    model,
+    onAttemptEnd,
+    onAttemptStart,
+  });
+  const result = generateText({
+    ...generateOptions,
+    model: observedModel,
+  });
   let finalization: Promise<ModelStepStreamFinalResult> | undefined;
   return {
     parts: synthesizedParts(result),
@@ -164,6 +252,18 @@ function generatedModelStep(
       return finalization;
     },
   };
+}
+
+async function* observeStreamFailures(
+  parts: AsyncIterable<ModelStepStreamPart>,
+  onError: (error: unknown) => void
+): AsyncIterable<ModelStepStreamPart> {
+  for await (const part of parts) {
+    if (part.type === "error") {
+      onError(part.error);
+    }
+    yield part;
+  }
 }
 
 async function* synthesizedParts(
@@ -234,12 +334,15 @@ async function finalizeStreamTextResult(
 
 async function finalizeStreamingModelStep(
   result: ReturnType<typeof streamText>,
-  getStreamFailure: () => { readonly error: unknown } | undefined
+  getStreamFailure: () => { readonly error: unknown } | undefined,
+  settleUnfinishedAttempt: () => void
 ): Promise<ModelStepStreamFinalResult> {
   try {
     return await finalizeStreamTextResult(result);
   } catch (error) {
     throw getStreamFailure()?.error ?? error;
+  } finally {
+    settleUnfinishedAttempt();
   }
 }
 
@@ -248,6 +351,107 @@ function finalResultFromGenerateText(
 ): ModelStepStreamFinalResult {
   const { finalStep, finishReason, response, responseMessages, usage } = result;
   return { finalStep, finishReason, response, responseMessages, usage };
+}
+
+function modelWithAttemptObserver({
+  model,
+  onAttemptEnd,
+  onAttemptStart,
+  onProviderStreamError,
+}: Pick<ModelStepStreamOptions, "model" | "onAttemptEnd" | "onAttemptStart"> & {
+  readonly onProviderStreamError?: (error: unknown) => void;
+}): LanguageModel {
+  const resolvedModel =
+    typeof model === "string"
+      ? globalThis.AI_SDK_DEFAULT_PROVIDER?.languageModel(model)
+      : model;
+  if (resolvedModel === undefined || typeof resolvedModel === "string") {
+    return model;
+  }
+  const origin = {
+    modelId: configuredModelId(resolvedModel),
+    provider: configuredProvider(resolvedModel),
+  };
+  const target = Object.create(resolvedModel) as Exclude<LanguageModel, string>;
+  return new Proxy(target, {
+    get: (_target, property) => {
+      const original = Reflect.get(resolvedModel, property, resolvedModel);
+      if (
+        (property === "doGenerate" || property === "doStream") &&
+        typeof original === "function"
+      ) {
+        return (...args: unknown[]) =>
+          observeProviderCall({
+            execute: async () => {
+              const result = await Reflect.apply(original, resolvedModel, args);
+              return property === "doStream" && onProviderStreamError
+                ? observeProviderStreamErrors(result, onProviderStreamError)
+                : result;
+            },
+            origin,
+            onAttemptEnd,
+            onAttemptStart,
+            settleOnReturn: property === "doGenerate",
+          });
+      }
+      return typeof original === "function"
+        ? original.bind(resolvedModel)
+        : original;
+    },
+  });
+}
+
+function observeProviderStreamErrors(
+  value: unknown,
+  onError: (error: unknown) => void
+): unknown {
+  const result = value as {
+    readonly stream: ReadableStream<{
+      readonly error?: unknown;
+      readonly type: string;
+    }>;
+  };
+  return {
+    ...result,
+    stream: result.stream.pipeThrough(
+      new TransformStream({
+        transform(part, controller) {
+          if (part.type === "error") {
+            onError(part.error);
+          }
+          controller.enqueue(part);
+        },
+      })
+    ),
+  };
+}
+
+async function observeProviderCall<T>({
+  execute,
+  origin,
+  onAttemptEnd,
+  onAttemptStart,
+  settleOnReturn,
+}: {
+  readonly execute: () => PromiseLike<T>;
+  readonly origin: ModelAttemptOriginSignal;
+  readonly settleOnReturn: boolean;
+} & Pick<
+  ModelStepStreamOptions,
+  "onAttemptEnd" | "onAttemptStart"
+>): Promise<T> {
+  onAttemptStart?.(origin);
+  let result: T;
+  try {
+    result = await execute();
+  } catch (error) {
+    onAttemptEnd?.({ error, outcome: "failed" });
+    throw error;
+  }
+  if (settleOnReturn) {
+    onAttemptEnd?.({ origin, outcome: "succeeded" });
+  }
+  return result;
 }
 
 function hasDoStream(model: LanguageModel): boolean {

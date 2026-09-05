@@ -89,7 +89,9 @@ describe("generateModelStepResult stream events", () => {
       history: prompt,
       model,
       onStreamEvent: (event) => {
-        events.push(event);
+        if (event.type !== "model-attempt") {
+          events.push(event);
+        }
       },
       signal: new AbortController().signal,
       tools: { lookup: lookupTool },
@@ -177,7 +179,9 @@ describe("generateModelStepResult stream events", () => {
       history: prompt,
       model,
       onStreamEvent: (event) => {
-        events.push(event);
+        if (event.type !== "model-attempt") {
+          events.push(event);
+        }
       },
       signal: new AbortController().signal,
       tools: { lookup: lookupTool },
@@ -251,8 +255,14 @@ describe("generateModelStepResult stream events", () => {
               () => controller.error(abortSignal.reason),
               { once: true }
             );
-            controller.enqueue({ type: "stream-start", warnings: [] });
-            controller.enqueue({ id: "text-1", type: "text-start" });
+            controller.enqueue({
+              type: "stream-start",
+              warnings: [],
+            });
+            controller.enqueue({
+              id: "text-1",
+              type: "text-start",
+            });
             controller.enqueue({
               delta: "before abort",
               id: "text-1",
@@ -271,6 +281,9 @@ describe("generateModelStepResult stream events", () => {
         history: prompt,
         model,
         onStreamEvent: (event) => {
+          if (event.type === "model-attempt") {
+            return;
+          }
           events.push(event);
           abortController.abort(
             new DOMException("fixture provider abort", "AbortError")
@@ -329,7 +342,13 @@ describe("generateModelStepResult stream events", () => {
 
     expect(result.messages).toEqual([
       {
-        content: [{ providerOptions: undefined, text: "done", type: "text" }],
+        content: [
+          {
+            providerOptions: undefined,
+            text: "done",
+            type: "text",
+          },
+        ],
         role: "assistant",
       },
     ]);

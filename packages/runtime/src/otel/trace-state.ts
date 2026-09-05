@@ -79,6 +79,7 @@ export function recordRuntimeTraceEvent(
     case "assistant-reasoning":
     case "assistant-reasoning-delta":
     case "context-usage":
+    case "model-attempt":
     case "model-usage":
     case "runtime-input":
     case "tool-call-input-delta":

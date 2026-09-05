@@ -1,4 +1,4 @@
-import { jsonSchema, type ToolSet, tool } from "ai";
+import { jsonSchema, type LanguageModel, type ToolSet, tool } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createNoopTool,
@@ -11,12 +11,24 @@ import {
 import { assistantMessage } from "../testing/test-fixtures";
 import { encodeRuntimeAttachmentData } from "../thread/input/attachments";
 import { ModelToolSelectionError } from "./model-step-error";
+import { configuredModelId, configuredProvider } from "./model-usage";
 
 const generateTextMock = getGenerateTextMock();
 const unsupportedApprovalPattern = /needsApproval.*not supported/;
 const sha256FingerprintPattern = /sha256:[0-9a-f]{64}/;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function expectSameModelIdentity(
+  actual: LanguageModel,
+  expected: LanguageModel
+) {
+  expect(configuredModelId(actual)).toBe(configuredModelId(expected));
+  expect(configuredProvider(actual)).toBe(configuredProvider(expected));
+  if (typeof actual !== "string" && typeof expected !== "string") {
+    expect(actual.specificationVersion).toBe(expected.specificationVersion);
+  }
+}
 
 describe("generateModelStep", () => {
   beforeEach(() => {
@@ -53,11 +65,14 @@ describe("generateModelStep", () => {
         abortSignal: signal,
         instructions: "test instructions",
         messages: history,
-        model: fakeModel,
         tools: expect.objectContaining({
           injected: expect.any(Object),
         }),
       })
+    );
+    expectSameModelIdentity(
+      generateTextMock.mock.calls.at(-1)?.[0].model,
+      fakeModel
     );
   });
 
@@ -824,9 +839,16 @@ describe("generateModelStep", () => {
       }
     );
     expect(providerGetter).not.toHaveBeenCalled();
-    expect(generateTextMock).toHaveBeenCalledWith(
-      expect.objectContaining({ model: modelOverride })
+    const receivedModel = generateTextMock.mock.calls.at(-1)?.[0].model;
+    expect(configuredModelId(receivedModel)).toBe(
+      configuredModelId(modelOverride as LanguageModel)
     );
+    expect(configuredProvider(receivedModel)).toBe(
+      configuredProvider(modelOverride as LanguageModel)
+    );
+    expect(receivedModel.specificationVersion).toBe("v4");
+    expect(receivedModel.supportedUrls).toBe(modelOverride.supportedUrls);
+    expect(providerGetter).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1931,11 +1953,14 @@ describe("Agent tool wiring", () => {
 
     expect(generateTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: fakeModel,
         tools: expect.objectContaining({
           injected: expect.any(Object),
         }),
       })
+    );
+    expectSameModelIdentity(
+      generateTextMock.mock.calls.at(-1)?.[0].model,
+      fakeModel
     );
   });
 
@@ -1951,9 +1976,12 @@ describe("Agent tool wiring", () => {
 
     expect(generateTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: fakeModel,
         toolChoice: "required",
       })
+    );
+    expectSameModelIdentity(
+      generateTextMock.mock.calls.at(-1)?.[0].model,
+      fakeModel
     );
   });
 

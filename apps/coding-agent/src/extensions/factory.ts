@@ -140,6 +140,9 @@ function createFactoryApi(
       case "context-usage":
         registry.on(type, handler);
         return;
+      case "model-attempt":
+        registry.on(type, handler);
+        return;
       case "model-usage":
         registry.on(type, handler);
         return;

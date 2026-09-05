@@ -9,6 +9,7 @@ import {
   enforceContextGate,
   materializeModelPromptTools,
 } from "./context-gate";
+import { createModelAttemptTracker } from "./model-attempt";
 import { ModelToolSelectionError } from "./model-step-error";
 import { resolveModelStepOptions } from "./model-step-preparation";
 import {
@@ -134,6 +135,7 @@ export async function generateModelStepResult({
     toolChoice: prepared.toolChoice,
   });
   assertNoUnsupportedToolApproval(prepared.tools);
+  const attemptTracker = createModelAttemptTracker({ attemptId });
   const handle = createModelStepStream({
     activeTools: prepared.activeTools,
     abortSignal: signal,
@@ -141,6 +143,20 @@ export async function generateModelStepResult({
     maxOutputTokens,
     messages,
     model: prepared.model,
+    onAttemptEnd: (result) => {
+      const event =
+        result.outcome === "succeeded"
+          ? attemptTracker.succeed(result.origin)
+          : attemptTracker.fail(result.error);
+      if (event) {
+        onStreamEvent?.(event);
+      }
+    },
+    onAttemptStart: (origin) => {
+      for (const event of attemptTracker.begin(origin)) {
+        onStreamEvent?.(event);
+      }
+    },
     seed,
     temperature,
     toolChoice: prepared.toolChoice,
@@ -168,7 +184,10 @@ export async function generateModelStepResult({
             ? undefined
             : contextTokenMeter?.outputDelta(attemptId, delta);
         if (usageSnapshot) {
-          onStreamEvent?.({ ...usageSnapshot, type: "context-usage" });
+          onStreamEvent?.({
+            ...usageSnapshot,
+            type: "context-usage",
+          });
         }
       }
     }
@@ -210,6 +229,10 @@ export async function generateModelStepResult({
       usage: normalizedUsage,
     };
   } catch (error) {
+    const failedAttempt = attemptTracker.fail(error);
+    if (failedAttempt) {
+      onStreamEvent?.(failedAttempt);
+    }
     const usageSnapshot = contextTokenMeter?.abort(attemptId);
     if (usageSnapshot) {
       onStreamEvent?.({ ...usageSnapshot, type: "context-usage" });
@@ -242,7 +265,10 @@ function mapStreamPartToAgentEvent(part: ModelStepStreamPart) {
     case "text-delta":
       return { text: part.text, type: "assistant-output-delta" } as const;
     case "reasoning-delta":
-      return { text: part.text, type: "assistant-reasoning-delta" } as const;
+      return {
+        text: part.text,
+        type: "assistant-reasoning-delta",
+      } as const;
     case "tool-input-start":
       return {
         toolCallId: part.id,

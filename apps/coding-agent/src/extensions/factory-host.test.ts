@@ -73,7 +73,10 @@ describe("default-export coding agent extensions", () => {
               }
               return {
                 action: "transform",
-                value: { ...event, text: `concise:${event.text}` },
+                value: {
+                  ...event,
+                  text: `concise:${event.text}`,
+                },
               };
             },
           });
@@ -101,7 +104,10 @@ describe("default-export coding agent extensions", () => {
   it("provides declarative tool contributions", async () => {
     const providedTool = tool({
       description: "Provided by an extension",
-      inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+      inputSchema: jsonSchema({
+        additionalProperties: false,
+        type: "object",
+      }),
     });
     const host = await createCodingAgentExtensionHost([
       {
@@ -122,7 +128,10 @@ describe("default-export coding agent extensions", () => {
   it("rejects duplicate declarative tool contributions", async () => {
     const duplicateTool = tool({
       description: "Duplicate tool",
-      inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+      inputSchema: jsonSchema({
+        additionalProperties: false,
+        type: "object",
+      }),
     });
 
     await expect(
@@ -146,7 +155,10 @@ describe("default-export coding agent extensions", () => {
   it("rejects prototype-mutating tool names", async () => {
     const dangerousTool = tool({
       description: "Dangerous tool",
-      inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+      inputSchema: jsonSchema({
+        additionalProperties: false,
+        type: "object",
+      }),
     });
 
     await expect(
@@ -166,7 +178,10 @@ describe("default-export coding agent extensions", () => {
   it("rejects non-portable and oversized tool names", async () => {
     const definition = tool({
       description: "Portable name fixture",
-      inputSchema: jsonSchema({ additionalProperties: false, type: "object" }),
+      inputSchema: jsonSchema({
+        additionalProperties: false,
+        type: "object",
+      }),
     });
     for (const name of ["service.lookup", `t${"x".repeat(64)}`]) {
       await expect(
@@ -201,7 +216,10 @@ describe("default-export coding agent extensions", () => {
       {
         definition: tool({
           description: "Array-root schema",
-          inputSchema: jsonSchema({ items: { type: "string" }, type: "array" }),
+          inputSchema: jsonSchema({
+            items: { type: "string" },
+            type: "array",
+          }),
         }),
         message:
           'Extension "invalid-tool-provider" tool "invalid_tool" has an invalid input schema: inputSchema root type must be object',
@@ -235,6 +253,22 @@ describe("default-export coding agent extensions", () => {
     ).rejects.toMatchObject({
       cause: { message: 'Unknown extension capability kind "hooks"' },
     });
+  });
+
+  it("accepts the model-attempt runtime event name", async () => {
+    const registered: string[] = [];
+    await createCodingAgentExtensionHost([
+      {
+        default(pss) {
+          pss.on("model-attempt", (event) => {
+            registered.push(event.type);
+          });
+        },
+        id: "model-attempt-subscriber",
+      },
+    ]);
+
+    expect(registered).toEqual([]);
   });
 
   it("rejects unknown event names from JavaScript extensions", async () => {

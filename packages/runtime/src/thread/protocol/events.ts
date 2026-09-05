@@ -114,6 +114,45 @@ export interface ContextUsageEvent extends ContextUsageSnapshot {
   type: "context-usage";
 }
 
+/**
+ * One physical provider call attempt inside a single runtime model step.
+ *
+ * The AI SDK retries failed streaming and non-streaming calls beneath
+ * `streamText` and `generateText`, so a step's `attemptId` can cover several
+ * provider requests. These events expose that otherwise invisible fan-out:
+ * `attempt` counts from 1 per physical call, while `attemptId` stays fixed for
+ * the whole step. End-event duration covers only that provider call and
+ * excludes retry backoff. Object models are observed directly. String model
+ * ids are observed when an `AI_SDK_DEFAULT_PROVIDER` is configured; calls
+ * resolved through the SDK's implicit gateway emit no attempt events because
+ * the SDK does not expose that resolved model or per-retry failures.
+ */
+export type ModelAttempt = {
+  /** 1-based provider call counter within this model step. */
+  readonly attempt: number;
+  /** Model-step identifier shared with the step's `model-usage` event. */
+  readonly attemptId: string;
+  readonly modelId?: string;
+  readonly provider?: string;
+  readonly type: "model-attempt";
+} & (
+  | { readonly phase: "start" }
+  | {
+      readonly durationMs?: number;
+      readonly outcome: "succeeded";
+      readonly phase: "end";
+    }
+  | {
+      readonly durationMs?: number;
+      /**
+       * Normalized failure from this call, absent when it cannot be classified.
+       */
+      readonly error?: TurnErrorMetadataV1;
+      readonly outcome: "failed";
+      readonly phase: "end";
+    }
+);
+
 export type TurnErrorCategory =
   | "authentication"
   | "bad-request"
@@ -202,7 +241,12 @@ export type AgentEvent =
    * The committed tool-call event remains the durable record.
    */
   | ToolCallInputEnd
-  | ContextUsageEvent;
+  | ContextUsageEvent
+  /**
+   * Ephemeral per-provider-call attempt signal, including SDK retries; never
+   * persisted. The committed model-usage event remains the durable record.
+   */
+  | ModelAttempt;
 
 export type AgentEventListener = (event: AgentEvent) => void;
 

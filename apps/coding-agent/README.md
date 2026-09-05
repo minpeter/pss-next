@@ -184,8 +184,12 @@ provider, and renderer capabilities. Each factory's capabilities are validated
 and staged before one atomic publication; unknown capability kinds fail
 closed. Event handlers run serially in extension and registration order.
 Naming a stream event such as `assistant-output-delta` explicitly opts into
-ephemeral deltas; handler failures are attributed to the owning extension and
-surfaced after the original events.
+ephemeral events. This also includes live-only `model-attempt` start/end pairs
+for physical provider calls and SDK retries. Object models and string ids backed
+by a configured `AI_SDK_DEFAULT_PROVIDER` are observed; implicit-gateway string
+ids emit no attempt events. Attempt events are excluded from durable replay and
+result payloads. Handler failures are attributed to the owning
+extension and surfaced after the original events.
 
 Install an extension globally or for one project:
 
@@ -541,12 +545,13 @@ pss exec --workspace . --stdin --timeout-seconds 900 --result-file result.json
 ```
 
 `pss exec` streams JSONL events (`metadata`, `agent_event`, `result`) to stdout
-and exits 0 only when the task completes. Streaming deltas
-(`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`)
-appear as `agent_event` lines alongside the committed events, but are excluded
-from the accumulated `result.events` payload, which stays committed-only.
-Structured `turn-error` metadata appears in both the live `agent_event` and
-committed result without raw provider diagnostics. Flags: `--workspace`; exactly one of
+and exits 0 only when the task completes. Ephemeral events
+(`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`,
+`context-usage`, and `model-attempt`) appear as `agent_event` lines alongside
+the committed events, but are excluded from the accumulated `result.events`
+payload, which stays committed-only. Structured `turn-error` metadata appears
+in both the live `agent_event` and committed result without raw provider
+diagnostics. Flags: `--workspace`; exactly one of
 `--prompt`, `--prompt-file`, or `--stdin`; plus `--model`, `--base-url`,
 `--timeout-seconds` (1-1200), `--web-tools`, and `--result-file`. A `.env` next
 to the working directory is loaded automatically.

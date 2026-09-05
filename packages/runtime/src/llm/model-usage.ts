@@ -131,7 +131,7 @@ function safeFinishReason(
     : undefined;
 }
 
-function safeTelemetryIdentifier(value: unknown): string | undefined {
+export function safeTelemetryIdentifier(value: unknown): string | undefined {
   return typeof value === "string" &&
     SAFE_TELEMETRY_IDENTIFIER_PATTERN.test(value)
     ? value

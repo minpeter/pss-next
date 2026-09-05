@@ -117,7 +117,8 @@ describe("Agent thread lifecycle", () => {
     });
 
     const events = (await collect(await agent.send("fail"))).filter(
-      (event) => event.type !== "context-usage"
+      (event) =>
+        event.type !== "context-usage" && event.type !== "model-attempt"
     );
 
     expect(events).toMatchObject([
@@ -183,7 +184,10 @@ describe("Agent thread lifecycle", () => {
 
     const events = await collect(await agent.send("fail safely"));
     const turnError = events
-      .filter((event) => event.type !== "context-usage")
+      .filter(
+        (event) =>
+          event.type !== "context-usage" && event.type !== "model-attempt"
+      )
       .at(-1);
 
     expect(turnError).toMatchObject({

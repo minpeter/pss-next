@@ -58,6 +58,7 @@
       "type InputSource",
       "type LifecycleAgentEvent",
       "type ManualThreadCompactionResult",
+      "type ModelAttempt",
       "type ModelContextTokenEstimateInput",
       "type ModelPromptMeasurement",
       "type ModelPromptMeasurementProfile",
