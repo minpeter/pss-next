@@ -49,6 +49,7 @@ import {
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
 import { boundedReloadOperation } from "./reload";
+import { type AppendedNotice, createRepeatedNotice } from "./repeated-notice";
 import { createRetryStatus } from "./retry-status";
 import {
   resumeSessionReplayParts,
@@ -80,6 +81,7 @@ const ANSI_BOLD = "\x1b[1m";
 const ANSI_DIM = "\x1b[2m";
 const ANSI_BG_SOFT_LIGHT = "\x1b[48;5;249m";
 const ANSI_BG_GRAY = "\x1b[100m";
+const ANSI_BG_WHITE = "\x1b[47m";
 const ANSI_CYAN = "\x1b[36m";
 const ANSI_BRIGHT_CYAN = "\x1b[96m";
 const ANSI_GRAY = "\x1b[38;5;245m";
@@ -432,13 +434,23 @@ const addTranslatedMessage = (
   );
 };
 
-const addSystemMessage = (chatContainer: Container, message: string): void => {
-  const cleaned = sanitizeTerminalText(message).trimEnd();
-  if (cleaned.length === 0) {
+/**
+ * Appends a sanitized gray system notice row. Returns the mounted row and exact
+ * string it was created with, so a repeated notice can restore that style
+ * byte-for-byte after pulsing; `undefined` when nothing was appended.
+ */
+const appendSystemNotice = (
+  chatContainer: Container,
+  message: string
+): AppendedNotice | undefined => {
+  if (message.length === 0) {
     return;
   }
 
-  addChatComponent(chatContainer, new Text(style(ANSI_GRAY, cleaned), 1, 0));
+  const normalText = style(ANSI_GRAY, message);
+  const row = new Text(normalText, 1, 0);
+  addChatComponent(chatContainer, row);
+  return { normalText, row };
 };
 
 const addErrorMessage = (chatContainer: Container, error: unknown): void => {
@@ -701,17 +713,27 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     assistantViews.clear();
   };
+  // Immediately repeated identical notices pulse the one visible row instead
+  // of appending duplicates. Scope is the current notice instance only; see
+  // `repeated-notice.ts`.
+  const repeatedNotice = createRepeatedNotice({
+    appendNotice: (message) => appendSystemNotice(chatContainer, message),
+    chatContainer,
+    pulseStyle: (message) => style(`${ANSI_BG_WHITE}${ANSI_BLACK}`, message),
+    requestRender: () => tui.requestRender(),
+  });
+  const showSystemMessage = (message: string): void => {
+    // Sanitize before either style is applied, including repeated custom notices.
+    repeatedNotice.show(sanitizeTerminalText(message).trimEnd());
+  };
   const clearChat = (): void => {
     disposeAssistantViews();
     chatContainer.clear();
+    repeatedNotice.reset();
   };
 
-  const assistantRendererNotifications = createAssistantRendererNotifications(
-    (message) => {
-      addSystemMessage(chatContainer, message);
-      tui.requestRender();
-    }
-  );
+  const assistantRendererNotifications =
+    createAssistantRendererNotifications(showSystemMessage);
 
   const title = new Text("", 1, 0);
   const help = new Text(
@@ -1230,8 +1252,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         editorTheme,
         isCtrlCInput,
         handleCtrlCPress,
-        showMessage: (message: string) =>
-          addSystemMessage(chatContainer, message),
+        showMessage: showSystemMessage,
         updateHeader,
       })
     );
@@ -1246,7 +1267,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const showModelSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.modelSelector;
     if (selectorConfig === undefined) {
-      addSystemMessage(chatContainer, "Model selection is not available.");
+      showSystemMessage("Model selection is not available.");
       tui.requestRender();
       return;
     }
@@ -1264,8 +1285,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       modelIds = result;
     } catch (error) {
       clearStatus();
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Could not list models: ${
           error instanceof Error ? error.message : String(error)
         }. Switch directly with /model <model-id>.`
@@ -1275,8 +1295,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     clearStatus();
     if (modelIds.length === 0) {
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         "The provider returned an empty model catalog. Switch directly with /model <model-id>."
       );
       tui.requestRender();
@@ -1337,13 +1356,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         selectorConfig.switchModel(selection)
       );
       updateHeader();
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Model switched to ${selection}. New steps use it immediately.`
       );
     } catch (error) {
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Model switch failed: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -1355,7 +1372,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const showSessionSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.sessionSelector;
     if (selectorConfig === undefined) {
-      addSystemMessage(chatContainer, "Session selection is not available.");
+      showSystemMessage("Session selection is not available.");
       tui.requestRender();
       return;
     }
@@ -1371,8 +1388,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       sessions = result;
     } catch (error) {
       clearStatus();
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Could not list sessions: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -1382,7 +1398,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     clearStatus();
     if (sessions.length === 0) {
-      addSystemMessage(chatContainer, "No sessions recorded yet.");
+      showSystemMessage("No sessions recorded yet.");
       tui.requestRender();
       return;
     }
@@ -1447,8 +1463,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       });
       updateHeader();
     } catch (error) {
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Session switch failed: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -1461,9 +1476,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     commandResult: TuiCommandResult | null
   ): void => {
     if (commandResult?.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     } else if (commandResult === null) {
-      addSystemMessage(chatContainer, "Unknown command.");
+      showSystemMessage("Unknown command.");
     }
     tui.requestRender();
   };
@@ -1514,7 +1529,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     }
     tui.requestRender();
   };
@@ -1529,7 +1544,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     updateHeader();
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     }
     tui.requestRender();
   };
@@ -1545,8 +1560,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       await busy.run("Reloading...", () => config.onCommandAction?.(action));
     } catch (error) {
       refreshCommandSet();
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         `Reload failed: ${
           error instanceof Error ? error.message : String(error)
         }`
@@ -1557,7 +1571,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     refreshCommandSet();
     updateHeader();
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     }
     tui.requestRender();
   };
@@ -1611,7 +1625,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
         if (result.type === "rejected") {
           clearStatus();
-          addSystemMessage(chatContainer, result.error);
+          showSystemMessage(result.error);
           tui.requestRender();
           return;
         }
@@ -1644,7 +1658,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const processInput = async (input: string): Promise<boolean> => {
     const trimmed = input.trim();
     if (trimmed.length === 0) {
-      addSystemMessage(chatContainer, "Please enter a message.");
+      showSystemMessage("Please enter a message.");
       tui.requestRender();
       return true;
     }
@@ -1664,7 +1678,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       clearStatus();
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+      showSystemMessage(`Error: ${errorMessage}`);
       tui.requestRender();
       return true;
     } finally {
@@ -1706,7 +1720,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           clearStatus();
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+          showSystemMessage(`Error: ${errorMessage}`);
           tui.requestRender();
         });
       }
@@ -1724,7 +1738,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       config.onExtensionUiReady?.((hostSignal) =>
         createExtensionUi({
           restoreFocus: clearPromptInput,
-          showMessage: (message) => addSystemMessage(chatContainer, message),
+          showMessage: showSystemMessage,
           showStatus: (message) => {
             const clear = busy.status(message);
             const signal = hostSignal ?? extensionUiController.signal;
@@ -1751,7 +1765,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       )
     );
     for (const message of config.setupMessages ?? []) {
-      addSystemMessage(chatContainer, message);
+      showSystemMessage(message);
     }
     await busy.run("Setting up...", () => config.onSetup?.());
     if (config.replayHistoryOnStartup === true) {
@@ -1790,6 +1804,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         // Flush the final interruption/status frame while its views still
         // exist. Normal stop adds a clamped cursor move and newline, losing
         // the composer's position when the transcript fills the viewport.
+        // Ending a pulse first keeps an exit mid-blink from freezing the
+        // notice inverted in that preserved frame.
+        repeatedNotice.settle();
         tui.renderNow();
         const renderState = tui.captureRenderState();
         const composerRows = composerLayer.render(terminal.columns).length;
@@ -1797,6 +1814,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         terminal.write(terminalExitCursorSequence(renderState, composerRows));
         disposeAssistantViews();
       } finally {
+        repeatedNotice.stop();
         await Promise.all(turnCompletions);
         for (const error of completionFailures) {
           console.error("onTurnComplete callback failed in TUI:", error);
