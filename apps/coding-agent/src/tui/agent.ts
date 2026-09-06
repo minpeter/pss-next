@@ -255,7 +255,9 @@ export class FooterStatusBar extends Text {
       ? style(ANSI_DIM, rightTextPlain)
       : "";
     return this.padLine(
-      `${width === 1 ? "" : " "}${left?.styled ?? ""}${" ".repeat(gap)}${rightTextStyled}`,
+      `${width === 1 ? "" : " "}${left?.styled ?? ""}${" ".repeat(
+        gap
+      )}${rightTextStyled}`,
       width
     );
   }
@@ -279,7 +281,9 @@ export class FooterStatusBar extends Text {
     return {
       plain: prefix ? `${prefix}${message ? ` ${message}` : ""}` : message,
       styled: prefix
-        ? `${prefixStyle}${message ? ` ${style(messageStylePrefix, message)}` : ""}`
+        ? `${prefixStyle}${
+            message ? ` ${style(messageStylePrefix, message)}` : ""
+          }`
         : style(messageStylePrefix, message),
     };
   }
@@ -730,7 +734,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     const footer = sanitizeTerminalText(config.footer?.text ?? "").trim();
     title.setText(
       subtitle
-        ? `${style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)}\n${style(ANSI_DIM, subtitle)}`
+        ? `${style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)}\n${style(
+            ANSI_DIM,
+            subtitle
+          )}`
         : style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)
     );
     footerStatusBar.setRightText(footer);
@@ -1087,7 +1094,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     });
 
   const accumulateUsage = (
-    total: { inputTokens: number; outputTokens: number; totalTokens: number },
+    total: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    },
     usage: ModelUsage
   ): void => {
     total.inputTokens += usage.inputTokens ?? 0;
@@ -1255,7 +1266,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       clearStatus();
       addSystemMessage(
         chatContainer,
-        `Could not list models: ${error instanceof Error ? error.message : String(error)}. Switch directly with /model <model-id>.`
+        `Could not list models: ${
+          error instanceof Error ? error.message : String(error)
+        }. Switch directly with /model <model-id>.`
       );
       tui.requestRender();
       return;
@@ -1331,7 +1344,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     } catch (error) {
       addSystemMessage(
         chatContainer,
-        `Model switch failed: ${error instanceof Error ? error.message : String(error)}`
+        `Model switch failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
     tui.requestRender();
@@ -1358,7 +1373,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       clearStatus();
       addSystemMessage(
         chatContainer,
-        `Could not list sessions: ${error instanceof Error ? error.message : String(error)}`
+        `Could not list sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
       tui.requestRender();
       return;
@@ -1432,7 +1449,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     } catch (error) {
       addSystemMessage(
         chatContainer,
-        `Session switch failed: ${error instanceof Error ? error.message : String(error)}`
+        `Session switch failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
     tui.requestRender();
@@ -1528,7 +1547,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       refreshCommandSet();
       addSystemMessage(
         chatContainer,
-        `Reload failed: ${error instanceof Error ? error.message : String(error)}`
+        `Reload failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
       tui.requestRender();
       return;
@@ -1623,7 +1644,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const processInput = async (input: string): Promise<boolean> => {
     const trimmed = input.trim();
     if (trimmed.length === 0) {
-      addSystemMessage(chatContainer, "메시지를 입력해주세요");
+      addSystemMessage(chatContainer, "Please enter a message.");
       tui.requestRender();
       return true;
     }
@@ -1707,7 +1728,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           showStatus: (message) => {
             const clear = busy.status(message);
             const signal = hostSignal ?? extensionUiController.signal;
-            signal.addEventListener("abort", clear, { once: true });
+            signal.addEventListener("abort", clear, {
+              once: true,
+            });
             if (signal.aborted) {
               clear();
             }

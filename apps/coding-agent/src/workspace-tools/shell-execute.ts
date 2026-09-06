@@ -136,8 +136,7 @@ export function createShellExecuteTool(
           `signal: ${result.signal ?? "none"}`,
           "stdout:",
           result.stdout,
-          "stderr:",
-          result.stderr,
+          ...(result.stderr.trim() ? ["stderr:", result.stderr] : []),
         ].join("\n")
       );
     },
