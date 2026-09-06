@@ -108,9 +108,9 @@ function applySwitch(
     };
   }
   return {
-    action: { type: "refresh-header" },
+    action: { type: "refresh-header", reason: "model-change" },
     success: true,
-    message: `Model switched to ${modelId}. New steps use it immediately.`,
+    message: `Model changed to ${modelId}.`,
   };
 }
 

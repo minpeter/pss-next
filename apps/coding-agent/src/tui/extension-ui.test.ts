@@ -1,128 +1,84 @@
-import type { Container, Input, SelectList, TUI } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import type {
+  Component,
+  Container,
+  Input,
+  SelectList,
+} from "@earendil-works/pi-tui";
+import { describe, expect, it, vi } from "vitest";
 import { createExtensionUi } from "./extension-ui";
 
-interface FakeTui {
-  readonly addInputListener: (
-    listener: (input: string) => unknown
-  ) => () => void;
-  readonly requestRender: () => void;
-  readonly setFocus: (component: unknown) => void;
-  readonly showOverlay: (component: Container) => {
-    focus(): void;
-    hide(): void;
-  };
-}
-
-const createFakeTui = () => {
-  const overlays: Container[] = [];
-  const listeners: ((input: string) => unknown)[] = [];
-  let hidden = 0;
-  let restored = 0;
-  const tui: FakeTui = {
-    addInputListener: (listener) => {
-      listeners.push(listener);
-      return () => {
-        const index = listeners.indexOf(listener);
-        if (index >= 0) {
-          listeners.splice(index, 1);
-        }
-      };
-    },
-    requestRender: () => undefined,
-    setFocus: () => undefined,
-    showOverlay: (component) => {
-      overlays.push(component);
-      return {
-        focus: () => undefined,
-        hide: () => {
-          hidden += 1;
-        },
-      };
-    },
-  };
+const fixture = () => {
+  const mounted: Component[] = [];
   const controller = new AbortController();
+  const showMessage = vi.fn();
+  const showStatus = vi.fn(() => () => undefined);
+  const unmounted = vi.fn();
   const ui = createExtensionUi({
-    restoreFocus: () => {
-      restored += 1;
+    promptHost: {
+      mount: (component) => {
+        mounted.push(component);
+        return unmounted;
+      },
     },
-    showMessage: () => undefined,
-    showStatus: () => () => undefined,
+    showMessage,
+    showStatus,
     signal: controller.signal,
-    tui: tui as unknown as TUI,
   });
-  return {
-    controller,
-    hidden: () => hidden,
-    listeners,
-    overlays,
-    restored: () => restored,
-    ui,
-  };
+  return { controller, mounted, showMessage, showStatus, ui, unmounted };
 };
 
-describe("extension TUI service", () => {
-  it("settles input once and restores focus", async () => {
-    const fixture = createFakeTui();
-    const result = fixture.ui.input({ initialValue: "draft", label: "Name" });
-    const input = fixture.overlays[0]?.children[1] as Input;
-
+describe("extension inline TUI service", () => {
+  it("settles input once and releases its composer slot", async () => {
+    const f = fixture();
+    const result = f.ui.input({ initialValue: "draft", label: "Name" });
+    const input = (f.mounted[0] as Container).children[1] as Input;
     input.onSubmit?.("chosen");
     input.onEscape?.();
-
     await expect(result).resolves.toBe("chosen");
-    expect(fixture.hidden()).toBe(1);
-    expect(fixture.restored()).toBe(1);
+    expect(f.unmounted).toHaveBeenCalledTimes(1);
   });
-
-  it("ignores key releases so the Enter that opened the picker cannot confirm", async () => {
-    const fixture = createFakeTui();
-    const result = fixture.ui.select({
+  it("ignores key releases before choosing the selected value", async () => {
+    const f = fixture();
+    const result = f.ui.select({
       label: "Model",
       options: [
         { label: "Fast", value: "fast" },
         { label: "Slow", value: "slow" },
       ],
     });
-    const listener = fixture.listeners[0];
-
-    // Kitty keyboard protocol delivers the *release* of the Enter keypress
-    // that submitted the command right after the overlay opens. It must be
-    // swallowed instead of confirming the first item.
-    expect(listener?.("\x1b[13;1:3u")).toEqual({ consume: true });
-    expect(fixture.hidden()).toBe(0);
-    expect(fixture.listeners).toHaveLength(1);
-
-    // A real Enter press still confirms the selection.
-    listener?.("\r");
-    await expect(result).resolves.toBe("fast");
+    const prompt = f.mounted[0];
+    prompt.handleInput?.("\x1b[13;1:3u");
+    expect(f.unmounted).not.toHaveBeenCalled();
+    prompt.handleInput?.("\x1b[B");
+    prompt.handleInput?.("\r");
+    await expect(result).resolves.toBe("slow");
   });
-
-  it("settles select cancellation on lifecycle abort and removes input routing", async () => {
-    const fixture = createFakeTui();
-    const result = fixture.ui.select({
+  it("settles cancellation on lifecycle abort and ignores retained selection callbacks", async () => {
+    const f = fixture();
+    const result = f.ui.select({
       label: "Model",
       options: [{ label: "Fast", value: "fast" }],
     });
-    const list = fixture.overlays[0]?.children[1] as SelectList;
-
-    expect(fixture.listeners).toHaveLength(1);
-    fixture.controller.abort();
+    const list = (f.mounted[0] as Container).children[1] as SelectList;
+    f.controller.abort();
     list.onSelect?.({ label: "Fast", value: "fast" });
-
     await expect(result).resolves.toBeUndefined();
-    expect(fixture.listeners).toHaveLength(0);
-    expect(fixture.hidden()).toBe(1);
-    expect(fixture.restored()).toBe(1);
+    expect(f.unmounted).toHaveBeenCalledTimes(1);
   });
-
-  it("does not open a dialog after the TUI lifecycle is already aborted", async () => {
-    const fixture = createFakeTui();
-    fixture.controller.abort();
-
-    const result = await fixture.ui.input({ label: "Aborted" });
-
-    expect(result).toBeUndefined();
-    expect(fixture.overlays).toHaveLength(0);
+  it("does not open prompts or publish notices/status after host abort", async () => {
+    const f = fixture();
+    f.controller.abort();
+    await expect(f.ui.input({ label: "Aborted" })).resolves.toBeUndefined();
+    f.ui.notify("stale");
+    f.ui.status("stale")();
+    expect(f.mounted).toHaveLength(0);
+    expect(f.showMessage).not.toHaveBeenCalled();
+    expect(f.showStatus).not.toHaveBeenCalled();
+  });
+  it.each(["\x1b", "\x03"])("cancels with %j", async (key) => {
+    const f = fixture();
+    const result = f.ui.confirm("Confirm?");
+    f.mounted[0].handleInput?.(key);
+    await expect(result).resolves.toBe(false);
   });
 });

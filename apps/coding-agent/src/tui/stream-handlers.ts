@@ -40,6 +40,8 @@ const getToolInputChunk = (part: {
 };
 
 export interface ToolInputRenderState {
+  // Canonical arguments outlive any individual display lease/continuation.
+  finalInput?: unknown;
   hasContent: boolean;
   inputBuffer: string;
   renderedInputLength: number;
@@ -94,8 +96,11 @@ export interface PiTuiRenderFlags {
 export interface PiTuiStreamState {
   activeToolInputs: Map<string, ToolInputRenderState>;
   chatContainer: Container;
+  endAssistantView?: (kind: "reasoning" | "text") => void;
   ensureAssistantView: () => AssistantStreamView;
   ensureToolView: (toolCallId: string, toolName: string) => ToolCallView;
+  finishOutput?: () => void;
+  finishToolView?: (toolCallId: string) => void;
   flags: PiTuiRenderFlags;
   getToolView: (toolCallId: string) => ToolCallView | undefined;
   onReasoningEnd?: () => void;
@@ -121,12 +126,8 @@ export const syncToolInputToView = async (
 
   const existingView = state.getToolView(toolCallId);
   const pendingInput = toolState.inputBuffer.slice(
-    toolState.renderedInputLength
+    existingView ? toolState.renderedInputLength : 0
   );
-  if (!existingView && pendingInput.length === 0) {
-    return;
-  }
-
   state.resetAssistantView(true);
   const toolView =
     existingView ?? state.ensureToolView(toolCallId, toolState.toolName);
@@ -148,7 +149,16 @@ export type StreamPartHandler = (
 ) => void | Promise<void>;
 
 export const handleTextStart: StreamPartHandler = (_part, state) => {
+  state.resetAssistantView();
   state.ensureAssistantView();
+};
+
+export const handleTextEnd: StreamPartHandler = (_part, state) => {
+  if (state.endAssistantView) {
+    state.endAssistantView("text");
+  } else {
+    state.resetAssistantView();
+  }
 };
 
 export const handleTextDelta: StreamPartHandler = (part, state) => {
@@ -156,6 +166,7 @@ export const handleTextDelta: StreamPartHandler = (part, state) => {
 };
 
 export const handleReasoningStart: StreamPartHandler = (_part, state) => {
+  state.resetAssistantView();
   if (state.flags.showReasoning) {
     state.ensureAssistantView();
   }
@@ -171,6 +182,11 @@ export const handleReasoningDelta: StreamPartHandler = (part, state) => {
 };
 
 export const handleReasoningEnd: StreamPartHandler = (_part, state) => {
+  if (state.endAssistantView) {
+    state.endAssistantView("reasoning");
+  } else {
+    state.resetAssistantView();
+  }
   state.onReasoningEnd?.();
 };
 
@@ -248,7 +264,9 @@ export const handleToolCall: StreamPartHandler = (part, state) => {
     state.streamedToolCallIds.has(toolCallId) &&
     inputState?.hasContent === true;
 
-  state.activeToolInputs.delete(toolCallId);
+  const canonical = inputState ?? createToolInputState(toolName);
+  canonical.finalInput = part.input;
+  state.activeToolInputs.set(toolCallId, canonical);
   state.streamedToolCallIds.delete(toolCallId);
 
   state.resetAssistantView(true);
@@ -277,6 +295,7 @@ export const handleToolResult: StreamPartHandler = (part, state) => {
   state.resetAssistantView(true);
   const view = state.ensureToolView(toolCallId, toolName);
   view.setOutput(part.output);
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolError: StreamPartHandler = (part, state) => {
@@ -286,6 +305,7 @@ export const handleToolError: StreamPartHandler = (part, state) => {
   state.resetAssistantView(true);
   const view = state.ensureToolView(toolCallId, toolName);
   view.setError(part.error);
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolOutputDenied: StreamPartHandler = (part, state) => {
@@ -297,6 +317,7 @@ export const handleToolOutputDenied: StreamPartHandler = (part, state) => {
   view.setOutputDenied(
     typeof part.reason === "string" ? part.reason : undefined
   );
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolApprovalRequest: StreamPartHandler = (part, state) => {
@@ -364,6 +385,8 @@ export const handleStartStep: StreamPartHandler = (_part, state) => {
 };
 
 export const handleFinishStep: StreamPartHandler = (part, state) => {
+  state.finishOutput?.();
+  state.resetAssistantView();
   if (!state.flags.showSteps) {
     return;
   }
@@ -394,6 +417,8 @@ export const handleFile: StreamPartHandler = (part, state) => {
 };
 
 export const handleFinish: StreamPartHandler = (part, state) => {
+  state.finishOutput?.();
+  state.resetAssistantView();
   if (!state.flags.showFinishReason) {
     return;
   }
@@ -408,6 +433,11 @@ export const handleFinish: StreamPartHandler = (part, state) => {
 export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   "text-start": handleTextStart,
   "text-delta": handleTextDelta,
+  "text-end": handleTextEnd,
+  abort: (_part, state) => {
+    state.finishOutput?.();
+    state.resetAssistantView();
+  },
   "reasoning-start": handleReasoningStart,
   "reasoning-delta": handleReasoningDelta,
   "reasoning-end": handleReasoningEnd,
@@ -427,7 +457,7 @@ export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   finish: handleFinish,
 };
 
-export const IGNORE_PART_TYPES = new Set(["abort", "text-end", "start"]);
+export const IGNORE_PART_TYPES = new Set(["start"]);
 
 export const isVisibleStreamPart = (
   part: TuiStreamPart,

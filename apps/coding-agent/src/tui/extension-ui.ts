@@ -1,12 +1,13 @@
 import {
+  type Component,
   Container,
   Input,
+  isFocusable,
   isKeyRelease,
   Key,
   matchesKey,
   SelectList,
   Text,
-  type TUI,
 } from "@earendil-works/pi-tui";
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import { sanitizeTerminalText } from "./terminal-safety";
@@ -19,16 +20,58 @@ const selectTheme = {
   selectedText: (text: string) => text,
 };
 
-export function createExtensionUi(options: {
+/** Prompts share the HOT composer slot, never a screen overlay. */
+export interface ExtensionPromptHost {
+  mount(component: Component): () => void;
+}
+
+class InlinePrompt extends Container {
+  readonly #input: Component;
+  readonly #cancel: () => void;
+  #focused = false;
+
+  constructor(label: string, input: Component, cancel: () => void) {
+    super();
+    this.#input = input;
+    this.#cancel = cancel;
+    this.addChild(new Text(label, 1, 0));
+    this.addChild(input);
+  }
+
+  get focused(): boolean {
+    return this.#focused;
+  }
+  set focused(value: boolean) {
+    this.#focused = value;
+    if (isFocusable(this.#input)) {
+      this.#input.focused = value;
+    }
+  }
+
+  handleInput(data: string): void {
+    if (isKeyRelease(data)) {
+      return;
+    }
+    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+      this.#cancel();
+    } else {
+      this.#input.handleInput?.(data);
+    }
+  }
+}
+
+interface UiOptions {
   readonly onUserWait?: () => () => void;
-  readonly restoreFocus: () => void;
+  readonly promptHost: ExtensionPromptHost;
+  readonly promptSignal?: () => AbortSignal;
   readonly showMessage: (message: string) => void;
   readonly showStatus: (message: string) => () => void;
   readonly signal: AbortSignal;
-  readonly tui: TUI;
-}): CodingAgentExtensionUi {
+}
+
+export function createExtensionUi(options: UiOptions): CodingAgentExtensionUi {
   const ui: CodingAgentExtensionUi = {
-    confirm: async (message: string) =>
+    confirm: async (message) =>
       (await selectValue(options, {
         label: message,
         options: [
@@ -36,71 +79,59 @@ export function createExtensionUi(options: {
           { label: "Cancel", value: "cancel" },
         ],
       })) === "confirm",
-    input: async ({
-      initialValue,
-      label,
-    }: {
-      readonly initialValue?: string;
-      readonly label: string;
-    }) => await inputValue(options, label, initialValue),
-    notify: (message: string) =>
-      options.showMessage(sanitizeTerminalText(message)),
-    select: async ({
-      label,
-      options: values,
-    }: {
-      readonly label: string;
-      readonly options: readonly {
-        readonly description?: string;
-        readonly label: string;
-        readonly value: string;
-      }[];
-    }) => await selectValue(options, { label, options: values }),
-    status: (message: string) =>
-      options.showStatus(sanitizeTerminalText(message)),
+    input: async ({ initialValue, label }) => {
+      if (options.signal.aborted) {
+        return;
+      }
+      const input = new Input();
+      input.setValue(initialValue ?? "");
+      return await prompt(options, requiredLabel(label), input, (settle) => {
+        input.onEscape = () => settle(undefined);
+        input.onSubmit = settle;
+      });
+    },
+    notify: (message) => {
+      if (!options.signal.aborted) {
+        options.showMessage(sanitizeTerminalText(message));
+      }
+    },
+    select: async (input) => await selectValue(options, input),
+    status: (message) =>
+      options.signal.aborted
+        ? () => undefined
+        : options.showStatus(sanitizeTerminalText(message)),
   };
   return Object.freeze(ui);
 }
 
-async function inputValue(
-  options: Parameters<typeof createExtensionUi>[0],
+async function prompt(
+  options: UiOptions,
   label: string,
-  initialValue: string | undefined
+  input: Component,
+  configure: (settle: (value: string | undefined) => void) => void
 ): Promise<string | undefined> {
-  if (options.signal.aborted) {
+  const signal = options.promptSignal?.() ?? options.signal;
+  if (signal.aborted) {
     return;
   }
-  const sanitizedLabel = requiredLabel(label);
   const resume = options.onUserWait?.();
   try {
     return await new Promise<string | undefined>((resolve) => {
-      const container = new Container();
-      const input = new Input();
       let settled = false;
-      let handle: ReturnType<typeof options.tui.showOverlay>;
+      let unmount: () => void = () => undefined;
       const settle = (value: string | undefined) => {
         if (settled) {
           return;
         }
         settled = true;
-        options.signal.removeEventListener("abort", abort);
-        handle.hide();
-        options.restoreFocus();
+        signal.removeEventListener("abort", abort);
+        unmount();
         resolve(value);
       };
       const abort = () => settle(undefined);
-      container.addChild(new Text(sanitizedLabel, 1, 0));
-      container.addChild(input);
-      input.setValue(initialValue ?? "");
-      input.onEscape = () => settle(undefined);
-      input.onSubmit = (value) => settle(value);
-      handle = options.tui.showOverlay(container, {
-        minWidth: 32,
-        width: "60%",
-      });
-      options.signal.addEventListener("abort", abort, { once: true });
-      options.tui.setFocus(input);
-      options.tui.requestRender();
+      configure(settle);
+      unmount = options.promptHost.mount(new InlinePrompt(label, input, abort));
+      signal.addEventListener("abort", abort, { once: true });
     });
   } finally {
     resume?.();
@@ -108,15 +139,8 @@ async function inputValue(
 }
 
 async function selectValue(
-  options: Parameters<typeof createExtensionUi>[0],
-  input: {
-    readonly label: string;
-    readonly options: readonly {
-      readonly description?: string;
-      readonly label: string;
-      readonly value: string;
-    }[];
-  }
+  options: UiOptions,
+  input: Parameters<CodingAgentExtensionUi["select"]>[0]
 ): Promise<string | undefined> {
   if (options.signal.aborted) {
     return;
@@ -148,60 +172,11 @@ async function selectValue(
       value: option.value,
     };
   });
-  const resume = options.onUserWait?.();
-  try {
-    return await new Promise<string | undefined>((resolve) => {
-      const container = new Container();
-      const list = new SelectList(items, 8, selectTheme);
-      let settled = false;
-      let handle: ReturnType<typeof options.tui.showOverlay>;
-      let removeInput: () => void = () => undefined;
-      const settle = (value: string | undefined) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        options.signal.removeEventListener("abort", abort);
-        removeInput();
-        handle.hide();
-        options.restoreFocus();
-        resolve(value);
-      };
-      const abort = () => settle(undefined);
-      container.addChild(new Text(label, 1, 0));
-      container.addChild(list);
-      list.onCancel = () => settle(undefined);
-      list.onSelect = (selected) => settle(selected.value);
-      handle = options.tui.showOverlay(container, {
-        minWidth: 32,
-        width: "60%",
-      });
-      removeInput = options.tui.addInputListener((data) => {
-        // Drop Kitty-protocol key *release* events (the TUI's focused-component
-        // path filters them too). Without this, the release of the Enter that
-        // submitted the command opening this picker arrives a moment later and
-        // instantly confirms the first item.
-        if (isKeyRelease(data)) {
-          return { consume: true };
-        }
-        if (matchesKey(data, Key.escape)) {
-          settle(undefined);
-        } else {
-          list.handleInput(data);
-        }
-        // Listener-consumed input bypasses the TUI's focused-component path,
-        // which is what normally schedules a render; request one explicitly so
-        // arrow-key selection is actually visible.
-        options.tui.requestRender();
-        return { consume: true };
-      });
-      options.signal.addEventListener("abort", abort, { once: true });
-      handle.focus();
-      options.tui.requestRender();
-    });
-  } finally {
-    resume?.();
-  }
+  const list = new SelectList(items, 8, selectTheme);
+  return await prompt(options, label, list, (settle) => {
+    list.onCancel = () => settle(undefined);
+    list.onSelect = (selected) => settle(selected.value);
+  });
 }
 
 function requiredLabel(value: string): string {

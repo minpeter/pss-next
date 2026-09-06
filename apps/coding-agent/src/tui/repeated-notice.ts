@@ -1,4 +1,4 @@
-import type { Container, Text } from "@earendil-works/pi-tui";
+import type { Text } from "@earendil-works/pi-tui";
 
 /**
  * Reuse-and-pulse behaviour for immediately repeated TUI system notices.
@@ -11,8 +11,9 @@ import type { Container, Text } from "@earendil-works/pi-tui";
  * MATCHING SCOPE — deliberately narrow:
  *
  * - Only the *current notice instance* is reusable: the exact `Text` row this
- *   module appended, only while it is still the LAST child of the chat
- *   container, and only for a byte-identical message.
+ *   module appended, only while its transcript lease is active, and only for
+ *   a byte-identical message (or the same explicit semantic key). Mounted
+ *   presentation wrappers are not identity.
  * - Anything landing after it (assistant text, tool output, a user message, a
  *   different notice) makes the tracked row stale, so the next notice is
  *   appended fresh. A genuinely new notice is never suppressed.
@@ -20,8 +21,8 @@ import type { Container, Text } from "@earendil-works/pi-tui";
  *   never inspected, compared, or collapsed.
  *
  * The pulse is pure view state on a mounted component: nothing here reaches
- * persisted session state, and restore writes back the byte-identical string
- * captured when the row was created.
+ * persisted session state, and restore writes back the newest normal text.
+ * Keyed updates replace only the current HOT notice, never historical content.
  */
 
 export const NOTICE_PULSE_MS = 140;
@@ -36,14 +37,16 @@ export interface RepeatedNotice {
   settle(): void;
   /**
    * Renders terminal-sanitized `message`. Appends a new row, or pulses the
-   * current notice instance when this is an immediate identical repeat.
+   * current notice instance for an immediate identical repeat or matching key.
    */
-  show(message: string): void;
+  show(message: string, key?: string): void;
   /** Tears down without painting; call settle before the UI's final render. */
   stop(): void;
 }
 
 export interface AppendedNotice {
+  /** True only while this notice owns the live transcript lease. */
+  readonly isActive: () => boolean;
   /** The byte-identical normal-style string the row was created with. */
   readonly normalText: string;
   readonly row: Text;
@@ -55,23 +58,22 @@ export interface RepeatedNoticeOptions {
    * renders to nothing and no row was added.
    */
   appendNotice: (message: string) => AppendedNotice | undefined;
-  /** The chat container the notice rows live in; used for staleness checks. */
-  chatContainer: Pick<Container, "children">;
+  /** Styles the newest sanitized notice for normal display after a pulse. */
+  normalStyle: (message: string) => string;
   /** Styles the sanitized notice with white background and black text. */
   pulseStyle: (message: string) => string;
   requestRender: () => void;
 }
 
-interface TrackedNotice {
-  readonly message: string;
-  /** The byte-identical normal-style string to restore after the pulse. */
-  readonly normalText: string;
-  readonly row: Text;
+interface TrackedNotice extends AppendedNotice {
+  readonly key?: string;
+  message: string;
+  normalText: string;
 }
 
 export const createRepeatedNotice = ({
   appendNotice,
-  chatContainer,
+  normalStyle,
   pulseStyle,
   requestRender,
 }: RepeatedNoticeOptions): RepeatedNotice => {
@@ -87,7 +89,7 @@ export const createRepeatedNotice = ({
   };
 
   const restore = (notice: TrackedNotice): boolean => {
-    if (!chatContainer.children.includes(notice.row)) {
+    if (!notice.isActive()) {
       return false;
     }
     notice.row.setText(notice.normalText);
@@ -109,23 +111,32 @@ export const createRepeatedNotice = ({
    * The reusable notice for `message`, or `undefined` when this is not an
    * immediate identical repeat of the still-visible current notice.
    */
-  const reusableFor = (message: string): TrackedNotice | undefined => {
-    if (tracked === undefined || tracked.message !== message) {
+  const reusableFor = (
+    message: string,
+    key?: string
+  ): TrackedNotice | undefined => {
+    if (
+      tracked === undefined ||
+      tracked.key !== key ||
+      (key === undefined && tracked.message !== message)
+    ) {
       return;
     }
     // Anything appended after the tracked row makes it stale, so a later
     // exchange never suppresses a genuinely new notice.
-    return chatContainer.children.at(-1) === tracked.row ? tracked : undefined;
+    return tracked.isActive() ? tracked : undefined;
   };
 
   return {
-    show(message: string): void {
+    show(message: string, key?: string): void {
       if (stopped) {
         return;
       }
 
-      const current = reusableFor(message);
+      const current = reusableFor(message, key);
       if (current !== undefined) {
+        current.message = message;
+        current.normalText = normalStyle(message);
         current.row.setText(pulseStyle(message));
         // A rapid repeat re-arms the single pulse instead of stacking timers,
         // so the inversion can never outlive the last attempt.
@@ -144,9 +155,7 @@ export const createRepeatedNotice = ({
       settle();
       const appended = appendNotice(message);
       tracked =
-        appended === undefined
-          ? undefined
-          : { message, normalText: appended.normalText, row: appended.row };
+        appended === undefined ? undefined : { key, message, ...appended };
       requestRender();
     },
     reset(): void {

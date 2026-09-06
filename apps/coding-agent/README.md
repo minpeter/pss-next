@@ -427,6 +427,48 @@ error rendering; it does not mean the tool has run or a file has been written.
 `showRawToolIo` keeps the JSON input/output view. Shell output still appears
 only when its result arrives, not as live stdout.
 
+Text bodies auto-follow their latest eight terminal rows, including wrapped
+lines, while streaming. On text completion, the current assistant block expands
+its full rendered text before freezing, including all table/code/prose rows.
+Long final answers remain available in terminal scrollback, not necessarily all
+on screen at once. Completed reasoning and interrupted partial text retain their
+displayed tail; later answer text cannot evict completed reasoning. Each
+pretty tool body and each raw Input/Output/Error body has its own window. Tool headers and raw section labels sit outside the
+budget. Earlier content remains stored but is not all visible at once; no new
+scrolling keys or mouse bindings are provided. The composer is unchanged.
+Text-only custom renderers use the same streaming bound and final-text expansion
+(a Markdown override is one body). Image-bearing renderer output, including Kitty/iTerm2 graphics and
+reserved image rows, remains intact and is exempt from the text-row cap.
+
+The startup header and transcript prefix are immutable rendered snapshots.
+Only the latest output block remains HOT; submitting input, a notice, or another
+stream/tool block freezes the previous block before appending. Late tool results
+and interleaved tool input use new continuation cards identified by call ID;
+canonical arguments and persisted messages remain complete. Completed views
+are detached, so late custom-renderer callbacks cannot rewrite history. Resize
+reflows the captured rows, not the old Markdown renderer or a newly selected
+tail; returning to the original width reproduces the snapshot. Ready graphics
+retain their payload and reserved geometry atomically (narrow terminals may clip).
+
+At a fixed terminal width, shrinking HOT output leaves synthetic blank rows at
+the transcript tail, above the composer, so the composer/footer does not jump
+upward. Completion freezes only actual rendered content, including genuine blank
+lines, Markdown spacing and graphic reserved rows. The next block starts after
+that content and its normal separator; new output consumes the shared trailing
+reserve before transcript height grows. Synthetic padding never becomes a
+permanent gap between COLD blocks or enters canonical messages/files. Width
+changes recompute the reservation without stale-width padding; transcript reset
+clears it. Streaming bodies remain capped, while full final-text expansion
+consumes or grows the reservation without rewriting older COLD blocks. Clearing
+multiline composer input is separate and unchanged.
+
+Extension input/select/confirm prompts share the HOT composer slot and retain
+the one-row footer rather than covering history. Model/title changes append
+current-state notices without rewriting startup information. `/reload` and
+compaction retain the transcript; explicit `/new` (`/clear`), `/resume`, `/fork`,
+and initial history replay start a new transcript epoch. Failed history loads
+retain old visible content and report the current-session mismatch.
+
 Provider failures use the runtime's structured `turn-error.error` metadata.
 The TUI maps stable categories to a concise title and action, shows only the
 safe summary, and renders bounded correlation IDs with their header source. It

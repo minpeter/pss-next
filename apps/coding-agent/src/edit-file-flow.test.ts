@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
 import type { ToolExecutionOptions } from "ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToolRenderers } from "./tui/renderers/tool-renderers";
 import { BaseToolCallView } from "./tui/tool-call-view";
 import { computeFileHash } from "./workspace-tools/hashline";
@@ -454,9 +454,16 @@ const renderEditResult = (input: unknown, output: unknown): string => {
     false,
     createToolRenderers()
   );
+  const pretty = vi.spyOn(view, "setPrettyBlock");
   view.setFinalInput(input);
   view.setOutput(output);
-  return view.render(120).join("\n");
+  // Highlighting still receives the entire diff; only its visible tail is capped.
+  const body = pretty.mock.calls.at(-1)?.[1];
+  expect(body).toBeDefined();
+  expect(view.render(120).length).toBeLessThanOrEqual(10);
+  pretty.mockRestore();
+  view.dispose();
+  return body ?? "";
 };
 
 describe("edit_file hashline flow — input → file state → edit → highlight", () => {
@@ -505,7 +512,7 @@ describe("edit_file hashline flow — input → file state → edit → highligh
         `file_hash: ${computeFileHash(scenario.expectedFile)}`
       );
 
-      // and: the TUI renders the real tool output with the expected highlight
+      // and: the real tool output is fully highlighted before viewport selection
       const rendered = renderEditResult(input, editOutput);
       for (const expected of scenario.expectRender.contains) {
         expect(rendered).toContain(expected);

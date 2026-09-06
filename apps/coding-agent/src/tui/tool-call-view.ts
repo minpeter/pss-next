@@ -2,11 +2,12 @@ import {
   Container,
   Markdown,
   type MarkdownTheme,
+  Spacer,
   Text,
-  truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { parsePartialJson } from "ai";
+import { BodyViewport, renderBodyTail } from "./body-viewport";
 import {
   createSpinnerTicker,
   type SpinnerTicker,
@@ -148,20 +149,25 @@ class BackgroundBody {
     }
 
     const normalizedText = this.text.replace(TAB_PATTERN, "   ");
-    const contentWidth = Math.max(1, width - this.paddingX * 2);
-    const leftMargin = " ".repeat(this.paddingX);
-    const rightMargin = " ".repeat(this.paddingX);
+    const padding = Math.min(
+      this.paddingX,
+      Math.max(0, Math.floor((width - 1) / 2))
+    );
+    const contentWidth = Math.max(1, width - padding * 2);
+    const leftMargin = " ".repeat(padding);
+    const rightMargin = " ".repeat(padding);
 
-    const renderedLines = normalizedText.split("\n").map((line) => {
-      const truncatedLine = truncateToWidth(line, contentWidth, "");
-      const lineWithMargins = `${leftMargin}${truncatedLine}${rightMargin}`;
-      const visLen = visibleWidth(lineWithMargins);
-      const paddedLine = `${lineWithMargins}${" ".repeat(Math.max(0, width - visLen))}`;
+    const renderedLines = renderBodyTail([normalizedText], contentWidth).map(
+      (line) => {
+        const lineWithMargins = `${leftMargin}${line}${rightMargin}`;
+        const visLen = visibleWidth(lineWithMargins);
+        const paddedLine = `${lineWithMargins}${" ".repeat(Math.max(0, width - visLen))}`;
 
-      return this.backgroundEnabled
-        ? this.backgroundFn(paddedLine)
-        : paddedLine;
-    });
+        return this.backgroundEnabled
+          ? this.backgroundFn(paddedLine)
+          : paddedLine;
+      }
+    );
 
     const result = ["", ...renderedLines];
     this.cachedText = this.text;
@@ -181,11 +187,12 @@ export interface ToolRendererMap {
 
 export class BaseToolCallView extends Container {
   private readonly callId: string;
-  private readonly content: TrimmedMarkdown;
+  private readonly content = new Container();
   private readonly markdownTheme: MarkdownTheme;
   private readonly renderers?: ToolRendererMap;
   private readonly showRawToolIo: boolean;
   private displayMode: "content" | "pretty" | "pending" = "content";
+  private disposed = false;
   private error: unknown;
   private finalInput: unknown;
   private inputBuffer = "";
@@ -218,18 +225,28 @@ export class BaseToolCallView extends Container {
     this.showRawToolIo = showRawToolIo ?? false;
     this.renderers = renderers;
     this.requestRender = requestRender ?? (() => undefined);
-    this.content = new TrimmedMarkdown("", 1, 0, markdownTheme);
     this.addChild(this.content);
     this.refresh();
   }
 
+  settle(): void {
+    if (this.pendingIndicator) {
+      this.pendingIndicator.setText("Preparing tool call…");
+    }
+    this.stopPendingIndicator();
+  }
+
   dispose(): void {
+    this.disposed = true;
     this.stopPendingIndicator();
   }
 
   async appendInputChunk(chunk: string): Promise<void> {
     this.inputBuffer += chunk;
     const { value, state } = await parsePartialJson(this.inputBuffer);
+    if (this.disposed) {
+      return;
+    }
     // Suppress transient empty objects during partial parsing to prevent
     // renderers from briefly showing "(unknown)" headers before real data arrives.
     if (state !== "successful-parse" && isPlainEmptyObject(value)) {
@@ -292,6 +309,9 @@ export class BaseToolCallView extends Container {
       useBackground?: boolean;
     }
   ): void {
+    if (this.disposed) {
+      return;
+    }
     this.prettyBlockActive = true;
     this.ensurePrettyBlockComponents();
 
@@ -323,7 +343,7 @@ export class BaseToolCallView extends Container {
     const body = new BackgroundBody("", 1, applyGrayBackground);
     const block = new Container();
     block.addChild(header);
-    block.addChild(body as unknown as InstanceType<typeof Container>);
+    block.addChild(body);
 
     this.readHeader = header;
     this.readBody = body;
@@ -428,6 +448,9 @@ export class BaseToolCallView extends Container {
   }
 
   private refresh(): void {
+    if (this.disposed) {
+      return;
+    }
     if (this.isEmptyState()) {
       this.setDisplayMode("pending");
       return;
@@ -452,7 +475,12 @@ export class BaseToolCallView extends Container {
       }
       if (this.renderedOverride) {
         this.setDisplayMode("content");
-        this.content.setText(this.renderedOverride);
+        this.content.clear();
+        this.content.addChild(
+          new BodyViewport(
+            new TrimmedMarkdown(this.renderedOverride, 1, 0, this.markdownTheme)
+          )
+        );
         return;
       }
     }
@@ -460,31 +488,54 @@ export class BaseToolCallView extends Container {
     this.setDisplayMode("content");
 
     const resolvedToolName = this.toolName || UNKNOWN_TOOL_NAME;
-    const blocks: string[] = [
-      `**Tool** \`${resolvedToolName}\` (\`${this.callId}\`)`,
+    this.content.clear();
+    this.content.addChild(
+      new TrimmedMarkdown(
+        `**Tool** \`${resolvedToolName}\` (\`${this.callId}\`)`,
+        1,
+        0,
+        this.markdownTheme
+      )
+    );
+    const sections = [
+      { label: "Input", language: "json", value: bestInput },
+      { label: "Output", language: "text", value: this.output },
+      { label: "Error", language: "text", value: this.error },
     ];
-
-    if (bestInput !== undefined) {
-      blocks.push(`**Input**\n\n${renderCodeBlock("json", bestInput)}`);
-    }
-
-    if (this.output !== undefined) {
-      blocks.push(`**Output**\n\n${renderCodeBlock("text", this.output)}`);
-    }
-
-    if (this.error !== undefined) {
-      blocks.push(`**Error**\n\n${renderCodeBlock("text", this.error)}`);
-    }
-
-    if (this.outputDenied) {
-      blocks.push(
-        this.outputDeniedReason
-          ? `**Output** denied: ${this.outputDeniedReason}`
-          : "**Output** denied by model/policy"
+    for (const { label, language, value } of sections) {
+      if (value === undefined) {
+        continue;
+      }
+      this.content.addChild(new Spacer(1));
+      this.content.addChild(
+        new TrimmedMarkdown(`**${label}**`, 1, 0, this.markdownTheme)
+      );
+      this.content.addChild(new Spacer(1));
+      this.content.addChild(
+        new BodyViewport(
+          new TrimmedMarkdown(
+            renderCodeBlock(language, value),
+            1,
+            0,
+            this.markdownTheme
+          )
+        )
       );
     }
 
-    this.content.setText(blocks.join("\n\n"));
+    if (this.outputDenied) {
+      this.content.addChild(new Spacer(1));
+      this.content.addChild(
+        new TrimmedMarkdown(
+          this.outputDeniedReason
+            ? `**Output** denied: ${this.outputDeniedReason}`
+            : "**Output** denied by model/policy",
+          1,
+          0,
+          this.markdownTheme
+        )
+      );
+    }
   }
 }
 

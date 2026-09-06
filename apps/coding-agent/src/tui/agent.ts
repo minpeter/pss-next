@@ -49,7 +49,7 @@ import {
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
 import { boundedReloadOperation } from "./reload";
-import { type AppendedNotice, createRepeatedNotice } from "./repeated-notice";
+import { createRepeatedNotice } from "./repeated-notice";
 import { createRetryStatus } from "./retry-status";
 import {
   resumeSessionReplayParts,
@@ -74,6 +74,11 @@ import { AssistantStreamView } from "./stream-views";
 import { terminalExitCursorSequence } from "./terminal-exit";
 import { sanitizeTerminalText } from "./terminal-safety";
 import { BaseToolCallView, type ToolRendererMap } from "./tool-call-view";
+import {
+  ColdSnapshot,
+  type TranscriptLease,
+  TranscriptOwner,
+} from "./transcript-owner";
 
 const ANSI_RESET = "\x1b[0m";
 const ANSI_BLACK = "\x1b[30m";
@@ -323,17 +328,13 @@ export class FooterStatusBar extends Text {
   }
 }
 
-/**
- * Bottom-pinned, focus-owning composer. The chat is normal-flow content but
- * this component is rendered as an overlay, so a streaming Markdown reflow
- * can never alter the editor's screen row. It forwards focus and input to
- * whichever component currently occupies the editor slot.
- */
+/** Normal-flow HOT composer and one-row footer, including inline prompts. */
 class ComposerLayer extends Container {
   #content: Component;
   readonly #footer: Component;
   readonly #afterInput: ((data: string) => void) | undefined;
   #focused = false;
+  readonly #prompts: Component[] = [];
 
   constructor(
     content: Component,
@@ -353,13 +354,14 @@ class ComposerLayer extends Container {
 
   set focused(value: boolean) {
     this.#focused = value;
-    if (isFocusable(this.#content)) {
-      this.#content.focused = value;
+    const content = this.#prompts.at(-1) ?? this.#content;
+    if (isFocusable(content)) {
+      content.focused = value;
     }
   }
 
   handleInput(data: string): void {
-    this.#content.handleInput?.(data);
+    (this.#prompts.at(-1) ?? this.#content).handleInput?.(data);
     this.#afterInput?.(data);
   }
 
@@ -371,9 +373,35 @@ class ComposerLayer extends Container {
     this.#rebuild();
   }
 
+  get hasPrompt(): boolean {
+    return this.#prompts.length > 0;
+  }
+
+  mountPrompt(component: Component): () => void {
+    const previous = this.#prompts.at(-1) ?? this.#content;
+    if (isFocusable(previous)) {
+      previous.focused = false;
+    }
+    this.#prompts.push(component);
+    this.#rebuild();
+    this.focused = this.#focused;
+    return () => {
+      const index = this.#prompts.indexOf(component);
+      if (index < 0) {
+        return;
+      }
+      if (isFocusable(component)) {
+        component.focused = false;
+      }
+      this.#prompts.splice(index, 1);
+      this.#rebuild();
+      this.focused = this.#focused;
+    };
+  }
+
   #rebuild(): void {
     this.clear();
-    this.addChild(this.#content);
+    this.addChild(this.#prompts.at(-1) ?? this.#content);
     this.addChild(this.#footer);
   }
 }
@@ -426,31 +454,12 @@ const addTranslatedMessage = (
   markdownTheme: MarkdownTheme,
   message: string
 ): void => {
-  chatContainer.addChild(new Spacer(1));
-  chatContainer.addChild(
+  addChatComponent(
+    chatContainer,
     new Markdown(sanitizeTerminalText(message), 1, 1, markdownTheme, {
       bgColor: (text: string) => style(ANSI_BG_GRAY, text),
     })
   );
-};
-
-/**
- * Appends a sanitized gray system notice row. Returns the mounted row and exact
- * string it was created with, so a repeated notice can restore that style
- * byte-for-byte after pulsing; `undefined` when nothing was appended.
- */
-const appendSystemNotice = (
-  chatContainer: Container,
-  message: string
-): AppendedNotice | undefined => {
-  if (message.length === 0) {
-    return;
-  }
-
-  const normalText = style(ANSI_GRAY, message);
-  const row = new Text(normalText, 1, 0);
-  addChatComponent(chatContainer, row);
-  return { normalText, row };
 };
 
 const addErrorMessage = (chatContainer: Container, error: unknown): void => {
@@ -471,8 +480,12 @@ const addErrorMessage = (chatContainer: Container, error: unknown): void => {
 
 interface StreamViewFactories {
   activeToolInputs: Map<string, ToolInputRenderState>;
+  endAssistantView: (kind: "reasoning" | "text") => void;
   ensureAssistantView: () => AssistantStreamView;
   ensureToolView: (toolCallId: string, toolName: string) => BaseToolCallView;
+  finish: () => void;
+  finishToolView: (id: string) => void;
+  getToolView: (id: string) => BaseToolCallView | undefined;
   pendingToolCallIds: Set<string>;
   resetAssistantView: (suppressLeadingSpacer?: boolean) => void;
   streamedToolCallIds: Set<string>;
@@ -483,7 +496,7 @@ const createStreamViewFactories = (options: {
   assistantRenderer?: AssistantRenderer;
   assistantRendererSignal?: AbortSignal;
   assistantViews: Set<AssistantStreamView>;
-  chatContainer: Container;
+  chatContainer: TranscriptOwner;
   flags: PiTuiRenderFlags;
   foregroundColor?: string;
   markdownTheme: MarkdownTheme;
@@ -496,57 +509,106 @@ const createStreamViewFactories = (options: {
   const streamedToolCallIds = new Set<string>();
   const pendingToolCallIds = new Set<string>();
   const toolViews = new Map<string, BaseToolCallView>();
-  let assistantView: AssistantStreamView | null = null;
+  let assistantLease: TranscriptLease<AssistantStreamView> | undefined;
+  const toolLeases = new Map<string, TranscriptLease<BaseToolCallView>>();
   let suppressAssistantLeadingSpacer = false;
 
   const resetAssistantView = (suppressLeadingSpacer = false): void => {
     if (suppressLeadingSpacer) {
       suppressAssistantLeadingSpacer = true;
     }
-    assistantView = null;
+    if (assistantLease) {
+      options.chatContainer.finish(assistantLease);
+      assistantLease = undefined;
+    }
   };
 
   const ensureAssistantView = (): AssistantStreamView => {
-    if (!assistantView) {
-      assistantView = new AssistantStreamView(options.markdownTheme, {
-        assistantRenderer: options.assistantRenderer,
-        foregroundColor: options.foregroundColor,
-        notify: options.notifyAssistantRenderer,
-        notifyOnce: options.notifyAssistantRendererOnce,
-        requestRender: options.requestRender,
-        signal: options.assistantRendererSignal,
-      });
-      options.assistantViews.add(assistantView);
-      addChatComponent(options.chatContainer, assistantView, {
-        addLeadingSpacer: !suppressAssistantLeadingSpacer,
-      });
+    if (!assistantLease?.active) {
+      assistantLease = options.chatContainer.acquire(
+        (permission) => {
+          const view = new AssistantStreamView(options.markdownTheme, {
+            assistantRenderer: options.assistantRenderer,
+            foregroundColor: options.foregroundColor,
+            notify: (message) => {
+              if (permission.active) {
+                options.notifyAssistantRenderer(message);
+              }
+            },
+            notifyOnce: (key, message) => {
+              if (permission.active) {
+                options.notifyAssistantRendererOnce(key, message);
+              }
+            },
+            requestRender: () => {
+              if (permission.active) {
+                options.requestRender();
+              }
+            },
+            signal:
+              options.assistantRendererSignal === undefined
+                ? permission.signal
+                : AbortSignal.any([
+                    permission.signal,
+                    options.assistantRendererSignal,
+                  ]),
+          });
+          options.assistantViews.add(view);
+          return view;
+        },
+        {
+          leadingSpacer: !suppressAssistantLeadingSpacer,
+          dispose: (view) => {
+            options.assistantViews.delete(view);
+            view.dispose();
+          },
+        }
+      );
       suppressAssistantLeadingSpacer = false;
     }
 
-    return assistantView;
+    return assistantLease.view;
   };
 
   const ensureToolView = (
     toolCallId: string,
     toolName: string
   ): BaseToolCallView => {
-    const existing = toolViews.get(toolCallId);
-    if (existing) {
-      existing.setToolName(toolName);
-      return existing;
+    const existing = toolLeases.get(toolCallId);
+    if (existing?.active) {
+      existing.view.setToolName(toolName);
+      return existing.view;
     }
 
-    const view = new BaseToolCallView(
-      toolCallId,
-      toolName,
-      options.markdownTheme,
-      options.requestRender,
-      options.flags.showRawToolIo,
-      options.toolRenderers
+    const lease = options.chatContainer.acquire(
+      (permission) =>
+        new BaseToolCallView(
+          toolCallId,
+          toolName,
+          options.markdownTheme,
+          () => {
+            if (permission.active) {
+              options.requestRender();
+            }
+          },
+          options.flags.showRawToolIo,
+          options.toolRenderers
+        ),
+      {
+        label: existing
+          ? `Continuation (${sanitizeTerminalText(toolCallId)})`
+          : undefined,
+        settle: (view) => view.settle(),
+        dispose: (view) => view.dispose(),
+      }
     );
-    toolViews.set(toolCallId, view);
-    addChatComponent(options.chatContainer, view);
-    return view;
+    const input = activeToolInputs.get(toolCallId);
+    if (input?.finalInput !== undefined) {
+      lease.view.setFinalInput(input.finalInput);
+    }
+    toolLeases.set(toolCallId, lease);
+    toolViews.set(toolCallId, lease.view);
+    return lease.view;
   };
 
   return {
@@ -554,9 +616,33 @@ const createStreamViewFactories = (options: {
     streamedToolCallIds,
     pendingToolCallIds,
     toolViews,
+    endAssistantView: (kind) => {
+      // Committed reasoning can arrive after text deltas. Never seal that
+      // newer text lease, or reopen a lease handed off to steering/tools.
+      if (assistantLease?.active && assistantLease.view.contentKind === kind) {
+        if (kind === "text") {
+          assistantLease.view.completeText();
+        }
+        resetAssistantView();
+      }
+    },
     resetAssistantView,
     ensureAssistantView,
     ensureToolView,
+    getToolView: (id: string) =>
+      toolLeases.get(id)?.active ? toolViews.get(id) : undefined,
+    finishToolView: (id: string) => {
+      const lease = toolLeases.get(id);
+      if (lease) {
+        options.chatContainer.finish(lease);
+      }
+    },
+    finish: () => {
+      resetAssistantView();
+      for (const lease of toolLeases.values()) {
+        options.chatContainer.finish(lease);
+      }
+    },
   };
 };
 
@@ -639,6 +725,8 @@ export interface AgentTUIConfig {
   assistantRenderer?: AssistantRenderer;
   assistantRendererSignal?: AbortSignal;
   commands?: TuiCommand[];
+  /** Structured current metadata; titles must never be parsed from subtitles. */
+  currentSession?: () => Pick<SessionIndexEntry, "key" | "name">;
   cwd?: string;
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
@@ -703,7 +791,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.setClearOnShrink(false);
 
   const headerContainer = new Container();
-  const chatContainer = new Container();
+  const chatContainer = new TranscriptOwner(() => terminal.columns);
   const overlayContainer = new Container();
   const footerStatusBar = new FooterStatusBar(tui);
   const assistantViews = new Set<AssistantStreamView>();
@@ -717,19 +805,28 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   // of appending duplicates. Scope is the current notice instance only; see
   // `repeated-notice.ts`.
   const repeatedNotice = createRepeatedNotice({
-    appendNotice: (message) => appendSystemNotice(chatContainer, message),
-    chatContainer,
+    appendNotice: (message) => {
+      if (!message) {
+        return;
+      }
+      const normalText = style(ANSI_GRAY, message);
+      const lease = chatContainer.acquire(() => new Text(normalText, 1, 0), {
+        settle: () => repeatedNotice.settle(),
+      });
+      return { normalText, row: lease.view, isActive: () => lease.active };
+    },
+    normalStyle: (message) => style(ANSI_GRAY, message),
     pulseStyle: (message) => style(`${ANSI_BG_WHITE}${ANSI_BLACK}`, message),
     requestRender: () => tui.requestRender(),
   });
-  const showSystemMessage = (message: string): void => {
+  const showSystemMessage = (message: string, key?: "model-change"): void => {
     // Sanitize before either style is applied, including repeated custom notices.
-    repeatedNotice.show(sanitizeTerminalText(message).trimEnd());
+    repeatedNotice.show(sanitizeTerminalText(message).trimEnd(), key);
   };
-  const clearChat = (): void => {
-    disposeAssistantViews();
-    chatContainer.clear();
+  const clearChat = (reason: "initial-replay" | "session-navigation"): void => {
     repeatedNotice.reset();
+    chatContainer.reset(reason);
+    disposeAssistantViews();
   };
 
   const assistantRendererNotifications =
@@ -745,24 +842,50 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     0
   );
 
-  const updateHeader = (): void => {
-    const headerTitle = sanitizeTerminalText(
-      config.header?.title ?? "Agent TUI"
+  const initializeStartupHeader = (): void => {
+    const headerTitle = style(
+      `${ANSI_BOLD}${ANSI_ORANGE}`,
+      sanitizeTerminalText(config.header?.title ?? "Agent TUI")
     );
-    const subtitle =
-      config.header?.subtitle === undefined
-        ? undefined
-        : sanitizeTerminalText(config.header.subtitle);
-    const footer = sanitizeTerminalText(config.footer?.text ?? "").trim();
+    const subtitle = sanitizeTerminalText(config.header?.subtitle ?? "");
     title.setText(
-      subtitle
-        ? `${style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)}\n${style(
-            ANSI_DIM,
-            subtitle
-          )}`
-        : style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)
+      subtitle ? `${headerTitle}\n${style(ANSI_DIM, subtitle)}` : headerTitle
     );
-    footerStatusBar.setRightText(footer);
+    const snapshot = new ColdSnapshot(
+      headerContainer.render(terminal.columns),
+      terminal.columns
+    );
+    headerContainer.clear();
+    headerContainer.addChild(snapshot);
+  };
+
+  let currentSubtitle = config.header?.subtitle;
+  let currentSession = config.currentSession?.();
+  const refreshCurrentStatus = (reason?: "model-change"): void => {
+    const nextSession = config.currentSession?.();
+    const sessionChanged = nextSession?.key !== currentSession?.key;
+    const titleChanged =
+      !sessionChanged && nextSession?.name !== currentSession?.name;
+    if (titleChanged && nextSession?.name !== undefined) {
+      const name = sanitizeTerminalText(
+        nextSession.name,
+        nextSession.name.length
+      );
+      showSystemMessage(`Session title updated to "${name}".`);
+    } else if (
+      (sessionChanged || config.header?.subtitle !== currentSubtitle) &&
+      reason !== "model-change"
+    ) {
+      const subtitle = sanitizeTerminalText(config.header?.subtitle ?? "");
+      if (subtitle) {
+        showSystemMessage(`Current session/model:\n${subtitle}`);
+      }
+    }
+    currentSubtitle = config.header?.subtitle;
+    currentSession = nextSession === undefined ? undefined : { ...nextSession };
+    footerStatusBar.setRightText(
+      sanitizeTerminalText(config.footer?.text ?? "").trim()
+    );
     tui.requestRender();
   };
 
@@ -908,6 +1031,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const removeInputListener = tui.addInputListener((data) => {
+    if (composerLayer.hasPrompt) {
+      return;
+    }
     if (isCtrlCInput(data) && !commandInputListenerActive) {
       handleCtrlCPress();
       return { consume: true };
@@ -982,9 +1108,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       streamedToolCallIds,
       pendingToolCallIds,
       toolViews,
+      endAssistantView,
       resetAssistantView,
       ensureAssistantView,
       ensureToolView,
+      getToolView,
+      finishToolView,
+      finish,
     } = createStreamViewFactories({
       assistantRenderer: config.assistantRenderer,
       assistantRendererSignal: config.assistantRendererSignal,
@@ -998,6 +1128,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       requestRender: () => tui.requestRender(),
       toolRenderers: config.toolRenderers,
     });
+    const epoch = chatContainer.epoch;
     const tracker: StreamPartTracker = {
       finishReason: undefined,
       firstVisiblePartSeen: false,
@@ -1030,10 +1161,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       activeToolInputs,
       streamedToolCallIds,
       pendingToolCallIds,
+      endAssistantView,
       resetAssistantView,
       ensureAssistantView,
       ensureToolView,
-      getToolView: (toolCallId: string) => toolViews.get(toolCallId),
+      getToolView,
+      finishToolView,
+      finishOutput: finish,
       chatContainer,
       onReasoningStart: orchestrator.onReasoningStart,
       onReasoningEnd: orchestrator.onReasoningEnd,
@@ -1045,6 +1179,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     try {
       for await (const part of stream) {
+        if (epoch !== chatContainer.epoch || session.closed) {
+          continue;
+        }
         await dispatchStreamPart(part, {
           chatContainer,
           flags,
@@ -1059,6 +1196,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // ticking or a stale wait banner behind for the next step or thread.
       retryStatus.clear();
       retryStatus.stop();
+      finish();
       for (const view of toolViews.values()) {
         view.dispose();
       }
@@ -1068,7 +1206,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const renderSessionHistory = (
-    replay?: readonly SessionHistoryReplayPart[]
+    replay?: readonly SessionHistoryReplayPart[],
+    resetReason: "initial-replay" | "session-navigation" = "session-navigation"
   ): Promise<void> =>
     busy.run("Loading session history...", async () => {
       const selectorConfig = config.sessionSelector;
@@ -1107,7 +1246,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         }
         await flushStreamParts();
         if (part.type === "clear") {
-          clearChat();
+          clearChat(resetReason);
         } else {
           addUserMessage(chatContainer, markdownTheme, part.text);
         }
@@ -1130,6 +1269,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const runSingleTurn = async (run: AgentTurn): Promise<void> => {
+    const turnEpoch = chatContainer.epoch;
+    const turnSignal = AbortSignal.any([
+      chatContainer.signal,
+      extensionUiController.signal,
+    ]);
     session.beginTurn(run);
     editor.disableSubmit = false;
     tui.setFocus(composerLayer);
@@ -1147,13 +1291,19 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       const { finishReason } = await renderAgentStream(
         agentEventStreamParts(run.events(), {
           onContextUsage: (snapshot) => {
+            if (turnSignal.aborted) {
+              return;
+            }
             config.onContextUsage?.(snapshot);
-            updateHeader();
+            refreshCurrentStatus();
           },
           onModelUsage: (usage) => {
+            if (turnSignal.aborted) {
+              return;
+            }
             sawModelUsage = true;
             accumulateUsage(turnUsage, usage);
-            updateHeader();
+            refreshCurrentStatus();
           },
         }),
         {
@@ -1169,6 +1319,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         "Working..."
       );
 
+      if (turnEpoch !== chatContainer.epoch || session.closed) {
+        return;
+      }
       if (session.wasInterrupted(run)) {
         addInterruptedMessage();
         return;
@@ -1181,7 +1334,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
               config.onTurnComplete?.(
                 sawModelUsage ? { ...turnUsage } : undefined,
                 finishReason,
-                extensionUiController.signal
+                turnSignal
               )
             ),
             10_000,
@@ -1189,8 +1342,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           )
         )
         .then(() => {
-          if (!session.closed) {
-            updateHeader();
+          if (!session.closed && turnEpoch === chatContainer.epoch) {
+            refreshCurrentStatus();
           }
         })
         .catch((error) => {
@@ -1253,7 +1406,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         isCtrlCInput,
         handleCtrlCPress,
         showMessage: showSystemMessage,
-        updateHeader,
+        updateHeader: refreshCurrentStatus,
       })
     );
   };
@@ -1348,17 +1501,22 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     });
     const selection = await untilExit(pendingSelection);
 
-    if (selection === undefined || selection === EXIT_REQUESTED) {
+    if (typeof selection !== "string") {
       return;
     }
     try {
+      const previousModelId = selectorConfig.currentModelId();
       await busy.run("Switching model...", () =>
         selectorConfig.switchModel(selection)
       );
-      updateHeader();
-      showSystemMessage(
-        `Model switched to ${selection}. New steps use it immediately.`
-      );
+      refreshCurrentStatus("model-change");
+      const currentModelId = selectorConfig.currentModelId();
+      if (currentModelId !== previousModelId) {
+        showSystemMessage(
+          `Model changed to ${currentModelId}.`,
+          "model-change"
+        );
+      }
     } catch (error) {
       showSystemMessage(
         `Model switch failed: ${
@@ -1461,10 +1619,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           await resumeSessionReplayParts(selectorConfig, selection)
         );
       });
-      updateHeader();
+      refreshCurrentStatus();
     } catch (error) {
       showSystemMessage(
-        `Session switch failed: ${
+        `Session switch failed (current session: ${selectorConfig.currentSessionKey()}; previous transcript retained): ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -1525,11 +1683,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (commandResult.action.type === "refresh-header") {
       const action = commandResult.action;
       await busy.run("Working...", () => config.onCommandAction?.(action));
-      updateHeader();
+      refreshCurrentStatus(action.reason);
     }
 
     if (commandResult.message) {
-      showSystemMessage(commandResult.message);
+      showSystemMessage(commandResult.message, commandResult.action.reason);
     }
     tui.requestRender();
   };
@@ -1540,9 +1698,17 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   ): Promise<void> => {
     if (clear) {
       clearStatus();
-      await renderSessionHistory();
+      try {
+        await renderSessionHistory();
+      } catch (error) {
+        showSystemMessage(
+          `History load failed for current session ${config.sessionSelector?.currentSessionKey() ?? "unknown"}; previous transcript retained: ${error instanceof Error ? error.message : String(error)}`
+        );
+        tui.requestRender();
+        return;
+      }
     }
-    updateHeader();
+    refreshCurrentStatus();
     if (commandResult.message) {
       showSystemMessage(commandResult.message);
     }
@@ -1556,6 +1722,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     const action = commandResult.action;
+    chatContainer.finish();
     try {
       await busy.run("Reloading...", () => config.onCommandAction?.(action));
     } catch (error) {
@@ -1569,7 +1736,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     refreshCommandSet();
-    updateHeader();
+    refreshCurrentStatus();
     if (commandResult.message) {
       showSystemMessage(commandResult.message);
     }
@@ -1730,18 +1897,40 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     session.submitInput(text);
   };
 
-  updateHeader();
+  initializeStartupHeader();
+  refreshCurrentStatus();
   tui.start();
 
   try {
     await busy.run("Activating extensions...", () =>
       config.onExtensionUiReady?.((hostSignal) =>
         createExtensionUi({
-          restoreFocus: clearPromptInput,
+          promptSignal: () =>
+            AbortSignal.any([
+              chatContainer.signal,
+              extensionUiController.signal,
+              ...(hostSignal ? [hostSignal] : []),
+            ]),
+          promptHost: {
+            mount: (component) => {
+              const unmount = composerLayer.mountPrompt(component);
+              tui.setFocus(composerLayer);
+              tui.requestRender();
+              return () => {
+                unmount();
+                tui.setFocus(composerLayer);
+                tui.requestRender();
+              };
+            },
+          },
           showMessage: showSystemMessage,
           showStatus: (message) => {
             const clear = busy.status(message);
-            const signal = hostSignal ?? extensionUiController.signal;
+            const signal = AbortSignal.any([
+              chatContainer.signal,
+              extensionUiController.signal,
+              ...(hostSignal ? [hostSignal] : []),
+            ]);
             signal.addEventListener("abort", clear, {
               once: true,
             });
@@ -1760,7 +1949,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
             hostSignal === undefined
               ? extensionUiController.signal
               : AbortSignal.any([extensionUiController.signal, hostSignal]),
-          tui,
         })
       )
     );
@@ -1769,9 +1957,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     await busy.run("Setting up...", () => config.onSetup?.());
     if (config.replayHistoryOnStartup === true) {
-      await renderSessionHistory();
+      await renderSessionHistory(undefined, "initial-replay");
     }
-    updateHeader();
+    refreshCurrentStatus();
 
     while (!session.closed) {
       const input = await waitForInput();
@@ -1806,6 +1994,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         // the composer's position when the transcript fills the viewport.
         // Ending a pulse first keeps an exit mid-blink from freezing the
         // notice inverted in that preserved frame.
+        chatContainer.finish();
         repeatedNotice.settle();
         tui.renderNow();
         const renderState = tui.captureRenderState();

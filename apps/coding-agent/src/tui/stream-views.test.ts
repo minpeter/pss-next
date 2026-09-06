@@ -113,6 +113,23 @@ describe("AssistantStreamView terminal safety", () => {
     expect(output).not.toContain("\u0007");
   });
 
+  it("expands text without lifting the reasoning bound in a mixed view", () => {
+    const view = new AssistantStreamView(markdownTheme);
+    const source = (prefix: string) =>
+      Array.from(
+        { length: 20 },
+        (_, i) => `${prefix}_${String(i).padStart(2, "0")}`
+      ).join("\n");
+    view.appendReasoning(source("THINK"));
+    view.appendText(source("TEXT"));
+    expect(view.render(48)).toHaveLength(8);
+    view.completeText();
+    const output = view.render(48).join("\n");
+    expect(output.match(/THINK_\d+/g)).toHaveLength(8);
+    expect(output.match(/TEXT_\d+/g)).toHaveLength(20);
+    view.dispose();
+  });
+
   it("preserves leading indentation for Markdown code blocks", () => {
     const view = new AssistantStreamView({
       ...markdownTheme,

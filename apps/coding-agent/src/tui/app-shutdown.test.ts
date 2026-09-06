@@ -282,7 +282,7 @@ describe.sequential("startTui final output", () => {
     expect(output.join("").split(hint)).toHaveLength(2);
   });
 
-  it("retains the streamed transcript and one composer border after narrow scrolling", async () => {
+  it("retains the streamed viewport tail and one composer border after narrow scrolling", async () => {
     const marker = "STREAM_SENTINEL";
     let hint = "";
     terminal.painted = (data) => {
@@ -299,7 +299,10 @@ describe.sequential("startTui final output", () => {
             controller.enqueue({
               type: "text-delta",
               id: "answer",
-              delta: `${marker}\n\n`.repeat(35),
+              delta: Array.from(
+                { length: 35 },
+                (_, i) => `${marker}_${i + 1}`
+              ).join("\n\n"),
             });
             abortSignal?.addEventListener(
               "abort",
@@ -329,7 +332,9 @@ describe.sequential("startTui final output", () => {
     );
     expect(await run).toBe(0);
     const rows = await expectFinalScreen(output.join(""), hint);
-    expect(rows.filter((row) => row?.includes(marker))).toHaveLength(35);
+    expect(rows.filter((row) => row?.includes(marker))).toHaveLength(4);
+    expect(rows.some((row) => row?.includes(`${marker}_35`))).toBe(true);
+    expect(rows.some((row) => row?.includes(`${marker}_1`))).toBe(false);
     expect(output.join("").split(hint)).toHaveLength(2);
   });
 

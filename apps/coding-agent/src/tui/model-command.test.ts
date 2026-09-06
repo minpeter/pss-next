@@ -37,8 +37,12 @@ describe("/model command", () => {
 
     expect(switchModel).toHaveBeenCalledWith("model-b");
     expect(result.success).toBe(true);
-    expect(result.action).toEqual({ type: "refresh-header" });
-    expect(result.message).toContain("Model switched to model-b");
+    expect(result.action).toEqual({
+      type: "refresh-header",
+      reason: "model-change",
+    });
+    expect(result.message?.match(/model-b/g)).toHaveLength(1);
+    expect(result.message?.split("\n")).toHaveLength(1);
   });
 
   it("opens the picker with a partial model id as its search query", async () => {

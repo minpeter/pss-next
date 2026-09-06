@@ -51,9 +51,11 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 
 import type { CodingAgentExtensionUi } from "../extensions/types";
 import { createAgentTUI } from "./agent";
+import { createModelCommand } from "./model-command";
 import { createRepeatedNotice } from "./repeated-notice";
 import { TuiSessionMachine } from "./session-state";
 import { sanitizeTerminalText } from "./terminal-safety";
+import { TranscriptOwner } from "./transcript-owner";
 
 const EMPTY_NOTICE = "Please enter a message.";
 const NOTICE_PULSE_MS = 140;
@@ -105,9 +107,7 @@ const rows = (): string[] => {
       }
       return;
     }
-    if (component instanceof Text) {
-      collected.push(component.render(80).join("\n").trim());
-    }
+    collected.push(...component.render(80).map((line) => line.trim()));
   };
   walk(surface);
   return collected;
@@ -154,19 +154,23 @@ afterEach(() => {
 });
 
 const controllerFixture = () => {
-  const chatContainer = new Container();
+  const chatContainer = new TranscriptOwner(() => 80);
   const requestRender = vi.fn();
+  const rows: Text[] = [];
   const controller = createRepeatedNotice({
     appendNotice: (message) => {
       if (!message) {
         return;
       }
       const normalText = `normal:${message}`;
-      const row = new Text(normalText);
-      chatContainer.addChild(row);
-      return { normalText, row };
+      const lease = chatContainer.acquire(() => new Text(normalText), {
+        leadingSpacer: false,
+        settle: () => controller.settle(),
+      });
+      rows.push(lease.view);
+      return { normalText, row: lease.view, isActive: () => lease.active };
     },
-    chatContainer,
+    normalStyle: (message) => `normal:${message}`,
     pulseStyle: (message) => `pulse:${message}`,
     requestRender,
   });
@@ -175,10 +179,72 @@ const controllerFixture = () => {
       .flatMap((row) => row.render(80))
       .map((line) => line.trim())
       .filter(Boolean);
-  return { chatContainer, contents, controller, requestRender };
+  return { chatContainer, contents, controller, requestRender, rows };
 };
 
 describe("repeated notice pulse ownership", () => {
+  it("replaces the current keyed notice and restores the latest text with one rearmed timer", () => {
+    const { controller, contents } = controllerFixture();
+    controller.show("MODEL_A", "model-change");
+    for (const model of ["MODEL_B", "MODEL_C", "MODEL_D"]) {
+      controller.show(model, "model-change");
+      vi.advanceTimersByTime(NOTICE_PULSE_MS / 2);
+      expect(contents()).toEqual([`pulse:${model}`]);
+      expect(vi.getTimerCount()).toBe(1);
+    }
+    vi.advanceTimersByTime(NOTICE_PULSE_MS);
+    expect(contents()).toEqual(["normal:MODEL_D"]);
+    expect(vi.getTimerCount()).toBe(0);
+    controller.stop();
+  });
+
+  it.each(["cold", "content", "different-key", "unkeyed"] as const)(
+    "does not replace a keyed notice across %s",
+    (boundary) => {
+      const { controller, chatContainer, contents, rows } = controllerFixture();
+      controller.show("MODEL_A", "model-change");
+      controller.show("MODEL_B", "model-change");
+      if (boundary === "cold") {
+        chatContainer.finish();
+      }
+      if (boundary === "content") {
+        chatContainer.addChild(new Text("CONTENT"));
+      }
+      if (boundary === "different-key") {
+        controller.show("MODEL_B", "other");
+      }
+      if (boundary === "unkeyed") {
+        controller.show("MODEL_B");
+      }
+      const before = contents();
+      const oldSetter = vi.spyOn(rows[0], "setText");
+      controller.show("MODEL_C", "model-change");
+      expect(contents()).toEqual([...before, "normal:MODEL_C"]);
+      expect(contents()[0]).toBe("normal:MODEL_B");
+      expect(oldSetter).not.toHaveBeenCalled();
+      controller.stop();
+    }
+  );
+
+  it("never reuses a sealed notice even while it is still the transcript tail", () => {
+    const { controller, chatContainer, contents, rows } = controllerFixture();
+    controller.show("A");
+    controller.show("A");
+    chatContainer.finish();
+    const cold = chatContainer.render(80);
+    const oldSetter = vi.spyOn(rows[0], "setText");
+    controller.settle();
+    vi.advanceTimersByTime(NOTICE_PULSE_MS);
+    expect(chatContainer.render(80)).toEqual(cold);
+    controller.show("A");
+    controller.show("A");
+    expect(contents()).toEqual(["normal:A", "pulse:A"]);
+    expect(oldSetter).not.toHaveBeenCalled();
+    expect(chatContainer.children[0]?.render(80)).toEqual(cold);
+    controller.settle();
+    controller.stop();
+  });
+
   it("restores the old row before a distinct notice replaces its pulse", () => {
     const { controller, contents, requestRender } = controllerFixture();
     controller.show("A");
@@ -198,7 +264,7 @@ describe("repeated notice pulse ownership", () => {
   });
 
   it.each(["user", "assistant", "tool"])(
-    "restores a stale pulse and appends afresh after %s content",
+    "settles before %s content and appends subsequent notices afresh",
     (kind) => {
       const { controller, chatContainer, contents } = controllerFixture();
       controller.show("A");
@@ -229,12 +295,16 @@ describe("repeated notice pulse ownership", () => {
   it.each(["reset", "timer"])(
     "does not repaint a cleared row on %s",
     (action) => {
-      const { controller, chatContainer, requestRender } = controllerFixture();
+      const { controller, chatContainer, requestRender, rows } =
+        controllerFixture();
       controller.show("A");
       controller.show("A");
-      const row = chatContainer.children[0] as Text;
+      const row = rows[0];
       const setText = vi.spyOn(row, "setText");
-      chatContainer.clear();
+      chatContainer.reset("session-navigation");
+      // The owner settles while still HOT, before revoking/resetting the epoch.
+      expect(setText).toHaveBeenCalledExactlyOnceWith("normal:A");
+      setText.mockClear();
       requestRender.mockClear();
       if (action === "reset") {
         controller.reset();
@@ -244,7 +314,7 @@ describe("repeated notice pulse ownership", () => {
       expect(requestRender).not.toHaveBeenCalled();
       controller.show("A");
       expect(chatContainer.children).toHaveLength(1);
-      expect(chatContainer.children[0]).not.toBe(row);
+      expect(rows.at(-1)).not.toBe(row);
       controller.stop();
     }
   );
@@ -260,10 +330,11 @@ describe("repeated notice pulse ownership", () => {
   });
 
   it("stop cancels without repainting disposed UI, including later calls", () => {
-    const { controller, chatContainer, requestRender } = controllerFixture();
+    const { controller, chatContainer, requestRender, rows } =
+      controllerFixture();
     controller.show("A");
     controller.show("A");
-    const setText = vi.spyOn(chatContainer.children[0] as Text, "setText");
+    const setText = vi.spyOn(rows[0], "setText");
     requestRender.mockClear();
     controller.stop();
     controller.show("A");
@@ -280,6 +351,49 @@ describe("repeated notice pulse ownership", () => {
 });
 
 describe.sequential("common system notices", () => {
+  it("sanitizes keyed model updates before pulse and restores the newest normal text", async () => {
+    let current = "MODEL_A";
+    const hostile = "MODEL_B\x1b[2J\x1b]52;c;payload\x07";
+    const model = createModelCommand({
+      currentModelId: () => current,
+      listModelIds: async () => ["MODEL_A", "MODEL_FIRST", hostile],
+      switchModel: (id) => {
+        current = id;
+      },
+    });
+    let requested = "MODEL_FIRST";
+    const command = {
+      ...model,
+      execute: () => model.execute({ args: [requested] }),
+    };
+    const ready = idleGate();
+    const run = createAgentTUI({ thread: thread(), commands: [command] });
+    const matching = () => rows().filter((row) => row.includes("MODEL_"));
+    try {
+      await ready;
+      let settled = idleGate();
+      input("/model\r");
+      await settled;
+      requested = hostile;
+      settled = idleGate();
+      input("/model\r");
+      await settled;
+      const result = await createModelCommand({
+        currentModelId: () => "",
+        listModelIds: async () => [hostile],
+        switchModel: () => undefined,
+      }).execute({ args: [hostile] });
+      const cleaned = sanitizeTerminalText(result.message ?? "");
+      expect(matching()).toEqual([`\x1b[47m\x1b[30m${cleaned}\x1b[0m`]);
+      vi.advanceTimersByTime(NOTICE_PULSE_MS);
+      expect(matching()).toEqual([`\x1b[38;5;245m${cleaned}\x1b[0m`]);
+      expect(matching().join("")).not.toContain("\x1b[2J");
+      expect(matching().join("")).not.toContain("\x1b]52");
+    } finally {
+      await exit(run);
+    }
+  });
+
   it("routes generic notifications through sanitized normal and pulse rendering", async () => {
     let ui!: CodingAgentExtensionUi;
     const idle = idleGate();

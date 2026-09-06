@@ -524,6 +524,7 @@ async function startTuiSession(
         steer: (input) => thread.steer(input),
       },
       commands: initialCommandMerge.commands,
+      currentSession: () => currentSession,
       cwd,
       header,
       footer,
