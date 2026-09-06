@@ -620,6 +620,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@ai-sdk/gateway':
+        specifier: 4.0.40
+        version: 4.0.40(zod@4.4.3)
       '@jsquash/avif':
         specifier: ^2.1.1
         version: 2.1.1

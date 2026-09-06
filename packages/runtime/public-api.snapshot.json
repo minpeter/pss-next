@@ -63,6 +63,7 @@
       "type ModelPromptMeasurement",
       "type ModelPromptMeasurementProfile",
       "type ModelPromptTool",
+      "type ModelRetry",
       "type ModelToolCacheFingerprintMetadata",
       "type ModelUsage",
       "type NormalizedTurnError",

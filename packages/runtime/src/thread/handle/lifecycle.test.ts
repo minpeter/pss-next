@@ -126,6 +126,13 @@ describe("Agent thread lifecycle", () => {
       { type: "turn-start" },
       { type: "step-start" },
       {
+        attempt: 1,
+        phase: "stopped",
+        reason: "non-retryable",
+        remainingRetries: 0,
+        type: "model-retry",
+      },
+      {
         error: { category: "unknown", version: 1 },
         type: "turn-error",
       },

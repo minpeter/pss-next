@@ -12,8 +12,9 @@ Minimal, platform-agnostic agent runtime with keyed threads, synchronized
 - **Provider boundary:** `model` accepts concrete AI SDK language-model objects
   for the versions represented by the exported `LanguageModel` type (currently
   v2, v3, and v4). PSS normalizes its own event protocol, but provider model
-  availability, token accounting, streaming quality, and retry behavior remain
-  provider/SDK concerns. `observedRetryable` is evidence, not a retry promise.
+  availability, token accounting, and streaming quality remain provider/SDK
+  concerns. PSS owns retries at observed provider-call boundaries and reports
+  its decisions through `model-retry`; `observedRetryable` alone is not a promise.
 - **Durability boundary:** durability comes from the selected `AgentHost`.
   Omitting `host` uses an in-memory host and does not survive process loss. File
   and Cloudflare hosts persist committed snapshots, execution records, and
@@ -100,8 +101,8 @@ instrumentation can still observe them. The committed `assistant-output`,
 record.
 
 Live consumers also receive `model-attempt` start/end pairs for each physical
-provider call, including AI SDK retries beneath streaming and non-streaming
-steps. An end event includes its outcome, duration when measurable, and
+provider call, including runtime-owned retries beneath streaming and
+non-streaming steps. An end event includes its outcome, duration when measurable, and
 normalized provider error when a failure can be classified. Object models are
 observed directly; string model ids are observed when `AI_SDK_DEFAULT_PROVIDER`
 is configured. String ids resolved through the SDK's implicit gateway emit no
@@ -109,6 +110,56 @@ attempt events because the SDK exposes neither that resolved model nor failures
 inside its retry loop. These events are likewise ephemeral and excluded from
 durable replay and result payloads; `model-usage` remains the durable
 successful-step record.
+
+`ModelRetry` / `model-retry` reports authoritative decisions at the same observed
+boundary, with the same `attemptId` as `model-attempt` and `model-usage`:
+
+- `scheduled`: a wait is armed for `delayMs`, with `retryAt` in Unix epoch
+  milliseconds. `remainingRetries` is unspent budget **including this scheduled
+  retry** (2 on the first failure, 1 on the second).
+- `started`: the actual wait completed, immediately before the next attempt.
+  `remainingRetries` excludes the retry now being consumed (1, then 0).
+- `stopped`: no further retry is scheduled or will occur; `remainingRetries`
+  is 0 even if unused budget existed. `reason` is `cancelled`, `exhausted`,
+  `non-retryable`, or `stream-ended` (a returned stream failed or ended without
+  a finish marker; replaying it could duplicate output).
+
+`attempt` is the last physical call number, so a retry after call 1 reports
+`attempt: 1` in both `scheduled` and `started`; the following `model-attempt`
+starts call 2. Cancellation before any call reports 0. A successful call emits
+no retry event. Only `phase === "scheduled"` means a retry is pending; a
+`started` event clears the countdown and a `stopped` event clears it permanently.
+A schedule is an intention, not a guarantee: aborting during backoff, including
+from a scheduling callback, prevents the next physical call and emits
+`stopped` / `cancelled`. A consumer cancelling on `started` can still prevent
+that call. Timer deadlines are not a guarantee of punctual event-loop execution.
+
+```ts
+const retryDeadlines = new Map<string, number>();
+for await (const event of turn.events()) {
+  if (event.type !== "model-retry") continue;
+  if (event.phase === "scheduled") {
+    retryDeadlines.set(event.attemptId, event.retryAt);
+    // Render Math.max(0, event.retryAt - Date.now()) locally; no tick events.
+  } else {
+    retryDeadlines.delete(event.attemptId);
+  }
+}
+```
+
+The policy preserves the SDK baseline: at most two retries (three provider
+calls), 2000/4000 ms exponential backoff, and explicit `isRetryable` on
+`APICallError` or `GatewayError`. Valid `retry-after-ms` takes precedence over
+`retry-after` seconds or HTTP dates; invalid/out-of-range values fall back to
+backoff. Abort errors are never retried. SDK retries are disabled only on these
+observed paths. Retrying a provider call does not rerun tools or replay a
+returned stream. Implicit-gateway strings retain SDK-owned retries and emit
+neither attempt nor retry events. Internal automatic compaction requests remain
+outside the public turn stream.
+
+Retry events contain only runtime counters, timestamps, phases, and fixed
+reasons, not provider prose, headers, prompts, or credentials. They are
+live-only, bypass hooks, and never enter durable replay or result payloads.
 
 Both "deltas then committed" and "just committed" are valid sequences, so a
 renderer must dedupe against the committed event. Render the committed text
@@ -136,7 +187,7 @@ On a mid-stream abort, a prefix of deltas can remain in the in-memory stream
 before `turn-abort`. Consumers must tolerate deltas without committed output.
 
 `isStreamAgentEvent` classifies the five delta kinds plus `context-usage` and
-`model-attempt`. `streamAgentEventTypes` and the `StreamAgentEvent` type are
+`model-attempt` / `model-retry`. `streamAgentEventTypes` and the `StreamAgentEvent` type are
 exported alongside it from the package root. Stream events are their own class:
 not visible, lifecycle, tool, or telemetry events. Filter them when
 accumulating a transcript:
@@ -184,8 +235,8 @@ events. Metadata excludes request/response bodies, raw headers, URLs, stacks,
 credentials, and arbitrary causes.
 
 `observedRetryable` reports what the SDK or transport observed. It does not
-promise that PSS will retry. A future retry policy must communicate its actual
-decision separately.
+promise that PSS will retry. Use live `model-retry` decisions for actual
+scheduling, cancellation, and exhaustion, not this error metadata.
 
 `model` is the single public constructor key for model execution. Pass an AI SDK
 `LanguageModel` object and configure runtime-owned prompting through
@@ -705,7 +756,8 @@ attempt whose generated state later fails to commit and is retried. Each retry
 invokes a new runtime model step and therefore receives a new `attemptId`.
 
 `model-usage` is operational telemetry, not an exactly-once billing ledger.
-AI SDK retries are exposed as live-only `model-attempt` events, but there
+Observed retries are exposed as live-only `model-attempt` and `model-retry`
+events, but there
 can still be no durable usage record when an adapter cannot parse the response,
 tool-call ID post-processing fails after a billed response, the process stops
 between the provider response and local event emission, or durable persistence

@@ -117,7 +117,7 @@ export interface ContextUsageEvent extends ContextUsageSnapshot {
 /**
  * One physical provider call attempt inside a single runtime model step.
  *
- * The AI SDK retries failed streaming and non-streaming calls beneath
+ * The runtime retries failed streaming and non-streaming calls beneath
  * `streamText` and `generateText`, so a step's `attemptId` can cover several
  * provider requests. These events expose that otherwise invisible fan-out:
  * `attempt` counts from 1 per physical call, while `attemptId` stays fixed for
@@ -150,6 +150,45 @@ export type ModelAttempt = {
       readonly error?: TurnErrorMetadataV1;
       readonly outcome: "failed";
       readonly phase: "end";
+    }
+);
+
+/**
+ * Live-only authoritative retry state for an observed provider-call boundary.
+ * No event is emitted for a successful call. Only `scheduled` means a retry
+ * is pending; it is an intention that `stopped` can cancel, not a guarantee.
+ */
+export type ModelRetry = {
+  /** Last physical call number (0 when cancelled before any call). */
+  readonly attempt: number;
+  /** Model-step identifier shared with `model-attempt` and `model-usage`. */
+  readonly attemptId: string;
+  readonly type: "model-retry";
+} & (
+  | {
+      readonly phase: "scheduled";
+      /** Actual selected backoff, in milliseconds. */
+      readonly delayMs: number;
+      /** Unix epoch milliseconds; consumers may render a local countdown. */
+      readonly retryAt: number;
+      /** Unspent retry budget INCLUDING the scheduled retry. */
+      readonly remainingRetries: number;
+    }
+  | {
+      /** The wait completed; emitted immediately before the next attempt. */
+      readonly phase: "started";
+      /** Unspent budget AFTER consuming this retry. No wait is pending. */
+      readonly remainingRetries: number;
+    }
+  | {
+      readonly phase: "stopped";
+      readonly reason:
+        | "cancelled"
+        | "exhausted"
+        | "non-retryable"
+        | "stream-ended";
+      /** No further retries will be made, even if budget was unused. */
+      readonly remainingRetries: 0;
     }
 );
 
@@ -246,7 +285,9 @@ export type AgentEvent =
    * Ephemeral per-provider-call attempt signal, including SDK retries; never
    * persisted. The committed model-usage event remains the durable record.
    */
-  | ModelAttempt;
+  | ModelAttempt
+  /** Ephemeral runtime retry scheduling and terminal decisions; never persisted. */
+  | ModelRetry;
 
 export type AgentEventListener = (event: AgentEvent) => void;
 

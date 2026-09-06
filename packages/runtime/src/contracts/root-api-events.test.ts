@@ -7,6 +7,7 @@ import type {
   AgentTransformDecision,
   ControlAgentEvent,
   LifecycleAgentEvent,
+  ModelRetry,
   StreamAgentEvent,
   TelemetryAgentEvent,
   TurnErrorMetadataV1,
@@ -101,6 +102,23 @@ describe("runtime root event API exports", () => {
       "assistant-output-delta",
       "tool-call-input-delta",
     ]);
+  });
+
+  it("exports and classifies retry lifecycle events as ephemeral control events", () => {
+    const retry = {
+      attempt: 1,
+      attemptId: "retry-step",
+      delayMs: 2000,
+      phase: "scheduled",
+      remainingRetries: 2,
+      retryAt: 2000,
+      type: "model-retry",
+    } satisfies ModelRetry;
+    expect(isStreamAgentEvent(retry)).toBe(true);
+    expect(isControlAgentEvent(retry)).toBe(true);
+    expect(isVisibleAgentEvent(retry)).toBe(false);
+    expect(isLifecycleAgentEvent(retry)).toBe(false);
+    expect(isTelemetryAgentEvent(retry)).toBe(false);
   });
 
   it("types host tool interception decisions", () => {

@@ -23,6 +23,23 @@ export function defaultAgentEventAttributes(event: AgentEvent): Attributes {
       };
     case "model-attempt":
       return { ...base, ...modelAttemptAttributes(event) };
+    case "model-retry":
+      return {
+        ...base,
+        "pss.model_retry.attempt": event.attempt,
+        "pss.model_retry.attempt_id": event.attemptId,
+        "pss.model_retry.phase": event.phase,
+        "pss.model_retry.remaining_retries": event.remainingRetries,
+        ...(event.phase === "scheduled"
+          ? {
+              "pss.model_retry.delay_ms": event.delayMs,
+              "pss.model_retry.retry_at": event.retryAt,
+            }
+          : {}),
+        ...(event.phase === "stopped"
+          ? { "pss.model_retry.reason": event.reason }
+          : {}),
+      };
     case "model-usage":
       return { ...base, ...modelUsageAttributes(event) };
     case "runtime-input":

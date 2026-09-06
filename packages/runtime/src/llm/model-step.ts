@@ -137,6 +137,8 @@ export async function generateModelStepResult({
   assertNoUnsupportedToolApproval(prepared.tools);
   const attemptTracker = createModelAttemptTracker({ attemptId });
   const handle = createModelStepStream({
+    attemptId,
+    onRetry: onStreamEvent,
     activeTools: prepared.activeTools,
     abortSignal: signal,
     instructions: prompt.instructions,

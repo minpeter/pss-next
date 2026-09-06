@@ -28,6 +28,7 @@ export const telemetryAgentEventTypes = {
 export const streamAgentEventTypes = Object.freeze({
   "context-usage": true,
   "model-attempt": true,
+  "model-retry": true,
   "assistant-output-delta": true,
   "assistant-reasoning-delta": true,
   "tool-call-input-delta": true,

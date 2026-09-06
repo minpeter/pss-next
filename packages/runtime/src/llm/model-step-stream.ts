@@ -6,6 +6,8 @@ import {
   type ToolChoice,
   type ToolSet,
 } from "ai";
+import type { ModelRetry } from "../thread/protocol/events";
+import { createModelRetry } from "./model-retry";
 import { configuredModelId, configuredProvider } from "./model-usage";
 
 type GenerateTextResult = Awaited<ReturnType<typeof generateText>>;
@@ -18,11 +20,12 @@ export interface ModelAttemptOriginSignal {
 export interface ModelStepStreamOptions {
   readonly abortSignal?: AbortSignal;
   readonly activeTools?: readonly string[];
+  readonly attemptId?: string;
   readonly instructions?: string;
   readonly maxOutputTokens?: number;
   readonly messages: ModelMessage[];
   readonly model: LanguageModel;
-  /** Notified when one physical provider call settles inside SDK retries. */
+  /** Notified when one physical provider call settles, before retry backoff. */
   readonly onAttemptEnd?: (
     result:
       | {
@@ -31,8 +34,9 @@ export interface ModelStepStreamOptions {
         }
       | { readonly error: unknown; readonly outcome: "failed" }
   ) => void;
-  /** Notified when one physical provider call starts inside SDK retries. */
+  /** Notified when one physical provider call starts. */
   readonly onAttemptStart?: (origin: ModelAttemptOriginSignal) => void;
+  readonly onRetry?: (event: ModelRetry) => void;
   readonly seed?: number;
   readonly temperature?: number;
   readonly toolChoice?: ToolChoice<ToolSet>;
@@ -155,7 +159,14 @@ function streamingModelStep(
   let streamFailure: { readonly error: unknown } | undefined;
   let finishedOrigin: ModelAttemptOriginSignal | undefined;
   let attemptOpen = false;
-  const { model, onAttemptEnd, onAttemptStart, ...streamOptions } = options;
+  const {
+    model,
+    attemptId,
+    onRetry,
+    onAttemptEnd,
+    onAttemptStart,
+    ...streamOptions
+  } = options;
   const notifyAttemptStart = (origin: ModelAttemptOriginSignal) => {
     attemptOpen = true;
     onAttemptStart?.(origin);
@@ -166,8 +177,11 @@ function streamingModelStep(
     attemptOpen = false;
     onAttemptEnd?.(attempt);
   };
-  const observedModel = modelWithAttemptObserver({
+  const observed = modelWithAttemptObserver({
     model,
+    attemptId,
+    onRetry,
+    abortSignal: options.abortSignal,
     onAttemptEnd: notifyAttemptEnd,
     onAttemptStart: notifyAttemptStart,
     onProviderStreamError: (error) => {
@@ -176,7 +190,7 @@ function streamingModelStep(
   });
   const result = streamText({
     ...streamOptions,
-    model: observedModel,
+    ...observed.options,
     onError: ({ error }) => {
       streamFailure ??= { error };
     },
@@ -211,6 +225,7 @@ function streamingModelStep(
               error: streamFailure.error,
               outcome: "failed",
             });
+            observed.retry?.stopStream(streamFailure.error);
             return;
           }
           if (finishedOrigin) {
@@ -220,10 +235,9 @@ function streamingModelStep(
             });
             return;
           }
-          notifyAttemptEnd({
-            error: new Error("Model stream ended without a finish event."),
-            outcome: "failed",
-          });
+          const error = new Error("Model stream ended without a finish event.");
+          notifyAttemptEnd({ error, outcome: "failed" });
+          observed.retry?.stopStream(error);
         }
       );
       return finalization;
@@ -234,15 +248,25 @@ function streamingModelStep(
 function generatedModelStep(
   options: ModelStepStreamOptions
 ): ModelStepStreamHandle {
-  const { model, onAttemptEnd, onAttemptStart, ...generateOptions } = options;
-  const observedModel = modelWithAttemptObserver({
+  const {
     model,
+    attemptId,
+    onRetry,
+    onAttemptEnd,
+    onAttemptStart,
+    ...generateOptions
+  } = options;
+  const observed = modelWithAttemptObserver({
+    model,
+    attemptId,
+    onRetry,
+    abortSignal: options.abortSignal,
     onAttemptEnd,
     onAttemptStart,
   });
   const result = generateText({
     ...generateOptions,
-    model: observedModel,
+    ...observed.options,
   });
   let finalization: Promise<ModelStepStreamFinalResult> | undefined;
   return {
@@ -355,25 +379,41 @@ function finalResultFromGenerateText(
 
 function modelWithAttemptObserver({
   model,
+  attemptId = crypto.randomUUID(),
+  abortSignal,
+  onRetry,
   onAttemptEnd,
   onAttemptStart,
   onProviderStreamError,
-}: Pick<ModelStepStreamOptions, "model" | "onAttemptEnd" | "onAttemptStart"> & {
+}: Pick<
+  ModelStepStreamOptions,
+  | "model"
+  | "attemptId"
+  | "abortSignal"
+  | "onRetry"
+  | "onAttemptEnd"
+  | "onAttemptStart"
+> & {
   readonly onProviderStreamError?: (error: unknown) => void;
-}): LanguageModel {
+}): {
+  options: { model: LanguageModel; maxRetries?: number };
+  retry?: ReturnType<typeof createModelRetry>;
+} {
   const resolvedModel =
     typeof model === "string"
       ? globalThis.AI_SDK_DEFAULT_PROVIDER?.languageModel(model)
       : model;
   if (resolvedModel === undefined || typeof resolvedModel === "string") {
-    return model;
+    return { options: { model } };
   }
+  const retry = createModelRetry({ attemptId, abortSignal, onRetry });
+  retry.checkAbort();
   const origin = {
     modelId: configuredModelId(resolvedModel),
     provider: configuredProvider(resolvedModel),
   };
   const target = Object.create(resolvedModel) as Exclude<LanguageModel, string>;
-  return new Proxy(target, {
+  const observedModel = new Proxy(target, {
     get: (_target, property) => {
       const original = Reflect.get(resolvedModel, property, resolvedModel);
       if (
@@ -381,24 +421,32 @@ function modelWithAttemptObserver({
         typeof original === "function"
       ) {
         return (...args: unknown[]) =>
-          observeProviderCall({
-            execute: async () => {
-              const result = await Reflect.apply(original, resolvedModel, args);
-              return property === "doStream" && onProviderStreamError
-                ? observeProviderStreamErrors(result, onProviderStreamError)
-                : result;
-            },
-            origin,
-            onAttemptEnd,
-            onAttemptStart,
-            settleOnReturn: property === "doGenerate",
-          });
+          retry.execute(() =>
+            observeProviderCall({
+              execute: async () => {
+                abortSignal?.throwIfAborted();
+                const result = await Reflect.apply(
+                  original,
+                  resolvedModel,
+                  args
+                );
+                return property === "doStream" && onProviderStreamError
+                  ? observeProviderStreamErrors(result, onProviderStreamError)
+                  : result;
+              },
+              origin,
+              onAttemptEnd,
+              onAttemptStart,
+              settleOnReturn: property === "doGenerate",
+            })
+          );
       }
       return typeof original === "function"
         ? original.bind(resolvedModel)
         : original;
     },
   });
+  return { options: { model: observedModel, maxRetries: 0 }, retry };
 }
 
 function observeProviderStreamErrors(

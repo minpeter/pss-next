@@ -112,6 +112,7 @@ describe("runtime public exports", () => {
       | "assistant-reasoning-delta"
       | "context-usage"
       | "model-attempt"
+      | "model-retry"
       | "tool-call-input-delta"
       | "tool-call-input-end"
       | "tool-call-input-start"

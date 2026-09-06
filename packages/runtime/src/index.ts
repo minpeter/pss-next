@@ -134,6 +134,7 @@ export type {
   InputSource,
   LifecycleAgentEvent,
   ModelAttempt,
+  ModelRetry,
   ModelUsage,
   RuntimeInput,
   StreamAgentEvent,

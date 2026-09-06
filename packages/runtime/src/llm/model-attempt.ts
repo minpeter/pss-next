@@ -21,8 +21,8 @@ export interface ModelAttemptTracker {
 /**
  * Tracks provider call attempts for one runtime model step.
  *
- * AI SDK language-model middleware wraps each physical provider call inside
- * the SDK's retry closure. Each wrapper invocation opens an attempt and closes
+ * The runtime wraps each physical provider call inside its retry closure.
+ * Each wrapper invocation opens an attempt and closes
  * it immediately after that call settles, before any retry backoff begins.
  */
 export function createModelAttemptTracker({
