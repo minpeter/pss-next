@@ -20,6 +20,7 @@ const selectTheme = {
 };
 
 export function createExtensionUi(options: {
+  readonly onUserWait?: () => () => void;
   readonly restoreFocus: () => void;
   readonly showMessage: (message: string) => void;
   readonly showStatus: (message: string) => () => void;
@@ -70,32 +71,40 @@ async function inputValue(
     return;
   }
   const sanitizedLabel = requiredLabel(label);
-  return await new Promise<string | undefined>((resolve) => {
-    const container = new Container();
-    const input = new Input();
-    let settled = false;
-    let handle: ReturnType<typeof options.tui.showOverlay>;
-    const settle = (value: string | undefined) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      options.signal.removeEventListener("abort", abort);
-      handle.hide();
-      options.restoreFocus();
-      resolve(value);
-    };
-    const abort = () => settle(undefined);
-    container.addChild(new Text(sanitizedLabel, 1, 0));
-    container.addChild(input);
-    input.setValue(initialValue ?? "");
-    input.onEscape = () => settle(undefined);
-    input.onSubmit = (value) => settle(value);
-    handle = options.tui.showOverlay(container, { minWidth: 32, width: "60%" });
-    options.signal.addEventListener("abort", abort, { once: true });
-    options.tui.setFocus(input);
-    options.tui.requestRender();
-  });
+  const resume = options.onUserWait?.();
+  try {
+    return await new Promise<string | undefined>((resolve) => {
+      const container = new Container();
+      const input = new Input();
+      let settled = false;
+      let handle: ReturnType<typeof options.tui.showOverlay>;
+      const settle = (value: string | undefined) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        options.signal.removeEventListener("abort", abort);
+        handle.hide();
+        options.restoreFocus();
+        resolve(value);
+      };
+      const abort = () => settle(undefined);
+      container.addChild(new Text(sanitizedLabel, 1, 0));
+      container.addChild(input);
+      input.setValue(initialValue ?? "");
+      input.onEscape = () => settle(undefined);
+      input.onSubmit = (value) => settle(value);
+      handle = options.tui.showOverlay(container, {
+        minWidth: 32,
+        width: "60%",
+      });
+      options.signal.addEventListener("abort", abort, { once: true });
+      options.tui.setFocus(input);
+      options.tui.requestRender();
+    });
+  } finally {
+    resume?.();
+  }
 }
 
 async function selectValue(
@@ -139,52 +148,60 @@ async function selectValue(
       value: option.value,
     };
   });
-  return await new Promise<string | undefined>((resolve) => {
-    const container = new Container();
-    const list = new SelectList(items, 8, selectTheme);
-    let settled = false;
-    let handle: ReturnType<typeof options.tui.showOverlay>;
-    let removeInput: () => void = () => undefined;
-    const settle = (value: string | undefined) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      options.signal.removeEventListener("abort", abort);
-      removeInput();
-      handle.hide();
-      options.restoreFocus();
-      resolve(value);
-    };
-    const abort = () => settle(undefined);
-    container.addChild(new Text(label, 1, 0));
-    container.addChild(list);
-    list.onCancel = () => settle(undefined);
-    list.onSelect = (selected) => settle(selected.value);
-    handle = options.tui.showOverlay(container, { minWidth: 32, width: "60%" });
-    removeInput = options.tui.addInputListener((data) => {
-      // Drop Kitty-protocol key *release* events (the TUI's focused-component
-      // path filters them too). Without this, the release of the Enter that
-      // submitted the command opening this picker arrives a moment later and
-      // instantly confirms the first item.
-      if (isKeyRelease(data)) {
+  const resume = options.onUserWait?.();
+  try {
+    return await new Promise<string | undefined>((resolve) => {
+      const container = new Container();
+      const list = new SelectList(items, 8, selectTheme);
+      let settled = false;
+      let handle: ReturnType<typeof options.tui.showOverlay>;
+      let removeInput: () => void = () => undefined;
+      const settle = (value: string | undefined) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        options.signal.removeEventListener("abort", abort);
+        removeInput();
+        handle.hide();
+        options.restoreFocus();
+        resolve(value);
+      };
+      const abort = () => settle(undefined);
+      container.addChild(new Text(label, 1, 0));
+      container.addChild(list);
+      list.onCancel = () => settle(undefined);
+      list.onSelect = (selected) => settle(selected.value);
+      handle = options.tui.showOverlay(container, {
+        minWidth: 32,
+        width: "60%",
+      });
+      removeInput = options.tui.addInputListener((data) => {
+        // Drop Kitty-protocol key *release* events (the TUI's focused-component
+        // path filters them too). Without this, the release of the Enter that
+        // submitted the command opening this picker arrives a moment later and
+        // instantly confirms the first item.
+        if (isKeyRelease(data)) {
+          return { consume: true };
+        }
+        if (matchesKey(data, Key.escape)) {
+          settle(undefined);
+        } else {
+          list.handleInput(data);
+        }
+        // Listener-consumed input bypasses the TUI's focused-component path,
+        // which is what normally schedules a render; request one explicitly so
+        // arrow-key selection is actually visible.
+        options.tui.requestRender();
         return { consume: true };
-      }
-      if (matchesKey(data, Key.escape)) {
-        settle(undefined);
-      } else {
-        list.handleInput(data);
-      }
-      // Listener-consumed input bypasses the TUI's focused-component path,
-      // which is what normally schedules a render; request one explicitly so
-      // arrow-key selection is actually visible.
+      });
+      options.signal.addEventListener("abort", abort, { once: true });
+      handle.focus();
       options.tui.requestRender();
-      return { consume: true };
     });
-    options.signal.addEventListener("abort", abort, { once: true });
-    handle.focus();
-    options.tui.requestRender();
-  });
+  } finally {
+    resume?.();
+  }
 }
 
 function requiredLabel(value: string): string {

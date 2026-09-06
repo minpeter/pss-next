@@ -33,6 +33,25 @@ describe("dispatchUserInput", () => {
     expect(thread.steer).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { activeId: "same", returnedId: "same", consumeRun: false },
+    { activeId: "old", returnedId: "new", consumeRun: true },
+    { activeId: undefined, returnedId: undefined, consumeRun: true },
+  ])(
+    "routes distinct wrappers by execution identity: $activeId / $returnedId",
+    async ({ activeId, returnedId, consumeRun }) => {
+      const activeRun = { ...createRun(), runId: activeId };
+      const returned = { ...createRun(), runId: returnedId };
+      const result = await dispatchUserInput({
+        activeRun,
+        hooks,
+        input: "steer",
+        thread: { send: vi.fn(), steer: async () => returned },
+      });
+      expect(result).toMatchObject({ consumeRun, type: "steered" });
+    }
+  );
+
   it("steers an active run without sending a separate turn", async () => {
     const run = createRun();
     const thread = {

@@ -3,6 +3,7 @@ import { FooterStatusBar } from "./agent";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: test helper strips ANSI emitted by the footer
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+const SPINNER_PATTERN = /[\u2800-\u28ff]/u;
 
 describe("FooterStatusBar", () => {
   it("reserves one blank row while idle so the editor cannot jump", () => {
@@ -55,6 +56,33 @@ describe("FooterStatusBar", () => {
     }
     footer.stop();
   });
+
+  it.each([1, 2, 3, 8, 18, 80])(
+    "keeps an animated glyph at width %i despite long right status",
+    (width) => {
+      vi.useFakeTimers();
+      const footer = new FooterStatusBar({ requestRender: vi.fn() });
+      try {
+        footer.setForegroundMessage("A long operation label");
+        footer.setRightText("Custom footer status ".repeat(30));
+        const before = footer.render(width)[0]?.replace(ANSI_PATTERN, "") ?? "";
+        vi.advanceTimersByTime(80);
+        footer.setForegroundMessage("Another label");
+        const after = footer.render(width)[0]?.replace(ANSI_PATTERN, "") ?? "";
+        expect(before).toMatch(SPINNER_PATTERN);
+        expect(after).toMatch(SPINNER_PATTERN);
+        expect(after.match(SPINNER_PATTERN)?.[0]).not.toBe(
+          before.match(SPINNER_PATTERN)?.[0]
+        );
+        expect(before.length).toBeLessThanOrEqual(width);
+        expect(after.length).toBeLessThanOrEqual(width);
+      } finally {
+        footer.stop();
+        expect(vi.getTimerCount()).toBe(0);
+        vi.useRealTimers();
+      }
+    }
+  );
 
   it("shares narrow widths between running and right-side status", () => {
     const footer = new FooterStatusBar({ requestRender: vi.fn() });

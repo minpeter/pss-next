@@ -90,13 +90,8 @@ describe("extension TUI service", () => {
     // that submitted the command right after the overlay opens. It must be
     // swallowed instead of confirming the first item.
     expect(listener?.("\x1b[13;1:3u")).toEqual({ consume: true });
-    const pending = await Promise.race([
-      result,
-      new Promise<string>((resolve) => {
-        setTimeout(() => resolve("pending"), 0);
-      }),
-    ]);
-    expect(pending).toBe("pending");
+    expect(fixture.hidden()).toBe(0);
+    expect(fixture.listeners).toHaveLength(1);
 
     // A real Enter press still confirms the selection.
     listener?.("\r");
@@ -125,12 +120,7 @@ describe("extension TUI service", () => {
     const fixture = createFakeTui();
     fixture.controller.abort();
 
-    const result = await Promise.race([
-      fixture.ui.input({ label: "Aborted" }),
-      new Promise<string>((resolve) => {
-        setTimeout(() => resolve("pending"), 0);
-      }),
-    ]);
+    const result = await fixture.ui.input({ label: "Aborted" });
 
     expect(result).toBeUndefined();
     expect(fixture.overlays).toHaveLength(0);

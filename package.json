@@ -20,7 +20,7 @@
     "check:tegami-notes": "node scripts/check-tegami-notes.mjs",
     "coverage": "pnpm --filter @minpeter/pss-coding-agent build && vitest run --config vitest.coverage.config.ts --coverage",
     "dev": "pnpm --filter @minpeter/pss-example-basic start",
-    "dev:tui": "tsx --conditions=@minpeter/pss-source apps/coding-agent/src/tui/app.ts",
+    "dev:tui": "tsx --conditions=@minpeter/pss-source scripts/dev-tui.mjs",
     "eval:edge-remote": "pnpm --filter @minpeter/pss-worker-agent eval:remote",
     "eval:provider": "pnpm --filter @minpeter/pss-example-evals eval",
     "format": "ultracite fix .",

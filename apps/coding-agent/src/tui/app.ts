@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { inspect } from "node:util";
 import {
   type AgentOptions,
   type ContextUsageSnapshot,
@@ -54,6 +55,7 @@ import { type AgentTUIConfig, createAgentTUI } from "./agent";
 import type { TuiCommand } from "./command";
 import { createReloadCommand } from "./command-set";
 import { createCompactCommand } from "./compact-command";
+import { withCompactionStatus } from "./compaction-status";
 import { parseDirectStartArguments } from "./direct-start";
 import { createModelCommand } from "./model-command";
 import {
@@ -65,10 +67,13 @@ import {
 import { createToolRenderers } from "./renderers/tool-renderers";
 import { createSessionCommands } from "./session-commands";
 import { shouldReplayOnStartup } from "./session-startup-replay";
+import { showStartupStatus } from "./startup-status";
 import { formatSessionResumeHint } from "./terminal-exit";
 import { contextUsageFooter } from "./usage-footer";
 
 export interface StartTuiOptions {
+  /** Workspace for tools, context, sessions, and completion; not dotenv loading. */
+  readonly cwd?: string;
   readonly extensions?: readonly CodingAgentExtensionInput[];
   /** Overrides the language model (tests and scripted QA). */
   readonly model?: AgentOptions["model"];
@@ -123,10 +128,10 @@ async function resolveStartupSessionEntry(
     return {
       entry: {
         createdAt: at,
-        cwd: process.cwd(),
+        cwd: sessionManager.cwd,
         key: threadConfig.keyFromEnv
           ? threadConfig.key
-          : `cwd:${process.cwd()}#${randomUUID().slice(0, 8)}`,
+          : `cwd:${sessionManager.cwd}#${randomUUID().slice(0, 8)}`,
         updatedAt: at,
       },
       notice: `Session index unavailable: ${
@@ -179,7 +184,53 @@ export async function startTui(
   options: StartTuiOptions = {},
   dependencies: StartTuiDependencies = { createTui: createAgentTUI }
 ): Promise<number> {
-  const resolvedThreadConfig = resolveCodingAgentThreadConfig();
+  const stopStatus = showStartupStatus();
+  let currentSessionKey: (() => string) | undefined;
+  try {
+    return await startTuiSession(
+      options,
+      {
+        createTui: (config) => {
+          stopStatus();
+          return dependencies.createTui(config);
+        },
+      },
+      (getKey) => {
+        currentSessionKey = getKey;
+      }
+    );
+  } catch (error) {
+    if (currentSessionKey === undefined) {
+      throw error;
+    }
+    stopStatus();
+    console.error("TUI session failed:", inspect(error, { depth: null }));
+    return 1;
+  } finally {
+    stopStatus();
+    if (currentSessionKey !== undefined) {
+      // Teardown reclaimed the composer border's row. Restore it in place
+      // (or below shutdown logs), without adding a blank row or second rule.
+      // No owned shutdown work or logging follows this block.
+      process.stdout.write(
+        `${"─".repeat(process.stdout.columns ?? 80)}\n${formatSessionResumeHint(currentSessionKey())}\n`
+      );
+    }
+  }
+}
+
+async function startTuiSession(
+  options: StartTuiOptions,
+  dependencies: StartTuiDependencies,
+  onSessionReady: (currentSessionKey: () => string) => void
+): Promise<number> {
+  const { cwd = process.cwd() } = options;
+  const resolvedThreadConfig = resolveCodingAgentThreadConfig(process.env, cwd);
+  let activityUi: CodingAgentExtensionUi | undefined;
+  const tuiCompaction = withCompactionStatus(
+    resolvedThreadConfig.compaction,
+    () => activityUi?.status("Compacting session context...")
+  );
   const providerEmitter: ProviderObservationEmitter = {};
   let model: AgentOptions["model"];
   let modelSession: CodingModelSession | undefined;
@@ -197,13 +248,13 @@ export async function startTui(
   let contextResources: ContextResources;
   try {
     contextResources = await loadContextResources({
-      cwd: process.cwd(),
+      cwd,
       home: homedir(),
       resourceRoots: extensionHost.resourceRoots,
     });
     ({ model, modelSession } = resolveTuiModel(options.model, providerEmitter));
     agent = await createCodingAgent({
-      compaction: resolvedThreadConfig.compaction,
+      compaction: tuiCompaction,
       extensionHost,
       host: createFileHost({ directory: resolvedThreadConfig.directory }),
       instructions: composeCodingAgentInstructions(
@@ -211,7 +262,7 @@ export async function startTui(
       ),
       model,
       tools: options.tools,
-      workspace: process.cwd(),
+      workspace: cwd,
     });
   } catch (error) {
     await extensionHost.dispose();
@@ -222,9 +273,10 @@ export async function startTui(
     throw error;
   }
   let exitCode = 0;
+  const cleanupFailures: unknown[] = [];
   try {
     const sessionManager = createSessionManager({
-      cwd: process.cwd(),
+      cwd,
       directory: resolvedThreadConfig.directory,
       threads: createFileHost({ directory: resolvedThreadConfig.directory })
         .store.threads,
@@ -240,6 +292,7 @@ export async function startTui(
       options.sessionName
     );
     let currentSession = startupSession.entry;
+    onSessionReady(() => currentSession.key);
     const sessionIndexNotice = startupSession.notice;
     let thread = agent.thread(currentSession.key);
     let createExtensionUiForHost:
@@ -361,7 +414,7 @@ export async function startTui(
     };
 
     const buildSubtitle = (): string => {
-      const base = `${modelSubtitleLabel(modelSession)}\n${process.cwd()}`;
+      const base = `${modelSubtitleLabel(modelSession)}\n${cwd}`;
       return currentSession.name === undefined
         ? base
         : `${base}\nsession: ${currentSession.name}`;
@@ -375,7 +428,8 @@ export async function startTui(
       ].join("\n\n");
 
     const generateTitleForSession = async (
-      session: SessionIndexEntry
+      session: SessionIndexEntry,
+      signal?: AbortSignal
     ): Promise<void> => {
       if (
         session.name !== undefined ||
@@ -386,11 +440,12 @@ export async function startTui(
       titleGenerationInFlight.add(session.key);
       try {
         const title = await generateSessionTitle({
+          signal,
           history: await sessionManager.loadSessionHistory(session.key),
           instructions: currentInstructions(),
           model,
         });
-        if (title === undefined) {
+        if (title === undefined || signal?.aborted) {
           return;
         }
         const renamed = await sessionManager.renameSessionIfUnnamed(
@@ -469,6 +524,7 @@ export async function startTui(
         steer: (input) => thread.steer(input),
       },
       commands: initialCommandMerge.commands,
+      cwd,
       header,
       footer,
       ...(activeModelSession === undefined
@@ -502,7 +558,7 @@ export async function startTui(
           await switchThread(entry, "resume");
         },
       },
-      onTurnComplete: () => {
+      onTurnComplete: (_usage, _finishReason, signal) => {
         const completedSession = currentSession;
         // Keep /resume recency meaningful: every completed turn bumps the
         // session's updatedAt (best-effort; never surfaces to the user).
@@ -510,10 +566,13 @@ export async function startTui(
           sessionManager
             .touchSession(completedSession.key)
             .catch(() => undefined),
-          generateTitleForSession(completedSession).catch(() => undefined),
+          generateTitleForSession(completedSession, signal).catch(
+            () => undefined
+          ),
         ]).then(() => undefined);
       },
       onExtensionUiReady: async (createUi) => {
+        activityUi = createUi();
         createExtensionUiForHost = createUi;
         extensionUiAbort = new AbortController();
         extensionUi = createUi(extensionUiAbort.signal);
@@ -529,7 +588,10 @@ export async function startTui(
       },
       onSetup: () => {
         for (const refresh of deferredRefreshes) {
-          refresh().catch(() => undefined);
+          const clear = extensionUi?.status("Checking for updates...");
+          refresh()
+            .catch(() => undefined)
+            .finally(() => clear?.());
         }
       },
       replayHistoryOnStartup: shouldReplayOnStartup({
@@ -619,7 +681,7 @@ export async function startTui(
 
     const createReplacementAgent = (host: CodingAgentExtensionHost) =>
       createCodingAgent({
-        compaction: threadConfig.compaction,
+        compaction: tuiCompaction,
         extensionHost: host,
         host: createFileHost({ directory: threadConfig.directory }),
         instructions: composeCodingAgentInstructions(
@@ -627,7 +689,7 @@ export async function startTui(
         ),
         model,
         tools: options.tools,
-        workspace: process.cwd(),
+        workspace: cwd,
       });
 
     const installRuntime = (
@@ -686,7 +748,7 @@ export async function startTui(
             // reload restores the previous resources with the previous
             // runtime.
             contextResources = await loadContextResources({
-              cwd: process.cwd(),
+              cwd,
               home: homedir(),
               resourceRoots: host.resourceRoots,
             });
@@ -824,10 +886,13 @@ export async function startTui(
     try {
       await dependencies.createTui(tuiConfig);
     } finally {
-      process.stdout.write(`${formatSessionResumeHint(currentSession.key)}\n`);
       emitSessionEvent("host:session-shutdown", { key: currentSession.key });
       thread.interrupt();
-      await thread.dispose().catch(() => undefined);
+      await collectCleanupFailure(
+        () => thread.dispose(),
+        cleanupFailures,
+        extensionHost.timeoutMs
+      );
     }
 
     if (autoUpdate !== undefined) {
@@ -837,22 +902,42 @@ export async function startTui(
       });
     }
   } finally {
-    const cleanupFailures: unknown[] = [];
     for (const cleanup of [
       () => agent.dispose(),
       () => extensionHost.dispose(),
     ]) {
-      try {
-        await cleanup();
-      } catch (error) {
-        cleanupFailures.push(error);
-      }
+      await collectCleanupFailure(
+        cleanup,
+        cleanupFailures,
+        extensionHost.timeoutMs
+      );
     }
     if (cleanupFailures.length > 0) {
+      await collectCleanupFailure(
+        () => extensionHost.revokeExtensionState(),
+        cleanupFailures,
+        extensionHost.timeoutMs
+      );
       exitCode = 1;
+      console.error(
+        "TUI cleanup failed:",
+        inspect(cleanupFailures, { depth: null })
+      );
     }
   }
   return exitCode;
+}
+
+async function collectCleanupFailure(
+  cleanup: () => Promise<void>,
+  failures: unknown[],
+  timeoutMs: number
+): Promise<void> {
+  try {
+    await boundedReloadOperation(cleanup(), timeoutMs, "TUI shutdown");
+  } catch (error) {
+    failures.push(error);
+  }
 }
 
 export function mergeToolRenderers(

@@ -61,6 +61,7 @@ function createTurnMachine(): Fsm<TurnState> {
 export class TuiSessionMachine {
   readonly #prompt = createPromptMachine();
   readonly #turn = createTurnMachine();
+  readonly #pendingTurns = new Map<AgentTurn, boolean>();
 
   get promptState(): PromptState {
     return this.#prompt.state;
@@ -135,6 +136,7 @@ export class TuiSessionMachine {
    * with a newly started one, so `active -> active` is a legal transition.
    */
   beginTurn(run: AgentTurn): void {
+    this.#pendingTurns.set(run, false);
     this.#turn.to({ tag: "active", interrupted: false, run });
   }
 
@@ -147,14 +149,18 @@ export class TuiSessionMachine {
     if (turn.tag !== "active") {
       return;
     }
+    // thread.interrupt() cancels the physical thread, including a predecessor
+    // whose steering acknowledgement has already finished consuming events.
+    for (const run of this.#pendingTurns.keys()) {
+      this.#pendingTurns.set(run, true);
+    }
     this.#turn.to({ ...turn, interrupted: true });
     return turn.run;
   }
 
-  /** Whether `run` is still the active turn and was interrupted. */
+  /** Whether this still-pending run was interrupted. */
   wasInterrupted(run: AgentTurn): boolean {
-    const turn = this.#turn.state;
-    return turn.tag === "active" && turn.run === run && turn.interrupted;
+    return this.#pendingTurns.get(run) === true;
   }
 
   /**
@@ -163,9 +169,15 @@ export class TuiSessionMachine {
    * predecessor.
    */
   endTurn(run: AgentTurn): void {
+    this.#pendingTurns.delete(run);
     const turn = this.#turn.state;
     if (turn.tag === "active" && turn.run === run) {
-      this.#turn.to({ tag: "none" });
+      const pending = [...this.#pendingTurns].at(-1);
+      this.#turn.to(
+        pending === undefined
+          ? { tag: "none" }
+          : { tag: "active", run: pending[0], interrupted: pending[1] }
+      );
     }
   }
 }

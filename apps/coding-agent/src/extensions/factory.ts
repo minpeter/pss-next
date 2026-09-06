@@ -143,6 +143,9 @@ function createFactoryApi(
       case "model-attempt":
         registry.on(type, handler);
         return;
+      case "model-retry":
+        registry.on(type, handler);
+        return;
       case "model-usage":
         registry.on(type, handler);
         return;

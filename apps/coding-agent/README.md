@@ -185,10 +185,31 @@ and staged before one atomic publication; unknown capability kinds fail
 closed. Event handlers run serially in extension and registration order.
 Naming a stream event such as `assistant-output-delta` explicitly opts into
 ephemeral events. This also includes live-only `model-attempt` start/end pairs
-for physical provider calls and SDK retries. Object models and string ids backed
-by a configured `AI_SDK_DEFAULT_PROVIDER` are observed; implicit-gateway string
-ids emit no attempt events. Attempt events are excluded from durable replay and
-result payloads. Handler failures are attributed to the owning
+for physical provider calls and runtime retries, plus `pss.on("model-retry", ...)`
+for authoritative retry state. `scheduled` supplies `delayMs`, Unix-ms `retryAt`,
+and `remainingRetries` including the scheduled retry; `started` clears the wait
+and decrements that budget; `stopped` clears it permanently with zero remaining
+retries and a cancellation, exhaustion, non-retryable, or stream-ended reason.
+A schedule is cancellable, not a guarantee. See the runtime README for the full
+counting contract and countdown example. The TUI renders an active schedule in
+its existing one-row footer status as `Retrying in 4s · attempt 2 · 2 retries
+left`. When a retry starts or stops, the countdown returns to the ongoing
+operation's label; the wait never enters the transcript.
+
+The footer keeps one animated busy indicator throughout input preprocessing,
+streaming text, physical tool execution, provider/step waits, and cancellation
+cleanup. Reasoning and retry events change its label, not its lifetime. Tool
+execution may use the generic `Working` label because committed tool events
+arrive after physical execution. Commands, reloads, catalog/history loading,
+model/session switching, setup, compaction policies/summaries, and asynchronous
+turn-completion callbacks own independent busy lifetimes. Finishing one cannot
+hide another. User-only selectors and extension dialogs suspend their calling
+operation's indicator, but not concurrent background work. Status labels clip
+before the animated glyph, including with a custom right-side footer.
+Object models and string ids backed by a configured `AI_SDK_DEFAULT_PROVIDER`
+are observed; implicit-gateway string ids emit neither attempt nor retry events.
+Both event kinds are excluded from durable replay and result payloads.
+Handler failures are attributed to the owning
 extension and surfaced after the original events.
 
 Install an extension globally or for one project:
@@ -547,7 +568,7 @@ pss exec --workspace . --stdin --timeout-seconds 900 --result-file result.json
 `pss exec` streams JSONL events (`metadata`, `agent_event`, `result`) to stdout
 and exits 0 only when the task completes. Ephemeral events
 (`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`,
-`context-usage`, and `model-attempt`) appear as `agent_event` lines alongside
+`context-usage`, `model-attempt`, and `model-retry`) appear as `agent_event` lines alongside
 the committed events, but are excluded from the accumulated `result.events`
 payload, which stays committed-only. Structured `turn-error` metadata appears
 in both the live `agent_event` and committed result without raw provider
@@ -683,7 +704,14 @@ PSS_THREAD_KEY=workspace:demo pss inspect-thread
 
 ```sh
 pnpm dev:tui
+# From another workspace:
+pnpm -C /path/to/pss-runtime dev:tui
 ```
+
+`dev:tui` runs source code with the caller's directory as the workspace for
+file/shell tools, context, sessions, and file completion. Model settings still
+load from the runtime repository's `.env`, not the caller's `.env`. Installed
+`pss` and other commands keep their existing cwd and environment behavior.
 
 ## JSONL RPC mode
 

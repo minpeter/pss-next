@@ -4,6 +4,7 @@ import {
   Spacer,
   Text,
 } from "@earendil-works/pi-tui";
+import type { RetryWaitSchedule } from "./retry-status";
 import type { AssistantStreamView } from "./stream-views";
 import { sanitizeTerminalText } from "./terminal-safety";
 import type { ToolCallView } from "./tool-call-view";
@@ -99,6 +100,8 @@ export interface PiTuiStreamState {
   getToolView: (toolCallId: string) => ToolCallView | undefined;
   onReasoningEnd?: () => void;
   onReasoningStart?: () => void;
+  onRetryClear?: () => void;
+  onRetryWait?: (schedule: RetryWaitSchedule) => void;
   onToolPendingEnd?: () => void;
   onToolPendingStart?: () => void;
   pendingToolCallIds: Set<string>;
@@ -333,6 +336,24 @@ export const handleToolApprovalRequest: StreamPartHandler = (part, state) => {
   );
 };
 
+/**
+ * Runtime retry phases. Only `scheduled` means a wait is pending; `started`
+ * and `stopped` both end it, so both clear the status.
+ */
+export const handleRetryWait: StreamPartHandler = (part, state) => {
+  if (part.phase !== "scheduled") {
+    state.onRetryClear?.();
+    return;
+  }
+
+  state.onRetryWait?.({
+    attempt: Number(part.attempt ?? 0),
+    delayMs: Number(part.delayMs ?? 0),
+    remainingRetries: Number(part.remainingRetries ?? 0),
+    retryAt: Number(part.retryAt ?? 0),
+  });
+};
+
 export const handleStartStep: StreamPartHandler = (_part, state) => {
   if (!state.flags.showSteps) {
     return;
@@ -398,6 +419,7 @@ export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   "tool-error": handleToolError,
   "tool-output-denied": handleToolOutputDenied,
   "tool-approval-request": handleToolApprovalRequest,
+  "retry-wait": handleRetryWait,
   "start-step": handleStartStep,
   "finish-step": handleFinishStep,
   source: handleSource,
@@ -419,6 +441,9 @@ export const isVisibleStreamPart = (
     case "reasoning-end":
     case "start":
     case "tool-input-end":
+    // A retry wait renders as foreground status only, so it must not open the
+    // transcript or count as the turn's first visible part.
+    case "retry-wait":
       return false;
     case "text-start":
       return true;

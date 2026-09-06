@@ -40,9 +40,12 @@ export function createExtensionServiceScope(options: {
   readonly ui?: CodingAgentExtensionUi;
   readonly workspace?: string;
 }): ExtensionServiceScope {
-  const logger = createExtensionLogger(options.extensionId);
   const children: Agent[] = [];
   let stateWritesRevoked = false;
+  const logger = createExtensionLogger(
+    options.extensionId,
+    () => stateWritesRevoked
+  );
   const agents: CodingAgentExtensionAgents = {
     create: async (
       input: Parameters<CodingAgentExtensionAgents["create"]>[0]
@@ -84,13 +87,14 @@ export function createExtensionServiceScope(options: {
       // write that passed the revocation check before the flag was set.
       // The fence is bounded: a never-settling queued updater must not be
       // able to hang revocation (and with it the whole reload).
+      let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         services.state.get().catch(() => undefined),
         new Promise<void>((resolveFence) => {
-          const timer = setTimeout(resolveFence, STATE_WRITE_FENCE_TIMEOUT_MS);
+          timer = setTimeout(resolveFence, STATE_WRITE_FENCE_TIMEOUT_MS);
           timer.unref?.();
         }),
-      ]);
+      ]).finally(() => clearTimeout(timer));
     },
     dispose: async () => {
       stateWritesRevoked = true;
@@ -168,9 +172,15 @@ function freezeJson<Value extends ExtensionJsonValue>(value: Value): Value {
 }
 
 function createExtensionLogger(
-  extensionId: string
+  extensionId: string,
+  isRevoked: () => boolean
 ): CodingAgentExtensionLogger {
   const write = (level: string, message: string, data: unknown): void => {
+    // A detached cleanup may retain services after its deadline. Revoke only
+    // this host-owned sink, not console or the process output streams.
+    if (isRevoked()) {
+      throw new Error(`Extension "${extensionId}" logger is disposed`);
+    }
     try {
       process.stderr.write(
         `${JSON.stringify({

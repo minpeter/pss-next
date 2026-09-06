@@ -28,6 +28,7 @@ import {
   createAssistantRendererNotifications,
 } from "./assistant-renderer";
 import { createAliasAwareAutocompleteProvider } from "./autocomplete";
+import { BusyStatus } from "./busy-status";
 import {
   isCommand,
   parseCommand,
@@ -47,6 +48,8 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import { boundedReloadOperation } from "./reload";
+import { createRetryStatus } from "./retry-status";
 import {
   resumeSessionReplayParts,
   type SessionHistoryReplayPart,
@@ -201,7 +204,8 @@ export class FooterStatusBar extends Text {
       return [this.padLine("", width)];
     }
 
-    const contentWidth = Math.max(0, width - 1);
+    // At one column the glyph takes precedence over the usual left padding.
+    const contentWidth = width === 1 ? 1 : width - 1;
     const lines: string[] = [];
     const leadingEntry = this.resolveLeadingEntry();
     const leadingLine = this.renderLeadingLine(
@@ -251,7 +255,7 @@ export class FooterStatusBar extends Text {
       ? style(ANSI_DIM, rightTextPlain)
       : "";
     return this.padLine(
-      ` ${left?.styled ?? ""}${" ".repeat(gap)}${rightTextStyled}`,
+      `${width === 1 ? "" : " "}${left?.styled ?? ""}${" ".repeat(gap)}${rightTextStyled}`,
       width
     );
   }
@@ -619,6 +623,7 @@ export interface AgentTUIConfig {
   assistantRenderer?: AssistantRenderer;
   assistantRendererSignal?: AbortSignal;
   commands?: TuiCommand[];
+  cwd?: string;
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
   /**
@@ -640,7 +645,8 @@ export interface AgentTUIConfig {
   onSetup?: () => void | Promise<void>;
   onTurnComplete?: (
     usage: TurnUsage | undefined,
-    finishReason?: string
+    finishReason?: string,
+    signal?: AbortSignal
   ) => Promise<void> | void;
   preprocessCommand?: (
     commandInput: string,
@@ -669,13 +675,15 @@ export interface AgentTUIConfig {
 }
 
 export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
+  const turnCompletions = new Set<Promise<void>>();
+  const completionFailures: unknown[] = [];
   const markdownTheme =
     config.theme?.markdownTheme ?? createDefaultMarkdownTheme();
   const editorTheme = config.theme?.editorTheme ?? createDefaultEditorTheme();
   let commandSet = buildTuiCommandSet(config.commands);
 
   const terminal = new ProcessTerminal();
-  const tui: TUI = new TuiMainScreen(terminal);
+  const tui = new TuiMainScreen(terminal);
   tui.setClearOnShrink(false);
 
   const headerContainer = new Container();
@@ -739,13 +747,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   });
   let autocompleteProvider = createAliasAwareAutocompleteProvider({
     commands: commandSet.commands,
-    basePath: process.cwd(),
+    basePath: config.cwd ?? process.cwd(),
   });
   const refreshCommandSet = (): void => {
     commandSet = buildTuiCommandSet(config.commands);
     autocompleteProvider = createAliasAwareAutocompleteProvider({
       commands: commandSet.commands,
-      basePath: process.cwd(),
+      basePath: config.cwd ?? process.cwd(),
     });
     editor.setAutocompleteProvider(autocompleteProvider);
   };
@@ -769,7 +777,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const session = new TuiSessionMachine();
   let lastCtrlCPressAt = 0;
-  let foregroundStatusMessage: string | null = null;
+  const busy = new BusyStatus((message) =>
+    footerStatusBar.setForegroundMessage(message)
+  );
   let activeModelSelector: ModelSelectorComponent | undefined;
   let activeSessionSelector: SessionSelectorComponent | undefined;
   let commandInputListenerActive = false;
@@ -786,16 +796,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   ): Promise<T | typeof EXIT_REQUESTED> =>
     Promise.race([operation, exitRequested]);
 
-  const clearStatus = (): void => {
-    foregroundStatusMessage = null;
-    footerStatusBar.setForegroundMessage(null);
-  };
-
-  const showLoader = (message: string): void => {
-    const sanitized = sanitizeTerminalText(message);
-    foregroundStatusMessage = sanitized;
-    footerStatusBar.setForegroundMessage(sanitized);
-  };
+  // Compatibility hooks reset this operation's label, not its busy lifetime.
+  const clearStatus = (): void => busy.setMessage(null);
+  const showLoader = (message: string): void =>
+    busy.setMessage(sanitizeTerminalText(message));
 
   const clearPromptInput = (): void => {
     editor.setText("");
@@ -815,7 +819,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const requestExit = (): void => {
     extensionUiController.abort();
     cancelActiveTurn();
-    clearStatus();
+    busy.dispose();
     session.close();
   };
 
@@ -970,19 +974,27 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       firstVisiblePartSeen: false,
     };
 
-    const baseLoaderMessage = loaderMessage ?? foregroundStatusMessage;
+    const baseLoaderMessage = loaderMessage ?? busy.getMessage();
     const orchestrator = createSpinnerOrchestrator(
       {
         clearStatus,
-        hasSpinner: () => foregroundStatusMessage !== null,
-        setMessage: (message) => {
-          foregroundStatusMessage = message;
-          footerStatusBar.setForegroundMessage(message);
-        },
+        hasSpinner: () => busy.getMessage() !== undefined,
+        setMessage: showLoader,
         showLoader,
       },
       baseLoaderMessage
     );
+    const retryStatus = createRetryStatus({
+      now: () => Date.now(),
+      setMessage: (message) => {
+        if (message === null) {
+          orchestrator.onRetryWaitEnd();
+        } else {
+          orchestrator.onRetryWaitMessage(message);
+        }
+        tui.requestRender();
+      },
+    });
 
     const state: PiTuiStreamState = {
       flags,
@@ -996,8 +1008,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       chatContainer,
       onReasoningStart: orchestrator.onReasoningStart,
       onReasoningEnd: orchestrator.onReasoningEnd,
-      onToolPendingStart: orchestrator.onToolPendingStart,
-      onToolPendingEnd: orchestrator.onToolPendingEnd,
+      // Runtime tool-call/result events are committed after execution. They
+      // must not claim physical execution; the turn's Working lease covers it.
+      onRetryWait: retryStatus.scheduled,
+      onRetryClear: retryStatus.clear,
     };
 
     try {
@@ -1012,6 +1026,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         tui.requestRender();
       }
     } finally {
+      // Turn end, abort, and error all land here: never leave a countdown
+      // ticking or a stale wait banner behind for the next step or thread.
+      retryStatus.clear();
+      retryStatus.stop();
       for (const view of toolViews.values()) {
         view.dispose();
       }
@@ -1020,64 +1038,53 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     return { finishReason: tracker.finishReason };
   };
 
-  const renderSessionHistory = async (
+  const renderSessionHistory = (
     replay?: readonly SessionHistoryReplayPart[]
-  ): Promise<void> => {
-    const selectorConfig = config.sessionSelector;
-    if (selectorConfig === undefined) {
-      return;
-    }
-    const parts =
-      replay ??
-      sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
-    let streamParts: TuiStreamPart[] = [];
-    const flushStreamParts = async (): Promise<void> => {
-      if (streamParts.length === 0) {
+  ): Promise<void> =>
+    busy.run("Loading session history...", async () => {
+      const selectorConfig = config.sessionSelector;
+      if (selectorConfig === undefined) {
         return;
       }
-      const pending = streamParts;
-      streamParts = [];
-      await renderAgentStream(
-        (async function* () {
-          yield* pending;
-        })(),
-        {
-          showReasoning: true,
-          showSteps: false,
-          showFinishReason: false,
-          showRawToolIo: config.showRawToolIo ?? false,
-          showToolResults: true,
-          showSources: false,
-          showFiles: false,
+      const parts =
+        replay ??
+        sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
+      let streamParts: TuiStreamPart[] = [];
+      const flushStreamParts = async (): Promise<void> => {
+        if (streamParts.length === 0) {
+          return;
         }
-      );
-    };
-    for (const part of parts) {
-      if (part.type === "stream") {
-        streamParts.push(part.part);
-        continue;
+        const pending = streamParts;
+        streamParts = [];
+        await renderAgentStream(
+          (async function* () {
+            yield* pending;
+          })(),
+          {
+            showReasoning: true,
+            showSteps: false,
+            showFinishReason: false,
+            showRawToolIo: config.showRawToolIo ?? false,
+            showToolResults: true,
+            showSources: false,
+            showFiles: false,
+          }
+        );
+      };
+      for (const part of parts) {
+        if (part.type === "stream") {
+          streamParts.push(part.part);
+          continue;
+        }
+        await flushStreamParts();
+        if (part.type === "clear") {
+          clearChat();
+        } else {
+          addUserMessage(chatContainer, markdownTheme, part.text);
+        }
       }
       await flushStreamParts();
-      if (part.type === "clear") {
-        clearChat();
-      } else {
-        addUserMessage(chatContainer, markdownTheme, part.text);
-      }
-    }
-    await flushStreamParts();
-  };
-
-  const createStreamingLoaderClearer = (): (() => void) => {
-    let hasClearedStreamingLoader = false;
-
-    return () => {
-      if (hasClearedStreamingLoader) {
-        return;
-      }
-      hasClearedStreamingLoader = true;
-      clearStatus();
-    };
-  };
+    });
 
   const accumulateUsage = (
     total: { inputTokens: number; outputTokens: number; totalTokens: number },
@@ -1103,7 +1110,6 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     try {
       showLoader("Working...");
-      const clearStreamingLoader = createStreamingLoaderClearer();
 
       const { finishReason } = await renderAgentStream(
         agentEventStreamParts(run.events(), {
@@ -1126,29 +1132,39 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           showSources: false,
           showFiles: false,
         },
-        clearStreamingLoader,
+        undefined,
         "Working..."
       );
-
-      clearStreamingLoader();
 
       if (session.wasInterrupted(run)) {
         addInterruptedMessage();
         return;
       }
 
-      Promise.resolve(
-        config.onTurnComplete?.(
-          sawModelUsage ? { ...turnUsage } : undefined,
-          finishReason
+      const completion = busy
+        .run("Finalizing...", () =>
+          boundedReloadOperation(
+            Promise.resolve(
+              config.onTurnComplete?.(
+                sawModelUsage ? { ...turnUsage } : undefined,
+                finishReason,
+                extensionUiController.signal
+              )
+            ),
+            10_000,
+            "Turn completion"
+          )
         )
-      )
         .then(() => {
-          updateHeader();
+          if (!session.closed) {
+            updateHeader();
+          }
         })
         .catch((error) => {
-          console.error("onTurnComplete callback failed in TUI:", error);
+          completionFailures.push(error);
         });
+      turnCompletions.add(completion);
+      completion.then(() => turnCompletions.delete(completion));
 
       if (finishReason !== undefined) {
         addAbnormalFinishReasonMessage(finishReason);
@@ -1172,7 +1188,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return null;
     }
 
-    return await command.execute({ args: parsed.args });
+    return await busy.run("Working...", () =>
+      command.execute({ args: parsed.args })
+    );
   };
 
   const preprocessCommandInput = async (
@@ -1182,25 +1200,30 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return input;
     }
 
-    return await config.preprocessCommand(input, {
-      addInputListener: (listener) => {
-        commandInputListenerActive = true;
-        const remove = tui.addInputListener(listener);
-        return () => {
-          remove();
-          commandInputListenerActive = false;
-        };
-      },
-      clearStatus,
-      tui,
-      overlayContainer,
-      editorTheme,
-      isCtrlCInput,
-      handleCtrlCPress,
-      showMessage: (message: string) =>
-        addSystemMessage(chatContainer, message),
-      updateHeader,
-    });
+    const preprocess = config.preprocessCommand;
+    return await busy.run("Processing command...", () =>
+      preprocess(input, {
+        addInputListener: (listener) => {
+          commandInputListenerActive = true;
+          const resume = busy.suspend();
+          const remove = tui.addInputListener(listener);
+          return () => {
+            remove();
+            resume();
+            commandInputListenerActive = false;
+          };
+        },
+        clearStatus,
+        tui,
+        overlayContainer,
+        editorTheme,
+        isCtrlCInput,
+        handleCtrlCPress,
+        showMessage: (message: string) =>
+          addSystemMessage(chatContainer, message),
+        updateHeader,
+      })
+    );
   };
 
   /**
@@ -1217,10 +1240,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
-    showLoader("Loading model catalog...");
     let modelIds: string[];
     try {
-      const result = await untilExit(selectorConfig.listModelIds());
+      const result = await untilExit(
+        busy.run("Loading model catalog...", () =>
+          selectorConfig.listModelIds()
+        )
+      );
       if (result === EXIT_REQUESTED) {
         return;
       }
@@ -1244,6 +1270,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    const resumeBusy = busy.suspend();
     const pendingSelection = new Promise<string | undefined>((resolve) => {
       // Let the selector own ctrl+c/escape while it is mounted.
       commandInputListenerActive = true;
@@ -1262,6 +1289,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         composerLayer.setContent(editor);
         tui.setFocus(composerLayer);
         tui.requestRender();
+        resumeBusy();
         resolve(modelId);
       };
       // Exit must settle the selector through the same idempotent path as
@@ -1292,7 +1320,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     try {
-      await selectorConfig.switchModel(selection);
+      await busy.run("Switching model...", () =>
+        selectorConfig.switchModel(selection)
+      );
       updateHeader();
       addSystemMessage(
         chatContainer,
@@ -1315,10 +1345,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
-    showLoader("Loading sessions...");
     let sessions: readonly SessionIndexEntry[];
     try {
-      const result = await untilExit(selectorConfig.listSessions());
+      const result = await untilExit(
+        busy.run("Loading sessions...", () => selectorConfig.listSessions())
+      );
       if (result === EXIT_REQUESTED) {
         return;
       }
@@ -1339,6 +1370,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
 
+    const resumeBusy = busy.suspend();
     const pendingSelection = new Promise<string | undefined>((resolve) => {
       commandInputListenerActive = true;
       let selector: SessionSelectorComponent | undefined;
@@ -1356,6 +1388,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         composerLayer.setContent(editor);
         tui.setFocus(composerLayer);
         tui.requestRender();
+        resumeBusy();
         resolve(sessionKey);
       };
       // Exit must settle the selector through the same idempotent path as
@@ -1390,9 +1423,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     try {
-      await renderSessionHistory(
-        await resumeSessionReplayParts(selectorConfig, selection)
-      );
+      await busy.run("Switching session...", async () => {
+        await renderSessionHistory(
+          await resumeSessionReplayParts(selectorConfig, selection)
+        );
+      });
       updateHeader();
     } catch (error) {
       addSystemMessage(
@@ -1454,7 +1489,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "refresh-header") {
-      await config.onCommandAction?.(commandResult.action);
+      const action = commandResult.action;
+      await busy.run("Working...", () => config.onCommandAction?.(action));
       updateHeader();
     }
 
@@ -1485,8 +1521,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (!commandResult.action) {
       return;
     }
+    const action = commandResult.action;
     try {
-      await config.onCommandAction?.(commandResult.action);
+      await busy.run("Reloading...", () => config.onCommandAction?.(action));
     } catch (error) {
       refreshCommandSet();
       addSystemMessage(
@@ -1504,61 +1541,68 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     tui.requestRender();
   };
 
-  const processCommandInput = async (trimmed: string): Promise<boolean> => {
-    const commandInput = await preprocessCommandInput(trimmed);
-    if (commandInput === null) {
-      tui.requestRender();
-      return true;
-    }
-
-    const commandResult = await executeLocalCommand(commandInput);
-    await handleCommandResult(commandResult);
-    return true;
-  };
-
-  const processUserInputMessage = async (
-    trimmed: string,
-    steeringRun?: AgentTurn
-  ): Promise<void> => {
-    addUserMessage(chatContainer, markdownTheme, trimmed);
-    tui.requestRender();
-
-    const result = await dispatchUserInput({
-      activeRun: steeringRun,
-      hooks: {
-        showStatus: (text: string) => showLoader(text),
-        clearStatus: () => clearStatus(),
-      },
-      input: trimmed,
-      onPrepared: (prepared) => {
-        if (prepared.translatedDisplay) {
-          addTranslatedMessage(
-            chatContainer,
-            markdownTheme,
-            prepared.translatedDisplay
-          );
-        }
-        showLoader(steeringRun === undefined ? "Processing..." : "Steering...");
+  const processCommandInput = (trimmed: string): Promise<boolean> =>
+    busy.run("Working...", async () => {
+      const commandInput = await preprocessCommandInput(trimmed);
+      if (commandInput === null) {
         tui.requestRender();
-      },
-      preprocess: config.preprocessUserInput,
-      thread: config.thread,
+        return true;
+      }
+
+      const commandResult = await executeLocalCommand(commandInput);
+      await handleCommandResult(commandResult);
+      return true;
     });
 
-    if (result.type === "rejected") {
-      clearStatus();
-      addSystemMessage(chatContainer, result.error);
-      tui.requestRender();
-      return;
-    }
+  const processUserInputMessage = (
+    trimmed: string,
+    steeringRun?: AgentTurn
+  ): Promise<void> =>
+    busy.run(
+      steeringRun === undefined ? "Processing..." : "Steering...",
+      async () => {
+        addUserMessage(chatContainer, markdownTheme, trimmed);
+        tui.requestRender();
 
-    if (!result.consumeRun) {
-      clearStatus();
-      return;
-    }
+        const result = await dispatchUserInput({
+          activeRun: steeringRun,
+          hooks: {
+            showStatus: (text: string) => showLoader(text),
+            clearStatus: () => clearStatus(),
+          },
+          input: trimmed,
+          onPrepared: (prepared) => {
+            if (prepared.translatedDisplay) {
+              addTranslatedMessage(
+                chatContainer,
+                markdownTheme,
+                prepared.translatedDisplay
+              );
+            }
+            showLoader(
+              steeringRun === undefined ? "Processing..." : "Steering..."
+            );
+            tui.requestRender();
+          },
+          preprocess: config.preprocessUserInput,
+          thread: config.thread,
+        });
 
-    await runSingleTurn(result.run);
-  };
+        if (result.type === "rejected") {
+          clearStatus();
+          addSystemMessage(chatContainer, result.error);
+          tui.requestRender();
+          return;
+        }
+
+        if (!result.consumeRun) {
+          clearStatus();
+          return;
+        }
+
+        await runSingleTurn(result.run);
+      }
+    );
 
   const processSteeringInput = async (
     trimmed: string,
@@ -1655,27 +1699,38 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   tui.start();
 
   try {
-    await config.onExtensionUiReady?.((hostSignal) =>
-      createExtensionUi({
-        restoreFocus: clearPromptInput,
-        showMessage: (message) => addSystemMessage(chatContainer, message),
-        showStatus: (message) => {
-          showLoader(message);
-          return clearStatus;
-        },
-        // Host-scoped signals let a runtime swap cancel prompts that a
-        // detached previous host still has on screen.
-        signal:
-          hostSignal === undefined
-            ? extensionUiController.signal
-            : AbortSignal.any([extensionUiController.signal, hostSignal]),
-        tui,
-      })
+    await busy.run("Activating extensions...", () =>
+      config.onExtensionUiReady?.((hostSignal) =>
+        createExtensionUi({
+          restoreFocus: clearPromptInput,
+          showMessage: (message) => addSystemMessage(chatContainer, message),
+          showStatus: (message) => {
+            const clear = busy.status(message);
+            const signal = hostSignal ?? extensionUiController.signal;
+            signal.addEventListener("abort", clear, { once: true });
+            if (signal.aborted) {
+              clear();
+            }
+            return () => {
+              signal.removeEventListener("abort", clear);
+              clear();
+            };
+          },
+          onUserWait: () => busy.suspend(),
+          // Host-scoped signals let a runtime swap cancel prompts that a
+          // detached previous host still has on screen.
+          signal:
+            hostSignal === undefined
+              ? extensionUiController.signal
+              : AbortSignal.any([extensionUiController.signal, hostSignal]),
+          tui,
+        })
+      )
     );
     for (const message of config.setupMessages ?? []) {
       addSystemMessage(chatContainer, message);
     }
-    await config.onSetup?.();
+    await busy.run("Setting up...", () => config.onSetup?.());
     if (config.replayHistoryOnStartup === true) {
       await renderSessionHistory();
     }
@@ -1693,9 +1748,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
-    const composerRows = composerLayer.render(terminal.columns).length;
     extensionUiController.abort();
-    clearStatus();
+    busy.dispose();
     footerStatusBar.stop();
     session.close();
 
@@ -1709,9 +1763,22 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // Rendering must stop before the streamed assistant views are disposed:
       // disposal empties their children, so a later render would blank the
       // reply that is already on screen.
-      tui.stop();
-      terminal.write(terminalExitCursorSequence(composerRows));
-      disposeAssistantViews();
+      try {
+        // Flush the final interruption/status frame while its views still
+        // exist. Normal stop adds a clamped cursor move and newline, losing
+        // the composer's position when the transcript fills the viewport.
+        tui.renderNow();
+        const renderState = tui.captureRenderState();
+        const composerRows = composerLayer.render(terminal.columns).length;
+        tui.stop({ preserveScreen: true });
+        terminal.write(terminalExitCursorSequence(renderState, composerRows));
+        disposeAssistantViews();
+      } finally {
+        await Promise.all(turnCompletions);
+        for (const error of completionFailures) {
+          console.error("onTurnComplete callback failed in TUI:", error);
+        }
+      }
     }
   }
 }
