@@ -272,3 +272,108 @@ describe("BaseToolCallView render shape fixtures", () => {
     view.dispose();
   });
 });
+
+describe("progressive shared input ownership", () => {
+  it.each([false, true])(
+    "reveals generic input before execution (raw=%s)",
+    async (raw) => {
+      const view = new BaseToolCallView(
+        "stream",
+        "generic",
+        markdownTheme,
+        undefined,
+        raw
+      );
+      await view.appendInputChunk('{"message":"EARLY');
+      expect(view.render(120).join("\n")).toContain("EARLY");
+      await view.appendInputChunk(' LATER"}');
+      expect(view.render(120).join("\n")).toContain("LATER");
+      view.dispose();
+    }
+  );
+
+  it("owns streaming input even when a custom renderer claims an empty body", async () => {
+    const view = new BaseToolCallView(
+      "stream",
+      "custom",
+      markdownTheme,
+      undefined,
+      false,
+      {
+        custom: (target, _input, output) =>
+          target.setPrettyBlock(
+            "custom",
+            typeof output === "string" ? output : ""
+          ),
+      }
+    );
+    await view.appendInputChunk('{"message":"EARLY');
+    expect(view.render(120).join("\n")).toContain("EARLY");
+    await view.appendInputChunk(' LATER"}');
+    view.setFinalInput({ message: "EARLY LATER" });
+    expect(view.render(120).join("\n")).toContain("LATER");
+    view.setOutput("CUSTOM_RESULT");
+    expect(view.render(120).join("\n")).toContain("CUSTOM_RESULT");
+    expect(view.render(120).join("\n")).not.toContain("EARLY");
+    view.dispose();
+  });
+
+  it("shows broken JSON safely instead of silently dropping input", async () => {
+    const view = new BaseToolCallView("stream", "generic", markdownTheme);
+    await view.appendInputChunk("broken EARLY \u001b]52;c;payload\u0007");
+    const text = view.render(120).join("\n");
+    expect(text).toContain("EARLY");
+    expect(text).not.toContain("\u001b]");
+    expect(text).not.toContain("\u0007");
+    view.dispose();
+  });
+});
+
+describe("characterization: shared terminal states", () => {
+  it("raw mode bypasses custom renderers and preserves input and result", async () => {
+    const renderer = vi.fn();
+    const view = new BaseToolCallView(
+      "raw",
+      "custom",
+      markdownTheme,
+      undefined,
+      true,
+      { custom: renderer }
+    );
+    await view.appendInputChunk('{"content":"RAW_EARLY\\nRAW_LATER"}');
+    expect(view.render(120).join("\n")).toContain("RAW_EARLY\\nRAW_LATER");
+    view.setFinalInput({ content: "RAW_EARLY\nRAW_LATER" });
+    view.setOutput("RAW_RESULT");
+    expect(view.render(120).join("\n")).toContain("RAW_RESULT");
+    expect(renderer).not.toHaveBeenCalled();
+    view.dispose();
+  });
+
+  it("denied output does not render a success result", () => {
+    const view = new BaseToolCallView("denied", "generic", markdownTheme);
+    view.setFinalInput({ path: "x" });
+    view.setOutputDenied("DENIED_SENTINEL");
+    expect(view.render(120).join("\n")).toContain("DENIED_SENTINEL");
+    view.dispose();
+  });
+
+  it("dispose stops pending animation without inventing an output on abort", () => {
+    vi.useFakeTimers();
+    const requestRender = vi.fn();
+    const view = new BaseToolCallView(
+      "abort",
+      "generic",
+      markdownTheme,
+      requestRender
+    );
+    const before = requestRender.mock.calls.length;
+    vi.advanceTimersByTime(80);
+    expect(requestRender.mock.calls.length).toBeGreaterThan(before);
+    view.dispose();
+    const stopped = requestRender.mock.calls.length;
+    vi.advanceTimersByTime(160);
+    expect(requestRender).toHaveBeenCalledTimes(stopped);
+    expect(view.render(120).join("\n")).not.toContain("Output");
+    vi.useRealTimers();
+  });
+});

@@ -46,6 +46,21 @@ const renderCodeBlock = (language: string, value: unknown): string => {
   return `${fence}${language}\n${text}\n${fence}`;
 };
 
+// Strings stay decoded (especially multiline source) rather than being
+// re-escaped by JSON.stringify. The pretty-block boundary sanitizes every field.
+const formatInputPreview = (value: unknown): string => {
+  if (typeof value !== "object" || value === null) {
+    return safeStringify(value);
+  }
+  const fields = Object.entries(value);
+  if (fields.length === 0) {
+    return safeStringify(value);
+  }
+  return fields
+    .map(([key, field]) => `${key}: ${formatInputPreview(field)}`)
+    .join("\n");
+};
+
 const isPlainEmptyObject = (value: unknown): boolean => {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -399,13 +414,12 @@ export class BaseToolCallView extends Container {
     return this.renderedOverride !== null || this.prettyBlockActive;
   }
 
-  private shouldSuppressRawFallback(): boolean {
+  private shouldRenderInputPreview(): boolean {
     if (this.showRawToolIo) {
       return false;
     }
 
     return (
-      this.finalInput === undefined &&
       this.output === undefined &&
       this.error === undefined &&
       !this.outputDenied &&
@@ -421,6 +435,17 @@ export class BaseToolCallView extends Container {
 
     const bestInput = this.resolveBestInput();
 
+    // Own streamed arguments until a result/error arrives: result renderers may
+    // intentionally claim an empty body, or require fields not yet received.
+    // Keep this same preview across the complete-input/execution boundary.
+    if (this.shouldRenderInputPreview()) {
+      this.setPrettyBlock(
+        `**${this.toolName || UNKNOWN_TOOL_NAME}** input`,
+        formatInputPreview(bestInput)
+      );
+      return;
+    }
+
     if (!this.showRawToolIo && this.tryRenderWithCustomRenderer(bestInput)) {
       if (this.prettyBlockActive) {
         return;
@@ -433,10 +458,6 @@ export class BaseToolCallView extends Container {
     }
 
     this.setDisplayMode("content");
-
-    if (this.shouldSuppressRawFallback()) {
-      return;
-    }
 
     const resolvedToolName = this.toolName || UNKNOWN_TOOL_NAME;
     const blocks: string[] = [

@@ -419,6 +419,14 @@ The TUI renders the runtime's streaming deltas as live tokens while a step
 runs. Dedupe against the committed events is built in: committed
 `assistant-output` text renders only when a step produced no deltas.
 
+In pretty mode, every tool's streamed arguments use a shared input preview,
+including extension tools with custom result renderers. String values are
+shown decoded, so multiline source is readable before execution. The preview
+remains while execution is pending and is replaced by the normal result or
+error rendering; it does not mean the tool has run or a file has been written.
+`showRawToolIo` keeps the JSON input/output view. Shell output still appears
+only when its result arrives, not as live stdout.
+
 Provider failures use the runtime's structured `turn-error.error` metadata.
 The TUI maps stable categories to a concise title and action, shows only the
 safe summary, and renders bounded correlation IDs with their header source. It
