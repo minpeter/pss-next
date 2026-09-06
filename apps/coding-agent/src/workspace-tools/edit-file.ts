@@ -17,25 +17,25 @@ const editSchema = z
     op: z
       .enum(["replace", "append", "prepend"])
       .describe(
-        "replace/append/prepend. Anchors are LINE#ID from read_file (e.g. 5#a3f2); never include |content."
+        "replace/append/prepend. Anchors are LINE#ID (shape example: 5#WM); copy actual anchors from the latest read_file, never include |content or invent hashes. Omit unused anchor fields entirely; empty strings, null, and placeholders are not omission."
       ),
     target: z
       .string()
       .optional()
       .describe(
-        'Line reference "LINE#ID" for one-line replace, or the insert point for append/prepend. Copy from read_file (e.g. "5#a3f2"); never include |content.'
+        'Line reference "LINE#ID" for one-line replace, or the insert point for append/prepend. Shape example: "5#WM"; copy the actual anchor from the latest read_file, never include |content. When using target, omit first and last entirely. For a replace range, omit target entirely; do not send an empty string, null, or a placeholder.'
       ),
     first: z
       .string()
       .optional()
       .describe(
-        'Start line ref "LINE#ID" for an inclusive replace range. Pair with last; do not combine with target.'
+        'Start line ref "LINE#ID" copied from the latest read_file for an inclusive replace range. Pair with last and omit target entirely. For one-line replace or append/prepend, omit first entirely; do not send an empty string, null, or a placeholder.'
       ),
     last: z
       .string()
       .optional()
       .describe(
-        'End line ref "LINE#ID" for an inclusive replace range. Pair with first; do not combine with target.'
+        'End line ref "LINE#ID" copied from the latest read_file for an inclusive replace range. Pair with first and omit target entirely. For one-line replace or append/prepend, omit last entirely; do not send an empty string, null, or a placeholder.'
       ),
     new_content: z
       .union([
@@ -125,7 +125,7 @@ function resolveEdit(
   if (edit.first !== undefined || edit.last !== undefined) {
     if (edit.target !== undefined) {
       throw new Error(
-        "replace accepts either target for one line or first+last for a range, not both."
+        'replace accepts either target for one line or first+last for a range, not both. For one line, keep target and omit first and last entirely. For a range, keep first and last and omit target entirely. Empty strings (""), null, and placeholders are not omission; remove the unused keys from the edit object.'
       );
     }
     if (edit.first === undefined) {
@@ -266,8 +266,9 @@ export function createEditFileTool(
   workspace: string
 ): Tool<z.infer<typeof inputSchema>, string> {
   return tool({
+    strict: false,
     description:
-      'Apply deterministic plugsuits-style hashline edits. CRITICAL: anchors are LINE#ID only (e.g. "5#a3f2") copied from read_file; never include |content or invent hashes. replace uses target for one line, or first+last for an inclusive range (never both); append/prepend insert relative to an optional target. Re-read after edits before another call on the same path.',
+      'Apply deterministic plugsuits-style hashline edits. CRITICAL: anchors are LINE#ID only (shape example: "5#WM"); copy actual anchors from the latest read_file, never include |content or invent hashes. For one-line replace, supply target and omit first and last entirely. For an inclusive replace range, supply first+last and omit target entirely (never both). append/prepend insert relative to an optional target; omit first and last entirely. Omit unused anchor fields entirely: empty strings (""), null, and placeholders are not omission. Re-read after edits before another call on the same path.',
     inputSchema,
     execute: async ({ path, expected_file_hash: expectedHash, edits }) => {
       for (const edit of edits) {

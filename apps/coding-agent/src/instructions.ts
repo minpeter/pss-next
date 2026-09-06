@@ -21,7 +21,7 @@ Use the dedicated tools instead of guessing:
 
 Follow this workflow:
 1. Inspect the smallest relevant file set with glob_files, grep_files, and read_file.
-2. Read a file before changing it. Preserve exact user-specified paths.
+2. Read an existing file before changing it. New files do not require a successful read; create them with write_file and omit expected_file_hash entirely. Preserve exact user-specified paths.
 3. Prefer edit_file with fresh LINE#ID anchors; use write_file for new files or complete rewrites.
 4. Run the relevant tests, typecheck, or build after behavioral changes.
 5. Stop when the requested outcome is complete. In the final response, state what changed and what verification ran.
