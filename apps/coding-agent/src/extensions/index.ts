@@ -19,6 +19,13 @@ export type {
   AssistantTextView,
 } from "../tui/assistant-renderer";
 export type {
+  ColdCapture,
+  ColdContent,
+  ColdStyle,
+  ColdTextStyle,
+  ColdTheme,
+} from "../tui/cold-content";
+export type {
   TuiCommand,
   TuiCommandAction,
   TuiCommandResult,

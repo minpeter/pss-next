@@ -4,6 +4,12 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
+import {
+  type ColdContent,
+  captureComponent,
+  selectColdTail,
+} from "./cold-content";
+
 const BODY_ROWS = 8;
 
 /** Render-only tail window; never shorten the component's underlying source. */
@@ -33,6 +39,14 @@ export class BodyViewport implements Component {
 
   constructor(child: Component) {
     this.child = child;
+  }
+
+  captureCold(width: number): ColdContent {
+    return selectColdTail(
+      captureComponent(this.child, width),
+      width,
+      BODY_ROWS
+    );
   }
 
   invalidate(): void {

@@ -1,40 +1,49 @@
+import { type Component, Container, Spacer } from "@earendil-works/pi-tui";
 import {
-  type Component,
-  Container,
-  Spacer,
-  Text,
-  wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+  type ColdContent,
+  captureComponent,
+  hasGraphics,
+  renderColdContent,
+} from "./cold-content";
+import { SnapshotText as Text } from "./snapshot-views";
 
-/** Captured presentation, never a renderer or canonical Markdown source. */
+/** Immutable content with width-dependent, synchronous, renderer-free layout. */
 export class ColdSnapshot implements Component {
-  readonly #lines: readonly string[];
-  readonly #width: number;
-  readonly #graphics: boolean;
+  readonly #content: ColdContent;
 
-  constructor(lines: readonly string[], width: number) {
-    this.#lines = [...lines];
-    this.#width = width;
-    // Retain entire graphics transmissions AND their reserved rows atomically.
-    this.#graphics = lines.some(
-      (line) =>
-        line.includes("\x1b_G") ||
-        line.includes("\x1b]1337;File=") ||
-        line.includes("\x1bP")
-    );
+  constructor(content: ColdContent | readonly string[], _width?: number) {
+    // Reject callbacks and detach every nested array/object supplied by a view.
+    this.#content = structuredClone(
+      Array.isArray(content)
+        ? {
+            kind: "fixed",
+            rows: content,
+            reason: hasGraphics(content) ? "graphics" : "opaque-renderer",
+          }
+        : content
+    ) as ColdContent;
+  }
+
+  static capture(component: Component, width: number): ColdSnapshot {
+    const rows = [...component.render(width)];
+    return new ColdSnapshot({
+      kind: "selected",
+      width,
+      rows,
+      content: captureComponent(component, width),
+    });
+  }
+
+  captureCold(): ColdContent {
+    return structuredClone(this.#content);
   }
 
   invalidate(): void {
-    /* Immutable, including selected tail and graphics asset. */
+    /* No live renderer or source survives handoff. */
   }
 
   render(width: number): string[] {
-    if (width === this.#width || this.#graphics) {
-      return [...this.#lines];
-    }
-    return this.#lines.flatMap((line) =>
-      wrapTextWithAnsi(line, Math.max(1, width))
-    );
+    return renderColdContent(this.#content, Math.max(1, width));
   }
 }
 
@@ -92,9 +101,7 @@ export class TranscriptOwner extends Container {
   /** One-shot appends are immediately COLD. No caller can bypass handoff. */
   override addChild(component: Component): void {
     this.finish();
-    super.addChild(
-      new ColdSnapshot(component.render(this.#width()), this.#width())
-    );
+    super.addChild(ColdSnapshot.capture(component, this.#width()));
   }
 
   acquire<T extends Component>(
@@ -138,9 +145,7 @@ export class TranscriptOwner extends Container {
       mounted = block;
     }
     if (options.leadingSpacer ?? true) {
-      super.addChild(
-        new ColdSnapshot(new Spacer(1).render(this.#width()), this.#width())
-      );
+      super.addChild(ColdSnapshot.capture(new Spacer(1), this.#width()));
     }
     super.addChild(mounted);
     this.#hot = {
@@ -168,7 +173,7 @@ export class TranscriptOwner extends Container {
         this.#reservationWidth = width;
       }
       // Snapshot actual rows, never the owner's synthetic trailing reserve.
-      const snapshot = new ColdSnapshot(hot.mounted.render(width), width);
+      const snapshot = ColdSnapshot.capture(hot.mounted, width);
       this.#hot = undefined;
       this.children[this.children.indexOf(hot.mounted)] = snapshot;
       // Revoke before callbacks from abort/dispose can request renders or notify.

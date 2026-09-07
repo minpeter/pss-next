@@ -1,10 +1,6 @@
-import {
-  type Container,
-  type Markdown,
-  Spacer,
-  Text,
-} from "@earendil-works/pi-tui";
+import { type Component, type Container, Spacer } from "@earendil-works/pi-tui";
 import type { RetryWaitSchedule } from "./retry-status";
+import { SnapshotText as Text } from "./snapshot-views";
 import type { AssistantStreamView } from "./stream-views";
 import { sanitizeTerminalText } from "./terminal-safety";
 import type { ToolCallView } from "./tool-call-view";
@@ -64,7 +60,7 @@ export const UNKNOWN_TOOL_NAME = "tool";
 
 export const addChatComponent = (
   chatContainer: Container,
-  component: Container | Text | Markdown,
+  component: Component,
   options: { addLeadingSpacer?: boolean } = {}
 ): void => {
   if (options.addLeadingSpacer ?? true) {

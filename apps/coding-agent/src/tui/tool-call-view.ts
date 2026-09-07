@@ -1,18 +1,21 @@
 import {
   Container,
-  Markdown,
   type MarkdownTheme,
   Spacer,
-  Text,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { parsePartialJson } from "ai";
 import { BodyViewport, renderBodyTail } from "./body-viewport";
+import { type ColdContent, captureStyle, selectTextTail } from "./cold-content";
 import {
   createSpinnerTicker,
   type SpinnerTicker,
   stylePendingIndicator,
 } from "./pending-spinner";
+import {
+  SnapshotMarkdown as Markdown,
+  SnapshotText as Text,
+} from "./snapshot-views";
 import { sanitizeTerminalText } from "./terminal-safety";
 
 const UNKNOWN_TOOL_NAME = "tool";
@@ -79,6 +82,13 @@ const applyErrorBackground = (text: string): string =>
   `${ANSI_BG_DARK_RED}${text}${ANSI_RESET}`;
 
 class TrimmedMarkdown extends Markdown {
+  override captureCold(width: number): ColdContent {
+    const content = super.captureCold(width);
+    return content.kind === "markdown"
+      ? { ...content, trimEnd: true }
+      : content;
+  }
+
   override render(width: number): string[] {
     const lines = super.render(width);
     let end = lines.length;
@@ -130,6 +140,26 @@ class BackgroundBody {
     this.cachedText = undefined;
     this.cachedWidth = undefined;
     this.cachedLines = undefined;
+  }
+
+  captureCold(width: number): ColdContent {
+    if (!this.text.trim()) {
+      return { kind: "group", children: [] };
+    }
+    const content = selectTextTail(
+      {
+        kind: "text",
+        text: this.text,
+        paddingX: this.paddingX,
+        paddingY: 0,
+        background: this.backgroundEnabled
+          ? captureStyle(this.backgroundFn)
+          : undefined,
+      },
+      width,
+      8
+    );
+    return { kind: "group", children: [{ kind: "spacer", rows: 1 }, content] };
   }
 
   render(width: number): string[] {

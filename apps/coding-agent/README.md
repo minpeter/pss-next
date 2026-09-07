@@ -440,15 +440,34 @@ Text-only custom renderers use the same streaming bound and final-text expansion
 (a Markdown override is one body). Image-bearing renderer output, including Kitty/iTerm2 graphics and
 reserved image rows, remains intact and is exempt from the text-row cap.
 
-The startup header and transcript prefix are immutable rendered snapshots.
-Only the latest output block remains HOT; submitting input, a notice, or another
-stream/tool block freezes the previous block before appending. Late tool results
-and interleaved tool input use new continuation cards identified by call ID;
-canonical arguments and persisted messages remain complete. Completed views
-are detached, so late custom-renderer callbacks cannot rewrite history. Resize
-reflows the captured rows, not the old Markdown renderer or a newly selected
-tail; returning to the original width reproduces the snapshot. Ready graphics
-retain their payload and reserved geometry atomically (narrow terminals may clip).
+The startup header and transcript prefix have immutable content, not immutable
+terminal wrapping. Only the latest output block remains HOT; submitting input,
+a notice, or another stream/tool block seals the previous block before appending.
+Late tool results and interleaved tool input use new continuation cards identified
+by call ID; canonical arguments and persisted messages remain complete. Completed
+views are detached, so late renderer callbacks cannot rewrite history.
+
+Width changes synchronously lay out copied text/Markdown and captured styles:
+soft wraps can join again, hard newlines remain, and tables/code re-layout.
+Completed answers retain their full content; capped reasoning/tool bodies select
+visible content once at sealing, including partial lines/cells. Resize never
+selects a fresh last-eight from the original source. Returning to the sealing
+width restores its exact presentation. Height-only changes affect the viewport
+and composer, not COLD content. Startup logo/model/cwd/help content stays fixed
+while its wrapping changes.
+
+Custom `AssistantTextView` implementations may provide synchronous
+`captureCold(width): ColdContent` (types exported from `/extension`). Return
+renderer-free presentation data: text with hard newlines, Markdown with captured
+style values, groups, or fixed rows. The host copies it before abort/disposal;
+never return callbacks, mutable view references, or fresh underlying content that
+was not displayed. Transparent composed fallbacks retain their delegated source.
+Opaque text renderers and non-wrapper theme transformations are explicit
+fixed-row-layout exceptions: rows may wrap narrower but cannot join old wraps.
+A graphical view without this contract is a fixed-size exception: its captured
+Kitty/iTerm2/DCS transmission and reserved rows remain atomic; narrower terminals
+may clip it. No image rescaling or producer rerun is claimed. A custom group can
+keep an image fixed while supplying independently reflowable adjacent text.
 
 At a fixed terminal width, shrinking HOT output leaves synthetic blank rows at
 the transcript tail, above the composer, so the composer/footer does not jump

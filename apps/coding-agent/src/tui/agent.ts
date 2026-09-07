@@ -8,12 +8,10 @@ import {
   isKeyRelease,
   isKeyRepeat,
   Key,
-  Markdown,
   type MarkdownTheme,
   matchesKey,
   ProcessTerminal,
   Spacer,
-  Text,
   type TUI,
   TuiMainScreen,
   visibleWidth,
@@ -58,6 +56,10 @@ import {
 } from "./session-history-replay";
 import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
+import {
+  SnapshotMarkdown as Markdown,
+  SnapshotText as Text,
+} from "./snapshot-views";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
   addChatComponent,
@@ -851,10 +853,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     title.setText(
       subtitle ? `${headerTitle}\n${style(ANSI_DIM, subtitle)}` : headerTitle
     );
-    const snapshot = new ColdSnapshot(
-      headerContainer.render(terminal.columns),
-      terminal.columns
-    );
+    const snapshot = ColdSnapshot.capture(headerContainer, terminal.columns);
     headerContainer.clear();
     headerContainer.addChild(snapshot);
   };
