@@ -185,10 +185,31 @@ and staged before one atomic publication; unknown capability kinds fail
 closed. Event handlers run serially in extension and registration order.
 Naming a stream event such as `assistant-output-delta` explicitly opts into
 ephemeral events. This also includes live-only `model-attempt` start/end pairs
-for physical provider calls and SDK retries. Object models and string ids backed
-by a configured `AI_SDK_DEFAULT_PROVIDER` are observed; implicit-gateway string
-ids emit no attempt events. Attempt events are excluded from durable replay and
-result payloads. Handler failures are attributed to the owning
+for physical provider calls and runtime retries, plus `pss.on("model-retry", ...)`
+for authoritative retry state. `scheduled` supplies `delayMs`, Unix-ms `retryAt`,
+and `remainingRetries` including the scheduled retry; `started` clears the wait
+and decrements that budget; `stopped` clears it permanently with zero remaining
+retries and a cancellation, exhaustion, non-retryable, or stream-ended reason.
+A schedule is cancellable, not a guarantee. See the runtime README for the full
+counting contract and countdown example. The TUI renders an active schedule in
+its existing one-row footer status as `Retrying in 4s · attempt 2 · 2 retries
+left`. When a retry starts or stops, the countdown returns to the ongoing
+operation's label; the wait never enters the transcript.
+
+The footer keeps one animated busy indicator throughout input preprocessing,
+streaming text, physical tool execution, provider/step waits, and cancellation
+cleanup. Reasoning and retry events change its label, not its lifetime. Tool
+execution may use the generic `Working` label because committed tool events
+arrive after physical execution. Commands, reloads, catalog/history loading,
+model/session switching, setup, compaction policies/summaries, and asynchronous
+turn-completion callbacks own independent busy lifetimes. Finishing one cannot
+hide another. User-only selectors and extension dialogs suspend their calling
+operation's indicator, but not concurrent background work. Status labels clip
+before the animated glyph, including with a custom right-side footer.
+Object models and string ids backed by a configured `AI_SDK_DEFAULT_PROVIDER`
+are observed; implicit-gateway string ids emit neither attempt nor retry events.
+Both event kinds are excluded from durable replay and result payloads.
+Handler failures are attributed to the owning
 extension and surfaced after the original events.
 
 Install an extension globally or for one project:
@@ -398,6 +419,75 @@ The TUI renders the runtime's streaming deltas as live tokens while a step
 runs. Dedupe against the committed events is built in: committed
 `assistant-output` text renders only when a step produced no deltas.
 
+In pretty mode, every tool's streamed arguments use a shared input preview,
+including extension tools with custom result renderers. String values are
+shown decoded, so multiline source is readable before execution. The preview
+remains while execution is pending and is replaced by the normal result or
+error rendering; it does not mean the tool has run or a file has been written.
+`showRawToolIo` keeps the JSON input/output view. Shell output still appears
+only when its result arrives, not as live stdout.
+
+Text bodies auto-follow their latest eight terminal rows, including wrapped
+lines, while streaming. On text completion, the current assistant block expands
+its full rendered text before freezing, including all table/code/prose rows.
+Long final answers remain available in terminal scrollback, not necessarily all
+on screen at once. Completed reasoning and interrupted partial text retain their
+displayed tail; later answer text cannot evict completed reasoning. Each
+pretty tool body and each raw Input/Output/Error body has its own window. Tool headers and raw section labels sit outside the
+budget. Earlier content remains stored but is not all visible at once; no new
+scrolling keys or mouse bindings are provided. The composer is unchanged.
+Text-only custom renderers use the same streaming bound and final-text expansion
+(a Markdown override is one body). Image-bearing renderer output, including Kitty/iTerm2 graphics and
+reserved image rows, remains intact and is exempt from the text-row cap.
+
+The startup header and transcript prefix have immutable content, not immutable
+terminal wrapping. Only the latest output block remains HOT; submitting input,
+a notice, or another stream/tool block seals the previous block before appending.
+Late tool results and interleaved tool input use new continuation cards identified
+by call ID; canonical arguments and persisted messages remain complete. Completed
+views are detached, so late renderer callbacks cannot rewrite history.
+
+Width changes synchronously lay out copied text/Markdown and captured styles:
+soft wraps can join again, hard newlines remain, and tables/code re-layout.
+Completed answers retain their full content; capped reasoning/tool bodies select
+visible content once at sealing, including partial lines/cells. Resize never
+selects a fresh last-eight from the original source. Returning to the sealing
+width restores its exact presentation. Height-only changes affect the viewport
+and composer, not COLD content. Startup logo/model/cwd/help content stays fixed
+while its wrapping changes.
+
+Custom `AssistantTextView` implementations may provide synchronous
+`captureCold(width): ColdContent` (types exported from `/extension`). Return
+renderer-free presentation data: text with hard newlines, Markdown with captured
+style values, groups, or fixed rows. The host copies it before abort/disposal;
+never return callbacks, mutable view references, or fresh underlying content that
+was not displayed. Transparent composed fallbacks retain their delegated source.
+Opaque text renderers and non-wrapper theme transformations are explicit
+fixed-row-layout exceptions: rows may wrap narrower but cannot join old wraps.
+A graphical view without this contract is a fixed-size exception: its captured
+Kitty/iTerm2/DCS transmission and reserved rows remain atomic; narrower terminals
+may clip it. No image rescaling or producer rerun is claimed. A custom group can
+keep an image fixed while supplying independently reflowable adjacent text.
+
+At a fixed terminal width, shrinking HOT output leaves synthetic blank rows at
+the transcript tail, above the composer, so the composer/footer does not jump
+upward. Completion freezes only actual rendered content, including genuine blank
+lines, Markdown spacing and graphic reserved rows. The next block starts after
+that content and its normal separator; new output consumes the shared trailing
+reserve before transcript height grows. Synthetic padding never becomes a
+permanent gap between COLD blocks or enters canonical messages/files. Width
+changes recompute the reservation without stale-width padding; transcript reset
+clears it. Streaming bodies remain capped, while full final-text expansion
+consumes or grows the reservation without rewriting older COLD blocks. Clearing
+multiline composer input is separate and unchanged.
+
+Extension input/select/confirm prompts share the HOT composer slot and retain
+the one-row footer rather than covering history. Model/title changes append
+current-state notices without rewriting startup information. `/reload` and
+compaction retain the transcript; explicit `/new` (`/clear`), `/resume`, `/fork`,
+and initial history replay start a new transcript epoch. Failed history loads
+retain old visible content and report the current-session mismatch.
+
 Provider failures use the runtime's structured `turn-error.error` metadata.
 The TUI maps stable categories to a concise title and action, shows only the
 safe summary, and renders bounded correlation IDs with their header source. It
@@ -547,7 +637,7 @@ pss exec --workspace . --stdin --timeout-seconds 900 --result-file result.json
 `pss exec` streams JSONL events (`metadata`, `agent_event`, `result`) to stdout
 and exits 0 only when the task completes. Ephemeral events
 (`assistant-output-delta`, `assistant-reasoning-delta`, `tool-call-input-*`,
-`context-usage`, and `model-attempt`) appear as `agent_event` lines alongside
+`context-usage`, `model-attempt`, and `model-retry`) appear as `agent_event` lines alongside
 the committed events, but are excluded from the accumulated `result.events`
 payload, which stays committed-only. Structured `turn-error` metadata appears
 in both the live `agent_event` and committed result without raw provider
@@ -683,7 +773,14 @@ PSS_THREAD_KEY=workspace:demo pss inspect-thread
 
 ```sh
 pnpm dev:tui
+# From another workspace:
+pnpm -C /path/to/pss-runtime dev:tui
 ```
+
+`dev:tui` runs source code with the caller's directory as the workspace for
+file/shell tools, context, sessions, and file completion. Model settings still
+load from the runtime repository's `.env`, not the caller's `.env`. Installed
+`pss` and other commands keep their existing cwd and environment behavior.
 
 ## JSONL RPC mode
 

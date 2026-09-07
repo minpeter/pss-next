@@ -68,8 +68,8 @@ describe("createSpinnerOrchestrator", () => {
       });
 
       orch.onReasoningEnd();
-      expect(h.events).toContainEqual({ type: "clearStatus" });
-      expect(h.state().hasSpinner).toBe(false);
+      expect(h.events).not.toContainEqual({ type: "clearStatus" });
+      expect(h.state().hasSpinner).toBe(true);
     });
   });
 
@@ -96,7 +96,7 @@ describe("createSpinnerOrchestrator", () => {
       });
 
       orch.onToolPendingEnd();
-      expect(h.state().hasSpinner).toBe(false);
+      expect(h.state().hasSpinner).toBe(true);
     });
 
     it("keeps Executing... until all parallel tool calls finish", () => {
@@ -212,8 +212,8 @@ describe("createSpinnerOrchestrator", () => {
       expect(h.state().currentMessage).toBe("Executing...");
 
       orch.onToolPendingEnd();
-      expect(h.events).toContainEqual({ type: "clearStatus" });
-      expect(h.state().hasSpinner).toBe(false);
+      expect(h.events).not.toContainEqual({ type: "clearStatus" });
+      expect(h.state().hasSpinner).toBe(true);
     });
 
     // Regression: tool-revived spinner ownership must transfer to reasoning
@@ -237,8 +237,104 @@ describe("createSpinnerOrchestrator", () => {
       expect(h.state().hasSpinner).toBe(true);
 
       orch.onReasoningEnd();
-      expect(h.events).toContainEqual({ type: "clearStatus" });
+      expect(h.events).not.toContainEqual({ type: "clearStatus" });
+      expect(h.state().hasSpinner).toBe(true);
+    });
+  });
+
+  describe("retry wait", () => {
+    it("outranks the streaming label while the wait is active", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+
+      orch.onReasoningStart();
+      expect(h.state().currentMessage).toBe("Thinking...");
+
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      expect(h.state()).toEqual({
+        hasSpinner: true,
+        currentMessage: "Retrying in 4s · attempt 2 · 2 retries left",
+      });
+
+      orch.onRetryWaitMessage("Retrying in 3s · attempt 2 · 2 retries left");
+      expect(h.state().currentMessage).toBe(
+        "Retrying in 3s · attempt 2 · 2 retries left"
+      );
+    });
+
+    it("restores the streaming label the turn was showing when the wait ends", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+
+      orch.onReasoningStart();
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      orch.onRetryWaitEnd();
+
+      expect(h.state()).toEqual({
+        hasSpinner: true,
+        currentMessage: "Thinking...",
+      });
+    });
+
+    it("restores the executing label when tools were pending under the wait", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+
+      orch.onToolPendingStart();
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      orch.onRetryWaitEnd();
+
+      expect(h.state().currentMessage).toBe("Executing...");
+    });
+
+    it("revives a cleared spinner for the wait and clears it again afterwards", () => {
+      const h = createAdapter(false);
+      const orch = createSpinnerOrchestrator(h.adapter, undefined);
+
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      expect(h.events).toContainEqual({
+        type: "showLoader",
+        message: "Retrying in 4s · attempt 2 · 2 retries left",
+      });
+
+      orch.onRetryWaitEnd();
+      expect(h.events.at(-1)).toEqual({ type: "clearStatus" });
       expect(h.state().hasSpinner).toBe(false);
+    });
+
+    it("falls back to the base label when nothing else was streaming", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      orch.onRetryWaitEnd();
+
+      expect(h.state().currentMessage).toBe("Working...");
+    });
+
+    it("ignores a wait end that no wait started, leaving status untouched", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+      const setMessage = vi.spyOn(h.adapter, "setMessage");
+      const clearStatus = vi.spyOn(h.adapter, "clearStatus");
+
+      orch.onRetryWaitEnd();
+
+      expect(setMessage).not.toHaveBeenCalled();
+      expect(clearStatus).not.toHaveBeenCalled();
+    });
+
+    it("keeps the wait label while tools start and finish underneath it", () => {
+      const h = createAdapter(true);
+      const orch = createSpinnerOrchestrator(h.adapter, "Working...");
+
+      orch.onRetryWaitMessage("Retrying in 4s · attempt 2 · 2 retries left");
+      orch.onToolPendingStart();
+      orch.onToolPendingEnd();
+
+      expect(h.state().currentMessage).toBe(
+        "Retrying in 4s · attempt 2 · 2 retries left"
+      );
     });
   });
 

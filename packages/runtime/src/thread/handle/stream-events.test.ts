@@ -1,4 +1,4 @@
-import { jsonSchema, tool } from "ai";
+import { APICallError, jsonSchema, tool } from "ai";
 import { convertArrayToReadableStream } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../../agent/core/agent";
@@ -133,6 +133,112 @@ describe("thread stream events", () => {
     ).toEqual(expectedLiveTypes);
   });
 
+  it("publishes real retry decisions without duplicating output or tool execution or persisting them", async () => {
+    let calls = 0;
+    let executions = 0;
+    const agent = new Agent({
+      host: createInMemoryHost(),
+      model: createStreamingMockLanguageModelV4(() => {
+        calls += 1;
+        if (calls === 1) {
+          throw new APICallError({
+            message: "fixture",
+            requestBodyValues: {},
+            responseHeaders: { "retry-after-ms": "0" },
+            statusCode: 429,
+            url: "https://fixture.test",
+          });
+        }
+        return Promise.resolve({
+          stream: convertArrayToReadableStream<MockStreamPart>(
+            calls === 2 ? firstStreamChunks : finalStreamChunks
+          ),
+        });
+      }),
+      tools: {
+        lookup: tool({
+          ...lookupTool,
+          execute: () => {
+            executions += 1;
+            return { weather: "sunny" };
+          },
+        }),
+      },
+    });
+    const thread = agent.thread("retry-live-and-replay");
+    const live = await collect(await thread.send("go"));
+    const replayed = await collectAsync(thread.events());
+    const retryEvents = live.filter((event) => event.type === "model-retry");
+    expect(retryEvents).toMatchObject([
+      { attempt: 1, delayMs: 0, phase: "scheduled", remainingRetries: 2 },
+      { attempt: 1, phase: "started", remainingRetries: 1 },
+    ]);
+    expect(
+      live
+        .filter((event) => event.type === "model-attempt")
+        .map((event) => [event.attempt, event.phase])
+    ).toEqual([
+      [1, "start"],
+      [1, "end"],
+      [2, "start"],
+      [2, "end"],
+      [1, "start"],
+      [1, "end"],
+    ]);
+    expect(calls).toBe(3);
+    expect(executions).toBe(1);
+    expect(
+      live
+        .filter((event) => event.type === "assistant-output-delta")
+        .map((event) => event.text)
+    ).toEqual(["hello ", "world"]);
+    expect(live.filter((event) => event.type === "tool-result")).toHaveLength(
+      1
+    );
+    expect(replayed.some(({ event }) => isStreamAgentEvent(event))).toBe(false);
+    expect(replayed.map(({ event }) => event.type)).toEqual(
+      committedTypes(live)
+    );
+    await agent.dispose();
+  });
+
+  it("publishes final cancellation when the live consumer interrupts a scheduled retry", async () => {
+    let calls = 0;
+    const agent = new Agent({
+      host: createInMemoryHost(),
+      model: createStreamingMockLanguageModelV4(() => {
+        calls += 1;
+        throw new APICallError({
+          message: "fixture",
+          requestBodyValues: {},
+          statusCode: 429,
+          url: "https://fixture.test",
+        });
+      }),
+    });
+    const thread = agent.thread("retry-interrupt");
+    const turn = await thread.send("go");
+    const live: AgentEvent[] = [];
+    for await (const event of turn.events()) {
+      live.push(event);
+      if (event.type === "model-retry" && event.phase === "scheduled") {
+        thread.interrupt();
+      }
+    }
+    expect(calls).toBe(1);
+    expect(live.filter((event) => event.type === "model-retry")).toMatchObject([
+      { phase: "scheduled", remainingRetries: 2 },
+      { phase: "stopped", reason: "cancelled", remainingRetries: 0 },
+    ]);
+    expect(live.at(-1)).toEqual({ type: "turn-abort" });
+    expect(
+      (await collectAsync(thread.events())).some(({ event }) =>
+        isStreamAgentEvent(event)
+      )
+    ).toBe(false);
+    await agent.dispose();
+  });
+
   it("preserves committed event parity with doGenerate-only models", async () => {
     const streamThread = createStreamThread("stream-parity");
     const generateThread = createGenerateThread("generate-parity");
@@ -164,6 +270,30 @@ describe("thread stream events", () => {
   });
 
   it.each([
+    {
+      attempt: 1,
+      attemptId: "fixture",
+      delayMs: 2000,
+      phase: "scheduled" as const,
+      remainingRetries: 2,
+      retryAt: 2000,
+      type: "model-retry" as const,
+    },
+    {
+      attempt: 1,
+      attemptId: "fixture",
+      phase: "started" as const,
+      remainingRetries: 1,
+      type: "model-retry" as const,
+    },
+    {
+      attempt: 1,
+      attemptId: "fixture",
+      phase: "stopped" as const,
+      reason: "cancelled" as const,
+      remainingRetries: 0 as const,
+      type: "model-retry" as const,
+    },
     {
       text: "must stay ephemeral",
       type: "assistant-output-delta" as const,

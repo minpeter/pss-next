@@ -173,6 +173,12 @@ export async function* agentEventStreamParts(
           };
         }
         break;
+      case "model-retry":
+        // Live-only retry state. Forwarded as a stream part so the TUI's one
+        // dispatch table stays the sole renderer, but it never becomes a
+        // transcript row: the wait only drives the foreground status.
+        yield { ...event, type: "retry-wait" };
+        break;
       case "model-usage":
         lastFinishReason = event.finishReason;
         options.onModelUsage?.(event);

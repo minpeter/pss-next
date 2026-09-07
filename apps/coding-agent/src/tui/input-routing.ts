@@ -71,7 +71,12 @@ export const dispatchUserInput = async (options: {
 
   const run = await options.thread.steer(prepared.message);
   return {
-    consumeRun: run !== options.activeRun,
+    // Public instrumentation may wrap the same execution in a fresh object.
+    // Its event stream is still single-consumer; queued steering must not
+    // subscribe again or tear down the original turn's UI ownership.
+    consumeRun:
+      run !== options.activeRun &&
+      (run.runId === undefined || run.runId !== options.activeRun.runId),
     run,
     translatedDisplay: prepared.translatedDisplay,
     type: "steered",

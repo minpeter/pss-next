@@ -217,7 +217,6 @@ function createNameCommand(context: SessionCommandContext): TuiCommand {
         context.onRenamed(entry);
         return {
           action: { type: "refresh-header" },
-          message: `Session named ${JSON.stringify(name)}.`,
           success: true,
         };
       }),

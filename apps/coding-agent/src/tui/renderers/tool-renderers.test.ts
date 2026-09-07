@@ -397,3 +397,130 @@ describe("createToolRenderers — workspace tools", () => {
     expect(text).toContain(ERROR_BG);
   });
 });
+
+describe("progressive tool arguments", () => {
+  const cases = [
+    ["write_file", '{"path":"demo.ts","content":"EARLY', ' LATER"}'],
+    [
+      "edit_file",
+      '{"path":"demo.ts","edits":[{"new_content":"EARLY',
+      ' LATER","op":"append"}]}',
+    ],
+    ["read_file", '{"path":"EARLY', ' LATER","offset":2}'],
+    ["delete_file", '{"path":"EARLY', ' LATER"}'],
+    ["glob_files", '{"path":"EARLY', ' LATER","pattern":"*.ts"}'],
+    ["grep_files", '{"include":"EARLY', ' LATER","pattern":"TODO"}'],
+    ["shell_execute", '{"cwd":"EARLY', ' LATER","command":"pwd"}'],
+    ["generic_tool", '{"data":"EARLY', ' LATER"}'],
+  ];
+  it.each(cases)(
+    "%s reveals every available field before execution",
+    async (name, early, later) => {
+      const view = new BaseToolCallView(
+        "stream",
+        name,
+        theme,
+        undefined,
+        false,
+        createToolRenderers()
+      );
+      await view.appendInputChunk(early);
+      expect(renderText(view)).toContain("EARLY");
+      await view.appendInputChunk(later);
+      expect(renderText(view)).toContain("LATER");
+      view.setFinalInput(JSON.parse(early + later));
+      expect(renderText(view)).toContain("LATER");
+      expect(renderText(view)).not.toContain("OK -");
+      view.dispose();
+    }
+  );
+
+  it.each([true, false])(
+    "write decodes source with path first=%s and replaces preview once",
+    async (pathFirst) => {
+      const content = 'EARLY "quote"\nLATER 한글 café 😀\nEND';
+      const input = pathFirst
+        ? { path: "sample.ts", content }
+        : { content, path: "sample.ts" };
+      const full = JSON.stringify(input);
+      const view = new BaseToolCallView(
+        "stream",
+        "write_file",
+        theme,
+        undefined,
+        false,
+        createToolRenderers()
+      );
+      if (pathFirst) {
+        const pathEnd = full.indexOf(",");
+        await view.appendInputChunk(full.slice(0, pathEnd));
+        expect(renderText(view)).toContain("sample.ts");
+        await view.appendInputChunk(full.slice(pathEnd, full.indexOf("LATER")));
+      } else {
+        await view.appendInputChunk(full.slice(0, full.indexOf("LATER")));
+      }
+      expect(renderText(view)).toContain('EARLY "quote"');
+      expect(renderText(view)).not.toContain("\\n");
+      await view.appendInputChunk(full.slice(full.indexOf("LATER")));
+      const lines = view.render(120);
+      expect(lines.some((line) => line.includes("LATER 한글 café 😀"))).toBe(
+        true
+      );
+      expect(lines.findIndex((line) => line.includes("LATER"))).toBeGreaterThan(
+        lines.findIndex((line) => line.includes("EARLY"))
+      );
+      view.setFinalInput(input);
+      expect(renderText(view)).toContain("LATER");
+      view.setOutput("OK - wrote file");
+      expect(renderText(view).split("EARLY")).toHaveLength(2);
+      expect(renderText(view)).not.toContain('"content"');
+      view.dispose();
+    }
+  );
+
+  it("sanitizes decoded controls while Unicode escapes are split across chunks", async () => {
+    const view = new BaseToolCallView(
+      "stream",
+      "write_file",
+      theme,
+      undefined,
+      false,
+      createToolRenderers()
+    );
+    await view.appendInputChunk('{"content":"EARLY \\uD83D');
+    await view.appendInputChunk(
+      '\\uDE00\\nLATER \\u001b]52;c;payload\\u0007"}'
+    );
+    const text = renderText(view);
+    expect(text).toContain("EARLY 😀");
+    expect(text).toContain("LATER ^[]52;c;payload^G");
+    expect(text).not.toContain("\u001b]");
+    view.dispose();
+  });
+});
+
+describe("characterization: write result and error", () => {
+  it("final success renders decoded content exactly once", () => {
+    const view = createView(
+      "write_file",
+      { path: "a.ts", content: "FINAL_A\nFINAL_B" },
+      "OK - wrote file"
+    );
+    expect(renderText(view).split("FINAL_A")).toHaveLength(2);
+    expect(renderText(view)).toContain("FINAL_B");
+    expect(renderText(view)).not.toContain("OK - wrote");
+    view.dispose();
+  });
+  it("error replaces successful source presentation", () => {
+    const view = createView(
+      "write_file",
+      { path: "a.ts", content: "UNWRITTEN" },
+      undefined,
+      "ERROR_SENTINEL"
+    );
+    expect(renderText(view)).toContain("ERROR_SENTINEL");
+    expect(renderText(view)).toContain(ERROR_BG);
+    expect(renderText(view)).not.toContain("UNWRITTEN");
+    view.dispose();
+  });
+});

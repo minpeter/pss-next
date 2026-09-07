@@ -281,7 +281,7 @@ describe("generateModelStepResult stream events", () => {
         history: prompt,
         model,
         onStreamEvent: (event) => {
-          if (event.type === "model-attempt") {
+          if (event.type === "model-attempt" || event.type === "model-retry") {
             return;
           }
           events.push(event);

@@ -21,6 +21,7 @@ export interface GenerateSessionTitleOptions {
   readonly history: readonly ModelMessage[];
   readonly instructions: string;
   readonly model: LanguageModel;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -32,6 +33,7 @@ export async function generateSessionTitle({
   history,
   instructions,
   model,
+  signal,
 }: GenerateSessionTitleOptions): Promise<string | undefined> {
   const userMessages = history.filter((message) => message.role === "user");
   if (userMessages.length !== 1) {
@@ -44,6 +46,7 @@ export async function generateSessionTitle({
   }
   try {
     const result = await generateText({
+      abortSignal: signal,
       instructions,
       maxOutputTokens: 24,
       messages: [...history, TITLE_REQUEST],

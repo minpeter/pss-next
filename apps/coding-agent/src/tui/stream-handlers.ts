@@ -1,9 +1,6 @@
-import {
-  type Container,
-  type Markdown,
-  Spacer,
-  Text,
-} from "@earendil-works/pi-tui";
+import { type Component, type Container, Spacer } from "@earendil-works/pi-tui";
+import type { RetryWaitSchedule } from "./retry-status";
+import { SnapshotText as Text } from "./snapshot-views";
 import type { AssistantStreamView } from "./stream-views";
 import { sanitizeTerminalText } from "./terminal-safety";
 import type { ToolCallView } from "./tool-call-view";
@@ -39,6 +36,8 @@ const getToolInputChunk = (part: {
 };
 
 export interface ToolInputRenderState {
+  // Canonical arguments outlive any individual display lease/continuation.
+  finalInput?: unknown;
   hasContent: boolean;
   inputBuffer: string;
   renderedInputLength: number;
@@ -61,7 +60,7 @@ export const UNKNOWN_TOOL_NAME = "tool";
 
 export const addChatComponent = (
   chatContainer: Container,
-  component: Container | Text | Markdown,
+  component: Component,
   options: { addLeadingSpacer?: boolean } = {}
 ): void => {
   if (options.addLeadingSpacer ?? true) {
@@ -93,12 +92,17 @@ export interface PiTuiRenderFlags {
 export interface PiTuiStreamState {
   activeToolInputs: Map<string, ToolInputRenderState>;
   chatContainer: Container;
+  endAssistantView?: (kind: "reasoning" | "text") => void;
   ensureAssistantView: () => AssistantStreamView;
   ensureToolView: (toolCallId: string, toolName: string) => ToolCallView;
+  finishOutput?: () => void;
+  finishToolView?: (toolCallId: string) => void;
   flags: PiTuiRenderFlags;
   getToolView: (toolCallId: string) => ToolCallView | undefined;
   onReasoningEnd?: () => void;
   onReasoningStart?: () => void;
+  onRetryClear?: () => void;
+  onRetryWait?: (schedule: RetryWaitSchedule) => void;
   onToolPendingEnd?: () => void;
   onToolPendingStart?: () => void;
   pendingToolCallIds: Set<string>;
@@ -118,12 +122,8 @@ export const syncToolInputToView = async (
 
   const existingView = state.getToolView(toolCallId);
   const pendingInput = toolState.inputBuffer.slice(
-    toolState.renderedInputLength
+    existingView ? toolState.renderedInputLength : 0
   );
-  if (!existingView && pendingInput.length === 0) {
-    return;
-  }
-
   state.resetAssistantView(true);
   const toolView =
     existingView ?? state.ensureToolView(toolCallId, toolState.toolName);
@@ -145,7 +145,16 @@ export type StreamPartHandler = (
 ) => void | Promise<void>;
 
 export const handleTextStart: StreamPartHandler = (_part, state) => {
+  state.resetAssistantView();
   state.ensureAssistantView();
+};
+
+export const handleTextEnd: StreamPartHandler = (_part, state) => {
+  if (state.endAssistantView) {
+    state.endAssistantView("text");
+  } else {
+    state.resetAssistantView();
+  }
 };
 
 export const handleTextDelta: StreamPartHandler = (part, state) => {
@@ -153,6 +162,7 @@ export const handleTextDelta: StreamPartHandler = (part, state) => {
 };
 
 export const handleReasoningStart: StreamPartHandler = (_part, state) => {
+  state.resetAssistantView();
   if (state.flags.showReasoning) {
     state.ensureAssistantView();
   }
@@ -168,6 +178,11 @@ export const handleReasoningDelta: StreamPartHandler = (part, state) => {
 };
 
 export const handleReasoningEnd: StreamPartHandler = (_part, state) => {
+  if (state.endAssistantView) {
+    state.endAssistantView("reasoning");
+  } else {
+    state.resetAssistantView();
+  }
   state.onReasoningEnd?.();
 };
 
@@ -245,7 +260,9 @@ export const handleToolCall: StreamPartHandler = (part, state) => {
     state.streamedToolCallIds.has(toolCallId) &&
     inputState?.hasContent === true;
 
-  state.activeToolInputs.delete(toolCallId);
+  const canonical = inputState ?? createToolInputState(toolName);
+  canonical.finalInput = part.input;
+  state.activeToolInputs.set(toolCallId, canonical);
   state.streamedToolCallIds.delete(toolCallId);
 
   state.resetAssistantView(true);
@@ -274,6 +291,7 @@ export const handleToolResult: StreamPartHandler = (part, state) => {
   state.resetAssistantView(true);
   const view = state.ensureToolView(toolCallId, toolName);
   view.setOutput(part.output);
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolError: StreamPartHandler = (part, state) => {
@@ -283,6 +301,7 @@ export const handleToolError: StreamPartHandler = (part, state) => {
   state.resetAssistantView(true);
   const view = state.ensureToolView(toolCallId, toolName);
   view.setError(part.error);
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolOutputDenied: StreamPartHandler = (part, state) => {
@@ -294,6 +313,7 @@ export const handleToolOutputDenied: StreamPartHandler = (part, state) => {
   view.setOutputDenied(
     typeof part.reason === "string" ? part.reason : undefined
   );
+  state.finishToolView?.(toolCallId);
 };
 
 export const handleToolApprovalRequest: StreamPartHandler = (part, state) => {
@@ -333,6 +353,24 @@ export const handleToolApprovalRequest: StreamPartHandler = (part, state) => {
   );
 };
 
+/**
+ * Runtime retry phases. Only `scheduled` means a wait is pending; `started`
+ * and `stopped` both end it, so both clear the status.
+ */
+export const handleRetryWait: StreamPartHandler = (part, state) => {
+  if (part.phase !== "scheduled") {
+    state.onRetryClear?.();
+    return;
+  }
+
+  state.onRetryWait?.({
+    attempt: Number(part.attempt ?? 0),
+    delayMs: Number(part.delayMs ?? 0),
+    remainingRetries: Number(part.remainingRetries ?? 0),
+    retryAt: Number(part.retryAt ?? 0),
+  });
+};
+
 export const handleStartStep: StreamPartHandler = (_part, state) => {
   if (!state.flags.showSteps) {
     return;
@@ -343,6 +381,8 @@ export const handleStartStep: StreamPartHandler = (_part, state) => {
 };
 
 export const handleFinishStep: StreamPartHandler = (part, state) => {
+  state.finishOutput?.();
+  state.resetAssistantView();
   if (!state.flags.showSteps) {
     return;
   }
@@ -373,6 +413,8 @@ export const handleFile: StreamPartHandler = (part, state) => {
 };
 
 export const handleFinish: StreamPartHandler = (part, state) => {
+  state.finishOutput?.();
+  state.resetAssistantView();
   if (!state.flags.showFinishReason) {
     return;
   }
@@ -387,6 +429,11 @@ export const handleFinish: StreamPartHandler = (part, state) => {
 export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   "text-start": handleTextStart,
   "text-delta": handleTextDelta,
+  "text-end": handleTextEnd,
+  abort: (_part, state) => {
+    state.finishOutput?.();
+    state.resetAssistantView();
+  },
   "reasoning-start": handleReasoningStart,
   "reasoning-delta": handleReasoningDelta,
   "reasoning-end": handleReasoningEnd,
@@ -398,6 +445,7 @@ export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   "tool-error": handleToolError,
   "tool-output-denied": handleToolOutputDenied,
   "tool-approval-request": handleToolApprovalRequest,
+  "retry-wait": handleRetryWait,
   "start-step": handleStartStep,
   "finish-step": handleFinishStep,
   source: handleSource,
@@ -405,7 +453,7 @@ export const STREAM_HANDLERS: Record<string, StreamPartHandler> = {
   finish: handleFinish,
 };
 
-export const IGNORE_PART_TYPES = new Set(["abort", "text-end", "start"]);
+export const IGNORE_PART_TYPES = new Set(["start"]);
 
 export const isVisibleStreamPart = (
   part: TuiStreamPart,
@@ -419,6 +467,9 @@ export const isVisibleStreamPart = (
     case "reasoning-end":
     case "start":
     case "tool-input-end":
+    // A retry wait renders as foreground status only, so it must not open the
+    // transcript or count as the turn's first visible part.
+    case "retry-wait":
       return false;
     case "text-start":
       return true;

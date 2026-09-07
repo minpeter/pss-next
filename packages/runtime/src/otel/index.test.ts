@@ -29,6 +29,67 @@ describe("traceAgentTurn", () => {
     expect(tracer.spans.every((span) => span.ended)).toBe(true);
   });
 
+  it("records retry scheduling and terminal state without provider payloads", async () => {
+    const events = [
+      {
+        attempt: 1,
+        attemptId: "retry-step",
+        delayMs: 2000,
+        phase: "scheduled",
+        remainingRetries: 2,
+        retryAt: 1_800_000_002_000,
+        type: "model-retry",
+      },
+      {
+        attempt: 1,
+        attemptId: "retry-step",
+        phase: "started",
+        remainingRetries: 1,
+        type: "model-retry",
+      },
+      {
+        attempt: 2,
+        attemptId: "retry-step",
+        phase: "stopped",
+        reason: "non-retryable",
+        remainingRetries: 0,
+        type: "model-retry",
+      },
+      { type: "turn-end" },
+    ] satisfies AgentEvent[];
+    const tracer = new RecordingTracer();
+    expect(
+      await collectEvents(
+        traceAgentTurn(singleUseTurn(events), { tracer }).events()
+      )
+    ).toEqual(events);
+    const recorded = spanNamed(tracer, "pss.runtime.turn").events;
+    expect(recorded[0]?.attributes).toEqual({
+      "pss.event.type": "model-retry",
+      "pss.model_retry.attempt": 1,
+      "pss.model_retry.attempt_id": "retry-step",
+      "pss.model_retry.delay_ms": 2000,
+      "pss.model_retry.phase": "scheduled",
+      "pss.model_retry.remaining_retries": 2,
+      "pss.model_retry.retry_at": 1_800_000_002_000,
+    });
+    expect(recorded[1]?.attributes).toEqual({
+      "pss.event.type": "model-retry",
+      "pss.model_retry.attempt": 1,
+      "pss.model_retry.attempt_id": "retry-step",
+      "pss.model_retry.phase": "started",
+      "pss.model_retry.remaining_retries": 1,
+    });
+    expect(recorded[2]?.attributes).toEqual({
+      "pss.event.type": "model-retry",
+      "pss.model_retry.attempt": 2,
+      "pss.model_retry.attempt_id": "retry-step",
+      "pss.model_retry.phase": "stopped",
+      "pss.model_retry.reason": "non-retryable",
+      "pss.model_retry.remaining_retries": 0,
+    });
+  });
+
   it("passes every event through while closing turn, step, and tool spans", async () => {
     const usage = {
       attemptId: "attempt-1",

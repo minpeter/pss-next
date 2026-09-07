@@ -8,6 +8,10 @@ export interface SpinnerOrchestratorAdapter {
 export interface SpinnerOrchestrator {
   onReasoningEnd: () => void;
   onReasoningStart: () => void;
+  /** Ends the retry wait and restores whatever label the turn implies. */
+  onRetryWaitEnd: () => void;
+  /** Shows or refreshes the retry countdown, outranking every other label. */
+  onRetryWaitMessage: (message: string) => void;
   onToolPendingEnd: () => void;
   onToolPendingStart: () => void;
 }
@@ -18,6 +22,8 @@ export const createSpinnerOrchestrator = (
 ): SpinnerOrchestrator => {
   let reasoningActive = false;
   let reasoningRevivedSpinner = false;
+  let retryWaiting = false;
+  let retryRevivedSpinner = false;
   let toolPendingCount = 0;
   let toolRevivedSpinner = false;
 
@@ -28,8 +34,44 @@ export const createSpinnerOrchestrator = (
   };
 
   return {
+    onRetryWaitMessage: (message: string) => {
+      // The provider call is not in flight during the wait, so the countdown
+      // replaces any streaming label until the wait resolves.
+      retryWaiting = true;
+      if (adapter.hasSpinner()) {
+        adapter.setMessage(message);
+        return;
+      }
+      adapter.showLoader(message);
+      retryRevivedSpinner = true;
+    },
+    onRetryWaitEnd: () => {
+      if (!retryWaiting) {
+        return;
+      }
+      retryWaiting = false;
+      if (reasoningActive) {
+        adapter.setMessage("Thinking...");
+        retryRevivedSpinner = false;
+        return;
+      }
+      if (toolPendingCount > 0) {
+        adapter.setMessage("Executing...");
+        retryRevivedSpinner = false;
+        return;
+      }
+      if (retryRevivedSpinner && !baseLoaderMessage) {
+        adapter.clearStatus();
+        retryRevivedSpinner = false;
+        return;
+      }
+      restoreBase();
+    },
     onReasoningStart: () => {
       reasoningActive = true;
+      if (retryWaiting) {
+        return;
+      }
       if (adapter.hasSpinner()) {
         adapter.setMessage("Thinking...");
       } else {
@@ -39,6 +81,9 @@ export const createSpinnerOrchestrator = (
     },
     onReasoningEnd: () => {
       reasoningActive = false;
+      if (retryWaiting) {
+        return;
+      }
       if (toolPendingCount > 0) {
         if (adapter.hasSpinner()) {
           adapter.setMessage("Executing...");
@@ -51,7 +96,7 @@ export const createSpinnerOrchestrator = (
         }
         return;
       }
-      if (reasoningRevivedSpinner) {
+      if (reasoningRevivedSpinner && !baseLoaderMessage) {
         adapter.clearStatus();
         reasoningRevivedSpinner = false;
         return;
@@ -60,7 +105,7 @@ export const createSpinnerOrchestrator = (
     },
     onToolPendingStart: () => {
       toolPendingCount += 1;
-      if (reasoningActive) {
+      if (reasoningActive || retryWaiting) {
         return;
       }
       if (adapter.hasSpinner()) {
@@ -72,7 +117,7 @@ export const createSpinnerOrchestrator = (
     },
     onToolPendingEnd: () => {
       toolPendingCount = Math.max(0, toolPendingCount - 1);
-      if (toolPendingCount > 0) {
+      if (toolPendingCount > 0 || retryWaiting) {
         return;
       }
       if (reasoningActive) {
@@ -82,7 +127,7 @@ export const createSpinnerOrchestrator = (
         }
         return;
       }
-      if (toolRevivedSpinner) {
+      if (toolRevivedSpinner && !baseLoaderMessage) {
         adapter.clearStatus();
         toolRevivedSpinner = false;
         return;

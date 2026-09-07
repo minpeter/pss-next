@@ -408,6 +408,70 @@ describe("agentEventStreamParts", () => {
     ]);
   });
 
+  it("translates a scheduled retry into a retry-wait part carrying the deadline", async () => {
+    const parts = await collect([
+      {
+        attempt: 1,
+        attemptId: "step-1",
+        delayMs: 4000,
+        phase: "scheduled",
+        remainingRetries: 2,
+        retryAt: 1_700_000_004_000,
+        type: "model-retry",
+      } as AgentEvent,
+    ]);
+
+    expect(parts).toEqual([
+      {
+        attempt: 1,
+        attemptId: "step-1",
+        delayMs: 4000,
+        phase: "scheduled",
+        remainingRetries: 2,
+        retryAt: 1_700_000_004_000,
+        type: "retry-wait",
+      },
+    ]);
+  });
+
+  it("translates started and stopped retries into clearing retry-wait parts", async () => {
+    const parts = await collect([
+      {
+        attempt: 1,
+        attemptId: "step-1",
+        phase: "started",
+        remainingRetries: 1,
+        type: "model-retry",
+      } as AgentEvent,
+      {
+        attempt: 2,
+        attemptId: "step-1",
+        phase: "stopped",
+        reason: "exhausted",
+        remainingRetries: 0,
+        type: "model-retry",
+      } as AgentEvent,
+    ]);
+
+    expect(parts).toEqual([
+      {
+        attempt: 1,
+        attemptId: "step-1",
+        phase: "started",
+        remainingRetries: 1,
+        type: "retry-wait",
+      },
+      {
+        attempt: 2,
+        attemptId: "step-1",
+        phase: "stopped",
+        reason: "exhausted",
+        remainingRetries: 0,
+        type: "retry-wait",
+      },
+    ]);
+  });
+
   it("skips user-input and runtime-input echoes", async () => {
     const parts = await collect([
       { type: "user-input", text: "hi" } as AgentEvent,

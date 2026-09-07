@@ -13,7 +13,7 @@ export type TuiCommandAction =
       /** @deprecated Legacy action ignored by current hosts. */
       type: "new-session";
     }
-  | { type: "refresh-header" }
+  | { type: "refresh-header"; reason?: "model-change" }
   | { type: "reload" }
   | { clear: boolean; type: "session" }
   | { query?: string; type: "select-session" }

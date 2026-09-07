@@ -132,6 +132,63 @@ describe("runCodingAgentExec", () => {
     expect(result.finalText).toBe("hello world");
   });
 
+  it("streams authoritative retries to NDJSON and extension subscribers but not results", async () => {
+    let calls = 0;
+    const observed: { phase: string; stream: boolean }[] = [];
+    const captured = createCapturedOutput();
+    const result = await runCodingAgentExec({
+      extensions: [
+        {
+          id: "retry-subscriber",
+          default(pss) {
+            pss.on("model-retry", (event, context) => {
+              observed.push({ phase: event.phase, stream: context.stream });
+            });
+          },
+        },
+      ],
+      model: new MockLanguageModelV4({
+        doStream: () => {
+          calls += 1;
+          if (calls === 1) {
+            throw new APICallError({
+              message: "private provider",
+              requestBodyValues: {},
+              responseHeaders: { "retry-after-ms": "0" },
+              statusCode: 429,
+              url: "https://fixture.test",
+            });
+          }
+          return Promise.resolve({
+            stream: convertArrayToReadableStream(streamChunks),
+          });
+        },
+      }),
+      prompt: "say hello",
+      stdout: captured.output,
+      workspace,
+    });
+    expect(calls).toBe(2);
+    expect(observed).toEqual([
+      { phase: "scheduled", stream: true },
+      { phase: "started", stream: true },
+    ]);
+    const lines = captured.lines();
+    expect(
+      lines.filter(
+        (line) =>
+          line.type === "agent_event" && line.event.type === "model-retry"
+      )
+    ).toHaveLength(2);
+    const resultLine = lines.find((line) => line.type === "result");
+    expect(resultLine?.result.events.some(isParsedStreamAgentEvent)).toBe(
+      false
+    );
+    expect(result.events.some(isStreamAgentEvent)).toBe(false);
+    expect(result.status).toBe("completed");
+    expect(result.finalText).toBe("hello world");
+  });
+
   it("rejects hostile extension ids without exposing their bytes", async () => {
     const hostileId = "extension-secret\u001b[2J\u0007\nSECOND_LINE\u2028";
 

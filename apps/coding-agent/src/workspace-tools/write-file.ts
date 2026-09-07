@@ -33,13 +33,30 @@ const inputSchema = z
       ),
     expected_file_hash: z
       .string()
-      .length(8)
+      .regex(
+        /^[0-9a-f]{8}$/,
+        "expected_file_hash must be exactly 8 lowercase hex characters; uppercase is not accepted. Copy the exact file_hash from the latest successful read_file for this existing path, or omit expected_file_hash entirely to intentionally create a new file. Never invent a hash."
+      )
       .optional()
       .describe(
-        "8-hex file_hash from the latest read_file; provide when overwriting to reject stale content."
+        "Optional overwrite guard: copy the exact 8-character lowercase hex file_hash from the latest successful read_file for this same existing path. OMIT this field entirely for a new file. Never invent hashes or use placeholders, sentinels, or null."
       ),
   })
   .strict();
+
+class FileHashPreconditionError extends Error {
+  readonly code: "FILE_HASH_MISMATCH" | "FILE_HASH_TARGET_MISSING";
+
+  constructor(
+    code: FileHashPreconditionError["code"],
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "FileHashPreconditionError";
+    this.code = code;
+  }
+}
 
 async function assertExpectedHash(
   path: string,
@@ -48,11 +65,24 @@ async function assertExpectedHash(
   if (expectedHash === undefined) {
     return;
   }
-  const current = await readFile(path, "utf8");
+  let current: string;
+  try {
+    current = await readFile(path, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      throw new FileHashPreconditionError(
+        "FILE_HASH_TARGET_MISSING",
+        "Cannot validate expected_file_hash: a guarded overwrite requires an existing file, but the target does not exist and has no file hash. Omit expected_file_hash entirely only if you intentionally want to create a new file. Do not invent a hash or create an empty file to satisfy the guard.",
+        { cause: error }
+      );
+    }
+    throw error;
+  }
   const currentHash = computeFileHash(current);
   if (currentHash !== expectedHash) {
-    throw new Error(
-      `Stale file hash ${expectedHash}; current hash is ${currentHash}.`
+    throw new FileHashPreconditionError(
+      "FILE_HASH_MISMATCH",
+      `Stale file hash ${expectedHash}; current hash is ${currentHash}. Read this existing file again with read_file and use its fresh file_hash before overwriting.`
     );
   }
 }
@@ -109,8 +139,9 @@ export function createWriteFileTool(
 ): Tool<z.infer<typeof inputSchema>, string> {
   return tool({
     description:
-      "Create or replace a UTF-8 file atomically. Prefer edit_file for surgical changes. Pass expected_file_hash when overwriting a file you read.",
+      "Create or replace a UTF-8 file atomically, creating missing parent directories. Prefer edit_file for surgical changes. For a new file, OMIT expected_file_hash entirely. For a guarded overwrite, copy the exact file_hash from the latest successful read_file for the same existing path. Never invent hashes or use placeholders, sentinels, or null.",
     inputSchema,
+    strict: false,
     execute: async ({ path, content, expected_file_hash: expectedHash }) => {
       const resolved = await resolveWorkspacePath(workspace, path);
       await assertExpectedHash(resolved.path, expectedHash);

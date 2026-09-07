@@ -104,6 +104,20 @@ describe("TuiSessionMachine turn", () => {
     expect(session.activeTurn).toBeUndefined();
   });
 
+  it("restores a still-running predecessor when a distinct steering run finishes first", () => {
+    const session = new TuiSessionMachine();
+    const original = fakeRun();
+    const steering = fakeRun();
+    session.beginTurn(original);
+    session.beginTurn(steering);
+    session.endTurn(steering);
+    expect(session.activeTurn?.run).toBe(original);
+    expect(session.markInterrupted()).toBe(original);
+    expect(session.wasInterrupted(original)).toBe(true);
+    session.endTurn(original);
+    expect(session.activeTurn).toBeUndefined();
+  });
+
   it("resets the interrupted flag when a replacement run begins", () => {
     const session = new TuiSessionMachine();
     const first = fakeRun();

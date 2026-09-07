@@ -67,7 +67,7 @@ describe("examples workspace packages", () => {
     expect(workspace).toContain('- "apps/*"');
     expect(rootPackageJson.workspaces).toContain("apps/*");
     expect(rootPackageJson.scripts["dev:tui"]).toBe(
-      "tsx --conditions=@minpeter/pss-source apps/coding-agent/src/tui/app.ts"
+      "tsx --conditions=@minpeter/pss-source scripts/dev-tui.mjs"
     );
     expect(rootTsconfig.include).toContain("apps/*/src/**/*.ts");
 

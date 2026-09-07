@@ -1,10 +1,15 @@
+import type { Component, MarkdownTheme } from "@earendil-works/pi-tui";
+
 import {
-  type Component,
-  Markdown,
-  type MarkdownTheme,
-} from "@earendil-works/pi-tui";
+  type ColdContent,
+  captureComponent,
+  hasGraphics,
+} from "./cold-content";
+import { SnapshotMarkdown as Markdown } from "./snapshot-views";
 
 export interface AssistantTextView extends Component {
+  /** Synchronous immutable presentation data; omitted views are fixed-size captures. */
+  captureCold?(width: number): ColdContent;
   dispose?(): void;
   setText(text: string): void;
 }
@@ -55,6 +60,7 @@ export const composeAssistantRenderers = (
         return createView(index - 1, notifyOutward);
       }
       let self: AssistantTextView | undefined;
+      const delegates = new Set<AssistantTextView>();
       // An async inner render (image ready) must drop every outer cached
       // frame before the TUI repaints, or the update never becomes visible.
       const requestRender = (): void => {
@@ -66,12 +72,43 @@ export const composeAssistantRenderers = (
         delegate: (text) => {
           const inner = createView(index - 1, requestRender);
           inner.setText(text);
+          delegates.add(inner);
           return inner;
         },
         requestRender,
       });
       self = view;
-      return view;
+      return {
+        setText(text) {
+          delegates.clear();
+          view.setText(text);
+        },
+        render: (width) => view.render(width),
+        invalidate: () => view.invalidate(),
+        dispose: () => view.dispose?.(),
+        captureCold(width) {
+          if (view.captureCold) {
+            return view.captureCold(width);
+          }
+          const rows = view.render(width);
+          // A transparent fallback already rendered an inner source view. Use
+          // that exact committed presentation, never reconstruct its raw input.
+          for (const delegate of delegates) {
+            const innerRows = delegate.render(width);
+            if (
+              rows.length === innerRows.length &&
+              rows.every((row, i) => row === innerRows[i])
+            ) {
+              return captureComponent(delegate, width);
+            }
+          }
+          return {
+            kind: "fixed",
+            rows: [...rows],
+            reason: hasGraphics(rows) ? "graphics" : "opaque-renderer",
+          };
+        },
+      };
     };
     return createView(renderers.length - 1, context.requestRender);
   };

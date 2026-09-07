@@ -82,7 +82,9 @@ const renderGrepFiles = (
   if (include) {
     context.push(`include: ${include}`);
   }
-  const header = `**grep** \`${pattern}\`${context.length > 0 ? ` (${context.join(", ")})` : ""}`;
+  const header = `**grep** \`${pattern}\`${
+    context.length > 0 ? ` (${context.join(", ")})` : ""
+  }`;
 
   if (typeof output !== "string" || output.length === 0) {
     view.setPrettyBlock(header, "");
@@ -133,9 +135,11 @@ const renderShellExecute = (
   // "OK|ERROR - ...", "exit_code:", "signal:", "stdout:" precede the body.
   const body = lines.slice(4).join("\n");
 
-  view.setPrettyBlock(`**bash** \`${displayCommand}\`${headerSuffix}`, body, {
-    isError: isErrorOutput,
-  });
+  view.setPrettyBlock(
+    `**bash** \`${displayCommand}\`${headerSuffix}`,
+    body.trim() ? body : "(No output)",
+    { isError: isErrorOutput }
+  );
 };
 
 /**

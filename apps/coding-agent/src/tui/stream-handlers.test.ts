@@ -95,6 +95,78 @@ describe("stream-handlers", () => {
     expect(output).toContain("waiting for user or policy decision");
   });
 
+  it("routes a scheduled retry to the wait hook without adding a transcript row", () => {
+    const onRetryWait = vi.fn();
+    const onRetryClear = vi.fn();
+    const { chatContainer, state } = createState({
+      onRetryClear,
+      onRetryWait,
+    });
+
+    STREAM_HANDLERS["retry-wait"]?.(
+      {
+        attempt: 1,
+        attemptId: "step-1",
+        delayMs: 4000,
+        phase: "scheduled",
+        remainingRetries: 2,
+        retryAt: 1_700_000_004_000,
+        type: "retry-wait",
+      } as never,
+      state
+    );
+
+    expect(onRetryWait).toHaveBeenCalledWith({
+      attempt: 1,
+      delayMs: 4000,
+      remainingRetries: 2,
+      retryAt: 1_700_000_004_000,
+    });
+    expect(onRetryClear).not.toHaveBeenCalled();
+    expect(chatContainer.render(120).join("\n").trim()).toBe("");
+  });
+
+  it.each(["started", "stopped"])(
+    "clears the retry wait on a %s retry phase",
+    (phase) => {
+      const onRetryWait = vi.fn();
+      const onRetryClear = vi.fn();
+      const { chatContainer, state } = createState({
+        onRetryClear,
+        onRetryWait,
+      });
+
+      STREAM_HANDLERS["retry-wait"]?.(
+        {
+          attempt: 1,
+          attemptId: "step-1",
+          phase,
+          remainingRetries: phase === "started" ? 1 : 0,
+          type: "retry-wait",
+        } as never,
+        state
+      );
+
+      expect(onRetryClear).toHaveBeenCalledTimes(1);
+      expect(onRetryWait).not.toHaveBeenCalled();
+      expect(chatContainer.render(120).join("\n").trim()).toBe("");
+    }
+  );
+
+  it("keeps retry waits out of the first-visible-part gate", () => {
+    expect(
+      isVisibleStreamPart({ type: "retry-wait" } as never, {
+        showFiles: false,
+        showFinishReason: false,
+        showRawToolIo: false,
+        showReasoning: true,
+        showSources: false,
+        showSteps: false,
+        showToolResults: true,
+      })
+    ).toBe(false);
+  });
+
   it("treats tool approval requests as visible stream parts", () => {
     expect(
       isVisibleStreamPart({ type: "tool-approval-request" } as never, {

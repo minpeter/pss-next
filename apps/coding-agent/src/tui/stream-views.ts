@@ -1,14 +1,16 @@
-import {
-  Container,
-  Markdown,
-  type MarkdownTheme,
-  Spacer,
-} from "@earendil-works/pi-tui";
+import { Container, type MarkdownTheme, Spacer } from "@earendil-works/pi-tui";
 
 import type {
   AssistantRenderer,
   AssistantTextView,
 } from "./assistant-renderer";
+import { renderBodyTail } from "./body-viewport";
+import {
+  type ColdContent,
+  captureComponent,
+  selectColdTail,
+} from "./cold-content";
+import { SnapshotMarkdown as Markdown } from "./snapshot-views";
 import { sanitizeTerminalText } from "./terminal-safety";
 
 const ANSI_RESET = "\x1b[0m";
@@ -50,6 +52,7 @@ export class AssistantStreamView extends Container {
   private readonly assistantRenderer: AssistantRenderer | undefined;
   private readonly controller = new AbortController();
   private disposed = false;
+  private textComplete = false;
   private readonly foregroundColor: string | undefined;
   private readonly markdownTheme: MarkdownTheme;
   private readonly notify: (message: string) => void;
@@ -89,6 +92,42 @@ export class AssistantStreamView extends Container {
       }
     };
     this.refresh();
+  }
+
+  override render(width: number): string[] {
+    if (!this.textComplete) {
+      return renderBodyTail(super.render(width), width);
+    }
+    return this.children.flatMap((child) => {
+      const lines = child.render(width);
+      const reasoning = this.segments.some(
+        (segment) => segment.view === child && segment.type === "reasoning"
+      );
+      return reasoning ? renderBodyTail(lines, width) : lines;
+    });
+  }
+
+  captureCold(width: number): ColdContent {
+    const children = this.children.map((child) => {
+      const content = captureComponent(child, width);
+      const reasoning = this.segments.some(
+        (segment) => segment.view === child && segment.type === "reasoning"
+      );
+      return this.textComplete && reasoning
+        ? selectColdTail(content, width)
+        : content;
+    });
+    const content: ColdContent = { kind: "group", children };
+    return this.textComplete ? content : selectColdTail(content, width);
+  }
+
+  get contentKind(): "reasoning" | "text" | undefined {
+    return this.segments.at(-1)?.type;
+  }
+
+  /** Expand text before sealing, without restarting an async renderer. */
+  completeText(): void {
+    this.textComplete = true;
   }
 
   appendReasoning(delta: string): void {

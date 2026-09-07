@@ -8,12 +8,10 @@ import {
   isKeyRelease,
   isKeyRepeat,
   Key,
-  Markdown,
   type MarkdownTheme,
   matchesKey,
   ProcessTerminal,
   Spacer,
-  Text,
   type TUI,
   TuiMainScreen,
   visibleWidth,
@@ -28,6 +26,7 @@ import {
   createAssistantRendererNotifications,
 } from "./assistant-renderer";
 import { createAliasAwareAutocompleteProvider } from "./autocomplete";
+import { BusyStatus } from "./busy-status";
 import {
   isCommand,
   parseCommand,
@@ -47,6 +46,9 @@ import {
 } from "./input-routing";
 import { ModelSelectorComponent } from "./model-selector";
 import { createSpinnerTicker, type SpinnerTicker } from "./pending-spinner";
+import { boundedReloadOperation } from "./reload";
+import { createRepeatedNotice } from "./repeated-notice";
+import { createRetryStatus } from "./retry-status";
 import {
   resumeSessionReplayParts,
   type SessionHistoryReplayPart,
@@ -54,6 +56,10 @@ import {
 } from "./session-history-replay";
 import { SessionSelectorComponent } from "./session-selector";
 import { TuiSessionMachine } from "./session-state";
+import {
+  SnapshotMarkdown as Markdown,
+  SnapshotText as Text,
+} from "./snapshot-views";
 import { createSpinnerOrchestrator } from "./spinner-orchestrator";
 import {
   addChatComponent,
@@ -70,6 +76,11 @@ import { AssistantStreamView } from "./stream-views";
 import { terminalExitCursorSequence } from "./terminal-exit";
 import { sanitizeTerminalText } from "./terminal-safety";
 import { BaseToolCallView, type ToolRendererMap } from "./tool-call-view";
+import {
+  ColdSnapshot,
+  type TranscriptLease,
+  TranscriptOwner,
+} from "./transcript-owner";
 
 const ANSI_RESET = "\x1b[0m";
 const ANSI_BLACK = "\x1b[30m";
@@ -77,6 +88,7 @@ const ANSI_BOLD = "\x1b[1m";
 const ANSI_DIM = "\x1b[2m";
 const ANSI_BG_SOFT_LIGHT = "\x1b[48;5;249m";
 const ANSI_BG_GRAY = "\x1b[100m";
+const ANSI_BG_WHITE = "\x1b[47m";
 const ANSI_CYAN = "\x1b[36m";
 const ANSI_BRIGHT_CYAN = "\x1b[96m";
 const ANSI_GRAY = "\x1b[38;5;245m";
@@ -201,7 +213,8 @@ export class FooterStatusBar extends Text {
       return [this.padLine("", width)];
     }
 
-    const contentWidth = Math.max(0, width - 1);
+    // At one column the glyph takes precedence over the usual left padding.
+    const contentWidth = width === 1 ? 1 : width - 1;
     const lines: string[] = [];
     const leadingEntry = this.resolveLeadingEntry();
     const leadingLine = this.renderLeadingLine(
@@ -251,7 +264,9 @@ export class FooterStatusBar extends Text {
       ? style(ANSI_DIM, rightTextPlain)
       : "";
     return this.padLine(
-      ` ${left?.styled ?? ""}${" ".repeat(gap)}${rightTextStyled}`,
+      `${width === 1 ? "" : " "}${left?.styled ?? ""}${" ".repeat(
+        gap
+      )}${rightTextStyled}`,
       width
     );
   }
@@ -275,7 +290,9 @@ export class FooterStatusBar extends Text {
     return {
       plain: prefix ? `${prefix}${message ? ` ${message}` : ""}` : message,
       styled: prefix
-        ? `${prefixStyle}${message ? ` ${style(messageStylePrefix, message)}` : ""}`
+        ? `${prefixStyle}${
+            message ? ` ${style(messageStylePrefix, message)}` : ""
+          }`
         : style(messageStylePrefix, message),
     };
   }
@@ -313,17 +330,13 @@ export class FooterStatusBar extends Text {
   }
 }
 
-/**
- * Bottom-pinned, focus-owning composer. The chat is normal-flow content but
- * this component is rendered as an overlay, so a streaming Markdown reflow
- * can never alter the editor's screen row. It forwards focus and input to
- * whichever component currently occupies the editor slot.
- */
+/** Normal-flow HOT composer and one-row footer, including inline prompts. */
 class ComposerLayer extends Container {
   #content: Component;
   readonly #footer: Component;
   readonly #afterInput: ((data: string) => void) | undefined;
   #focused = false;
+  readonly #prompts: Component[] = [];
 
   constructor(
     content: Component,
@@ -343,13 +356,14 @@ class ComposerLayer extends Container {
 
   set focused(value: boolean) {
     this.#focused = value;
-    if (isFocusable(this.#content)) {
-      this.#content.focused = value;
+    const content = this.#prompts.at(-1) ?? this.#content;
+    if (isFocusable(content)) {
+      content.focused = value;
     }
   }
 
   handleInput(data: string): void {
-    this.#content.handleInput?.(data);
+    (this.#prompts.at(-1) ?? this.#content).handleInput?.(data);
     this.#afterInput?.(data);
   }
 
@@ -361,9 +375,35 @@ class ComposerLayer extends Container {
     this.#rebuild();
   }
 
+  get hasPrompt(): boolean {
+    return this.#prompts.length > 0;
+  }
+
+  mountPrompt(component: Component): () => void {
+    const previous = this.#prompts.at(-1) ?? this.#content;
+    if (isFocusable(previous)) {
+      previous.focused = false;
+    }
+    this.#prompts.push(component);
+    this.#rebuild();
+    this.focused = this.#focused;
+    return () => {
+      const index = this.#prompts.indexOf(component);
+      if (index < 0) {
+        return;
+      }
+      if (isFocusable(component)) {
+        component.focused = false;
+      }
+      this.#prompts.splice(index, 1);
+      this.#rebuild();
+      this.focused = this.#focused;
+    };
+  }
+
   #rebuild(): void {
     this.clear();
-    this.addChild(this.#content);
+    this.addChild(this.#prompts.at(-1) ?? this.#content);
     this.addChild(this.#footer);
   }
 }
@@ -416,21 +456,12 @@ const addTranslatedMessage = (
   markdownTheme: MarkdownTheme,
   message: string
 ): void => {
-  chatContainer.addChild(new Spacer(1));
-  chatContainer.addChild(
+  addChatComponent(
+    chatContainer,
     new Markdown(sanitizeTerminalText(message), 1, 1, markdownTheme, {
       bgColor: (text: string) => style(ANSI_BG_GRAY, text),
     })
   );
-};
-
-const addSystemMessage = (chatContainer: Container, message: string): void => {
-  const cleaned = sanitizeTerminalText(message).trimEnd();
-  if (cleaned.length === 0) {
-    return;
-  }
-
-  addChatComponent(chatContainer, new Text(style(ANSI_GRAY, cleaned), 1, 0));
 };
 
 const addErrorMessage = (chatContainer: Container, error: unknown): void => {
@@ -451,8 +482,12 @@ const addErrorMessage = (chatContainer: Container, error: unknown): void => {
 
 interface StreamViewFactories {
   activeToolInputs: Map<string, ToolInputRenderState>;
+  endAssistantView: (kind: "reasoning" | "text") => void;
   ensureAssistantView: () => AssistantStreamView;
   ensureToolView: (toolCallId: string, toolName: string) => BaseToolCallView;
+  finish: () => void;
+  finishToolView: (id: string) => void;
+  getToolView: (id: string) => BaseToolCallView | undefined;
   pendingToolCallIds: Set<string>;
   resetAssistantView: (suppressLeadingSpacer?: boolean) => void;
   streamedToolCallIds: Set<string>;
@@ -463,7 +498,7 @@ const createStreamViewFactories = (options: {
   assistantRenderer?: AssistantRenderer;
   assistantRendererSignal?: AbortSignal;
   assistantViews: Set<AssistantStreamView>;
-  chatContainer: Container;
+  chatContainer: TranscriptOwner;
   flags: PiTuiRenderFlags;
   foregroundColor?: string;
   markdownTheme: MarkdownTheme;
@@ -476,57 +511,106 @@ const createStreamViewFactories = (options: {
   const streamedToolCallIds = new Set<string>();
   const pendingToolCallIds = new Set<string>();
   const toolViews = new Map<string, BaseToolCallView>();
-  let assistantView: AssistantStreamView | null = null;
+  let assistantLease: TranscriptLease<AssistantStreamView> | undefined;
+  const toolLeases = new Map<string, TranscriptLease<BaseToolCallView>>();
   let suppressAssistantLeadingSpacer = false;
 
   const resetAssistantView = (suppressLeadingSpacer = false): void => {
     if (suppressLeadingSpacer) {
       suppressAssistantLeadingSpacer = true;
     }
-    assistantView = null;
+    if (assistantLease) {
+      options.chatContainer.finish(assistantLease);
+      assistantLease = undefined;
+    }
   };
 
   const ensureAssistantView = (): AssistantStreamView => {
-    if (!assistantView) {
-      assistantView = new AssistantStreamView(options.markdownTheme, {
-        assistantRenderer: options.assistantRenderer,
-        foregroundColor: options.foregroundColor,
-        notify: options.notifyAssistantRenderer,
-        notifyOnce: options.notifyAssistantRendererOnce,
-        requestRender: options.requestRender,
-        signal: options.assistantRendererSignal,
-      });
-      options.assistantViews.add(assistantView);
-      addChatComponent(options.chatContainer, assistantView, {
-        addLeadingSpacer: !suppressAssistantLeadingSpacer,
-      });
+    if (!assistantLease?.active) {
+      assistantLease = options.chatContainer.acquire(
+        (permission) => {
+          const view = new AssistantStreamView(options.markdownTheme, {
+            assistantRenderer: options.assistantRenderer,
+            foregroundColor: options.foregroundColor,
+            notify: (message) => {
+              if (permission.active) {
+                options.notifyAssistantRenderer(message);
+              }
+            },
+            notifyOnce: (key, message) => {
+              if (permission.active) {
+                options.notifyAssistantRendererOnce(key, message);
+              }
+            },
+            requestRender: () => {
+              if (permission.active) {
+                options.requestRender();
+              }
+            },
+            signal:
+              options.assistantRendererSignal === undefined
+                ? permission.signal
+                : AbortSignal.any([
+                    permission.signal,
+                    options.assistantRendererSignal,
+                  ]),
+          });
+          options.assistantViews.add(view);
+          return view;
+        },
+        {
+          leadingSpacer: !suppressAssistantLeadingSpacer,
+          dispose: (view) => {
+            options.assistantViews.delete(view);
+            view.dispose();
+          },
+        }
+      );
       suppressAssistantLeadingSpacer = false;
     }
 
-    return assistantView;
+    return assistantLease.view;
   };
 
   const ensureToolView = (
     toolCallId: string,
     toolName: string
   ): BaseToolCallView => {
-    const existing = toolViews.get(toolCallId);
-    if (existing) {
-      existing.setToolName(toolName);
-      return existing;
+    const existing = toolLeases.get(toolCallId);
+    if (existing?.active) {
+      existing.view.setToolName(toolName);
+      return existing.view;
     }
 
-    const view = new BaseToolCallView(
-      toolCallId,
-      toolName,
-      options.markdownTheme,
-      options.requestRender,
-      options.flags.showRawToolIo,
-      options.toolRenderers
+    const lease = options.chatContainer.acquire(
+      (permission) =>
+        new BaseToolCallView(
+          toolCallId,
+          toolName,
+          options.markdownTheme,
+          () => {
+            if (permission.active) {
+              options.requestRender();
+            }
+          },
+          options.flags.showRawToolIo,
+          options.toolRenderers
+        ),
+      {
+        label: existing
+          ? `Continuation (${sanitizeTerminalText(toolCallId)})`
+          : undefined,
+        settle: (view) => view.settle(),
+        dispose: (view) => view.dispose(),
+      }
     );
-    toolViews.set(toolCallId, view);
-    addChatComponent(options.chatContainer, view);
-    return view;
+    const input = activeToolInputs.get(toolCallId);
+    if (input?.finalInput !== undefined) {
+      lease.view.setFinalInput(input.finalInput);
+    }
+    toolLeases.set(toolCallId, lease);
+    toolViews.set(toolCallId, lease.view);
+    return lease.view;
   };
 
   return {
@@ -534,9 +618,33 @@ const createStreamViewFactories = (options: {
     streamedToolCallIds,
     pendingToolCallIds,
     toolViews,
+    endAssistantView: (kind) => {
+      // Committed reasoning can arrive after text deltas. Never seal that
+      // newer text lease, or reopen a lease handed off to steering/tools.
+      if (assistantLease?.active && assistantLease.view.contentKind === kind) {
+        if (kind === "text") {
+          assistantLease.view.completeText();
+        }
+        resetAssistantView();
+      }
+    },
     resetAssistantView,
     ensureAssistantView,
     ensureToolView,
+    getToolView: (id: string) =>
+      toolLeases.get(id)?.active ? toolViews.get(id) : undefined,
+    finishToolView: (id: string) => {
+      const lease = toolLeases.get(id);
+      if (lease) {
+        options.chatContainer.finish(lease);
+      }
+    },
+    finish: () => {
+      resetAssistantView();
+      for (const lease of toolLeases.values()) {
+        options.chatContainer.finish(lease);
+      }
+    },
   };
 };
 
@@ -619,6 +727,9 @@ export interface AgentTUIConfig {
   assistantRenderer?: AssistantRenderer;
   assistantRendererSignal?: AbortSignal;
   commands?: TuiCommand[];
+  /** Structured current metadata; titles must never be parsed from subtitles. */
+  currentSession?: () => Pick<SessionIndexEntry, "key" | "name">;
+  cwd?: string;
   footer?: { text?: string };
   header?: { title: string; subtitle?: string };
   /**
@@ -640,7 +751,8 @@ export interface AgentTUIConfig {
   onSetup?: () => void | Promise<void>;
   onTurnComplete?: (
     usage: TurnUsage | undefined,
-    finishReason?: string
+    finishReason?: string,
+    signal?: AbortSignal
   ) => Promise<void> | void;
   preprocessCommand?: (
     commandInput: string,
@@ -669,17 +781,19 @@ export interface AgentTUIConfig {
 }
 
 export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
+  const turnCompletions = new Set<Promise<void>>();
+  const completionFailures: unknown[] = [];
   const markdownTheme =
     config.theme?.markdownTheme ?? createDefaultMarkdownTheme();
   const editorTheme = config.theme?.editorTheme ?? createDefaultEditorTheme();
   let commandSet = buildTuiCommandSet(config.commands);
 
   const terminal = new ProcessTerminal();
-  const tui: TUI = new TuiMainScreen(terminal);
+  const tui = new TuiMainScreen(terminal);
   tui.setClearOnShrink(false);
 
   const headerContainer = new Container();
-  const chatContainer = new Container();
+  const chatContainer = new TranscriptOwner(() => terminal.columns);
   const overlayContainer = new Container();
   const footerStatusBar = new FooterStatusBar(tui);
   const assistantViews = new Set<AssistantStreamView>();
@@ -689,17 +803,36 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
     assistantViews.clear();
   };
-  const clearChat = (): void => {
+  // Immediately repeated identical notices pulse the one visible row instead
+  // of appending duplicates. Scope is the current notice instance only; see
+  // `repeated-notice.ts`.
+  const repeatedNotice = createRepeatedNotice({
+    appendNotice: (message) => {
+      if (!message) {
+        return;
+      }
+      const normalText = style(ANSI_GRAY, message);
+      const lease = chatContainer.acquire(() => new Text(normalText, 1, 0), {
+        settle: () => repeatedNotice.settle(),
+      });
+      return { normalText, row: lease.view, isActive: () => lease.active };
+    },
+    normalStyle: (message) => style(ANSI_GRAY, message),
+    pulseStyle: (message) => style(`${ANSI_BG_WHITE}${ANSI_BLACK}`, message),
+    requestRender: () => tui.requestRender(),
+  });
+  const showSystemMessage = (message: string, key?: "model-change"): void => {
+    // Sanitize before either style is applied, including repeated custom notices.
+    repeatedNotice.show(sanitizeTerminalText(message).trimEnd(), key);
+  };
+  const clearChat = (reason: "initial-replay" | "session-navigation"): void => {
+    repeatedNotice.reset();
+    chatContainer.reset(reason);
     disposeAssistantViews();
-    chatContainer.clear();
   };
 
-  const assistantRendererNotifications = createAssistantRendererNotifications(
-    (message) => {
-      addSystemMessage(chatContainer, message);
-      tui.requestRender();
-    }
-  );
+  const assistantRendererNotifications =
+    createAssistantRendererNotifications(showSystemMessage);
 
   const title = new Text("", 1, 0);
   const help = new Text(
@@ -711,21 +844,47 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     0
   );
 
-  const updateHeader = (): void => {
-    const headerTitle = sanitizeTerminalText(
-      config.header?.title ?? "Agent TUI"
+  const initializeStartupHeader = (): void => {
+    const headerTitle = style(
+      `${ANSI_BOLD}${ANSI_ORANGE}`,
+      sanitizeTerminalText(config.header?.title ?? "Agent TUI")
     );
-    const subtitle =
-      config.header?.subtitle === undefined
-        ? undefined
-        : sanitizeTerminalText(config.header.subtitle);
-    const footer = sanitizeTerminalText(config.footer?.text ?? "").trim();
+    const subtitle = sanitizeTerminalText(config.header?.subtitle ?? "");
     title.setText(
-      subtitle
-        ? `${style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)}\n${style(ANSI_DIM, subtitle)}`
-        : style(`${ANSI_BOLD}${ANSI_ORANGE}`, headerTitle)
+      subtitle ? `${headerTitle}\n${style(ANSI_DIM, subtitle)}` : headerTitle
     );
-    footerStatusBar.setRightText(footer);
+    const snapshot = ColdSnapshot.capture(headerContainer, terminal.columns);
+    headerContainer.clear();
+    headerContainer.addChild(snapshot);
+  };
+
+  let currentSubtitle = config.header?.subtitle;
+  let currentSession = config.currentSession?.();
+  const refreshCurrentStatus = (reason?: "model-change"): void => {
+    const nextSession = config.currentSession?.();
+    const sessionChanged = nextSession?.key !== currentSession?.key;
+    const titleChanged =
+      !sessionChanged && nextSession?.name !== currentSession?.name;
+    if (titleChanged && nextSession?.name !== undefined) {
+      const name = sanitizeTerminalText(
+        nextSession.name,
+        nextSession.name.length
+      );
+      showSystemMessage(`Session title updated to "${name}".`);
+    } else if (
+      (sessionChanged || config.header?.subtitle !== currentSubtitle) &&
+      reason !== "model-change"
+    ) {
+      const subtitle = sanitizeTerminalText(config.header?.subtitle ?? "");
+      if (subtitle) {
+        showSystemMessage(`Current session/model:\n${subtitle}`);
+      }
+    }
+    currentSubtitle = config.header?.subtitle;
+    currentSession = nextSession === undefined ? undefined : { ...nextSession };
+    footerStatusBar.setRightText(
+      sanitizeTerminalText(config.footer?.text ?? "").trim()
+    );
     tui.requestRender();
   };
 
@@ -739,13 +898,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   });
   let autocompleteProvider = createAliasAwareAutocompleteProvider({
     commands: commandSet.commands,
-    basePath: process.cwd(),
+    basePath: config.cwd ?? process.cwd(),
   });
   const refreshCommandSet = (): void => {
     commandSet = buildTuiCommandSet(config.commands);
     autocompleteProvider = createAliasAwareAutocompleteProvider({
       commands: commandSet.commands,
-      basePath: process.cwd(),
+      basePath: config.cwd ?? process.cwd(),
     });
     editor.setAutocompleteProvider(autocompleteProvider);
   };
@@ -769,7 +928,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
   const session = new TuiSessionMachine();
   let lastCtrlCPressAt = 0;
-  let foregroundStatusMessage: string | null = null;
+  const busy = new BusyStatus((message) =>
+    footerStatusBar.setForegroundMessage(message)
+  );
   let activeModelSelector: ModelSelectorComponent | undefined;
   let activeSessionSelector: SessionSelectorComponent | undefined;
   let commandInputListenerActive = false;
@@ -786,16 +947,10 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   ): Promise<T | typeof EXIT_REQUESTED> =>
     Promise.race([operation, exitRequested]);
 
-  const clearStatus = (): void => {
-    foregroundStatusMessage = null;
-    footerStatusBar.setForegroundMessage(null);
-  };
-
-  const showLoader = (message: string): void => {
-    const sanitized = sanitizeTerminalText(message);
-    foregroundStatusMessage = sanitized;
-    footerStatusBar.setForegroundMessage(sanitized);
-  };
+  // Compatibility hooks reset this operation's label, not its busy lifetime.
+  const clearStatus = (): void => busy.setMessage(null);
+  const showLoader = (message: string): void =>
+    busy.setMessage(sanitizeTerminalText(message));
 
   const clearPromptInput = (): void => {
     editor.setText("");
@@ -815,7 +970,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const requestExit = (): void => {
     extensionUiController.abort();
     cancelActiveTurn();
-    clearStatus();
+    busy.dispose();
     session.close();
   };
 
@@ -875,6 +1030,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const removeInputListener = tui.addInputListener((data) => {
+    if (composerLayer.hasPrompt) {
+      return;
+    }
     if (isCtrlCInput(data) && !commandInputListenerActive) {
       handleCtrlCPress();
       return { consume: true };
@@ -949,9 +1107,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       streamedToolCallIds,
       pendingToolCallIds,
       toolViews,
+      endAssistantView,
       resetAssistantView,
       ensureAssistantView,
       ensureToolView,
+      getToolView,
+      finishToolView,
+      finish,
     } = createStreamViewFactories({
       assistantRenderer: config.assistantRenderer,
       assistantRendererSignal: config.assistantRendererSignal,
@@ -965,43 +1127,60 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       requestRender: () => tui.requestRender(),
       toolRenderers: config.toolRenderers,
     });
+    const epoch = chatContainer.epoch;
     const tracker: StreamPartTracker = {
       finishReason: undefined,
       firstVisiblePartSeen: false,
     };
 
-    const baseLoaderMessage = loaderMessage ?? foregroundStatusMessage;
+    const baseLoaderMessage = loaderMessage ?? busy.getMessage();
     const orchestrator = createSpinnerOrchestrator(
       {
         clearStatus,
-        hasSpinner: () => foregroundStatusMessage !== null,
-        setMessage: (message) => {
-          foregroundStatusMessage = message;
-          footerStatusBar.setForegroundMessage(message);
-        },
+        hasSpinner: () => busy.getMessage() !== undefined,
+        setMessage: showLoader,
         showLoader,
       },
       baseLoaderMessage
     );
+    const retryStatus = createRetryStatus({
+      now: () => Date.now(),
+      setMessage: (message) => {
+        if (message === null) {
+          orchestrator.onRetryWaitEnd();
+        } else {
+          orchestrator.onRetryWaitMessage(message);
+        }
+        tui.requestRender();
+      },
+    });
 
     const state: PiTuiStreamState = {
       flags,
       activeToolInputs,
       streamedToolCallIds,
       pendingToolCallIds,
+      endAssistantView,
       resetAssistantView,
       ensureAssistantView,
       ensureToolView,
-      getToolView: (toolCallId: string) => toolViews.get(toolCallId),
+      getToolView,
+      finishToolView,
+      finishOutput: finish,
       chatContainer,
       onReasoningStart: orchestrator.onReasoningStart,
       onReasoningEnd: orchestrator.onReasoningEnd,
-      onToolPendingStart: orchestrator.onToolPendingStart,
-      onToolPendingEnd: orchestrator.onToolPendingEnd,
+      // Runtime tool-call/result events are committed after execution. They
+      // must not claim physical execution; the turn's Working lease covers it.
+      onRetryWait: retryStatus.scheduled,
+      onRetryClear: retryStatus.clear,
     };
 
     try {
       for await (const part of stream) {
+        if (epoch !== chatContainer.epoch || session.closed) {
+          continue;
+        }
         await dispatchStreamPart(part, {
           chatContainer,
           flags,
@@ -1012,6 +1191,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         tui.requestRender();
       }
     } finally {
+      // Turn end, abort, and error all land here: never leave a countdown
+      // ticking or a stale wait banner behind for the next step or thread.
+      retryStatus.clear();
+      retryStatus.stop();
+      finish();
       for (const view of toolViews.values()) {
         view.dispose();
       }
@@ -1020,67 +1204,61 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     return { finishReason: tracker.finishReason };
   };
 
-  const renderSessionHistory = async (
-    replay?: readonly SessionHistoryReplayPart[]
-  ): Promise<void> => {
-    const selectorConfig = config.sessionSelector;
-    if (selectorConfig === undefined) {
-      return;
-    }
-    const parts =
-      replay ??
-      sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
-    let streamParts: TuiStreamPart[] = [];
-    const flushStreamParts = async (): Promise<void> => {
-      if (streamParts.length === 0) {
+  const renderSessionHistory = (
+    replay?: readonly SessionHistoryReplayPart[],
+    resetReason: "initial-replay" | "session-navigation" = "session-navigation"
+  ): Promise<void> =>
+    busy.run("Loading session history...", async () => {
+      const selectorConfig = config.sessionSelector;
+      if (selectorConfig === undefined) {
         return;
       }
-      const pending = streamParts;
-      streamParts = [];
-      await renderAgentStream(
-        (async function* () {
-          yield* pending;
-        })(),
-        {
-          showReasoning: true,
-          showSteps: false,
-          showFinishReason: false,
-          showRawToolIo: config.showRawToolIo ?? false,
-          showToolResults: true,
-          showSources: false,
-          showFiles: false,
+      const parts =
+        replay ??
+        sessionHistoryReplayParts(await selectorConfig.loadCurrentHistory());
+      let streamParts: TuiStreamPart[] = [];
+      const flushStreamParts = async (): Promise<void> => {
+        if (streamParts.length === 0) {
+          return;
         }
-      );
-    };
-    for (const part of parts) {
-      if (part.type === "stream") {
-        streamParts.push(part.part);
-        continue;
+        const pending = streamParts;
+        streamParts = [];
+        await renderAgentStream(
+          (async function* () {
+            yield* pending;
+          })(),
+          {
+            showReasoning: true,
+            showSteps: false,
+            showFinishReason: false,
+            showRawToolIo: config.showRawToolIo ?? false,
+            showToolResults: true,
+            showSources: false,
+            showFiles: false,
+          }
+        );
+      };
+      for (const part of parts) {
+        if (part.type === "stream") {
+          streamParts.push(part.part);
+          continue;
+        }
+        await flushStreamParts();
+        if (part.type === "clear") {
+          clearChat(resetReason);
+        } else {
+          addUserMessage(chatContainer, markdownTheme, part.text);
+        }
       }
       await flushStreamParts();
-      if (part.type === "clear") {
-        clearChat();
-      } else {
-        addUserMessage(chatContainer, markdownTheme, part.text);
-      }
-    }
-    await flushStreamParts();
-  };
-
-  const createStreamingLoaderClearer = (): (() => void) => {
-    let hasClearedStreamingLoader = false;
-
-    return () => {
-      if (hasClearedStreamingLoader) {
-        return;
-      }
-      hasClearedStreamingLoader = true;
-      clearStatus();
-    };
-  };
+    });
 
   const accumulateUsage = (
-    total: { inputTokens: number; outputTokens: number; totalTokens: number },
+    total: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    },
     usage: ModelUsage
   ): void => {
     total.inputTokens += usage.inputTokens ?? 0;
@@ -1090,6 +1268,11 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   };
 
   const runSingleTurn = async (run: AgentTurn): Promise<void> => {
+    const turnEpoch = chatContainer.epoch;
+    const turnSignal = AbortSignal.any([
+      chatContainer.signal,
+      extensionUiController.signal,
+    ]);
     session.beginTurn(run);
     editor.disableSubmit = false;
     tui.setFocus(composerLayer);
@@ -1103,18 +1286,23 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
 
     try {
       showLoader("Working...");
-      const clearStreamingLoader = createStreamingLoaderClearer();
 
       const { finishReason } = await renderAgentStream(
         agentEventStreamParts(run.events(), {
           onContextUsage: (snapshot) => {
+            if (turnSignal.aborted) {
+              return;
+            }
             config.onContextUsage?.(snapshot);
-            updateHeader();
+            refreshCurrentStatus();
           },
           onModelUsage: (usage) => {
+            if (turnSignal.aborted) {
+              return;
+            }
             sawModelUsage = true;
             accumulateUsage(turnUsage, usage);
-            updateHeader();
+            refreshCurrentStatus();
           },
         }),
         {
@@ -1126,29 +1314,42 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           showSources: false,
           showFiles: false,
         },
-        clearStreamingLoader,
+        undefined,
         "Working..."
       );
 
-      clearStreamingLoader();
-
+      if (turnEpoch !== chatContainer.epoch || session.closed) {
+        return;
+      }
       if (session.wasInterrupted(run)) {
         addInterruptedMessage();
         return;
       }
 
-      Promise.resolve(
-        config.onTurnComplete?.(
-          sawModelUsage ? { ...turnUsage } : undefined,
-          finishReason
+      const completion = busy
+        .run("Finalizing...", () =>
+          boundedReloadOperation(
+            Promise.resolve(
+              config.onTurnComplete?.(
+                sawModelUsage ? { ...turnUsage } : undefined,
+                finishReason,
+                turnSignal
+              )
+            ),
+            10_000,
+            "Turn completion"
+          )
         )
-      )
         .then(() => {
-          updateHeader();
+          if (!session.closed && turnEpoch === chatContainer.epoch) {
+            refreshCurrentStatus();
+          }
         })
         .catch((error) => {
-          console.error("onTurnComplete callback failed in TUI:", error);
+          completionFailures.push(error);
         });
+      turnCompletions.add(completion);
+      completion.then(() => turnCompletions.delete(completion));
 
       if (finishReason !== undefined) {
         addAbnormalFinishReasonMessage(finishReason);
@@ -1172,7 +1373,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return null;
     }
 
-    return await command.execute({ args: parsed.args });
+    return await busy.run("Working...", () =>
+      command.execute({ args: parsed.args })
+    );
   };
 
   const preprocessCommandInput = async (
@@ -1182,25 +1385,29 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return input;
     }
 
-    return await config.preprocessCommand(input, {
-      addInputListener: (listener) => {
-        commandInputListenerActive = true;
-        const remove = tui.addInputListener(listener);
-        return () => {
-          remove();
-          commandInputListenerActive = false;
-        };
-      },
-      clearStatus,
-      tui,
-      overlayContainer,
-      editorTheme,
-      isCtrlCInput,
-      handleCtrlCPress,
-      showMessage: (message: string) =>
-        addSystemMessage(chatContainer, message),
-      updateHeader,
-    });
+    const preprocess = config.preprocessCommand;
+    return await busy.run("Processing command...", () =>
+      preprocess(input, {
+        addInputListener: (listener) => {
+          commandInputListenerActive = true;
+          const resume = busy.suspend();
+          const remove = tui.addInputListener(listener);
+          return () => {
+            remove();
+            resume();
+            commandInputListenerActive = false;
+          };
+        },
+        clearStatus,
+        tui,
+        overlayContainer,
+        editorTheme,
+        isCtrlCInput,
+        handleCtrlCPress,
+        showMessage: showSystemMessage,
+        updateHeader: refreshCurrentStatus,
+      })
+    );
   };
 
   /**
@@ -1212,38 +1419,42 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const showModelSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.modelSelector;
     if (selectorConfig === undefined) {
-      addSystemMessage(chatContainer, "Model selection is not available.");
+      showSystemMessage("Model selection is not available.");
       tui.requestRender();
       return;
     }
 
-    showLoader("Loading model catalog...");
     let modelIds: string[];
     try {
-      const result = await untilExit(selectorConfig.listModelIds());
+      const result = await untilExit(
+        busy.run("Loading model catalog...", () =>
+          selectorConfig.listModelIds()
+        )
+      );
       if (result === EXIT_REQUESTED) {
         return;
       }
       modelIds = result;
     } catch (error) {
       clearStatus();
-      addSystemMessage(
-        chatContainer,
-        `Could not list models: ${error instanceof Error ? error.message : String(error)}. Switch directly with /model <model-id>.`
+      showSystemMessage(
+        `Could not list models: ${
+          error instanceof Error ? error.message : String(error)
+        }. Switch directly with /model <model-id>.`
       );
       tui.requestRender();
       return;
     }
     clearStatus();
     if (modelIds.length === 0) {
-      addSystemMessage(
-        chatContainer,
+      showSystemMessage(
         "The provider returned an empty model catalog. Switch directly with /model <model-id>."
       );
       tui.requestRender();
       return;
     }
 
+    const resumeBusy = busy.suspend();
     const pendingSelection = new Promise<string | undefined>((resolve) => {
       // Let the selector own ctrl+c/escape while it is mounted.
       commandInputListenerActive = true;
@@ -1262,6 +1473,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         composerLayer.setContent(editor);
         tui.setFocus(composerLayer);
         tui.requestRender();
+        resumeBusy();
         resolve(modelId);
       };
       // Exit must settle the selector through the same idempotent path as
@@ -1288,20 +1500,27 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     });
     const selection = await untilExit(pendingSelection);
 
-    if (selection === undefined || selection === EXIT_REQUESTED) {
+    if (typeof selection !== "string") {
       return;
     }
     try {
-      await selectorConfig.switchModel(selection);
-      updateHeader();
-      addSystemMessage(
-        chatContainer,
-        `Model switched to ${selection}. New steps use it immediately.`
+      const previousModelId = selectorConfig.currentModelId();
+      await busy.run("Switching model...", () =>
+        selectorConfig.switchModel(selection)
       );
+      refreshCurrentStatus("model-change");
+      const currentModelId = selectorConfig.currentModelId();
+      if (currentModelId !== previousModelId) {
+        showSystemMessage(
+          `Model changed to ${currentModelId}.`,
+          "model-change"
+        );
+      }
     } catch (error) {
-      addSystemMessage(
-        chatContainer,
-        `Model switch failed: ${error instanceof Error ? error.message : String(error)}`
+      showSystemMessage(
+        `Model switch failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
     tui.requestRender();
@@ -1310,35 +1529,38 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const showSessionSelector = async (initialQuery?: string): Promise<void> => {
     const selectorConfig = config.sessionSelector;
     if (selectorConfig === undefined) {
-      addSystemMessage(chatContainer, "Session selection is not available.");
+      showSystemMessage("Session selection is not available.");
       tui.requestRender();
       return;
     }
 
-    showLoader("Loading sessions...");
     let sessions: readonly SessionIndexEntry[];
     try {
-      const result = await untilExit(selectorConfig.listSessions());
+      const result = await untilExit(
+        busy.run("Loading sessions...", () => selectorConfig.listSessions())
+      );
       if (result === EXIT_REQUESTED) {
         return;
       }
       sessions = result;
     } catch (error) {
       clearStatus();
-      addSystemMessage(
-        chatContainer,
-        `Could not list sessions: ${error instanceof Error ? error.message : String(error)}`
+      showSystemMessage(
+        `Could not list sessions: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
       tui.requestRender();
       return;
     }
     clearStatus();
     if (sessions.length === 0) {
-      addSystemMessage(chatContainer, "No sessions recorded yet.");
+      showSystemMessage("No sessions recorded yet.");
       tui.requestRender();
       return;
     }
 
+    const resumeBusy = busy.suspend();
     const pendingSelection = new Promise<string | undefined>((resolve) => {
       commandInputListenerActive = true;
       let selector: SessionSelectorComponent | undefined;
@@ -1356,6 +1578,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
         composerLayer.setContent(editor);
         tui.setFocus(composerLayer);
         tui.requestRender();
+        resumeBusy();
         resolve(sessionKey);
       };
       // Exit must settle the selector through the same idempotent path as
@@ -1390,14 +1613,17 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       return;
     }
     try {
-      await renderSessionHistory(
-        await resumeSessionReplayParts(selectorConfig, selection)
-      );
-      updateHeader();
+      await busy.run("Switching session...", async () => {
+        await renderSessionHistory(
+          await resumeSessionReplayParts(selectorConfig, selection)
+        );
+      });
+      refreshCurrentStatus();
     } catch (error) {
-      addSystemMessage(
-        chatContainer,
-        `Session switch failed: ${error instanceof Error ? error.message : String(error)}`
+      showSystemMessage(
+        `Session switch failed (current session: ${selectorConfig.currentSessionKey()}; previous transcript retained): ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
     tui.requestRender();
@@ -1407,9 +1633,9 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     commandResult: TuiCommandResult | null
   ): void => {
     if (commandResult?.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     } else if (commandResult === null) {
-      addSystemMessage(chatContainer, "Unknown command.");
+      showSystemMessage("Unknown command.");
     }
     tui.requestRender();
   };
@@ -1454,12 +1680,13 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     }
 
     if (commandResult.action.type === "refresh-header") {
-      await config.onCommandAction?.(commandResult.action);
-      updateHeader();
+      const action = commandResult.action;
+      await busy.run("Working...", () => config.onCommandAction?.(action));
+      refreshCurrentStatus(action.reason);
     }
 
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message, commandResult.action.reason);
     }
     tui.requestRender();
   };
@@ -1470,11 +1697,19 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   ): Promise<void> => {
     if (clear) {
       clearStatus();
-      await renderSessionHistory();
+      try {
+        await renderSessionHistory();
+      } catch (error) {
+        showSystemMessage(
+          `History load failed for current session ${config.sessionSelector?.currentSessionKey() ?? "unknown"}; previous transcript retained: ${error instanceof Error ? error.message : String(error)}`
+        );
+        tui.requestRender();
+        return;
+      }
     }
-    updateHeader();
+    refreshCurrentStatus();
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     }
     tui.requestRender();
   };
@@ -1485,80 +1720,90 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     if (!commandResult.action) {
       return;
     }
+    const action = commandResult.action;
+    chatContainer.finish();
     try {
-      await config.onCommandAction?.(commandResult.action);
+      await busy.run("Reloading...", () => config.onCommandAction?.(action));
     } catch (error) {
       refreshCommandSet();
-      addSystemMessage(
-        chatContainer,
-        `Reload failed: ${error instanceof Error ? error.message : String(error)}`
+      showSystemMessage(
+        `Reload failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
       tui.requestRender();
       return;
     }
     refreshCommandSet();
-    updateHeader();
+    refreshCurrentStatus();
     if (commandResult.message) {
-      addSystemMessage(chatContainer, commandResult.message);
+      showSystemMessage(commandResult.message);
     }
     tui.requestRender();
   };
 
-  const processCommandInput = async (trimmed: string): Promise<boolean> => {
-    const commandInput = await preprocessCommandInput(trimmed);
-    if (commandInput === null) {
-      tui.requestRender();
-      return true;
-    }
-
-    const commandResult = await executeLocalCommand(commandInput);
-    await handleCommandResult(commandResult);
-    return true;
-  };
-
-  const processUserInputMessage = async (
-    trimmed: string,
-    steeringRun?: AgentTurn
-  ): Promise<void> => {
-    addUserMessage(chatContainer, markdownTheme, trimmed);
-    tui.requestRender();
-
-    const result = await dispatchUserInput({
-      activeRun: steeringRun,
-      hooks: {
-        showStatus: (text: string) => showLoader(text),
-        clearStatus: () => clearStatus(),
-      },
-      input: trimmed,
-      onPrepared: (prepared) => {
-        if (prepared.translatedDisplay) {
-          addTranslatedMessage(
-            chatContainer,
-            markdownTheme,
-            prepared.translatedDisplay
-          );
-        }
-        showLoader(steeringRun === undefined ? "Processing..." : "Steering...");
+  const processCommandInput = (trimmed: string): Promise<boolean> =>
+    busy.run("Working...", async () => {
+      const commandInput = await preprocessCommandInput(trimmed);
+      if (commandInput === null) {
         tui.requestRender();
-      },
-      preprocess: config.preprocessUserInput,
-      thread: config.thread,
+        return true;
+      }
+
+      const commandResult = await executeLocalCommand(commandInput);
+      await handleCommandResult(commandResult);
+      return true;
     });
 
-    if (result.type === "rejected") {
-      clearStatus();
-      addSystemMessage(chatContainer, result.error);
-      tui.requestRender();
-      return;
-    }
+  const processUserInputMessage = (
+    trimmed: string,
+    steeringRun?: AgentTurn
+  ): Promise<void> =>
+    busy.run(
+      steeringRun === undefined ? "Processing..." : "Steering...",
+      async () => {
+        addUserMessage(chatContainer, markdownTheme, trimmed);
+        tui.requestRender();
 
-    if (!result.consumeRun) {
-      clearStatus();
-      return;
-    }
+        const result = await dispatchUserInput({
+          activeRun: steeringRun,
+          hooks: {
+            showStatus: (text: string) => showLoader(text),
+            clearStatus: () => clearStatus(),
+          },
+          input: trimmed,
+          onPrepared: (prepared) => {
+            if (prepared.translatedDisplay) {
+              addTranslatedMessage(
+                chatContainer,
+                markdownTheme,
+                prepared.translatedDisplay
+              );
+            }
+            showLoader(
+              steeringRun === undefined ? "Processing..." : "Steering..."
+            );
+            tui.requestRender();
+          },
+          preprocess: config.preprocessUserInput,
+          thread: config.thread,
+        });
 
-    await runSingleTurn(result.run);
-  };
+        if (result.type === "rejected") {
+          clearStatus();
+          showSystemMessage(result.error);
+          tui.requestRender();
+          return;
+        }
+
+        if (!result.consumeRun) {
+          clearStatus();
+          return;
+        }
+
+        await runSingleTurn(result.run);
+      }
+    );
 
   const processSteeringInput = async (
     trimmed: string,
@@ -1579,7 +1824,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
   const processInput = async (input: string): Promise<boolean> => {
     const trimmed = input.trim();
     if (trimmed.length === 0) {
-      addSystemMessage(chatContainer, "메시지를 입력해주세요");
+      showSystemMessage("Please enter a message.");
       tui.requestRender();
       return true;
     }
@@ -1599,7 +1844,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       clearStatus();
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+      showSystemMessage(`Error: ${errorMessage}`);
       tui.requestRender();
       return true;
     } finally {
@@ -1641,7 +1886,7 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
           clearStatus();
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          addSystemMessage(chatContainer, `Error: ${errorMessage}`);
+          showSystemMessage(`Error: ${errorMessage}`);
           tui.requestRender();
         });
       }
@@ -1651,35 +1896,69 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
     session.submitInput(text);
   };
 
-  updateHeader();
+  initializeStartupHeader();
+  refreshCurrentStatus();
   tui.start();
 
   try {
-    await config.onExtensionUiReady?.((hostSignal) =>
-      createExtensionUi({
-        restoreFocus: clearPromptInput,
-        showMessage: (message) => addSystemMessage(chatContainer, message),
-        showStatus: (message) => {
-          showLoader(message);
-          return clearStatus;
-        },
-        // Host-scoped signals let a runtime swap cancel prompts that a
-        // detached previous host still has on screen.
-        signal:
-          hostSignal === undefined
-            ? extensionUiController.signal
-            : AbortSignal.any([extensionUiController.signal, hostSignal]),
-        tui,
-      })
+    await busy.run("Activating extensions...", () =>
+      config.onExtensionUiReady?.((hostSignal) =>
+        createExtensionUi({
+          promptSignal: () =>
+            AbortSignal.any([
+              chatContainer.signal,
+              extensionUiController.signal,
+              ...(hostSignal ? [hostSignal] : []),
+            ]),
+          promptHost: {
+            mount: (component) => {
+              const unmount = composerLayer.mountPrompt(component);
+              tui.setFocus(composerLayer);
+              tui.requestRender();
+              return () => {
+                unmount();
+                tui.setFocus(composerLayer);
+                tui.requestRender();
+              };
+            },
+          },
+          showMessage: showSystemMessage,
+          showStatus: (message) => {
+            const clear = busy.status(message);
+            const signal = AbortSignal.any([
+              chatContainer.signal,
+              extensionUiController.signal,
+              ...(hostSignal ? [hostSignal] : []),
+            ]);
+            signal.addEventListener("abort", clear, {
+              once: true,
+            });
+            if (signal.aborted) {
+              clear();
+            }
+            return () => {
+              signal.removeEventListener("abort", clear);
+              clear();
+            };
+          },
+          onUserWait: () => busy.suspend(),
+          // Host-scoped signals let a runtime swap cancel prompts that a
+          // detached previous host still has on screen.
+          signal:
+            hostSignal === undefined
+              ? extensionUiController.signal
+              : AbortSignal.any([extensionUiController.signal, hostSignal]),
+        })
+      )
     );
     for (const message of config.setupMessages ?? []) {
-      addSystemMessage(chatContainer, message);
+      showSystemMessage(message);
     }
-    await config.onSetup?.();
+    await busy.run("Setting up...", () => config.onSetup?.());
     if (config.replayHistoryOnStartup === true) {
-      await renderSessionHistory();
+      await renderSessionHistory(undefined, "initial-replay");
     }
-    updateHeader();
+    refreshCurrentStatus();
 
     while (!session.closed) {
       const input = await waitForInput();
@@ -1693,9 +1972,8 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       }
     }
   } finally {
-    const composerRows = composerLayer.render(terminal.columns).length;
     extensionUiController.abort();
-    clearStatus();
+    busy.dispose();
     footerStatusBar.stop();
     session.close();
 
@@ -1709,9 +1987,27 @@ export async function createAgentTUI(config: AgentTUIConfig): Promise<void> {
       // Rendering must stop before the streamed assistant views are disposed:
       // disposal empties their children, so a later render would blank the
       // reply that is already on screen.
-      tui.stop();
-      terminal.write(terminalExitCursorSequence(composerRows));
-      disposeAssistantViews();
+      try {
+        // Flush the final interruption/status frame while its views still
+        // exist. Normal stop adds a clamped cursor move and newline, losing
+        // the composer's position when the transcript fills the viewport.
+        // Ending a pulse first keeps an exit mid-blink from freezing the
+        // notice inverted in that preserved frame.
+        chatContainer.finish();
+        repeatedNotice.settle();
+        tui.renderNow();
+        const renderState = tui.captureRenderState();
+        const composerRows = composerLayer.render(terminal.columns).length;
+        tui.stop({ preserveScreen: true });
+        terminal.write(terminalExitCursorSequence(renderState, composerRows));
+        disposeAssistantViews();
+      } finally {
+        repeatedNotice.stop();
+        await Promise.all(turnCompletions);
+        for (const error of completionFailures) {
+          console.error("onTurnComplete callback failed in TUI:", error);
+        }
+      }
     }
   }
 }

@@ -37,6 +37,7 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 });
 
 import { type AgentTUIConfig, createAgentTUI } from "./agent";
+import { TuiSessionMachine } from "./session-state";
 
 const deferred = <T>(): {
   promise: Promise<T>;
@@ -53,16 +54,17 @@ const deferred = <T>(): {
 };
 
 const submitModelCommandAfterSetup = (): void => {
-  // The outer microtask lets createAgentTUI continue past onSetup; the inner
-  // one runs after its input waiter has been installed.
-  queueMicrotask(() => {
-    queueMicrotask(() => {
+  const original = TuiSessionMachine.prototype.awaitInput;
+  const spy = vi
+    .spyOn(TuiSessionMachine.prototype, "awaitInput")
+    .mockImplementation(function (this: TuiSessionMachine, resolve) {
+      original.call(this, resolve);
+      spy.mockRestore();
       for (const input of "/model") {
         terminalHarness.send?.(input);
       }
       terminalHarness.send?.("\r");
     });
-  });
 };
 
 const requestExit = (): void => {
